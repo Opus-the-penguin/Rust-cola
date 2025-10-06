@@ -1373,7 +1373,10 @@ impl UnsafeSendSyncBoundsRule {
                 continue;
             }
 
-            if bounds.iter().any(|bound| bound == trait_name) {
+            if bounds
+                .iter()
+                .any(|bound| Self::bound_matches_trait(bound, trait_name))
+            {
                 satisfied.insert(name.clone());
             }
         }
@@ -1384,7 +1387,10 @@ impl UnsafeSendSyncBoundsRule {
                     continue;
                 }
 
-                if bounds.iter().any(|bound| bound == trait_name) {
+                if bounds
+                    .iter()
+                    .any(|bound| Self::bound_matches_trait(bound, trait_name))
+                {
                     satisfied.insert(name);
                 }
             }
@@ -1505,6 +1511,32 @@ impl UnsafeSendSyncBoundsRule {
             })
             .filter(|part| !part.is_empty())
             .collect()
+    }
+
+    fn bound_matches_trait(bound: &str, trait_name: &str) -> bool {
+        let normalized = bound.trim();
+        if normalized.is_empty() {
+            return false;
+        }
+
+        let normalized = normalized
+            .trim_start_matches("dyn ")
+            .trim_start_matches("impl ");
+
+        if normalized == trait_name {
+            return true;
+        }
+
+        if normalized.ends_with(trait_name)
+            && normalized
+                .trim_end_matches(trait_name)
+                .trim_end()
+                .ends_with("::")
+        {
+            return true;
+        }
+
+        false
     }
 }
 
@@ -4400,6 +4432,10 @@ unsafe impl<T: Send> Send for SafeWrapper<T> {}
 
         unsafe impl<T: Send, U: Send> Send for SafePair<T, U> {}
 
+        pub struct QualifiedSafe<T>(PhantomData<T>);
+
+        unsafe impl<T: std::marker::Send> Send for QualifiedSafe<T> {}
+
         pub struct WhereSync<T>(PhantomData<T>);
 
         unsafe impl<T> Sync for WhereSync<T>
@@ -4466,6 +4502,12 @@ unsafe impl<T: Send> Send for SafeWrapper<T> {}
                 .iter()
                 .any(|sig| sig.contains("unsafe impl<T> Sync for WhereSync<T>")),
             "WhereSync with where clause should not be flagged"
+        );
+        assert!(
+            !signatures
+                .iter()
+                .any(|sig| sig.contains("unsafe impl<T: std::marker::Send> Send for QualifiedSafe<T>")),
+            "QualifiedSafe with fully qualified bound should not be flagged"
         );
 
         Ok(())

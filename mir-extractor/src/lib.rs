@@ -157,7 +157,10 @@ fn command_rule_should_skip(function: &MirFunction, package: &MirPackage) -> boo
     if package.crate_name == "mir-extractor" {
         matches!(
             function.name.as_str(),
-            "detect_rustc_version" | "run_cargo_rustc" | "discover_rustc_targets"
+            "detect_rustc_version"
+                | "run_cargo_rustc"
+                | "discover_rustc_targets"
+                | "detect_crate_name"
         )
     } else {
         false
@@ -3698,6 +3701,30 @@ rules:
                 .iter()
                 .any(|f| f.rule_id == "RUSTCOLA007" && f.function == "discover_rustc_targets"),
             "command rule should ignore discover_rustc_targets helper"
+        );
+    }
+
+    #[test]
+    fn command_rule_ignores_detect_crate_name() {
+        let engine = RuleEngine::with_builtin_rules();
+        let package = MirPackage {
+            crate_name: "mir-extractor".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "detect_crate_name".to_string(),
+                signature: "fn detect_crate_name()".to_string(),
+                body: vec!["_0 = MetadataCommand::new();".to_string()],
+            }],
+        };
+
+        let analysis = engine.run(&package);
+
+        assert!(
+            !analysis
+                .findings
+                .iter()
+                .any(|f| f.rule_id == "RUSTCOLA007" && f.function == "detect_crate_name"),
+            "command rule should ignore detect_crate_name helper"
         );
     }
 

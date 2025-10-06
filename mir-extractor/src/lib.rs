@@ -148,6 +148,24 @@ fn line_contains_md5_usage(line: &str) -> bool {
     false
 }
 
+fn line_contains_sha1_usage(line: &str) -> bool {
+    if line.contains('"') {
+        return false;
+    }
+
+    let lower = line.to_lowercase();
+
+    if lower.contains("sha1::") || lower.contains("::sha1") {
+        return true;
+    }
+
+    if lower.contains("sha-1") {
+        return true;
+    }
+
+    text_contains_word_case_insensitive(line, "sha1")
+}
+
 fn text_contains_word_case_insensitive(text: &str, needle: &str) -> bool {
     if needle.is_empty() {
         return false;
@@ -742,10 +760,14 @@ impl Rule for InsecureSha1Rule {
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
         let mut findings = Vec::new();
-        let patterns = ["sha1", "sha-1"];
 
         for function in &package.functions {
-            let evidence = collect_case_insensitive_matches(&function.body, &patterns);
+            let evidence: Vec<String> = function
+                .body
+                .iter()
+                .filter(|line| line_contains_sha1_usage(line))
+                .map(|line| line.trim().to_string())
+                .collect();
             if evidence.is_empty() {
                 continue;
             }
@@ -3595,6 +3617,30 @@ rules:
                 .iter()
                 .any(|f| f.rule_id == "RUSTCOLA004" && f.function == "doc_only"),
             "md5 rule should not fire on doc-only strings"
+        );
+    }
+
+    #[test]
+    fn sha1_rule_ignores_doc_only_matches() {
+        let engine = RuleEngine::with_builtin_rules();
+        let package = MirPackage {
+            crate_name: "docs".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "doc_only_sha".to_string(),
+                signature: "fn doc_only_sha()".to_string(),
+                body: vec!["const _: &str = \"Usage of SHA-1 hashing\";".to_string()],
+            }],
+        };
+
+        let analysis = engine.run(&package);
+
+        assert!(
+            !analysis
+                .findings
+                .iter()
+                .any(|f| f.rule_id == "RUSTCOLA005" && f.function == "doc_only_sha"),
+            "sha1 rule should not fire on doc-only strings"
         );
     }
 

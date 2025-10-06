@@ -153,6 +153,17 @@ fn line_contains_sha1_usage(line: &str) -> bool {
     lower.contains("sha1::") || lower.contains("::sha1")
 }
 
+fn command_rule_should_skip(function: &MirFunction, package: &MirPackage) -> bool {
+    if package.crate_name == "mir-extractor" {
+        matches!(
+            function.name.as_str(),
+            "detect_rustc_version" | "run_cargo_rustc" | "discover_rustc_targets"
+        )
+    } else {
+        false
+    }
+}
+
 fn text_contains_word_case_insensitive(text: &str, needle: &str) -> bool {
     if needle.is_empty() {
         return false;
@@ -867,10 +878,7 @@ impl Rule for CommandInjectionRiskRule {
         let patterns = ["std::process::command::new", "command::new"];
 
         for function in &package.functions {
-            if function
-                .name
-                .contains("detect_rustc_version")
-            {
+            if command_rule_should_skip(function, package) {
                 continue;
             }
 
@@ -3649,7 +3657,7 @@ rules:
     fn command_rule_ignores_rustc_detection() {
         let engine = RuleEngine::with_builtin_rules();
         let package = MirPackage {
-            crate_name: "tools".to_string(),
+            crate_name: "mir-extractor".to_string(),
             crate_root: ".".to_string(),
             functions: vec![MirFunction {
                 name: "detect_rustc_version".to_string(),
@@ -3666,6 +3674,30 @@ rules:
                 .iter()
                 .any(|f| f.rule_id == "RUSTCOLA007" && f.function == "detect_rustc_version"),
             "command rule should ignore detect_rustc_version helper"
+        );
+    }
+
+    #[test]
+    fn command_rule_ignores_discover_targets() {
+        let engine = RuleEngine::with_builtin_rules();
+        let package = MirPackage {
+            crate_name: "mir-extractor".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "discover_rustc_targets".to_string(),
+                signature: "fn discover_rustc_targets()".to_string(),
+                body: vec!["_0 = std::process::Command::new(const \"cargo\");".to_string()],
+            }],
+        };
+
+        let analysis = engine.run(&package);
+
+        assert!(
+            !analysis
+                .findings
+                .iter()
+                .any(|f| f.rule_id == "RUSTCOLA007" && f.function == "discover_rustc_targets"),
+            "command rule should ignore discover_rustc_targets helper"
         );
     }
 

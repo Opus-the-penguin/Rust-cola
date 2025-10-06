@@ -122,6 +122,27 @@ fn collect_case_insensitive_matches(lines: &[String], patterns: &[&str]) -> Vec<
         .collect()
 }
 
+fn line_contains_md5_usage(line: &str) -> bool {
+    let lower = line.to_lowercase();
+    let mut search_start = 0;
+
+    while let Some(relative_idx) = lower[search_start..].find("md5") {
+        let idx = search_start + relative_idx;
+        let before_char = lower[..idx].chars().rev().find(|c| !c.is_whitespace());
+        let after_char = lower[idx + 3..].chars().find(|c| !c.is_whitespace());
+        let before_ok = before_char.map(|c| !c.is_alphanumeric()).unwrap_or(true);
+        let after_ok = after_char.map(|c| !c.is_alphanumeric()).unwrap_or(true);
+
+        if before_ok && after_ok {
+            return true;
+        }
+
+        search_start = idx + 3;
+    }
+
+    false
+}
+
 fn text_contains_word_case_insensitive(text: &str, needle: &str) -> bool {
     if needle.is_empty() {
         return false;
@@ -662,10 +683,14 @@ impl Rule for InsecureMd5Rule {
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
         let mut findings = Vec::new();
-        let patterns = ["md5"];
 
         for function in &package.functions {
-            let evidence = collect_case_insensitive_matches(&function.body, &patterns);
+            let evidence: Vec<String> = function
+                .body
+                .iter()
+                .filter(|line| line_contains_md5_usage(line))
+                .map(|line| line.trim().to_string())
+                .collect();
             if evidence.is_empty() {
                 continue;
             }
@@ -3542,6 +3567,30 @@ rules:
         ] {
             assert!(analysis.rules.iter().any(|meta| meta.id == *id));
         }
+    }
+
+    #[test]
+    fn md5_rule_ignores_doc_only_matches() {
+        let engine = RuleEngine::with_builtin_rules();
+        let package = MirPackage {
+            crate_name: "docs".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "doc_only".to_string(),
+                signature: "fn doc_only()".to_string(),
+                body: vec!["const _: &str = \"Detects use of MD5 hashing\";".to_string()],
+            }],
+        };
+
+        let analysis = engine.run(&package);
+
+        assert!(
+            !analysis
+                .findings
+                .iter()
+                .any(|f| f.rule_id == "RUSTCOLA004" && f.function == "doc_only"),
+            "md5 rule should not fire on doc-only strings"
+        );
     }
 
     #[test]

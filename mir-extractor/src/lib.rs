@@ -122,11 +122,15 @@ fn collect_case_insensitive_matches(lines: &[String], patterns: &[&str]) -> Vec<
         .collect()
 }
 
-fn text_contains_any_case_insensitive(text: &str, patterns: &[&str]) -> bool {
-    let lower = text.to_lowercase();
-    patterns
-        .iter()
-        .any(|needle| lower.contains(&needle.to_lowercase()))
+fn text_contains_word_case_insensitive(text: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return false;
+    }
+
+    let target = needle.to_lowercase();
+    text.to_lowercase()
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .any(|token| token == target)
 }
 
 pub struct RuleEngine {
@@ -583,16 +587,19 @@ impl UnsafeUsageRule {
         let mut evidence = Vec::new();
         let mut seen = HashSet::new();
 
-        if text_contains_any_case_insensitive(&function.signature, &["unsafe"]) {
+        if text_contains_word_case_insensitive(&function.signature, "unsafe") {
             let sig = format!("signature: {}", function.signature.trim());
             if seen.insert(sig.clone()) {
                 evidence.push(sig);
             }
         }
 
-        for line in collect_case_insensitive_matches(&function.body, &["unsafe"]).into_iter() {
-            if seen.insert(line.clone()) {
-                evidence.push(line);
+        for line in &function.body {
+            if text_contains_word_case_insensitive(line, "unsafe") {
+                let entry = line.trim().to_string();
+                if seen.insert(entry.clone()) {
+                    evidence.push(entry);
+                }
             }
         }
 

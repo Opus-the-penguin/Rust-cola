@@ -19,7 +19,7 @@ impl MirDataflow {
         let assignments = function
             .body
             .iter()
-            .filter_map(|line| parse_assignment_line(line))
+            .flat_map(|line| parse_assignment_line(line))
             .collect();
         Self { assignments }
     }
@@ -63,44 +63,46 @@ impl MirDataflow {
     }
 }
 
-fn parse_assignment_line(line: &str) -> Option<Assignment> {
+fn parse_assignment_line(line: &str) -> Vec<Assignment> {
     let trimmed = line.trim();
     if trimmed.is_empty() {
-        return None;
+        return Vec::new();
     }
 
     let mut parts = trimmed.splitn(2, '=');
-    let lhs = parts.next()?.trim();
-    let rhs = parts.next()?.trim();
-
-    if !lhs.starts_with('_') {
-        return None;
-    }
-
-    if lhs.contains(',') || lhs.contains('(') || lhs.contains('[') {
-        return None;
-    }
-
-    if !lhs
-        .chars()
-        .all(|ch| ch == '_' || ch.is_ascii_digit() || ch.is_alphabetic())
-    {
-        return None;
-    }
+    let lhs = match parts.next() {
+        Some(value) => value.trim(),
+        None => return Vec::new(),
+    };
+    let rhs = match parts.next() {
+        Some(value) => value.trim(),
+        None => return Vec::new(),
+    };
 
     let rhs = rhs.trim_end_matches(';').trim();
     if rhs.is_empty() {
-        return None;
+        return Vec::new();
     }
+
+    let mut targets = extract_variables(lhs);
+    if targets.is_empty() {
+        return Vec::new();
+    }
+
+    targets.sort();
+    targets.dedup();
 
     let sources = extract_variables(rhs);
 
-    Some(Assignment {
-        target: lhs.to_string(),
-        sources,
-        rhs: rhs.to_string(),
-        line: trimmed.to_string(),
-    })
+    targets
+        .into_iter()
+        .map(|target| Assignment {
+            target,
+            sources: sources.clone(),
+            rhs: rhs.to_string(),
+            line: trimmed.to_string(),
+        })
+        .collect()
 }
 
 pub(crate) fn extract_variables(input: &str) -> Vec<String> {
@@ -173,5 +175,39 @@ mod tests {
 
         let dataflow = MirDataflow::new(&function);
         assert_eq!(dataflow.assignments().len(), 1);
+    }
+
+    #[test]
+    fn tuple_destructuring_creates_assignments_for_each_slot() {
+        let function = make_function(&[
+            "    (_1, _2) = move _3;",
+            "    _4 = copy _2;",
+        ]);
+
+        let dataflow = MirDataflow::new(&function);
+        assert_eq!(dataflow.assignments().len(), 3);
+
+    let tainted = dataflow.taint_from(|assignment| assignment.rhs.contains("_3"));
+        assert!(tainted.contains("_1"));
+        assert!(tainted.contains("_2"));
+        assert!(tainted.contains("_4"));
+    }
+
+    #[test]
+    fn option_projections_propagate_through_fields() {
+        let function = make_function(&[
+            "    _4 = reqwest::Response::content_length(move _1);",
+            "    (_5.0: core::option::Option<usize>) = move _4;",
+            "    _6 = move (_5.0: core::option::Option<usize>);",
+            "    _7 = Vec::<u8>::with_capacity(move _6);",
+        ]);
+
+        let dataflow = MirDataflow::new(&function);
+        let tainted = dataflow.taint_from(|assignment| assignment.rhs.contains("content_length"));
+
+        assert!(tainted.contains("_4"));
+        assert!(tainted.contains("_5"));
+        assert!(tainted.contains("_6"));
+        assert!(tainted.contains("_7"));
     }
 }

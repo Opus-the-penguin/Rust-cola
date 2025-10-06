@@ -20,6 +20,7 @@ RustSec advisory [RUSTSEC-2025-0015](https://rustsec.org/advisories/RUSTSEC-2025
 
 - Detects simple flows where `Response::content_length` or a header lookup feeds directly or indirectly into `Vec::with_capacity`.
 - Propagates through multiple assignment hops and survives conversions such as copies or moves.
+- Handles tuple destructuring (`(_1, _2) = ...`) and Option projections (`(_5.0: Option<_>)`) so taint survives common unwrapping patterns.
 - Flags both `Vec::with_capacity` and `Vec::reserve*` call sites (case-insensitive match).
 
 ## Limitations & open questions
@@ -31,10 +32,9 @@ RustSec advisory [RUSTSEC-2025-0015](https://rustsec.org/advisories/RUSTSEC-2025
 
 ## Next steps
 
-1. Expand the assignment parser to understand tuple destructuring and projections so that taint survives `Option::Some` unwrapping.
-2. Track simple range guards (asserts, `min`, `clamp`) to reduce noise.
-3. Once signal quality looks good, wrap the detector in a real rule struct and add SARIF metadata.
-4. Explore similar prototypes for backlog items 105 (length truncation casts) and 106 (Tokio broadcast `!Sync` payloads) using the same helper.
+1. Model range guards (asserts, `min`, `clamp`) to filter safe allocations.
+2. Wrap the detector in a production rule with SARIF metadata and configurability.
+3. Reuse the enhanced parser for backlog items 105 (length truncation casts) and 106 (Tokio broadcast `!Sync` payloads); add dedicated prototypes.
 
 ## Artifacts
 

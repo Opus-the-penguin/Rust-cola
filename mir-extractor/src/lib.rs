@@ -1357,29 +1357,154 @@ impl UnsafeSendSyncBoundsRule {
             return true;
         };
         let before_for = &block_text[..for_idx];
-        let generics_text = if let Some(start) = before_for.find('<') {
-            if let Some(end_offset) = before_for[start..].find('>') {
-                before_for[start + 1..start + end_offset].trim()
-            } else {
-                return true;
-            }
-        } else {
+        let Some((generics_text, generic_names)) = Self::extract_generic_params(before_for) else {
             return true;
         };
 
-        let where_text = if let Some(where_idx) = block_text.find(" where ") {
-            let after_where = &block_text[where_idx + " where ".len()..];
-            let end_idx = after_where
-                .find('{')
-                .or_else(|| after_where.find(';'))
-                .unwrap_or(after_where.len());
-            after_where[..end_idx].trim()
-        } else {
-            ""
-        };
+        if generic_names.is_empty() {
+            return true;
+        }
 
-        let combined = format!("{} {}", generics_text, where_text);
-        combined.contains(trait_name)
+        let generic_set: HashSet<String> = generic_names.iter().cloned().collect();
+        let mut satisfied: HashSet<String> = HashSet::new();
+
+        for (name, bounds) in Self::parse_inline_bounds(&generics_text) {
+            if !generic_set.contains(&name) {
+                continue;
+            }
+
+            if bounds.iter().any(|bound| bound == trait_name) {
+                satisfied.insert(name.clone());
+            }
+        }
+
+        if let Some(where_clauses) = Self::extract_where_clauses(block_text) {
+            for (name, bounds) in where_clauses {
+                if !generic_set.contains(&name) {
+                    continue;
+                }
+
+                if bounds.iter().any(|bound| bound == trait_name) {
+                    satisfied.insert(name);
+                }
+            }
+        }
+
+        generic_names
+            .into_iter()
+            .all(|name| satisfied.contains(&name))
+    }
+
+    fn extract_generic_params(before_for: &str) -> Option<(String, Vec<String>)> {
+        let start = before_for.find('<')?;
+        let end_offset = before_for[start..].find('>')?;
+        let generics_text = before_for[start + 1..start + end_offset].trim().to_string();
+
+        let mut names = Vec::new();
+        for param in generics_text.split(',') {
+            if let Some(name) = Self::normalize_generic_name(param) {
+                names.push(name);
+            }
+        }
+
+        Some((generics_text, names))
+    }
+
+    fn parse_inline_bounds(generics_text: &str) -> Vec<(String, Vec<String>)> {
+        generics_text
+            .split(',')
+            .filter_map(|param| {
+                let Some(name) = Self::normalize_generic_name(param) else {
+                    return None;
+                };
+
+                let trimmed = param.trim();
+                let mut parts = trimmed.splitn(2, ':');
+                parts.next()?;
+                let bounds = parts
+                    .next()
+                    .map(|rest| Self::split_bounds(rest))
+                    .unwrap_or_default();
+
+                Some((name, bounds))
+            })
+            .collect()
+    }
+
+    fn normalize_generic_name(token: &str) -> Option<String> {
+        let token = token.trim();
+        if token.is_empty() {
+            return None;
+        }
+
+        if token.starts_with("const ") {
+            return None;
+        }
+
+        if token.starts_with('\'') {
+            return None;
+        }
+
+        let ident = token
+            .split(|c: char| c == ':' || c == '=' || c.is_whitespace())
+            .next()
+            .unwrap_or("")
+            .trim();
+
+        if ident.is_empty() {
+            None
+        } else {
+            Some(ident.to_string())
+        }
+    }
+
+    fn extract_where_clauses(block_text: &str) -> Option<Vec<(String, Vec<String>)>> {
+        let where_idx = block_text.find(" where ")?;
+        let after_where = &block_text[where_idx + " where ".len()..];
+        let end_idx = after_where
+            .find('{')
+            .or_else(|| after_where.find(';'))
+            .unwrap_or(after_where.len());
+        let clauses = after_where[..end_idx].trim();
+        if clauses.is_empty() {
+            return Some(Vec::new());
+        }
+
+        let mut result = Vec::new();
+        for predicate in clauses.split(',') {
+            let pred = predicate.trim();
+            if pred.is_empty() {
+                continue;
+            }
+
+            let mut parts = pred.splitn(2, ':');
+            let ident = parts.next().unwrap_or("").trim();
+            if ident.is_empty() {
+                continue;
+            }
+
+            let bounds = parts
+                .next()
+                .map(|rest| Self::split_bounds(rest))
+                .unwrap_or_default();
+            result.push((ident.to_string(), bounds));
+        }
+
+        Some(result)
+    }
+
+    fn split_bounds(bounds: &str) -> Vec<String> {
+        bounds
+            .split('+')
+            .map(|part| {
+                part.trim()
+                    .trim_start_matches('?')
+                    .trim_start_matches("~const ")
+                    .trim_end_matches(|c| matches!(c, ',' | '{' | ';'))
+                    .to_string()
+            })
+            .filter(|part| !part.is_empty())
+            .collect()
     }
 }
 
@@ -4259,9 +4384,28 @@ pub struct Wrapper<T>(PhantomData<T>);
 
 unsafe impl<T> Send for Wrapper<T> {}
 
+        pub struct Pair<T, U>(PhantomData<(T, U)>);
+
+        unsafe impl<T, U: Send> Send for Pair<T, U> {}
+
+        pub struct SyncWrapper<T>(PhantomData<T>);
+
+        unsafe impl<T> Sync for SyncWrapper<T> {}
+
 pub struct SafeWrapper<T>(PhantomData<T>);
 
 unsafe impl<T: Send> Send for SafeWrapper<T> {}
+
+        pub struct SafePair<T, U>(PhantomData<(T, U)>);
+
+        unsafe impl<T: Send, U: Send> Send for SafePair<T, U> {}
+
+        pub struct WhereSync<T>(PhantomData<T>);
+
+        unsafe impl<T> Sync for WhereSync<T>
+        where
+            T: Sync,
+        {}
 "#,
         )?;
 
@@ -4279,25 +4423,49 @@ unsafe impl<T: Send> Send for SafeWrapper<T> {}
             .filter(|finding| finding.rule_id == "RUSTCOLA015")
             .collect();
 
-        assert_eq!(matches.len(), 1, "expected exactly one unsafe Send finding");
+        assert_eq!(matches.len(), 3, "expected three unsafe Send/Sync findings");
 
-        let finding = matches[0];
+        let signatures: Vec<_> = matches
+            .iter()
+            .map(|finding| finding.function_signature.clone())
+            .collect();
+
         assert!(
-            finding.function.contains("src/lib.rs"),
-            "finding should reference source file"
-        );
-        assert!(
-            finding
-                .function_signature
-                .contains("unsafe impl<T> Send for Wrapper<T>"),
-            "finding should point at missing bounds impl"
-        );
-        assert!(
-            finding
-                .evidence
+            signatures
                 .iter()
-                .any(|line| line.contains("unsafe impl<T> Send for Wrapper<T>")),
-            "evidence should include offending impl"
+                .any(|sig| sig.contains("unsafe impl<T> Send for Wrapper<T>")),
+            "missing finding for Wrapper"
+        );
+        assert!(
+            signatures
+                .iter()
+                .any(|sig| sig.contains("unsafe impl<T, U: Send> Send for Pair<T, U>")),
+            "missing finding for Pair"
+        );
+        assert!(
+            signatures
+                .iter()
+                .any(|sig| sig.contains("unsafe impl<T> Sync for SyncWrapper<T>")),
+            "missing finding for SyncWrapper"
+        );
+
+        assert!(
+            !signatures
+                .iter()
+                .any(|sig| sig.contains("unsafe impl<T: Send> Send for SafeWrapper<T>")),
+            "safe Send impl should not be flagged"
+        );
+        assert!(
+            !signatures
+                .iter()
+                .any(|sig| sig.contains("unsafe impl<T: Send, U: Send> Send for SafePair<T, U>")),
+            "SafePair should not be flagged"
+        );
+        assert!(
+            !signatures
+                .iter()
+                .any(|sig| sig.contains("unsafe impl<T> Sync for WhereSync<T>")),
+            "WhereSync with where clause should not be flagged"
         );
 
         Ok(())

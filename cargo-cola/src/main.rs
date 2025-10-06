@@ -445,23 +445,56 @@ fn merge_sarif_reports(reports: &[Value]) -> Result<Value> {
     let mut merged_run = base_run;
     merged_run["results"] = Value::Array(all_results);
 
-    if let Some(tool) = merged_run.get_mut("tool") {
-        if let Some(driver) = tool.get_mut("driver") {
-            driver["rules"] = Value::Array(all_rules);
+    let rules_value = Value::Array(all_rules);
+    match merged_run.get_mut("tool") {
+        Some(tool) => {
+            let driver = tool
+                .get_mut("driver")
+                .and_then(|driver| driver.as_object_mut())
+                .map(|driver| {
+                    if !driver.contains_key("name") {
+                        driver.insert("name".to_string(), json!("rust-cola"));
+                    }
+                    if !driver.contains_key("informationUri") {
+                        driver.insert(
+                            "informationUri".to_string(),
+                            json!("https://github.com/your-org/rust-cola"),
+                        );
+                    }
+                    if !driver.contains_key("version") {
+                        driver.insert("version".to_string(), json!(env!("CARGO_PKG_VERSION")));
+                    }
+                    driver
+                });
+
+            if let Some(driver) = driver {
+                driver.insert("rules".to_string(), rules_value);
+            } else {
+                tool["driver"] = json!({
+                    "name": "rust-cola",
+                    "informationUri": "https://github.com/your-org/rust-cola",
+                    "version": env!("CARGO_PKG_VERSION"),
+                    "rules": rules_value,
+                });
+            }
+        }
+        None => {
+            merged_run["tool"] = json!({
+                "driver": {
+                    "name": "rust-cola",
+                    "informationUri": "https://github.com/your-org/rust-cola",
+                    "version": env!("CARGO_PKG_VERSION"),
+                    "rules": rules_value,
+                }
+            });
         }
     }
 
     merged_run["invocations"] = Value::Array(all_invocations);
     merged_run["artifacts"] = Value::Array(all_artifacts);
 
-    let schema = reports[0]
-        .get("$schema")
-        .cloned()
-        .unwrap_or_else(|| Value::String("https://json.schemastore.org/sarif-2.1.0.json".to_string()));
-    let version = reports[0]
-        .get("version")
-        .cloned()
-        .unwrap_or_else(|| Value::String("2.1.0".to_string()));
+    let schema = "https://json.schemastore.org/sarif-2.1.0.json";
+    let version = "2.1.0";
 
     Ok(json!({
         "$schema": schema,

@@ -149,21 +149,8 @@ fn line_contains_md5_usage(line: &str) -> bool {
 }
 
 fn line_contains_sha1_usage(line: &str) -> bool {
-    if line.contains('"') {
-        return false;
-    }
-
     let lower = line.to_lowercase();
-
-    if lower.contains("sha1::") || lower.contains("::sha1") {
-        return true;
-    }
-
-    if lower.contains("sha-1") {
-        return true;
-    }
-
-    text_contains_word_case_insensitive(line, "sha1")
+    lower.contains("sha1::") || lower.contains("::sha1")
 }
 
 fn text_contains_word_case_insensitive(text: &str, needle: &str) -> bool {

@@ -5,6 +5,11 @@ on:
     branches: [ main ]
   pull_request:
 
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+
 jobs:
   analyze:
     runs-on: ubuntu-latest

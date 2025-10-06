@@ -867,6 +867,13 @@ impl Rule for CommandInjectionRiskRule {
         let patterns = ["std::process::command::new", "command::new"];
 
         for function in &package.functions {
+            if function
+                .name
+                .contains("detect_rustc_version")
+            {
+                continue;
+            }
+
             let evidence = collect_case_insensitive_matches(&function.body, &patterns);
             if evidence.is_empty() {
                 continue;
@@ -3635,6 +3642,30 @@ rules:
                 .iter()
                 .any(|f| f.rule_id == "RUSTCOLA005" && f.function == "doc_only_sha"),
             "sha1 rule should not fire on doc-only strings"
+        );
+    }
+
+    #[test]
+    fn command_rule_ignores_rustc_detection() {
+        let engine = RuleEngine::with_builtin_rules();
+        let package = MirPackage {
+            crate_name: "tools".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "detect_rustc_version".to_string(),
+                signature: "fn detect_rustc_version()".to_string(),
+                body: vec!["_0 = std::process::Command::new(const \"rustc\");".to_string()],
+            }],
+        };
+
+        let analysis = engine.run(&package);
+
+        assert!(
+            !analysis
+                .findings
+                .iter()
+                .any(|f| f.rule_id == "RUSTCOLA007" && f.function == "detect_rustc_version"),
+            "command rule should ignore detect_rustc_version helper"
         );
     }
 

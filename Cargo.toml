@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "cargo-cola",
+    "mir-extractor",
+    "examples/simple",
+]
+resolver = "2"

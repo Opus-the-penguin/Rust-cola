@@ -1,0 +1,22 @@
+# Example rulepack for Rust-cola
+#
+# To load it:
+#   cargo run -p cargo-cola -- --rulepack examples/rulepacks/example-basic.yaml
+#
+rules:
+  - id: ORG0001
+    name: unwrap-in-production
+    short_description: Flag std::result::Result::unwrap
+    full_description: Detects calls to unwrap in MIR bodies as a simple example for teams starting out with rulepacks.
+    severity: medium
+    message: Avoid unwrap() in production code; handle the error explicitly.
+    body_contains_any:
+      - "unwrap"
+  - id: ORG0002
+    name: unsafe-block-count
+    short_description: Detect functions containing unsafe keyword
+    full_description: Highlights functions that contain the `unsafe` keyword, useful when teams want to audit unsafe usage.
+    severity: high
+    function_name_contains_any: []
+    body_contains_any:
+      - "unsafe"

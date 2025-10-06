@@ -1,4 +1,4 @@
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::{dataflow::extract_variables, MirDataflow, MirFunction};
 
@@ -96,6 +96,12 @@ pub struct BroadcastUnsyncUsage {
 pub struct CommandInvocation {
     pub command_line: String,
     pub tainted_args: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpensslVerifyNoneInvocation {
+    pub call_line: String,
+    pub supporting_lines: Vec<String>,
 }
 
 pub fn detect_content_length_allocations(function: &MirFunction) -> Vec<ContentLengthAllocation> {
@@ -412,6 +418,100 @@ pub fn detect_command_invocations(function: &MirFunction) -> Vec<CommandInvocati
     findings
 }
 
+pub fn detect_openssl_verify_none(
+    function: &MirFunction,
+) -> Vec<OpensslVerifyNoneInvocation> {
+    let dataflow = MirDataflow::new(function);
+    let mut var_to_lines: HashMap<String, Vec<String>> = HashMap::new();
+
+    for assignment in dataflow.assignments() {
+        var_to_lines
+            .entry(assignment.target.clone())
+            .or_default()
+            .push(assignment.line.trim().to_string());
+    }
+
+    let tainted_modes = dataflow.taint_from(|assignment| rhs_disables_verification(&assignment.rhs));
+    let mut findings: HashMap<String, Vec<String>> = HashMap::new();
+
+    for assignment in dataflow.assignments() {
+        if !is_verify_configuration_call(&assignment.rhs) {
+            continue;
+        }
+
+        let mut supporting = Vec::new();
+        let mut disables = rhs_disables_verification(&assignment.rhs);
+
+        for source in &assignment.sources {
+            if tainted_modes.contains(source) {
+                disables = true;
+                if let Some(lines) = var_to_lines.get(source) {
+                    for line in lines {
+                        if !supporting.contains(line) {
+                            supporting.push(line.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        if !disables {
+            continue;
+        }
+
+        let entry = findings
+            .entry(assignment.line.trim().to_string())
+            .or_insert_with(Vec::new);
+        for line in supporting {
+            if !entry.contains(&line) {
+                entry.push(line);
+            }
+        }
+    }
+
+    for raw_line in &function.body {
+        let trimmed = raw_line.trim().to_string();
+        if !is_verify_configuration_call(&trimmed) {
+            continue;
+        }
+        if !rhs_disables_verification(&trimmed) {
+            continue;
+        }
+        findings.entry(trimmed).or_insert_with(Vec::new);
+    }
+
+    let mut result: Vec<_> = findings
+        .into_iter()
+        .map(|(call_line, supporting_lines)| OpensslVerifyNoneInvocation {
+            call_line,
+            supporting_lines,
+        })
+        .collect();
+
+    result.sort_by(|a, b| a.call_line.cmp(&b.call_line));
+    result
+}
+
+fn is_verify_configuration_call(text: &str) -> bool {
+    let lowered = text.to_lowercase();
+    lowered.contains("set_verify(") || lowered.contains("set_verify_callback(")
+}
+
+fn rhs_disables_verification(rhs: &str) -> bool {
+    let rhs_lower = rhs.to_lowercase();
+
+    rhs_lower.contains("sslverifymode::none")
+        || rhs_lower.contains("ssl_verify_none")
+        || rhs_lower.contains("verify_none")
+        || rhs_lower.contains("sslverifymode::empty(")
+        || rhs_lower.contains("verify_mode::empty(")
+        || rhs_lower.contains("sslverifymode::from_bits_truncate(0")
+        || rhs_lower.contains("sslverifymode::from_bits(0")
+        || rhs_lower.contains("sslverifymode::from_bits_truncate(const 0")
+        || rhs_lower.contains("sslverifymode::from_bits(const 0")
+        || rhs_lower.contains("sslverifymode::bits(0")
+}
+
 fn collect_length_seed_vars(
     function: &MirFunction,
     dataflow: &MirDataflow,
@@ -685,6 +785,44 @@ mod tests {
         let invocations = detect_command_invocations(&function);
         assert_eq!(invocations.len(), 1);
         assert!(invocations[0].tainted_args.is_empty());
+    }
+
+    #[test]
+    fn detects_openssl_verify_none_inline() {
+        let function = function_from_lines(&[
+            "    _1 = openssl::ssl::SslContextBuilder::set_verify(move _0, openssl::ssl::SslVerifyMode::NONE);",
+        ]);
+
+        let findings = detect_openssl_verify_none(&function);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].call_line.contains("set_verify"));
+        assert!(findings[0].supporting_lines.is_empty());
+    }
+
+    #[test]
+    fn detects_openssl_verify_none_via_empty_mode() {
+        let function = function_from_lines(&[
+            "    _1 = openssl::ssl::SslVerifyMode::empty();",
+            "    _2 = openssl::ssl::SslContextBuilder::set_verify(move _0, move _1);",
+        ]);
+
+        let findings = detect_openssl_verify_none(&function);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].supporting_lines.len(), 1);
+        assert!(findings[0]
+            .supporting_lines[0]
+            .contains("SslVerifyMode::empty"));
+    }
+
+    #[test]
+    fn detects_openssl_verify_none_callback() {
+        let function = function_from_lines(&[
+            "    _2 = openssl::ssl::SslContextBuilder::set_verify_callback(move _0, openssl::ssl::SslVerifyMode::NONE, move _1);",
+        ]);
+
+        let findings = detect_openssl_verify_none(&function);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].call_line.contains("set_verify_callback"));
     }
 
     #[test]

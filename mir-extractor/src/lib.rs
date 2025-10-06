@@ -19,8 +19,10 @@ mod prototypes;
 pub use dataflow::{Assignment, MirDataflow};
 pub use prototypes::{
     detect_broadcast_unsync_payloads, detect_command_invocations,
-    detect_content_length_allocations, detect_truncating_len_casts, detect_unbounded_allocations,
-    BroadcastUnsyncUsage, CommandInvocation, ContentLengthAllocation, LengthTruncationCast,
+    detect_content_length_allocations, detect_openssl_verify_none,
+    detect_truncating_len_casts, detect_unbounded_allocations, BroadcastUnsyncUsage,
+    CommandInvocation, ContentLengthAllocation, LengthTruncationCast,
+    OpensslVerifyNoneInvocation,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1243,26 +1245,34 @@ impl Rule for OpensslVerifyNoneRule {
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
         let mut findings = Vec::new();
-        let patterns = ["VerifyNone", "SslVerifyMode::NONE"];
 
         for function in &package.functions {
-            let evidence = collect_matches(&function.body, &patterns);
-            if evidence.is_empty() {
+            let invocations = detect_openssl_verify_none(function);
+            if invocations.is_empty() {
                 continue;
             }
 
-            findings.push(Finding {
-                rule_id: self.metadata.id.clone(),
-                rule_name: self.metadata.name.clone(),
-                severity: self.metadata.default_severity,
-                message: format!(
-                    "OpenSSL certificate verification disabled in `{}`",
-                    function.name
-                ),
-                function: function.name.clone(),
-                function_signature: function.signature.clone(),
-                evidence,
-            });
+            for invocation in invocations {
+                let mut evidence = vec![invocation.call_line.clone()];
+                for line in invocation.supporting_lines {
+                    if !evidence.contains(&line) {
+                        evidence.push(line);
+                    }
+                }
+
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "OpenSSL certificate verification disabled in `{}`",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence,
+                });
+            }
         }
 
         findings
@@ -4052,6 +4062,56 @@ rules:
         assert_eq!(finding.severity, Severity::Medium);
         assert_eq!(finding.evidence.len(), 1);
         assert!(finding.message.contains("Process command execution detected"));
+    }
+
+    #[test]
+    fn openssl_rule_reports_none_literal() {
+        let rule = OpensslVerifyNoneRule::new();
+        let package = MirPackage {
+            crate_name: "demo".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "disable_verify".to_string(),
+                signature: "fn disable_verify()".to_string(),
+                body: vec![
+                    "    _1 = openssl::ssl::SslContextBuilder::set_verify(move _0, openssl::ssl::SslVerifyMode::NONE);"
+                        .to_string(),
+                ],
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0]
+            .evidence
+            .iter()
+            .any(|line| line.contains("set_verify")));
+    }
+
+    #[test]
+    fn openssl_rule_reports_empty_mode_variable() {
+        let rule = OpensslVerifyNoneRule::new();
+        let package = MirPackage {
+            crate_name: "demo".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "disable_verify_var".to_string(),
+                signature: "fn disable_verify_var()".to_string(),
+                body: vec![
+                    "    _1 = openssl::ssl::SslVerifyMode::empty();".to_string(),
+                    "    _2 = openssl::ssl::SslContextBuilder::set_verify(move _0, move _1);"
+                        .to_string(),
+                ],
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert_eq!(findings.len(), 1);
+        let evidence = &findings[0].evidence;
+        assert_eq!(evidence.len(), 2);
+        assert!(evidence
+            .iter()
+            .any(|line| line.contains("SslVerifyMode::empty")));
     }
 
     #[test]

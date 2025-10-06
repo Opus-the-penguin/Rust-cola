@@ -37,7 +37,7 @@ Feasibility legend:
 22. **Predictable randomness** – Warn on constant seeds for RNG. **Feasibility:** Heuristic.
 23. **Modulo bias on random outputs** – Identify `% n` on random values in crypto context. **Feasibility:** Advanced.
 24. **Danger accept invalid certs** – Flag `danger_accept_invalid_certs(true)`. **Feasibility:** Heuristic.
-25. **OpenSSL VerifyNone** – Detect `set_verify(VerifyNone)`. **Feasibility:** Heuristic.
+25. **OpenSSL VerifyNone** *(shipped)* – Detect `set_verify(VerifyNone)`. **Feasibility:** Heuristic.
 26. **Non-HTTPS URLs** – Spot HTTP URLs in network clients. **Feasibility:** Heuristic.
 27. **TLS verification disabled in custom clients** – Extend detection beyond reqwest (e.g., hyper). **Feasibility:** MIR dataflow.
 28. **Weak hashing beyond MD5/SHA-1** – Include RIPEMD, CRC for sensitive data. **Feasibility:** Heuristic.

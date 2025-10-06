@@ -2975,6 +2975,56 @@ pub fn analyze_with_engine(engine: &RuleEngine, package: &MirPackage) -> Analysi
     engine.run(package)
 }
 
+fn derive_relative_source_path(crate_name: &str, function_name: &str) -> Option<String> {
+    let marker = " at ";
+    let start = function_name.find(marker)? + marker.len();
+    let rest = &function_name[start..];
+    let end = rest.find("::")?;
+    let location = &rest[..end];
+    let path_part = location.split(':').next()?.trim();
+    if path_part.is_empty() {
+        return None;
+    }
+
+    let mut normalized = path_part.replace('\\', "/");
+    let prefix = format!("{}/", crate_name);
+    if let Some(stripped) = normalized.strip_prefix(&prefix) {
+        normalized = stripped.to_string();
+    }
+
+    Some(normalized)
+}
+
+fn file_uri_from_path(path: &Path) -> String {
+    #[cfg(windows)]
+    {
+        let mut cleaned = path
+            .to_string_lossy()
+            .trim_start_matches(r"\\\\?\\")
+            .replace('\\', "/");
+        if !cleaned.starts_with('/') {
+            cleaned = format!("/{}", cleaned);
+        }
+        format!("file://{}", cleaned)
+    }
+    #[cfg(not(windows))]
+    {
+        format!("file://{}", path.to_string_lossy())
+    }
+}
+
+fn artifact_uri_for(package: &MirPackage, function_name: &str) -> String {
+    let mut path = PathBuf::from(&package.crate_root);
+    if let Some(relative) = derive_relative_source_path(&package.crate_name, function_name) {
+        for component in relative.split('/') {
+            if !component.is_empty() {
+                path.push(component);
+            }
+        }
+    }
+    file_uri_from_path(&path)
+}
+
 pub fn sarif_report(package: &MirPackage, analysis: &AnalysisResult) -> serde_json::Value {
     let rule_index: HashMap<&str, &RuleMetadata> = analysis
         .rules
@@ -2990,6 +3040,7 @@ pub fn sarif_report(package: &MirPackage, analysis: &AnalysisResult) -> serde_js
             let origin = rule_meta
                 .map(|meta| meta.origin.label())
                 .unwrap_or_else(|| "unknown".to_string());
+            let artifact_uri = artifact_uri_for(package, &finding.function);
             json!({
                 "ruleId": finding.rule_id,
                 "level": finding.severity.sarif_level(),
@@ -2998,12 +3049,18 @@ pub fn sarif_report(package: &MirPackage, analysis: &AnalysisResult) -> serde_js
                     {
                         "physicalLocation": {
                             "artifactLocation": {
-                                "uri": finding.function,
+                                "uri": artifact_uri,
                             },
                             "region": {
                                 "message": {"text": finding.function_signature.clone()}
                             }
-                        }
+                        },
+                        "logicalLocations": [
+                            {
+                                "fullyQualifiedName": finding.function,
+                                "decoratedName": finding.function_signature,
+                            }
+                        ]
                     }
                 ],
                 "properties": {

@@ -1,9 +1,14 @@
 # Rust-cola — OSS SAST for Rust (prototype)
 
-Rust-cola is an experimental static analysis engine that focuses on deep Rust semantics (MIR, async lowering, FFI boundaries) rather than shallow AST matching. The current prototype can:
+Rust-cola is an experimental static analysis engine that focuses on deep Rust semantics and learns from the same mid-level IR the compiler uses. Instead of guessing from surface syntax, it follows lifetimes, async state machines, and cross-crate FFI edges the way rustc actually lowers them—exposing subtle issues that simpler linters never see. The current prototype can:
 
 - Extract MIR for a crate/workspace and emit a structured JSON model.
-- Run built-in security rules that flag raw-pointer escapes (`Box::into_raw`), `std::mem::transmute`, unsafe blocks/functions, insecure hashing (MD5/SHA-1), untrusted environment reads, risky `std::process::Command` spawning, `Vec::set_len`, `MaybeUninit::assume_init`, deprecated `mem::uninitialized`/`mem::zeroed`, literal `http://` URLs, TLS bypasses (`danger_accept_invalid_certs`, OpenSSL `VerifyNone`), hard-coded home directory paths, unsafe Send/Sync impls, FFI allocator mismatches, and yanked/unsound dependencies.
+- Run built-in security rules that catch:
+	- Memory-safety pitfalls such as leaking `Box` pointers, unchecked `transmute`, risky `Vec::set_len`, and premature `MaybeUninit::assume_init`, plus calls to long-deprecated zero-initialization helpers.
+	- Dangerous execution patterns, including unsafe blocks/functions, reading untrusted environment variables, and spawning external commands that can be influenced by user input.
+	- Weak crypto and network hygiene issues like MD5/SHA-1 usage, literal `http://` URLs, and toggles that bypass TLS certificate validation.
+	- Concurrency and FFI hazards, from unsafe `Send`/`Sync` impls to allocator mismatches across foreign-function boundaries.
+	- Supply-chain red flags, highlighting hard-coded home directory paths, yanked or unsound dependencies, and binaries missing `cargo auditable` metadata.
 - Emit human-readable findings plus SARIF output suitable for CI integration.
 
 In addition to the shipped rules, we maintain MIR-based research prototypes for RustSec-inspired findings (Content-Length DoS guards, protocol length truncation casts, Tokio broadcast payload unsoundness) in [`mir-extractor/src/prototypes.rs`](mir-extractor/src/prototypes.rs) with write-ups under [`docs/research/`](docs/research/).

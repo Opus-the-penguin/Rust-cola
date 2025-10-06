@@ -1933,6 +1933,184 @@ impl Rule for AllocatorMismatchRule {
     }
 }
 
+struct ContentLengthAllocationRule {
+    metadata: RuleMetadata,
+}
+
+impl ContentLengthAllocationRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA021".to_string(),
+                name: "content-length-allocation".to_string(),
+                short_description:
+                    "Allocations sized from untrusted Content-Length header".to_string(),
+                full_description: "Flags allocations (`Vec::with_capacity`, `reserve*`) that trust HTTP Content-Length values without upper bounds, enabling attacker-controlled memory exhaustion.".to_string(),
+                help_uri: Some("https://github.com/Opus-the-penguin/Rust-cola/blob/main/docs/research/rustsec-content-length-prototype.md".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for ContentLengthAllocationRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            let allocations = detect_content_length_allocations(function);
+
+            for allocation in allocations {
+                let mut evidence = vec![allocation.allocation_line.clone()];
+
+                let mut tainted: Vec<_> = allocation.tainted_vars.iter().cloned().collect();
+                tainted.sort();
+                tainted.dedup();
+                if !tainted.is_empty() {
+                    evidence.push(format!("tainted length symbols: {}", tainted.join(", ")));
+                }
+
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "Potential unbounded allocation from Content-Length in `{}`",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence,
+                });
+            }
+        }
+
+        findings
+    }
+}
+
+struct LengthTruncationCastRule {
+    metadata: RuleMetadata,
+}
+
+impl LengthTruncationCastRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA022".to_string(),
+                name: "length-truncation-cast".to_string(),
+                short_description: "Payload length cast to narrower integer".to_string(),
+                full_description: "Detects casts or try_into conversions that shrink message length fields to 8/16/32-bit integers without bounds checks, potentially smuggling extra bytes past protocol parsers.".to_string(),
+                help_uri: Some("https://github.com/Opus-the-penguin/Rust-cola/blob/main/docs/research/rustsec-length-truncation-prototype.md".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for LengthTruncationCastRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            let casts = detect_truncating_len_casts(function);
+
+            for cast in casts {
+                let mut evidence = vec![cast.cast_line.clone()];
+
+                if !cast.source_vars.is_empty() {
+                    evidence.push(format!(
+                        "length sources: {}",
+                        cast.source_vars.join(", ")
+                    ));
+                }
+
+                for sink in &cast.sink_lines {
+                    if !evidence.contains(sink) {
+                        evidence.push(sink.clone());
+                    }
+                }
+
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "Potential length truncation before serialization in `{}`",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence,
+                });
+            }
+        }
+
+        findings
+    }
+}
+
+struct BroadcastUnsyncPayloadRule {
+    metadata: RuleMetadata,
+}
+
+impl BroadcastUnsyncPayloadRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA023".to_string(),
+                name: "tokio-broadcast-unsync-payload".to_string(),
+                short_description: "Tokio broadcast carries !Sync payload".to_string(),
+                full_description: "Warns when `tokio::sync::broadcast` channels are instantiated for types like `Rc`/`RefCell` that are not Sync, mirroring RustSec unsoundness reports.".to_string(),
+                help_uri: Some("https://github.com/Opus-the-penguin/Rust-cola/blob/main/docs/research/rustsec-broadcast-unsync-prototype.md".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for BroadcastUnsyncPayloadRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            let usages = detect_broadcast_unsync_payloads(function);
+
+            for usage in usages {
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "Broadcast channel instantiated with !Sync payload in `{}`",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence: vec![usage.line.clone()],
+                });
+            }
+        }
+
+        findings
+    }
+}
+
 struct RustsecUnsoundDependencyRule {
     metadata: RuleMetadata,
 }
@@ -2489,6 +2667,9 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(UnsafeSendSyncBoundsRule::new()));
     engine.register_rule(Box::new(FfiBufferLeakRule::new()));
     engine.register_rule(Box::new(AllocatorMismatchRule::new()));
+    engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
+    engine.register_rule(Box::new(LengthTruncationCastRule::new()));
+    engine.register_rule(Box::new(BroadcastUnsyncPayloadRule::new()));
     engine.register_rule(Box::new(RustsecUnsoundDependencyRule::new()));
     engine.register_rule(Box::new(YankedCrateRule::new()));
     engine.register_rule(Box::new(CargoAuditableMetadataRule::new()));
@@ -3541,6 +3722,32 @@ rules:
                     signature: "fn home_path_literal()".to_string(),
                     body: vec!["_11 = const \"/home/alice/.ssh/id_rsa\";".to_string()],
                 },
+                MirFunction {
+                    name: "content_length_allocation".to_string(),
+                    signature: "fn content_length_allocation(resp: reqwest::Response)".to_string(),
+                    body: vec![
+                        "    _1 = reqwest::Response::content_length(move _0);".to_string(),
+                        "    _2 = copy _1;".to_string(),
+                        "    _3 = Vec::<u8>::with_capacity(move _2);".to_string(),
+                    ],
+                },
+                MirFunction {
+                    name: "length_truncation_cast".to_string(),
+                    signature: "fn length_truncation_cast(len: usize)".to_string(),
+                    body: vec![
+                        "    debug payload_len => _1;".to_string(),
+                        "    _2 = copy _1;".to_string(),
+                        "    _3 = move _2 as i32 (IntToInt);".to_string(),
+                        "    _4 = byteorder::WriteBytesExt::write_u16::<byteorder::BigEndian>(move _0, move _3);".to_string(),
+                    ],
+                },
+                MirFunction {
+                    name: "broadcast_unsync".to_string(),
+                    signature: "fn broadcast_unsync()".to_string(),
+                    body: vec![
+                        "    _5 = tokio::sync::broadcast::channel::<std::rc::Rc<String>>(const 16_usize);".to_string(),
+                    ],
+                },
             ],
         };
 
@@ -3599,6 +3806,51 @@ rules:
             triggered.contains(&"RUSTCOLA014"),
             "expected hardcoded home path rule to fire"
         );
+        assert!(
+            triggered.contains(&"RUSTCOLA021"),
+            "expected content-length allocation rule to fire"
+        );
+        assert!(
+            triggered.contains(&"RUSTCOLA022"),
+            "expected length truncation cast rule to fire"
+        );
+        assert!(
+            triggered.contains(&"RUSTCOLA023"),
+            "expected broadcast unsync payload rule to fire"
+        );
+        let content_length_finding = analysis
+            .findings
+            .iter()
+            .find(|f| f.rule_id == "RUSTCOLA021")
+            .expect("content-length finding present");
+        assert!(content_length_finding
+            .evidence
+            .iter()
+            .any(|line| line.contains("with_capacity")));
+
+        let truncation_finding = analysis
+            .findings
+            .iter()
+            .find(|f| f.rule_id == "RUSTCOLA022")
+            .expect("length truncation finding present");
+        assert!(truncation_finding
+            .evidence
+            .iter()
+            .any(|line| line.contains("IntToInt")));
+        assert!(truncation_finding
+            .evidence
+            .iter()
+            .any(|line| line.contains("write_u16")));
+
+        let broadcast_finding = analysis
+            .findings
+            .iter()
+            .find(|f| f.rule_id == "RUSTCOLA023")
+            .expect("broadcast finding present");
+        assert!(broadcast_finding
+            .evidence
+            .iter()
+            .any(|line| line.contains("broadcast::channel")));
 
         for id in &[
             "RUSTCOLA003",
@@ -3613,6 +3865,9 @@ rules:
             "RUSTCOLA012",
             "RUSTCOLA013",
             "RUSTCOLA014",
+            "RUSTCOLA021",
+            "RUSTCOLA022",
+            "RUSTCOLA023",
         ] {
             assert!(analysis.rules.iter().any(|meta| meta.id == *id));
         }

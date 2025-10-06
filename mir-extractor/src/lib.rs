@@ -162,7 +162,10 @@ impl RuleEngine {
     }
 
     pub fn rule_metadata(&self) -> Vec<RuleMetadata> {
-        self.rules.iter().map(|rule| rule.metadata().clone()).collect()
+        self.rules
+            .iter()
+            .map(|rule| rule.metadata().clone())
+            .collect()
     }
 
     pub fn cache_fingerprint(&self) -> String {
@@ -176,16 +179,22 @@ impl RuleEngine {
 
     pub fn load_rulepack<P: AsRef<Path>>(&mut self, path: P) -> Result<()> {
         let path = path.as_ref();
-        let mut file = File::open(path).with_context(|| format!("open rulepack {}", path.display()))?;
+        let mut file =
+            File::open(path).with_context(|| format!("open rulepack {}", path.display()))?;
         let mut contents = Vec::new();
         file.read_to_end(&mut contents)?;
         self.load_rulepack_from_reader(&contents[..], &path.display().to_string())
     }
 
-    pub fn load_rulepack_from_reader<R: Read>(&mut self, mut reader: R, origin: &str) -> Result<()> {
+    pub fn load_rulepack_from_reader<R: Read>(
+        &mut self,
+        mut reader: R,
+        origin: &str,
+    ) -> Result<()> {
         let mut buf = Vec::new();
         reader.read_to_end(&mut buf)?;
-        let document: RulePackDocument = serde_yaml::from_slice(&buf).context("parse rulepack YAML")?;
+        let document: RulePackDocument =
+            serde_yaml::from_slice(&buf).context("parse rulepack YAML")?;
 
         for rule_config in document.rules {
             let declarative = DeclarativeRule::new(rule_config, origin.to_string());
@@ -1340,9 +1349,7 @@ impl Rule for UnsafeSendSyncBoundsRule {
                         rule_id: self.metadata.id.clone(),
                         rule_name: self.metadata.name.clone(),
                         severity: self.metadata.default_severity,
-                        message: format!(
-                            "Unsafe impl of {trait_name} without generic bounds"
-                        ),
+                        message: format!("Unsafe impl of {trait_name} without generic bounds"),
                         function: location,
                         function_signature: block_lines
                             .first()
@@ -1404,7 +1411,8 @@ impl FfiBufferLeakRule {
             return true;
         }
 
-        if (trimmed.starts_with("return ") || trimmed.contains(" return ")) && position < last_index {
+        if (trimmed.starts_with("return ") || trimmed.contains(" return ")) && position < last_index
+        {
             return true;
         }
 
@@ -1577,7 +1585,10 @@ impl Rule for FfiBufferLeakRule {
                     let mut evidence = Vec::new();
                     let mut seen = HashSet::new();
 
-                    for line in pointer_lines.iter().chain(early_lines.iter().map(|(_, l)| l)) {
+                    for line in pointer_lines
+                        .iter()
+                        .chain(early_lines.iter().map(|(_, l)| l))
+                    {
                         if seen.insert(line.clone()) {
                             evidence.push(line.clone());
                         }
@@ -1588,7 +1599,8 @@ impl Rule for FfiBufferLeakRule {
                         rule_id: self.metadata.id.clone(),
                         rule_name: self.metadata.name.clone(),
                         severity: self.metadata.default_severity,
-                        message: "Potential FFI buffer leak due to early return before cleanup".to_string(),
+                        message: "Potential FFI buffer leak due to early return before cleanup"
+                            .to_string(),
                         function: location,
                         function_signature: signature_line,
                         evidence,
@@ -1657,11 +1669,7 @@ impl AllocatorMismatchRule {
     }
 
     fn foreign_deallocation_patterns() -> &'static [&'static str] {
-        &[
-            "libc::free",
-            "libc::realloc",
-            "libc::cfree",
-        ]
+        &["libc::free", "libc::realloc", "libc::cfree"]
     }
 
     fn collect_function_block(lines: &[&str], start_idx: usize) -> (usize, usize, Vec<String>) {
@@ -1778,8 +1786,7 @@ impl Rule for AllocatorMismatchRule {
                     continue;
                 }
 
-                let (next_idx, start_idx, block_lines) =
-                    Self::collect_function_block(&lines, idx);
+                let (next_idx, start_idx, block_lines) = Self::collect_function_block(&lines, idx);
 
                 let signature = block_lines
                     .iter()
@@ -1787,10 +1794,14 @@ impl Rule for AllocatorMismatchRule {
                     .cloned()
                     .unwrap_or_else(|| block_lines.first().cloned().unwrap_or_default());
 
-                let rust_alloc_hits = collect_matches(&block_lines, Self::rust_allocation_patterns());
-                let rust_free_hits = collect_matches(&block_lines, Self::rust_deallocation_patterns());
-                let foreign_alloc_hits = collect_matches(&block_lines, Self::foreign_allocation_patterns());
-                let foreign_free_hits = collect_matches(&block_lines, Self::foreign_deallocation_patterns());
+                let rust_alloc_hits =
+                    collect_matches(&block_lines, Self::rust_allocation_patterns());
+                let rust_free_hits =
+                    collect_matches(&block_lines, Self::rust_deallocation_patterns());
+                let foreign_alloc_hits =
+                    collect_matches(&block_lines, Self::foreign_allocation_patterns());
+                let foreign_free_hits =
+                    collect_matches(&block_lines, Self::foreign_deallocation_patterns());
 
                 let rust_to_foreign = !rust_alloc_hits.is_empty() && !foreign_free_hits.is_empty();
                 let foreign_to_rust = !foreign_alloc_hits.is_empty() && !rust_free_hits.is_empty();
@@ -1811,9 +1822,13 @@ impl Rule for AllocatorMismatchRule {
                     }
 
                     let scenario = match (rust_to_foreign, foreign_to_rust) {
-                        (true, true) => "Mixed Rust and foreign allocators in same function".to_string(),
+                        (true, true) => {
+                            "Mixed Rust and foreign allocators in same function".to_string()
+                        }
                         (true, false) => "Rust allocation freed via foreign allocator".to_string(),
-                        (false, true) => "Foreign allocation released via Rust allocator".to_string(),
+                        (false, true) => {
+                            "Foreign allocation released via Rust allocator".to_string()
+                        }
                         _ => "Mixed allocator usage".to_string(),
                     };
 
@@ -1948,7 +1963,11 @@ impl Rule for RustsecUnsoundDependencyRule {
                     continue;
                 }
 
-                let key = (name.to_string(), version_str.to_string(), advisory.advisory_id);
+                let key = (
+                    name.to_string(),
+                    version_str.to_string(),
+                    advisory.advisory_id,
+                );
                 if !emitted.insert(key) {
                     continue;
                 }
@@ -2231,9 +2250,7 @@ impl CargoAuditableMetadataRule {
             return false;
         };
 
-        contents
-            .to_lowercase()
-            .contains("auditable")
+        contents.to_lowercase().contains("auditable")
     }
 
     fn ci_mentions_cargo_auditable(crate_root: &Path) -> bool {
@@ -2331,11 +2348,7 @@ impl Rule for CargoAuditableMetadataRule {
             evidence.push("Found src/main.rs binary entry point".to_string());
         }
 
-        if crate_root
-            .join("src")
-            .join("bin")
-            .exists()
-        {
+        if crate_root.join("src").join("bin").exists() {
             evidence.push("Found src/bin directory indicating additional binaries".to_string());
         }
 
@@ -2348,7 +2361,10 @@ impl Rule for CargoAuditableMetadataRule {
             evidence.push("Cargo.toml defines [[bin]] targets".to_string());
         }
 
-        evidence.push("No cargo auditable dependency, metadata, lockfile entry, or CI integration detected".to_string());
+        evidence.push(
+            "No cargo auditable dependency, metadata, lockfile entry, or CI integration detected"
+                .to_string(),
+        );
 
         let manifest_path = crate_root.join("Cargo.toml");
         let relative_manifest = manifest_path
@@ -2841,15 +2857,12 @@ fn discover_rustc_targets(crate_path: &Path) -> Result<Vec<RustcTarget>> {
             .find(|pkg| {
                 fs::canonicalize(pkg.manifest_path.as_std_path())
                     .map(|path| path == manifest_canonical)
-                    .unwrap_or_else(|_| pkg.manifest_path.as_std_path() == manifest_canonical.as_path())
+                    .unwrap_or_else(|_| {
+                        pkg.manifest_path.as_std_path() == manifest_canonical.as_path()
+                    })
             })
             .cloned()
-            .ok_or_else(|| {
-                anyhow!(
-                    "no package metadata found for {}",
-                    crate_path.display()
-                )
-            })?
+            .ok_or_else(|| anyhow!("no package metadata found for {}", crate_path.display()))?
     };
 
     let mut targets = Vec::new();
@@ -2998,14 +3011,27 @@ fn derive_relative_source_path(crate_name: &str, function_name: &str) -> Option<
 fn file_uri_from_path(path: &Path) -> String {
     #[cfg(windows)]
     {
-        let mut cleaned = path
-            .to_string_lossy()
-            .trim_start_matches(r"\\\\?\\")
-            .replace('\\', "/");
-        if !cleaned.starts_with('/') {
-            cleaned = format!("/{}", cleaned);
+        let mut owned = path.to_string_lossy().into_owned();
+
+        if let Some(stripped) = owned.strip_prefix("\\\\?\\UNC\\") {
+            let normalized = stripped.replace('\\', "/");
+            return format!("file://{}", normalized);
         }
-        format!("file://{}", cleaned)
+
+        if let Some(stripped) = owned.strip_prefix("\\\\?\\") {
+            owned = stripped.to_string();
+        }
+
+        if let Some(stripped) = owned.strip_prefix("\\\\") {
+            let normalized = stripped.replace('\\', "/");
+            return format!("file://{}", normalized);
+        }
+
+        let mut normalized = owned.replace('\\', "/");
+        if !normalized.starts_with('/') {
+            normalized.insert(0, '/');
+        }
+        format!("file://{}", normalized)
     }
     #[cfg(not(windows))]
     {
@@ -3014,15 +3040,43 @@ fn file_uri_from_path(path: &Path) -> String {
 }
 
 fn artifact_uri_for(package: &MirPackage, function_name: &str) -> String {
-    let mut path = PathBuf::from(&package.crate_root);
+    let crate_root = PathBuf::from(&package.crate_root);
     if let Some(relative) = derive_relative_source_path(&package.crate_name, function_name) {
-        for component in relative.split('/') {
-            if !component.is_empty() {
-                path.push(component);
+        let mut segments: Vec<&str> = relative
+            .split('/')
+            .filter(|segment| !segment.is_empty())
+            .collect();
+
+        if let Some(first) = segments.first().copied() {
+            let crate_dir = crate_root
+                .file_name()
+                .map(|os| os.to_string_lossy().to_string());
+            let normalized_first = first.replace('_', "-").to_lowercase();
+            let crate_name_normalized = package.crate_name.replace('_', "-").to_lowercase();
+            let crate_dir_normalized = crate_dir
+                .as_deref()
+                .map(|dir| dir.replace('_', "-").to_lowercase());
+
+            let drop_first = crate_dir_normalized
+                .as_ref()
+                .map(|dir| dir == &normalized_first)
+                .unwrap_or(false)
+                || normalized_first == crate_name_normalized
+                || normalized_first == package.crate_name.replace('-', "_").to_lowercase();
+
+            if drop_first {
+                segments.remove(0);
             }
         }
+
+        let mut path = crate_root.clone();
+        for segment in segments {
+            path.push(segment);
+        }
+        return file_uri_from_path(&path);
     }
-    file_uri_from_path(&path)
+
+    file_uri_from_path(&crate_root)
 }
 
 pub fn sarif_report(package: &MirPackage, analysis: &AnalysisResult) -> serde_json::Value {
@@ -3117,15 +3171,15 @@ pub fn sarif_report(package: &MirPackage, analysis: &AnalysisResult) -> serde_js
                 "invocations": [
                     {
                         "workingDirectory": {
-                            "uri": package.crate_root,
+                            "uri": file_uri_from_path(Path::new(&package.crate_root)),
                         },
-                        "executionSuccessful": analysis.findings.is_empty()
+                        "executionSuccessful": true
                     }
                 ],
                 "artifacts": [
                     {
                         "location": {
-                            "uri": package.crate_root.clone()
+                            "uri": file_uri_from_path(Path::new(&package.crate_root))
                         },
                         "description": {
                             "text": format!("Crate {} analyzed via MIR", package.crate_name)
@@ -3190,13 +3244,48 @@ fn trim_trailing_blanks(lines: &mut Vec<String>) {
 }
 
 fn detect_crate_name(crate_path: &Path) -> Option<String> {
+    let canonical_crate = fs::canonicalize(crate_path)
+        .ok()
+        .unwrap_or_else(|| crate_path.to_path_buf());
+    let manifest_path = if canonical_crate.is_file() {
+        canonical_crate.clone()
+    } else {
+        canonical_crate.join("Cargo.toml")
+    };
+
+    let canonical_manifest = fs::canonicalize(&manifest_path).ok();
+
     let mut cmd = MetadataCommand::new();
-    cmd.current_dir(crate_path);
+    cmd.current_dir(&canonical_crate);
     cmd.no_deps();
     let metadata = cmd.exec().ok()?;
+
+    if let Some(target_manifest) = canonical_manifest {
+        if let Some(pkg) = metadata.packages.iter().find(|pkg| {
+            let pkg_manifest = pkg.manifest_path.clone().into_std_path_buf();
+            fs::canonicalize(pkg_manifest)
+                .ok()
+                .map(|path| path == target_manifest)
+                .unwrap_or(false)
+        }) {
+            return Some(pkg.name.clone());
+        }
+    }
+
     metadata
-        .root_package()
+        .packages
+        .iter()
+        .find(|pkg| {
+            let parent = pkg
+                .manifest_path
+                .clone()
+                .into_std_path_buf()
+                .parent()
+                .map(|p| p.to_path_buf());
+            parent == Some(canonical_crate.clone())
+        })
         .map(|pkg| pkg.name.clone())
+        .or_else(|| metadata.root_package().map(|pkg| pkg.name.clone()))
         .or_else(|| metadata.packages.first().map(|pkg| pkg.name.clone()))
 }
 
@@ -3204,6 +3293,7 @@ fn detect_crate_name(crate_path: &Path) -> Option<String> {
 mod tests {
     use super::*;
     use std::io::Cursor;
+    use std::path::Path;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
     use tempfile::tempdir;
@@ -3230,6 +3320,42 @@ fn bar(_1: i32) -> i32 {
         assert_eq!(functions.len(), 2);
         assert_eq!(functions[0].name, "foo");
         assert_eq!(functions[1].name, "bar");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn file_uri_from_path_strips_extended_prefix() {
+        let uri =
+            super::file_uri_from_path(Path::new(r"\\?\C:\workspace\mir-extractor\src\lib.rs"));
+        assert!(
+            uri.starts_with("file:///C:/workspace/mir-extractor/src/lib.rs"),
+            "unexpected uri: {uri}"
+        );
+        assert!(!uri.contains("//?/"), "extended prefix remained: {uri}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn artifact_uri_for_avoids_duplicate_crate_folder() {
+        let package = MirPackage {
+            crate_name: "mir-extractor".to_string(),
+            crate_root: r"\\?\C:\workspace\mir-extractor".to_string(),
+            functions: Vec::new(),
+        };
+
+        let uri = super::artifact_uri_for(
+            &package,
+            "fn <impl at mir-extractor\\src\\lib.rs:10:1: 10:2>::example()",
+        );
+
+        assert!(
+            uri.starts_with("file:///C:/workspace/mir-extractor/src/lib.rs"),
+            "unexpected uri: {uri}"
+        );
+        assert!(
+            !uri.contains("mir-extractor/mir-extractor"),
+            "duplicate crate segment detected: {uri}"
+        );
     }
 
     #[test]
@@ -3531,7 +3657,11 @@ pub extern "C" fn ffi_allocate(target: *mut *mut u8, len: usize) -> Result<(), &
             .filter(|finding| finding.rule_id == "RUSTCOLA016")
             .collect();
 
-        assert_eq!(ffi_findings.len(), 1, "expected single FFI buffer leak finding");
+        assert_eq!(
+            ffi_findings.len(),
+            1,
+            "expected single FFI buffer leak finding"
+        );
         let finding = ffi_findings[0];
         assert!(finding.function.contains("src/lib.rs"));
         assert!(finding
@@ -3600,7 +3730,11 @@ pub unsafe extern "C" fn good_mix() {
             .filter(|finding| finding.rule_id == "RUSTCOLA017")
             .collect();
 
-        assert_eq!(findings.len(), 1, "expected single allocator mismatch finding");
+        assert_eq!(
+            findings.len(),
+            1,
+            "expected single allocator mismatch finding"
+        );
         let finding = findings[0];
         assert!(finding.function.contains("src/lib.rs"));
         assert!(finding
@@ -3632,7 +3766,7 @@ edition = "2021"
 path = "src/lib.rs"
 "#,
         )?;
-    fs::write(crate_root.join("src/lib.rs"), "pub fn noop() {}")?;
+        fs::write(crate_root.join("src/lib.rs"), "pub fn noop() {}")?;
         fs::write(
             crate_root.join("Cargo.lock"),
             r#"# This file is automatically @generated by Cargo.
@@ -3686,7 +3820,7 @@ edition = "2021"
 path = "src/lib.rs"
 "#,
         )?;
-    fs::write(crate_root.join("src/lib.rs"), "pub fn noop() {}")?;
+        fs::write(crate_root.join("src/lib.rs"), "pub fn noop() {}")?;
         fs::write(
             crate_root.join("Cargo.lock"),
             r#"# autogenerated
@@ -3796,10 +3930,7 @@ skip_auditable_check = true
             .iter()
             .any(|finding| finding.rule_id == "RUSTCOLA020");
 
-        assert!(
-            !finding_exists,
-            "skip metadata should suppress findings"
-        );
+        assert!(!finding_exists, "skip metadata should suppress findings");
 
         Ok(())
     }

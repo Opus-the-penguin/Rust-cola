@@ -71,8 +71,8 @@ fn main() -> Result<()> {
     let fail_on_findings = args.fail_on_findings.unwrap_or(true);
     let cache_enabled = args.cache.unwrap_or(true);
 
-    let (crate_roots, workspace_root) = resolve_crate_roots(&args.crate_path)
-        .with_context(|| {
+    let (crate_roots, workspace_root) =
+        resolve_crate_roots(&args.crate_path).with_context(|| {
             format!(
                 "determine workspace members for {}",
                 args.crate_path.display()
@@ -367,7 +367,11 @@ fn resolve_crate_roots(path: &Path) -> Result<(Vec<PathBuf>, PathBuf)> {
     Ok((crate_roots, workspace_root))
 }
 
-fn write_workspace_mir_json(path: &Path, workspace_root: &Path, packages: &[MirPackage]) -> Result<()> {
+fn write_workspace_mir_json(
+    path: &Path,
+    workspace_root: &Path,
+    packages: &[MirPackage],
+) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).context("create parent directories for workspace MIR JSON")?;
     }

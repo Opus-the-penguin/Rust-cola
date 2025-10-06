@@ -2,7 +2,7 @@
 name = "cargo-cola"
 version = "0.1.0"
 edition = "2021"
-authors = ["Your Name <you@example.com>"]
+authors = ["Opus-the-penguin"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

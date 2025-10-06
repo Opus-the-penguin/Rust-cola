@@ -13,6 +13,12 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 use walkdir::{DirEntry, WalkDir};
 
+mod dataflow;
+mod prototypes;
+
+pub use dataflow::{Assignment, MirDataflow};
+pub use prototypes::{detect_content_length_allocations, ContentLengthAllocation};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {

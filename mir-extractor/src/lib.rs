@@ -2793,36 +2793,142 @@ fn current_timestamp() -> u64 {
         .unwrap_or(0)
 }
 
+#[derive(Clone, Debug)]
+enum RustcTarget {
+    Lib,
+    Bin(String),
+}
+
+impl RustcTarget {
+    fn description(&self) -> String {
+        match self {
+            RustcTarget::Lib => "--lib".to_string(),
+            RustcTarget::Bin(name) => format!("--bin {name}"),
+        }
+    }
+
+    fn apply_to(&self, cmd: &mut Command) {
+        match self {
+            RustcTarget::Lib => {
+                cmd.arg("--lib");
+            }
+            RustcTarget::Bin(name) => {
+                cmd.args(["--bin", name]);
+            }
+        }
+    }
+}
+
+fn discover_rustc_targets(crate_path: &Path) -> Result<Vec<RustcTarget>> {
+    let manifest_path = crate_path.join("Cargo.toml");
+    let mut cmd = MetadataCommand::new();
+    if manifest_path.exists() {
+        cmd.manifest_path(&manifest_path);
+    } else {
+        cmd.current_dir(crate_path);
+    }
+    cmd.no_deps();
+    let metadata = cmd
+        .exec()
+        .with_context(|| format!("query cargo metadata for {}", crate_path.display()))?;
+    let manifest_canonical = fs::canonicalize(&manifest_path).unwrap_or(manifest_path.clone());
+    let package = if let Some(pkg) = metadata.root_package() {
+        pkg.clone()
+    } else {
+        metadata
+            .packages
+            .iter()
+            .find(|pkg| {
+                fs::canonicalize(pkg.manifest_path.as_std_path())
+                    .map(|path| path == manifest_canonical)
+                    .unwrap_or_else(|_| pkg.manifest_path.as_std_path() == manifest_canonical.as_path())
+            })
+            .cloned()
+            .ok_or_else(|| {
+                anyhow!(
+                    "no package metadata found for {}",
+                    crate_path.display()
+                )
+            })?
+    };
+
+    let mut targets = Vec::new();
+    for target in &package.targets {
+        if target
+            .kind
+            .iter()
+            .any(|kind| kind == "lib" || kind == "proc-macro")
+        {
+            targets.push(RustcTarget::Lib);
+        }
+
+        if target.kind.iter().any(|kind| kind == "bin") {
+            targets.push(RustcTarget::Bin(target.name.clone()));
+        }
+    }
+
+    if targets.is_empty() {
+        return Err(anyhow!(
+            "package {} has no lib or bin targets; cannot extract MIR",
+            package.name
+        ));
+    }
+
+    Ok(targets)
+}
+
+fn run_cargo_rustc(crate_path: &Path, target: &RustcTarget) -> Result<String> {
+    let mut cmd = Command::new("cargo");
+    cmd.current_dir(crate_path);
+    cmd.arg("+nightly");
+    cmd.arg("rustc");
+    target.apply_to(&mut cmd);
+    cmd.args(["--", "-Zunpretty=mir"]);
+
+    let output = cmd
+        .output()
+        .with_context(|| format!("run `cargo +nightly rustc {}`", target.description()))?;
+
+    if !output.status.success() {
+        return Err(anyhow!(
+            "cargo rustc failed for {}: {}",
+            target.description(),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let stdout =
+        String::from_utf8(output.stdout).context("decode MIR output to UTF-8 for target")?;
+    Ok(stdout)
+}
+
 pub fn extract(crate_path: &Path) -> Result<MirPackage> {
-    let crate_path = fs::canonicalize(crate_path).context("canonicalize crate path")?;
-    let crate_root = crate_path
+    let targets = discover_rustc_targets(crate_path)?;
+    let canonical_crate_path = fs::canonicalize(crate_path).context("canonicalize crate path")?;
+    let crate_root = canonical_crate_path
         .to_str()
         .ok_or_else(|| anyhow!("crate path is not valid UTF-8"))?
         .to_string();
 
-    let crate_name = detect_crate_name(&crate_path).unwrap_or_else(|| {
-        crate_path
+    let crate_name = detect_crate_name(&canonical_crate_path).unwrap_or_else(|| {
+        canonical_crate_path
             .file_name()
             .and_then(|os| os.to_str())
             .unwrap_or("unknown")
             .to_string()
     });
 
-    let output = Command::new("cargo")
-        .current_dir(&crate_path)
-        .args(["+nightly", "rustc", "--", "-Zunpretty=mir"])
-        .output()
-        .context("run `cargo +nightly rustc -- -Zunpretty=mir`")?;
+    let mut functions = Vec::new();
+    let mut seen = HashSet::new();
 
-    if !output.status.success() {
-        return Err(anyhow!(
-            "cargo rustc failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
+    for target in targets {
+        let stdout = run_cargo_rustc(&canonical_crate_path, &target)?;
+        for function in parse_mir_dump(&stdout) {
+            if seen.insert((function.name.clone(), function.signature.clone())) {
+                functions.push(function);
+            }
+        }
     }
-
-    let stdout = String::from_utf8(output.stdout).context("decode MIR output to UTF-8")?;
-    let functions = parse_mir_dump(&stdout);
 
     Ok(MirPackage {
         crate_name,

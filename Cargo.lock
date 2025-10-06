@@ -87,6 +87,7 @@ name = "cargo-cola"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cargo_metadata",
  "clap",
  "mir-extractor",
  "serde",

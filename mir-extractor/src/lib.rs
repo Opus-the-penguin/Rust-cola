@@ -749,6 +749,13 @@ impl Rule for InsecureSha1Rule {
         let mut findings = Vec::new();
 
         for function in &package.functions {
+            if function
+                .name
+                .contains("line_contains_sha1_usage")
+            {
+                continue;
+            }
+
             let evidence: Vec<String> = function
                 .body
                 .iter()

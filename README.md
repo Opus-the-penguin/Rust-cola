@@ -3,8 +3,10 @@
 Rust-cola is an experimental static analysis engine that focuses on deep Rust semantics (MIR, async lowering, FFI boundaries) rather than shallow AST matching. The current prototype can:
 
 - Extract MIR for a crate/workspace and emit a structured JSON model.
-- Run built-in security rules that flag raw-pointer escapes (`Box::into_raw`), `std::mem::transmute`, unsafe blocks/functions, insecure hashing (MD5/SHA-1), untrusted environment reads, risky `std::process::Command` spawning, `Vec::set_len`, `MaybeUninit::assume_init`, deprecated `mem::uninitialized`/`mem::zeroed`, literal `http://` URLs, TLS bypasses (`danger_accept_invalid_certs`, OpenSSL `VerifyNone`), and hard-coded home directory paths.
+- Run built-in security rules that flag raw-pointer escapes (`Box::into_raw`), `std::mem::transmute`, unsafe blocks/functions, insecure hashing (MD5/SHA-1), untrusted environment reads, risky `std::process::Command` spawning, `Vec::set_len`, `MaybeUninit::assume_init`, deprecated `mem::uninitialized`/`mem::zeroed`, literal `http://` URLs, TLS bypasses (`danger_accept_invalid_certs`, OpenSSL `VerifyNone`), hard-coded home directory paths, unsafe Send/Sync impls, FFI allocator mismatches, and yanked/unsound dependencies.
 - Emit human-readable findings plus SARIF output suitable for CI integration.
+
+In addition to the shipped rules, we maintain MIR-based research prototypes for RustSec-inspired findings (Content-Length DoS guards, protocol length truncation casts, Tokio broadcast payload unsoundness) in [`mir-extractor/src/prototypes.rs`](mir-extractor/src/prototypes.rs) with write-ups under [`docs/research/`](docs/research/).
 
 ## Getting started
 
@@ -48,34 +50,43 @@ Each `--rulepack` flag loads another YAML file. Rulepacks support simple string 
 
 ### Security rule backlog
 
-Curious what’s coming next? The living backlog in [`docs/security-rule-backlog.md`](docs/security-rule-backlog.md) tracks over 70 candidate security rules sourced from Semgrep, GitHub CodeQL, SonarSource, and Trail of Bits’ Dylint packs, along with feasibility notes. Contributions welcome!
+Curious what’s coming next? The living backlog in [`docs/security-rule-backlog.md`](docs/security-rule-backlog.md) tracks 100+ candidate security rules sourced from Semgrep, GitHub CodeQL, SonarSource, Trail of Bits’ Dylint packs, Checkmarx, Snyk, and RustSec advisories, along with feasibility notes and prototype links. Contributions welcome!
 
 ## Example commands
 
-- Run the extractor CLI directly (same engine underpinning `cargo cola`):
+- **Scan the current project** (writes MIR, findings, and SARIF to `out/my-project`):
+
+	```powershell
+	cargo run -p cargo-cola -- --crate-path . --out-dir out/my-project --sarif out/my-project/cola.sarif --fail-on-findings=true
+	```
+
+- **Scan another workspace without failing the build**:
+
+	```powershell
+	cargo run -p cargo-cola -- --crate-path path\to\crate --out-dir out/full-scan --fail-on-findings=false
+	```
+
+- **Run the extractor CLI directly** (same engine underpinning `cargo cola`):
 
 	```powershell
 	cargo run -p mir-extractor -- --crate-path examples/simple --out-dir out/mir --sarif out/mir/cola.sarif
 	```
 
-- Analyze another crate and fail the build on findings:
+- **Extend the rule set with a YAML rulepack**:
 
 	```powershell
-	cargo run -p cargo-cola -- --crate-path path\to\crate --out-dir out/my-crate
+	cargo run -p cargo-cola -- --crate-path examples/simple --out-dir out/rulepack --rulepack examples/rulepacks/example-basic.yaml --fail-on-findings=false
 	```
 
-- Analyze but continue the pipeline (useful in CI when you still want SARIF uploaded):
-
-	```powershell
-	cargo run -p cargo-cola -- --crate-path path\to\crate --out-dir out/my-crate --fail-on-findings=false
-	```
+All commands accept `--mir-json` and `--findings-json` to override output paths, plus repeatable `--rulepack`/`--wasm-rule` flags for extending the rule set.
 
 ## Roadmap (abridged)
 
 - Replace the command-line rustc invocation with an in-process `rustc_interface` harness for richer MIR/HIR data.
-- Expand the rule engine (taint tracking, FFI boundary modelling, async misuse).
-- Pluggable rulepacks (native + WASM) and org-specific configuration.
-- First-class SARIF publishing (GitHub Action) and incremental caching for CI-grade latency.
+- Graduate prototype detectors (Content-Length guards, length truncation casts, Tokio broadcast payloads) into first-class rules with SARIF metadata.
+- Expand MIR dataflow (range guards, trusted sources/sinks) and add async misuse & FFI boundary modelling.
+- Pluggable rulepacks (native + WASM) and organization-specific configuration.
+- First-class SARIF publishing (GitHub Action) with incremental caching for CI-grade latency.
 
 ## GitHub Action (experimental)
 

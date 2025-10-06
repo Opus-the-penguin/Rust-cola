@@ -21,20 +21,20 @@ RustSec advisory [RUSTSEC-2025-0015](https://rustsec.org/advisories/RUSTSEC-2025
 - Detects simple flows where `Response::content_length` or a header lookup feeds directly or indirectly into `Vec::with_capacity`.
 - Propagates through multiple assignment hops and survives conversions such as copies or moves.
 - Handles tuple destructuring (`(_1, _2) = ...`) and Option projections (`(_5.0: Option<_>)`) so taint survives common unwrapping patterns.
+- Recognizes upper-bound guards such as `core::cmp::min`, `.clamp(...)`, and `assert!(len <= MAX)` so guarded allocations are suppressed.
 - Flags both `Vec::with_capacity` and `Vec::reserve*` call sites (case-insensitive match).
 
 ## Limitations & open questions
 
-- The parser ignores tuple assignments and field projections that appear in more complex MIR (e.g., tuple returns from `Option::transpose`). We may need to extend it for real-world crates.
-- False negatives remain possible when the tainted value is wrapped in helper structs or stored in aggregates we currently skip.
-- The heuristic marks allocations even if a clamp (e.g., `min`) is present. A production rule should recognize effective upper bounds and drop those matches.
-- Sources only trigger on string matches; we should generalize to typed paths (e.g., `http::header::CONTENT_LENGTH` constants).
+- Sources only trigger on textual matches; we should generalize to typed paths (e.g., `http::header::CONTENT_LENGTH` constants).
+- Complex aggregation (e.g., storing lengths inside structs or slices) can still hide taint from the current parser.
+- Guard detection ignores custom helper functions that enforce bounds; we should surface a way to configure trusted clamps.
 
 ## Next steps
 
-1. Model range guards (asserts, `min`, `clamp`) to filter safe allocations.
-2. Wrap the detector in a production rule with SARIF metadata and configurability.
-3. Reuse the enhanced parser for backlog items 105 (length truncation casts) and 106 (Tokio broadcast `!Sync` payloads); add dedicated prototypes.
+1. Wrap the detector in a production rule with SARIF metadata and configurability.
+2. Allow rulepacks or configuration to specify additional trusted guard helpers.
+3. Leverage the shared dataflow helper for backlog items 105 (length truncation casts) and 106 (Tokio broadcast `!Sync` payloads).
 
 ## Artifacts
 

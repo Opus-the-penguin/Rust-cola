@@ -17,7 +17,11 @@ mod dataflow;
 mod prototypes;
 
 pub use dataflow::{Assignment, MirDataflow};
-pub use prototypes::{detect_content_length_allocations, ContentLengthAllocation};
+pub use prototypes::{
+    detect_broadcast_unsync_payloads, detect_content_length_allocations,
+    detect_truncating_len_casts, BroadcastUnsyncUsage, ContentLengthAllocation,
+    LengthTruncationCast,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

@@ -128,12 +128,17 @@ fn line_contains_md5_usage(line: &str) -> bool {
 
     while let Some(relative_idx) = lower[search_start..].find("md5") {
         let idx = search_start + relative_idx;
-        let before_char = lower[..idx].chars().rev().find(|c| !c.is_whitespace());
-        let after_char = lower[idx + 3..].chars().find(|c| !c.is_whitespace());
-        let before_ok = before_char.map(|c| !c.is_alphanumeric()).unwrap_or(true);
-        let after_ok = after_char.map(|c| !c.is_alphanumeric()).unwrap_or(true);
 
-        if before_ok && after_ok {
+        let mut before_chars = lower[..idx].chars().rev().skip_while(|c| c.is_whitespace());
+        let mut after_chars = lower[idx + 3..].chars().skip_while(|c| c.is_whitespace());
+
+        let after_matches = matches!((after_chars.next(), after_chars.next()), (Some(':'), Some(':')));
+
+        let before_first = before_chars.next();
+        let before_second = before_chars.next();
+        let before_matches = matches!((before_first, before_second), (Some(':'), Some(':')));
+
+        if before_matches || after_matches {
             return true;
         }
 

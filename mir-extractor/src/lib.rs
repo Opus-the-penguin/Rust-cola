@@ -3019,7 +3019,7 @@ pub fn sarif_report(package: &MirPackage, analysis: &AnalysisResult) -> serde_js
         .rules
         .iter()
         .map(|rule| {
-            json!({
+            let mut value = json!({
                 "id": rule.id,
                 "name": rule.name,
                 "shortDescription": {"text": rule.short_description},
@@ -3031,7 +3031,15 @@ pub fn sarif_report(package: &MirPackage, analysis: &AnalysisResult) -> serde_js
                 "properties": {
                     "origin": rule.origin.label()
                 }
-            })
+            });
+
+            if rule.help_uri.is_none() {
+                if let Some(obj) = value.as_object_mut() {
+                    obj.remove("helpUri");
+                }
+            }
+
+            value
         })
         .collect();
 

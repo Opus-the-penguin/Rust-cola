@@ -18,9 +18,9 @@ mod prototypes;
 
 pub use dataflow::{Assignment, MirDataflow};
 pub use prototypes::{
-    detect_broadcast_unsync_payloads, detect_content_length_allocations,
-    detect_truncating_len_casts, BroadcastUnsyncUsage, ContentLengthAllocation,
-    LengthTruncationCast,
+    detect_broadcast_unsync_payloads, detect_command_invocations,
+    detect_content_length_allocations, detect_truncating_len_casts, detect_unbounded_allocations,
+    BroadcastUnsyncUsage, CommandInvocation, ContentLengthAllocation, LengthTruncationCast,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -888,27 +888,54 @@ impl Rule for CommandInjectionRiskRule {
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
         let mut findings = Vec::new();
-        let patterns = ["std::process::command::new", "command::new"];
 
         for function in &package.functions {
             if command_rule_should_skip(function, package) {
                 continue;
             }
 
-            let evidence = collect_case_insensitive_matches(&function.body, &patterns);
-            if evidence.is_empty() {
+            let invocations = detect_command_invocations(function);
+            if invocations.is_empty() {
                 continue;
             }
 
-            findings.push(Finding {
-                rule_id: self.metadata.id.clone(),
-                rule_name: self.metadata.name.clone(),
-                severity: self.metadata.default_severity,
-                message: format!("Process command execution detected in `{}`", function.name),
-                function: function.name.clone(),
-                function_signature: function.signature.clone(),
-                evidence,
-            });
+            for invocation in invocations {
+                let mut evidence = vec![invocation.command_line.clone()];
+                if !invocation.tainted_args.is_empty() {
+                    evidence.push(format!(
+                        "tainted arguments: {}",
+                        invocation.tainted_args.join(", ")
+                    ));
+                }
+
+                let (severity, message) = if invocation.tainted_args.is_empty() {
+                    (
+                        Severity::Medium,
+                        format!(
+                            "Process command execution detected in `{}`; review argument construction",
+                            function.name
+                        ),
+                    )
+                } else {
+                    (
+                        Severity::High,
+                        format!(
+                            "Potential command injection: tainted arguments reach Command::arg in `{}`",
+                            function.name
+                        ),
+                    )
+                };
+
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity,
+                    message,
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence,
+                });
+            }
         }
 
         findings
@@ -1994,6 +2021,83 @@ impl Rule for ContentLengthAllocationRule {
     }
 }
 
+struct UnboundedAllocationRule {
+    metadata: RuleMetadata,
+}
+
+impl UnboundedAllocationRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA024".to_string(),
+                name: "unbounded-allocation".to_string(),
+                short_description: "Allocation sized from tainted length without guard".to_string(),
+                full_description: "Detects allocations (`with_capacity`, `reserve*`) that rely on tainted length values (parameters, `.len()` on attacker data, etc.) without bounding them, enabling memory exhaustion.".to_string(),
+                help_uri: Some("https://github.com/Opus-the-penguin/Rust-cola/blob/main/docs/security-rule-backlog.md#resource-management--dos".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for UnboundedAllocationRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+        let options = prototypes::PrototypeOptions::default();
+
+        for function in &package.functions {
+            let specialized = prototypes::detect_content_length_allocations_with_options(
+                function,
+                &options,
+            );
+            let specialized_lines: HashSet<_> = specialized
+                .iter()
+                .map(|alloc| alloc.allocation_line.clone())
+                .collect();
+
+            let allocations = prototypes::detect_unbounded_allocations_with_options(
+                function,
+                &options,
+            );
+
+            for allocation in allocations {
+                if specialized_lines.contains(&allocation.allocation_line) {
+                    continue;
+                }
+
+                let mut evidence = vec![allocation.allocation_line.clone()];
+
+                let mut tainted: Vec<_> = allocation.tainted_vars.iter().cloned().collect();
+                tainted.sort();
+                tainted.dedup();
+                if !tainted.is_empty() {
+                    evidence.push(format!("tainted length symbols: {}", tainted.join(", ")));
+                }
+
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "Potential unbounded allocation from tainted input in `{}`",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence,
+                });
+            }
+        }
+
+        findings
+    }
+}
+
 struct LengthTruncationCastRule {
     metadata: RuleMetadata,
 }
@@ -2668,6 +2772,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(FfiBufferLeakRule::new()));
     engine.register_rule(Box::new(AllocatorMismatchRule::new()));
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
+    engine.register_rule(Box::new(UnboundedAllocationRule::new()));
     engine.register_rule(Box::new(LengthTruncationCastRule::new()));
     engine.register_rule(Box::new(BroadcastUnsyncPayloadRule::new()));
     engine.register_rule(Box::new(RustsecUnsoundDependencyRule::new()));
@@ -3742,6 +3847,15 @@ rules:
                     ],
                 },
                 MirFunction {
+                    name: "unbounded_allocation".to_string(),
+                    signature: "fn unbounded_allocation(len: usize)".to_string(),
+                    body: vec![
+                        "    debug len => _1;".to_string(),
+                        "    _2 = copy _1;".to_string(),
+                        "    _3 = Vec::<u8>::with_capacity(move _2);".to_string(),
+                    ],
+                },
+                MirFunction {
                     name: "broadcast_unsync".to_string(),
                     signature: "fn broadcast_unsync()".to_string(),
                     body: vec![
@@ -3815,6 +3929,10 @@ rules:
             "expected length truncation cast rule to fire"
         );
         assert!(
+            triggered.contains(&"RUSTCOLA024"),
+            "expected general unbounded allocation rule to fire"
+        );
+        assert!(
             triggered.contains(&"RUSTCOLA023"),
             "expected broadcast unsync payload rule to fire"
         );
@@ -3852,6 +3970,16 @@ rules:
             .iter()
             .any(|line| line.contains("broadcast::channel")));
 
+        let unbounded_finding = analysis
+            .findings
+            .iter()
+            .find(|f| f.rule_id == "RUSTCOLA024")
+            .expect("unbounded allocation finding present");
+        assert!(unbounded_finding
+            .evidence
+            .iter()
+            .any(|line| line.contains("with_capacity")));
+
         for id in &[
             "RUSTCOLA003",
             "RUSTCOLA004",
@@ -3867,10 +3995,63 @@ rules:
             "RUSTCOLA014",
             "RUSTCOLA021",
             "RUSTCOLA022",
+            "RUSTCOLA024",
             "RUSTCOLA023",
         ] {
             assert!(analysis.rules.iter().any(|meta| meta.id == *id));
         }
+    }
+
+    #[test]
+    fn command_rule_reports_tainted_arguments_with_high_severity() {
+        let rule = CommandInjectionRiskRule::new();
+        let package = MirPackage {
+            crate_name: "demo".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "bad".to_string(),
+                signature: "fn bad()".to_string(),
+                body: vec![
+                    "    _1 = std::env::var(const \"USER\");".to_string(),
+                    "    _2 = std::process::Command::new(const \"/bin/sh\");".to_string(),
+                    "    _3 = std::process::Command::arg(move _2, move _1);".to_string(),
+                ],
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert_eq!(findings.len(), 1);
+        let finding = &findings[0];
+        assert_eq!(finding.severity, Severity::High);
+        assert!(finding
+            .evidence
+            .iter()
+            .any(|entry| entry.contains("tainted arguments")));
+        assert!(finding.message.contains("Potential command injection"));
+    }
+
+    #[test]
+    fn command_rule_reports_constant_arguments_with_medium_severity() {
+        let rule = CommandInjectionRiskRule::new();
+        let package = MirPackage {
+            crate_name: "demo".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "ok".to_string(),
+                signature: "fn ok()".to_string(),
+                body: vec![
+                    "    _1 = std::process::Command::new(const \"git\");".to_string(),
+                    "    _2 = std::process::Command::arg(move _1, const \"status\");".to_string(),
+                ],
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert_eq!(findings.len(), 1);
+        let finding = &findings[0];
+        assert_eq!(finding.severity, Severity::Medium);
+        assert_eq!(finding.evidence.len(), 1);
+        assert!(finding.message.contains("Process command execution detected"));
     }
 
     #[test]

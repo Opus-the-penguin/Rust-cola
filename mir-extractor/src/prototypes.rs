@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 
 use crate::{dataflow::extract_variables, MirDataflow, MirFunction};
 
@@ -92,6 +92,12 @@ pub struct BroadcastUnsyncUsage {
     pub line: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandInvocation {
+    pub command_line: String,
+    pub tainted_args: Vec<String>,
+}
+
 pub fn detect_content_length_allocations(function: &MirFunction) -> Vec<ContentLengthAllocation> {
     detect_content_length_allocations_with_options(function, &PrototypeOptions::default())
 }
@@ -108,6 +114,44 @@ pub fn detect_content_length_allocations_with_options(
             || rhs_lower.contains("header::content_length")
     });
 
+    if tainted.is_empty() {
+        return Vec::new();
+    }
+
+    let mut findings = Vec::new();
+
+    for line in &function.body {
+        if let Some(capacity_var) = extract_capacity_variable(line) {
+            if tainted.contains(&capacity_var)
+                && !is_guarded_capacity(function, &dataflow, &capacity_var, options)
+            {
+                findings.push(ContentLengthAllocation {
+                    allocation_line: line.trim().to_string(),
+                    capacity_var,
+                    tainted_vars: tainted.clone(),
+                });
+            }
+        }
+    }
+
+    findings
+}
+
+pub fn detect_unbounded_allocations(function: &MirFunction) -> Vec<ContentLengthAllocation> {
+    detect_unbounded_allocations_with_options(function, &PrototypeOptions::default())
+}
+
+pub fn detect_unbounded_allocations_with_options(
+    function: &MirFunction,
+    options: &PrototypeOptions,
+) -> Vec<ContentLengthAllocation> {
+    let dataflow = MirDataflow::new(function);
+    let seeds = collect_length_seed_vars(function, &dataflow, options);
+    if seeds.is_empty() {
+        return Vec::new();
+    }
+
+    let tainted = propagate_length_seeds(&dataflow, seeds);
     if tainted.is_empty() {
         return Vec::new();
     }
@@ -283,6 +327,86 @@ pub fn detect_broadcast_unsync_payloads_with_options(
                 line: line.trim().to_string(),
             });
         }
+    }
+
+    findings
+}
+
+pub fn detect_command_invocations(function: &MirFunction) -> Vec<CommandInvocation> {
+    let dataflow = MirDataflow::new(function);
+    let taint_sources = dataflow.taint_from(|assignment| {
+        let lowered = assignment.rhs.to_lowercase();
+        lowered.contains("env::var")
+            || lowered.contains("env::args")
+            || lowered.contains("env::var_os")
+            || lowered.contains("env::args_os")
+            || lowered.contains("std::env::args")
+            || lowered.contains("std::env::vars")
+    });
+
+    let mut findings = Vec::new();
+
+    for assignment in dataflow.assignments() {
+        let lowered = assignment.rhs.to_lowercase();
+        if !(lowered.contains("std::process::command::new")
+            || lowered.contains("command::new(")
+            || lowered.contains("command::new::<"))
+        {
+            continue;
+        }
+
+        let mut tainted_args = Vec::new();
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+        queue.push_back(assignment.target.clone());
+
+        while let Some(current) = queue.pop_front() {
+            if !visited.insert(current.clone()) {
+                continue;
+            }
+
+            let mut arg_sites = Vec::new();
+
+            for other in dataflow.assignments() {
+                if other.target == current {
+                    for src in &other.sources {
+                        queue.push_back(src.clone());
+                    }
+                }
+
+                let rhs_lower = other.rhs.to_lowercase();
+                if other.sources.iter().any(|src| src == &current)
+                    && (rhs_lower.contains("command::arg(")
+                        || rhs_lower.contains("command::args(")
+                        || rhs_lower.contains("command::env(")
+                        || rhs_lower.contains("command::arg_os(")
+                        || rhs_lower.contains("command::args_os("))
+                {
+                    arg_sites.push(other.clone());
+                }
+            }
+
+            for site in arg_sites {
+                let mut queue_inputs = Vec::new();
+                for src in &site.sources {
+                    queue_inputs.push(src.clone());
+                    if taint_sources.contains(src) {
+                        tainted_args.push(src.clone());
+                    }
+                }
+                for src in queue_inputs {
+                    queue.push_back(src);
+                }
+            }
+        }
+
+        tainted_args.sort();
+        tainted_args.dedup();
+
+        findings.push(CommandInvocation {
+            command_line: assignment.line.trim().to_string(),
+            tainted_args,
+        });
     }
 
     findings
@@ -511,6 +635,56 @@ mod tests {
 
         let findings = detect_content_length_allocations(&function);
         assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn detects_unbounded_allocation_from_len() {
+        let function = function_from_lines(&[
+            "    debug body_len => _1;",
+            "    _2 = copy _1;",
+            "    _3 = Vec::<u8>::with_capacity(move _2);",
+        ]);
+
+        let findings = detect_unbounded_allocations(&function);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].capacity_var, "_2");
+    }
+
+    #[test]
+    fn unbounded_allocation_respects_guard() {
+        let function = function_from_lines(&[
+            "    debug payload_size => _1;",
+            "    _2 = core::cmp::min(move _1, const 65536_usize);",
+            "    _3 = Vec::<u8>::with_capacity(move _2);",
+        ]);
+
+        let findings = detect_unbounded_allocations(&function);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn detects_tainted_command_arg() {
+        let function = function_from_lines(&[
+            "    _1 = std::env::var(const \"USER\");",
+            "    _2 = std::process::Command::new(const \"/bin/echo\");",
+            "    _3 = std::process::Command::arg(move _2, move _1);",
+        ]);
+
+        let invocations = detect_command_invocations(&function);
+        assert_eq!(invocations.len(), 1);
+        assert!(invocations[0].tainted_args.contains(&"_1".to_string()));
+    }
+
+    #[test]
+    fn ignores_constant_command_args() {
+        let function = function_from_lines(&[
+            "    _1 = std::process::Command::new(const \"git\");",
+            "    _2 = std::process::Command::arg(move _1, const \"status\");",
+        ]);
+
+        let invocations = detect_command_invocations(&function);
+        assert_eq!(invocations.len(), 1);
+        assert!(invocations[0].tainted_args.is_empty());
     }
 
     #[test]

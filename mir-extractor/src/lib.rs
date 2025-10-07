@@ -1342,9 +1342,11 @@ struct StringLiteralState {
     raw_hashes: Option<usize>,
 }
 
+const STRIP_STRING_INITIAL_CAPACITY: usize = 256;
+
 fn strip_string_literals(mut state: StringLiteralState, line: &str) -> (String, StringLiteralState) {
     let bytes = line.as_bytes();
-    let mut result = String::with_capacity(line.len());
+    let mut result = String::with_capacity(STRIP_STRING_INITIAL_CAPACITY);
     let mut i = 0usize;
 
     while i < bytes.len() {
@@ -1418,6 +1420,17 @@ fn strip_string_literals(mut state: StringLiteralState, line: &str) -> (String, 
         }
 
         if ch == b'\'' {
+            if i + 1 < bytes.len() {
+                let next = bytes[i + 1];
+                let looks_like_lifetime = next == b'_' || next.is_ascii_alphabetic();
+                let following = bytes.get(i + 2).copied();
+                if looks_like_lifetime && following != Some(b'\'') {
+                    result.push('\'');
+                    i += 1;
+                    continue;
+                }
+            }
+
             let mut j = i + 1;
             let mut escaped = false;
             let mut found_closing = false;
@@ -4826,6 +4839,18 @@ path = "src/lib.rs"
             matches.is_empty(),
             "string literals should not trigger unsafe send/sync findings",
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn strip_string_literals_preserves_lifetimes_and_length() -> Result<()> {
+        let input = "fn demo<'a>(s: &'a str) -> &'a str { let c = 'x'; s }";
+        let (sanitized, _) = strip_string_literals(StringLiteralState::default(), input);
+
+        assert_eq!(sanitized.len(), input.len());
+        assert!(sanitized.contains("&'a str"));
+        assert!(!sanitized.contains("'x'"));
 
         Ok(())
     }

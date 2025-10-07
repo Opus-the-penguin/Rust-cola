@@ -52,7 +52,7 @@ impl Holder {
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
 
     assert!(
-        stdout.contains("location: src/lib.rs:"),
+        stdout.contains("@ src/lib.rs:"),
         "expected stdout to contain span location for fixture, got:\n{}",
         stdout
     );

@@ -1470,6 +1470,45 @@ impl DangerAcceptInvalidCertRule {
     }
 }
 
+fn line_disables_tls_verification(line: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    let lower = trimmed.to_lowercase();
+
+    if lower.contains(DANGER_ACCEPT_INVALID_CERTS_SYMBOL) && lower.contains("true") {
+        return true;
+    }
+
+    if lower.contains(DANGER_ACCEPT_INVALID_HOSTNAMES_SYMBOL) && lower.contains("true") {
+        return true;
+    }
+
+    let touches_dangerous_client = lower.contains("dangerous::dangerousclientconfig");
+    let sets_custom_verifier = lower.contains("set_certificate_verifier");
+    let sets_custom_resolver = lower.contains("set_certificate_resolver");
+
+    if touches_dangerous_client && (sets_custom_verifier || sets_custom_resolver) {
+        return true;
+    }
+
+    if (sets_custom_verifier || sets_custom_resolver)
+        && (lower.contains("noverifier")
+            || lower.contains("nocertificateverification")
+            || lower.contains("no_certificate_verifier"))
+    {
+        return true;
+    }
+
+    if lower.contains("dangerous()") && (sets_custom_verifier || sets_custom_resolver) {
+        return true;
+    }
+
+    false
+}
+
 impl Rule for DangerAcceptInvalidCertRule {
     fn metadata(&self) -> &RuleMetadata {
         &self.metadata
@@ -1481,19 +1520,19 @@ impl Rule for DangerAcceptInvalidCertRule {
         }
 
         let mut findings = Vec::new();
-        let patterns = [
-            DANGER_ACCEPT_INVALID_CERTS_SYMBOL,
-            DANGER_ACCEPT_INVALID_HOSTNAMES_SYMBOL,
-        ];
 
         for function in &package.functions {
-            let lines: Vec<String> = function
-                .body
-                .iter()
-                .filter(|line| patterns.iter().any(|needle| line.contains(needle)))
-                .filter(|line| line.contains("true"))
-                .map(|line| line.trim().to_string())
-                .collect();
+            let mut lines = Vec::new();
+            let mut seen = HashSet::new();
+
+            for raw_line in &function.body {
+                if line_disables_tls_verification(raw_line) {
+                    let trimmed = raw_line.trim().to_string();
+                    if seen.insert(trimmed.clone()) {
+                        lines.push(trimmed);
+                    }
+                }
+            }
 
             if lines.is_empty() {
                 continue;
@@ -1814,10 +1853,7 @@ impl Rule for WorldWritableModeRule {
                 rule_id: self.metadata.id.clone(),
                 rule_name: self.metadata.name.clone(),
                 severity: self.metadata.default_severity,
-                message: format!(
-                    "World-writable permission mask set in `{}`",
-                    function.name
-                ),
+                message: format!("World-writable permission mask set in `{}`", function.name),
                 function: function.name.clone(),
                 function_signature: function.signature.clone(),
                 evidence,
@@ -5738,7 +5774,9 @@ rules:
             functions: vec![MirFunction {
                 name: "loosen_permissions".to_string(),
                 signature: "fn loosen_permissions(perm: &mut std::fs::Permissions)".to_string(),
-                body: vec!["    std::fs::Permissions::set_readonly(move _1, const false);".to_string()],
+                body: vec![
+                    "    std::fs::Permissions::set_readonly(move _1, const false);".to_string(),
+                ],
                 span: None,
             }],
         };
@@ -5760,7 +5798,9 @@ rules:
             functions: vec![MirFunction {
                 name: "loosen_permissions".to_string(),
                 signature: "fn loosen_permissions(perm: &mut std::fs::Permissions)".to_string(),
-                body: vec!["    std::fs::Permissions::set_readonly(move _1, const false);".to_string()],
+                body: vec![
+                    "    std::fs::Permissions::set_readonly(move _1, const false);".to_string(),
+                ],
                 span: None,
             }],
         };
@@ -5778,7 +5818,9 @@ rules:
             functions: vec![MirFunction {
                 name: "harden_permissions".to_string(),
                 signature: "fn harden_permissions(perm: &mut std::fs::Permissions)".to_string(),
-                body: vec!["    std::fs::Permissions::set_readonly(move _1, const true);".to_string()],
+                body: vec![
+                    "    std::fs::Permissions::set_readonly(move _1, const true);".to_string(),
+                ],
                 span: None,
             }],
         };
@@ -5888,9 +5930,7 @@ rules:
             functions: vec![MirFunction {
                 name: "forget_vec".to_string(),
                 signature: "fn forget_vec(buffer: Vec<u8>)".to_string(),
-                body: vec![
-                    "    std::mem::forget(move _1);".to_string(),
-                ],
+                body: vec!["    std::mem::forget(move _1);".to_string()],
                 span: None,
             }],
         };
@@ -5907,8 +5947,12 @@ rules:
             crate_root: ".".to_string(),
             functions: vec![MirFunction {
                 name: "make_world_writable".to_string(),
-                signature: "fn make_world_writable(perm: &mut std::os::unix::fs::PermissionsExt)".to_string(),
-                body: vec!["    std::os::unix::fs::PermissionsExt::set_mode(move _1, const 0o777);".to_string()],
+                signature: "fn make_world_writable(perm: &mut std::os::unix::fs::PermissionsExt)"
+                    .to_string(),
+                body: vec![
+                    "    std::os::unix::fs::PermissionsExt::set_mode(move _1, const 0o777);"
+                        .to_string(),
+                ],
                 span: None,
             }],
         };
@@ -5929,8 +5973,12 @@ rules:
             crate_root: ".".to_string(),
             functions: vec![MirFunction {
                 name: "make_world_writable".to_string(),
-                signature: "fn make_world_writable(perm: &mut std::os::unix::fs::PermissionsExt)".to_string(),
-                body: vec!["    std::os::unix::fs::PermissionsExt::set_mode(move _1, const 0o777);".to_string()],
+                signature: "fn make_world_writable(perm: &mut std::os::unix::fs::PermissionsExt)"
+                    .to_string(),
+                body: vec![
+                    "    std::os::unix::fs::PermissionsExt::set_mode(move _1, const 0o777);"
+                        .to_string(),
+                ],
                 span: None,
             }],
         };
@@ -5947,8 +5995,12 @@ rules:
             crate_root: ".".to_string(),
             functions: vec![MirFunction {
                 name: "make_restrictive".to_string(),
-                signature: "fn make_restrictive(perm: &mut std::os::unix::fs::PermissionsExt)".to_string(),
-                body: vec!["    std::os::unix::fs::PermissionsExt::set_mode(move _1, const 0o755);".to_string()],
+                signature: "fn make_restrictive(perm: &mut std::os::unix::fs::PermissionsExt)"
+                    .to_string(),
+                body: vec![
+                    "    std::os::unix::fs::PermissionsExt::set_mode(move _1, const 0o755);"
+                        .to_string(),
+                ],
                 span: None,
             }],
         };
@@ -5984,6 +6036,34 @@ rules:
             .iter()
             .any(|entry| entry.contains("tainted arguments")));
         assert!(finding.message.contains("Potential command injection"));
+    }
+
+    #[test]
+    fn command_rule_reports_tokio_process_usage() {
+        let rule = CommandInjectionRiskRule::new();
+        let package = MirPackage {
+            crate_name: "tokio-demo".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "run_async".to_string(),
+                signature: "fn run_async()".to_string(),
+                body: vec![
+                    "    _1 = std::env::var(const \"TARGET\");".to_string(),
+                    "    _2 = tokio::process::Command::new(const \"/usr/bin/env\");".to_string(),
+                    "    _3 = tokio::process::Command::arg(move _2, move _1);".to_string(),
+                ],
+                span: None,
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert_eq!(findings.len(), 1);
+        let finding = &findings[0];
+        assert_eq!(finding.severity, Severity::High);
+        assert!(finding
+            .evidence
+            .iter()
+            .any(|entry| entry.contains("tokio::process::Command::new")));
     }
 
     #[test]
@@ -6936,6 +7016,43 @@ path = "src/lib.rs"
             .evidence
             .iter()
             .any(|line| line.contains(DANGER_ACCEPT_INVALID_CERTS_SYMBOL)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn danger_accept_invalid_certs_rule_detects_rustls_dangerous() -> Result<()> {
+        let package = MirPackage {
+            crate_name: "rustls-dangerous-client".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "dangerous_client".to_string(),
+                signature: "fn dangerous_client(config: &mut rustls::ClientConfig)".to_string(),
+                body: vec![
+                    "fn dangerous_client(config: &mut rustls::ClientConfig) {".to_string(),
+                    "    _3 = rustls::client::dangerous::DangerousClientConfig::set_certificate_verifier(move _2, move _1);".to_string(),
+                    "}".to_string(),
+                ],
+                span: None,
+            }],
+        };
+
+        let analysis = RuleEngine::with_builtin_rules().run(&package);
+        let matches: Vec<_> = analysis
+            .findings
+            .iter()
+            .filter(|finding| finding.rule_id == "RUSTCOLA012")
+            .collect();
+
+        assert_eq!(
+            matches.len(),
+            1,
+            "expected RUSTCOLA012 to fire for rustls dangerous usage"
+        );
+        assert!(matches[0]
+            .evidence
+            .iter()
+            .any(|line| line.contains("set_certificate_verifier")));
 
         Ok(())
     }

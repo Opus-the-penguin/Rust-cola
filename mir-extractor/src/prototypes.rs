@@ -334,7 +334,8 @@ pub fn detect_broadcast_unsync_payloads_with_options(
     let mut seed_lines = Vec::new();
 
     let unsync_vars = dataflow.taint_from(|assignment| {
-        if is_broadcast_constructor(&assignment.rhs) && payload_looks_unsync(&assignment.rhs, options)
+        if is_broadcast_constructor(&assignment.rhs)
+            && payload_looks_unsync(&assignment.rhs, options)
         {
             seed_lines.push(assignment.line.trim().to_string());
             return true;
@@ -423,6 +424,10 @@ pub fn detect_command_invocations(function: &MirFunction) -> Vec<CommandInvocati
         let is_process_command = [
             "::std::process::command::new",
             "std::process::command::new",
+            "::tokio::process::command::new",
+            "tokio::process::command::new",
+            "::async_process::command::new",
+            "async_process::command::new",
         ]
         .into_iter()
         .any(|pattern| {

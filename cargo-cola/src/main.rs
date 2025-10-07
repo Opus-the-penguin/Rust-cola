@@ -324,17 +324,16 @@ fn format_findings_output(
             .find(|rule| rule.id == finding.rule_id)
             .map(|rule| rule.name.as_str())
             .unwrap_or("unknown-rule");
+        let location_display = finding
+            .span
+            .as_ref()
+            .map(|span| format_span(span))
+            .unwrap_or_else(|| finding.function.clone());
         let _ = writeln!(
             &mut buffer,
-            "- [{}|{}|{:?}] {}",
-            finding.rule_id, rule_name, finding.severity, finding.message
+            "- [{}|{}|{:?}] {} @ {}",
+            finding.rule_id, rule_name, finding.severity, finding.message, location_display
         );
-
-        if let Some(span) = &finding.span {
-            let _ = writeln!(&mut buffer, "    location: {}", format_span(span));
-        } else {
-            let _ = writeln!(&mut buffer, "    location: {}", finding.function);
-        }
 
         let _ = writeln!(&mut buffer, "    function: {}", finding.function_signature);
 
@@ -429,7 +428,7 @@ mod tests {
         let rendered = format_findings_output(&findings, &rules).expect("should render output");
         assert!(rendered.contains("Findings:"));
         assert!(rendered.contains("- [TEST001|demo-rule|"));
-        assert!(rendered.contains("location: C:/workspace/demo/src/lib.rs:8:1-4"));
+        assert!(rendered.contains("@ C:/workspace/demo/src/lib.rs:8:1-4"));
         assert!(rendered.contains("function: fn demo::example()"));
         assert!(rendered.contains("evidence: evidence line"));
     }

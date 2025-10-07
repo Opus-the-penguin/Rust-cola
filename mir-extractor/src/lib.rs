@@ -588,6 +588,53 @@ impl TransmuteRule {
             },
         }
     }
+
+    fn line_contains_transmute_call(line: &str) -> bool {
+        let mut search_start = 0usize;
+        while let Some(relative_idx) = line[search_start..].find("transmute") {
+            let idx = search_start + relative_idx;
+            let before_non_ws = line[..idx].chars().rev().find(|c| !c.is_whitespace());
+            if before_non_ws
+                .map(|c| c.is_alphanumeric() || c == '_')
+                .unwrap_or(false)
+            {
+                search_start = idx + "transmute".len();
+                continue;
+            }
+
+            let after = &line[idx + "transmute".len()..];
+            let after_trimmed = after.trim_start();
+
+            if after_trimmed.starts_with('(') || after_trimmed.starts_with("::<") {
+                return true;
+            }
+
+            search_start = idx + "transmute".len();
+        }
+
+        false
+    }
+
+    fn collect_transmute_lines(body: &[String]) -> Vec<String> {
+        let mut state = StringLiteralState::default();
+        let mut lines = Vec::new();
+
+        for raw_line in body {
+            let (sanitized, next_state) = strip_string_literals(state, raw_line);
+            state = next_state;
+
+            let trimmed = sanitized.trim_start();
+            if trimmed.starts_with("//") || trimmed.starts_with("/*") {
+                continue;
+            }
+
+            if Self::line_contains_transmute_call(&sanitized) {
+                lines.push(raw_line.trim().to_string());
+            }
+        }
+
+        lines
+    }
 }
 
 impl Rule for TransmuteRule {
@@ -598,12 +645,7 @@ impl Rule for TransmuteRule {
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
         let mut findings = Vec::new();
         for function in &package.functions {
-            let transmute_lines: Vec<String> = function
-                .body
-                .iter()
-                .filter(|line| line.contains("transmute"))
-                .map(|line| line.trim().to_string())
-                .collect();
+            let transmute_lines = Self::collect_transmute_lines(&function.body);
 
             if !transmute_lines.is_empty() {
                 findings.push(Finding {
@@ -5045,6 +5087,66 @@ path = "src/lib.rs"
             findings.is_empty(),
             "string literals referencing allocator names should not trigger RUSTCOLA017"
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn transmute_rule_detects_usage() -> Result<()> {
+        let package = MirPackage {
+            crate_name: "transmute-detect".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "reinterpret".to_string(),
+                signature: "unsafe fn reinterpret(value: u32) -> i32".to_string(),
+                body: vec![
+                    "unsafe fn reinterpret(value: u32) -> i32 {".to_string(),
+                    "    std::mem::transmute(value)".to_string(),
+                    "}".to_string(),
+                ],
+            }],
+        };
+
+        let analysis = RuleEngine::with_builtin_rules().run(&package);
+        let matches: Vec<_> = analysis
+            .findings
+            .iter()
+            .filter(|finding| finding.rule_id == "RUSTCOLA002")
+            .collect();
+
+        assert_eq!(matches.len(), 1, "expected single RUSTCOLA002 finding");
+        assert!(matches[0]
+            .evidence
+            .iter()
+            .any(|line| line.contains("std::mem::transmute")));
+
+        Ok(())
+    }
+
+    #[test]
+    fn transmute_rule_ignores_string_literals() -> Result<()> {
+        let package = MirPackage {
+            crate_name: "transmute-string".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "describe".to_string(),
+                signature: "pub fn describe() -> &'static str".to_string(),
+                body: vec![
+                    "pub fn describe() -> &'static str {".to_string(),
+                    "    \"std::mem::transmute should not trigger\"".to_string(),
+                    "}".to_string(),
+                ],
+            }],
+        };
+
+        let analysis = RuleEngine::with_builtin_rules().run(&package);
+        let matches: Vec<_> = analysis
+            .findings
+            .iter()
+            .filter(|finding| finding.rule_id == "RUSTCOLA002")
+            .collect();
+
+        assert!(matches.is_empty(), "string literal should not trigger transmute rule");
 
         Ok(())
     }

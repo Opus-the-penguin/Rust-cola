@@ -1094,6 +1094,10 @@ impl Rule for VecSetLenRule {
     }
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -5809,6 +5813,33 @@ path = "src/lib.rs"
             first_package.functions.len(),
             second_package.functions.len()
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn vec_set_len_rule_skips_analyzer_crate() -> Result<()> {
+        let package = MirPackage {
+            crate_name: "mir-extractor".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "self_test".to_string(),
+                signature: "fn self_test(vec: &mut Vec<i32>)".to_string(),
+                body: vec![
+                    "fn self_test(vec: &mut Vec<i32>) {".to_string(),
+                    make_vec_set_len_line("    "),
+                    "}".to_string(),
+                ],
+            }],
+        };
+
+        let analysis = RuleEngine::with_builtin_rules().run(&package);
+        let has_vec_set_len = analysis
+            .findings
+            .iter()
+            .any(|finding| finding.rule_id == "RUSTCOLA008");
+
+        assert!(!has_vec_set_len, "Vec::set_len rule should not flag mir-extractor crate");
 
         Ok(())
     }

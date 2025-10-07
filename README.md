@@ -142,6 +142,31 @@ Curious what’s coming next? The living backlog in [`docs/security-rule-backlog
 
 All commands accept `--mir-json` and `--findings-json` to override output paths, plus repeatable `--rulepack`/`--wasm-rule` flags for extending the rule set.
 
+## Auditable release builds
+
+Supply-chain metadata is embedded in the release binary using [`cargo-auditable`](https://github.com/rust-secure-code/cargo-auditable). The CI workflow installs the plugin, produces an auditable `cargo-cola` binary, and verifies the resulting ELF contains the `note.auditable` section. To reproduce locally:
+
+```powershell
+# Windows PowerShell
+cargo install --locked cargo-auditable
+cargo auditable build -p cargo-cola --release --target-dir target/auditable
+```
+
+```bash
+# Linux (bash/zsh)
+cargo install --locked cargo-auditable
+cargo auditable build -p cargo-cola --release --target-dir target/auditable
+readelf --notes target/auditable/release/cargo-cola | grep -i auditable
+```
+
+```bash
+# macOS (bash/zsh)
+cargo install --locked cargo-auditable
+cargo auditable build -p cargo-cola --release --target-dir target/auditable
+otool -l target/auditable/release/cargo-cola | grep -i auditable
+```
+The generated binary now carries provenance metadata so downstream consumers can run `cargo auditable audit` or other supply-chain scanners without rebuilding from source.
+
 ## Roadmap (abridged)
 
 - Replace the command-line rustc invocation with an in-process `rustc_interface` harness for richer MIR/HIR data.

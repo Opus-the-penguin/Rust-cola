@@ -14,11 +14,11 @@ Feasibility legend:
 2. **std::mem::transmute usage** *(shipped)* – Flag calls to `std::mem::transmute`. **Feasibility:** Heuristic.
 3. **Vec::set_len misuse** – Identify `Vec::set_len` when the vector is not fully initialized. **Feasibility:** MIR dataflow.
 4. **MaybeUninit::assume_init before initialization** – Detect `assume_init` without a preceding `write`. **Feasibility:** MIR dataflow.
-5. **mem::uninitialized / mem::zeroed** *(quick win)* – Flag usage of deprecated zero-init APIs on non-zero types. **Feasibility:** Heuristic.
+5. **mem::uninitialized / mem::zeroed** *(shipped — RUSTCOLA010)* – Flag usage of deprecated zero-init APIs on non-zero types. **Feasibility:** Heuristic.
 6. **Dangling pointer use-after-free** – Ensure no access after `drop` or reallocation. **Feasibility:** Advanced.
 7. **Access of invalid pointer** – Catch derefs of null or misaligned pointers. **Feasibility:** Advanced.
 8. **Unsafe Send/Sync impls** *(RUSTCOLA015 shipped for missing generic bounds; doc commentary lint pending)* – Highlight `unsafe impl Send/Sync` without safety commentary. **Feasibility:** Heuristic (doc-aware).
-9. **static mut globals** – Warn about mutable statics that break thread safety. **Feasibility:** Heuristic.
+9. **static mut globals** *(shipped — RUSTCOLA025)* – Warn about mutable statics that break thread safety. **Feasibility:** Heuristic.
 10. **NonNull::new_unchecked misuse** – Ensure null checks before `new_unchecked`. **Feasibility:** Heuristic.
 11. **mem::forget on guards** – Catch forgetting RAII guards that release locks/resources. **Feasibility:** MIR dataflow.
 12. **repr(packed) field references** – Avoid taking references to packed struct fields. **Feasibility:** Heuristic.

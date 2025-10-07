@@ -1579,6 +1579,69 @@ impl Rule for HardcodedHomePathRule {
     }
 }
 
+struct StaticMutGlobalRule {
+    metadata: RuleMetadata,
+}
+
+impl StaticMutGlobalRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA025".to_string(),
+                name: "static-mut-global".to_string(),
+                short_description: "Mutable static global detected".to_string(),
+                full_description: "Flags uses of `static mut` globals, which are unsafe shared mutable state and can introduce data races or memory safety bugs.".to_string(),
+                help_uri: None,
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for StaticMutGlobalRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let patterns = ["static mut "];
+
+        for function in &package.functions {
+            let mut evidence = collect_matches(&function.body, &patterns);
+            if evidence.is_empty() {
+                continue;
+            }
+
+            // If the signature itself declared a mutable static, include it for additional context.
+            if function.signature.contains("static mut ") {
+                evidence.push(function.signature.trim().to_string());
+            }
+
+            findings.push(Finding {
+                rule_id: self.metadata.id.clone(),
+                rule_name: self.metadata.name.clone(),
+                severity: self.metadata.default_severity,
+                message: format!(
+                    "Mutable static global detected in `{}`; prefer interior mutability or synchronization primitives",
+                    function.name
+                ),
+                function: function.name.clone(),
+                function_signature: function.signature.clone(),
+                evidence,
+                span: function.span.clone(),
+            });
+        }
+
+        findings
+    }
+}
+
 struct UnsafeSendSyncBoundsRule {
     metadata: RuleMetadata,
 }
@@ -3478,6 +3541,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(DangerAcceptInvalidCertRule::new()));
     engine.register_rule(Box::new(OpensslVerifyNoneRule::new()));
     engine.register_rule(Box::new(HardcodedHomePathRule::new()));
+    engine.register_rule(Box::new(StaticMutGlobalRule::new()));
     engine.register_rule(Box::new(UnsafeSendSyncBoundsRule::new()));
     engine.register_rule(Box::new(FfiBufferLeakRule::new()));
     engine.register_rule(Box::new(AllocatorMismatchRule::new()));
@@ -4831,6 +4895,12 @@ rules:
                     span: None,
                 },
                 MirFunction {
+                    name: "static_mut_global".to_string(),
+                    signature: "fn static_mut_global()".to_string(),
+                    body: vec!["    static mut GLOBAL: i32 = 0;".to_string()],
+                    span: None,
+                },
+                MirFunction {
                     name: "content_length_allocation".to_string(),
                     signature: "fn content_length_allocation(resp: reqwest::Response)".to_string(),
                     body: vec![
@@ -4929,6 +4999,10 @@ rules:
             "expected hardcoded home path rule to fire"
         );
         assert!(
+            triggered.contains(&"RUSTCOLA025"),
+            "expected static mut global rule to fire"
+        );
+        assert!(
             triggered.contains(&"RUSTCOLA021"),
             "expected content-length allocation rule to fire"
         );
@@ -5001,6 +5075,7 @@ rules:
             "RUSTCOLA012",
             "RUSTCOLA013",
             "RUSTCOLA014",
+            "RUSTCOLA025",
             "RUSTCOLA021",
             "RUSTCOLA022",
             "RUSTCOLA024",
@@ -5122,6 +5197,46 @@ rules:
                 name: "document_paths".to_string(),
                 signature: "fn document_paths()".to_string(),
                 body: vec!["    _1 = const \"/home/docs\";".to_string()],
+                span: None,
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn static_mut_global_rule_detects_mutable_static() {
+        let rule = StaticMutGlobalRule::new();
+        let package = MirPackage {
+            crate_name: "demo".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "global".to_string(),
+                signature: "fn global()".to_string(),
+                body: vec!["    static mut COUNTER: usize = 0;".to_string()],
+                span: None,
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0]
+            .evidence
+            .iter()
+            .any(|entry| entry.contains("static mut")));
+    }
+
+    #[test]
+    fn static_mut_global_rule_skips_analyzer_crate() {
+        let rule = StaticMutGlobalRule::new();
+        let package = MirPackage {
+            crate_name: "mir-extractor".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "global".to_string(),
+                signature: "fn global()".to_string(),
+                body: vec!["    static mut COUNTER: usize = 0;".to_string()],
                 span: None,
             }],
         };

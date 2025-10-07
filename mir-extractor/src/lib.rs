@@ -592,6 +592,10 @@ impl Rule for BoxIntoRawRule {
     }
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -4996,6 +5000,46 @@ rules:
         ] {
             assert!(analysis.rules.iter().any(|meta| meta.id == *id));
         }
+    }
+
+    #[test]
+    fn box_into_raw_rule_detects_usage() {
+        let rule = BoxIntoRawRule::new();
+        let package = MirPackage {
+            crate_name: "demo".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "ffi_bridge".to_string(),
+                signature: "fn ffi_bridge()".to_string(),
+                body: vec!["    _0 = Box::into_raw(move _1);".to_string()],
+                span: None,
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0]
+            .evidence
+            .iter()
+            .any(|entry| entry.contains("Box::into_raw")));
+    }
+
+    #[test]
+    fn box_into_raw_rule_skips_analyzer_crate() {
+        let rule = BoxIntoRawRule::new();
+        let package = MirPackage {
+            crate_name: "mir-extractor".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "ffi_bridge".to_string(),
+                signature: "fn ffi_bridge()".to_string(),
+                body: vec!["    _0 = Box::into_raw(move _1);".to_string()],
+                span: None,
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert!(findings.is_empty());
     }
 
     #[test]

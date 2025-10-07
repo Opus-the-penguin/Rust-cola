@@ -1547,6 +1547,10 @@ impl Rule for HardcodedHomePathRule {
     }
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
         let mut findings = Vec::new();
         let patterns = ["/home/", "\\\\users\\", "/users/", "~/"];
 
@@ -5078,6 +5082,46 @@ rules:
                 name: "document_string".to_string(),
                 signature: "fn document_string()".to_string(),
                 body: vec!["    _1 = const \"http://docs\";".to_string()],
+                span: None,
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn hardcoded_home_path_rule_detects_literal() {
+        let rule = HardcodedHomePathRule::new();
+        let package = MirPackage {
+            crate_name: "demo".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "store_profile".to_string(),
+                signature: "fn store_profile()".to_string(),
+                body: vec!["    _1 = const \"/home/alice/.config\";".to_string()],
+                span: None,
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0]
+            .evidence
+            .iter()
+            .any(|entry| entry.contains("/home/alice/.config")));
+    }
+
+    #[test]
+    fn hardcoded_home_path_rule_skips_analyzer_crate() {
+        let rule = HardcodedHomePathRule::new();
+        let package = MirPackage {
+            crate_name: "mir-extractor".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "document_paths".to_string(),
+                signature: "fn document_paths()".to_string(),
+                body: vec!["    _1 = const \"/home/docs\";".to_string()],
                 span: None,
             }],
         };

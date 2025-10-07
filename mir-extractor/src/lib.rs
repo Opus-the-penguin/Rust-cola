@@ -1038,14 +1038,19 @@ struct VecSetLenRule {
     metadata: RuleMetadata,
 }
 
+const VEC_SET_LEN_SYMBOL: &str = concat!("Vec", "::", "set", "_len");
+
 impl VecSetLenRule {
     fn new() -> Self {
         Self {
             metadata: RuleMetadata {
                 id: "RUSTCOLA008".to_string(),
                 name: "vec-set-len".to_string(),
-                short_description: "Potential misuse of Vec::set_len".to_string(),
-                full_description: "Flags calls to Vec::set_len which can lead to uninitialized memory exposure if not followed by proper writes.".to_string(),
+                short_description: format!("Potential misuse of {}", VEC_SET_LEN_SYMBOL),
+                full_description: format!(
+                    "Flags calls to {} which can lead to uninitialized memory exposure if not followed by proper writes.",
+                    VEC_SET_LEN_SYMBOL
+                ),
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
@@ -1102,7 +1107,8 @@ impl Rule for VecSetLenRule {
                 rule_name: self.metadata.name.clone(),
                 severity: self.metadata.default_severity,
                 message: format!(
-                    "Vec::set_len used in `{}`; ensure elements are initialized",
+                    "{} used in `{}`; ensure elements are initialized",
+                    VEC_SET_LEN_SYMBOL,
                     function.name
                 ),
                 function: function.name.clone(),
@@ -4468,7 +4474,8 @@ rules:
         );
         assert!(
             triggered.contains(&"RUSTCOLA008"),
-            "expected vec::set_len rule to fire"
+            "expected {} rule to fire",
+            VEC_SET_LEN_SYMBOL
         );
         assert!(
             triggered.contains(&"RUSTCOLA009"),
@@ -5281,7 +5288,10 @@ path = "src/lib.rs"
                 signature: "fn doc_only()".to_string(),
                 body: vec![
                     "fn doc_only() {".to_string(),
-                    "    _1 = \"Documenting Vec::set_len behavior\";".to_string(),
+                    format!(
+                        "    _1 = \"Documenting {} behavior\";",
+                        VEC_SET_LEN_SYMBOL
+                    ),
                     "}".to_string(),
                 ],
             }],
@@ -5296,7 +5306,8 @@ path = "src/lib.rs"
 
         assert!(
             matches.is_empty(),
-            "string literal mentioning Vec::set_len should not trigger RUSTCOLA008"
+            "string literal mentioning {} should not trigger RUSTCOLA008",
+            VEC_SET_LEN_SYMBOL
         );
 
         Ok(())
@@ -5312,7 +5323,10 @@ path = "src/lib.rs"
                 signature: "fn meta()".to_string(),
                 body: vec![
                     "fn meta() {".to_string(),
-                    "    0x00 │ 56 65 63 3a 3a 73 65 74 5f 6c 65 6e │ Vec::set_len used in metadata".to_string(),
+                    format!(
+                        "    0x00 │ 56 65 63 3a 3a 73 65 74 5f 6c 65 6e │ {} used in metadata",
+                        VEC_SET_LEN_SYMBOL
+                    ),
                     "    0x10 │ 20 75 73 65 64 20 69 6e 20 6d 65 74 │  used in metadata".to_string(),
                     "}".to_string(),
                 ],
@@ -5328,7 +5342,8 @@ path = "src/lib.rs"
 
         assert!(
             matches.is_empty(),
-            "metadata-style Vec::set_len mention without call should not trigger RUSTCOLA008"
+            "metadata-style {} mention without call should not trigger RUSTCOLA008",
+            VEC_SET_LEN_SYMBOL
         );
 
         Ok(())

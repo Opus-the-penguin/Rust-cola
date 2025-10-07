@@ -1052,6 +1052,28 @@ impl VecSetLenRule {
             },
         }
     }
+
+    fn gather_evidence(&self, function: &MirFunction) -> Vec<String> {
+        let mut evidence = Vec::new();
+        let mut seen = HashSet::new();
+        let mut state = StringLiteralState::default();
+        let mut in_block_comment = false;
+
+        for line in &function.body {
+            let (sanitized, next_state) = strip_string_literals(state, line);
+            state = next_state;
+
+            let without_comments = strip_comments(&sanitized, &mut in_block_comment);
+            if text_contains_word_case_insensitive(&without_comments, "set_len") {
+                let entry = line.trim().to_string();
+                if seen.insert(entry.clone()) {
+                    evidence.push(entry);
+                }
+            }
+        }
+
+        evidence
+    }
 }
 
 impl Rule for VecSetLenRule {
@@ -1061,10 +1083,9 @@ impl Rule for VecSetLenRule {
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
         let mut findings = Vec::new();
-        let patterns = ["set_len"];
 
         for function in &package.functions {
-            let evidence = collect_matches(&function.body, &patterns);
+            let evidence = self.gather_evidence(function);
             if evidence.is_empty() {
                 continue;
             }
@@ -5197,6 +5218,69 @@ path = "src/lib.rs"
         assert!(
             matches.is_empty(),
             "string literal mentioning unsafe should not trigger RUSTCOLA003"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn vec_set_len_rule_detects_usage() -> Result<()> {
+        let package = MirPackage {
+            crate_name: "vec-set-len-detect".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "grow".to_string(),
+                signature: "fn grow(vec: &mut Vec<i32>)".to_string(),
+                body: vec![
+                    "fn grow(vec: &mut Vec<i32>) {".to_string(),
+                    "    Vec::<i32>::set_len((*_1), const 4_usize);".to_string(),
+                    "}".to_string(),
+                ],
+            }],
+        };
+
+        let analysis = RuleEngine::with_builtin_rules().run(&package);
+        let matches: Vec<_> = analysis
+            .findings
+            .iter()
+            .filter(|finding| finding.rule_id == "RUSTCOLA008")
+            .collect();
+
+        assert_eq!(matches.len(), 1, "expected RUSTCOLA008 to fire");
+        assert!(matches[0]
+            .evidence
+            .iter()
+            .any(|line| line.contains("set_len")));
+
+        Ok(())
+    }
+
+    #[test]
+    fn vec_set_len_rule_ignores_string_literals() -> Result<()> {
+        let package = MirPackage {
+            crate_name: "vec-set-len-literal".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "doc_only".to_string(),
+                signature: "fn doc_only()".to_string(),
+                body: vec![
+                    "fn doc_only() {".to_string(),
+                    "    _1 = \"Documenting Vec::set_len behavior\";".to_string(),
+                    "}".to_string(),
+                ],
+            }],
+        };
+
+        let analysis = RuleEngine::with_builtin_rules().run(&package);
+        let matches: Vec<_> = analysis
+            .findings
+            .iter()
+            .filter(|finding| finding.rule_id == "RUSTCOLA008")
+            .collect();
+
+        assert!(
+            matches.is_empty(),
+            "string literal mentioning Vec::set_len should not trigger RUSTCOLA008"
         );
 
         Ok(())

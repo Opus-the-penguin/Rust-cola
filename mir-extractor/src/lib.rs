@@ -19,10 +19,9 @@ mod prototypes;
 pub use dataflow::{Assignment, MirDataflow};
 pub use prototypes::{
     detect_broadcast_unsync_payloads, detect_command_invocations,
-    detect_content_length_allocations, detect_openssl_verify_none,
-    detect_truncating_len_casts, detect_unbounded_allocations, BroadcastUnsyncUsage,
-    CommandInvocation, ContentLengthAllocation, LengthTruncationCast,
-    OpensslVerifyNoneInvocation,
+    detect_content_length_allocations, detect_openssl_verify_none, detect_truncating_len_casts,
+    detect_unbounded_allocations, BroadcastUnsyncUsage, CommandInvocation, ContentLengthAllocation,
+    LengthTruncationCast, OpensslVerifyNoneInvocation,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -155,7 +154,10 @@ fn line_contains_md5_usage(line: &str) -> bool {
         let mut before_chars = lower[..idx].chars().rev().skip_while(|c| c.is_whitespace());
         let mut after_chars = lower[idx + 3..].chars().skip_while(|c| c.is_whitespace());
 
-        let after_matches = matches!((after_chars.next(), after_chars.next()), (Some(':'), Some(':')));
+        let after_matches = matches!(
+            (after_chars.next(), after_chars.next()),
+            (Some(':'), Some(':'))
+        );
 
         let before_first = before_chars.next();
         let before_second = before_chars.next();
@@ -880,10 +882,7 @@ impl Rule for InsecureSha1Rule {
         let mut findings = Vec::new();
 
         for function in &package.functions {
-            if function
-                .name
-                .contains("line_contains_sha1_usage")
-            {
+            if function.name.contains("line_contains_sha1_usage") {
                 continue;
             }
 
@@ -1130,8 +1129,7 @@ impl Rule for VecSetLenRule {
                 severity: self.metadata.default_severity,
                 message: format!(
                     "{} used in `{}`; ensure elements are initialized",
-                    VEC_SET_LEN_SYMBOL,
-                    function.name
+                    VEC_SET_LEN_SYMBOL, function.name
                 ),
                 function: function.name.clone(),
                 function_signature: function.signature.clone(),
@@ -1350,8 +1348,7 @@ struct DangerAcceptInvalidCertRule {
     metadata: RuleMetadata,
 }
 
-const DANGER_ACCEPT_INVALID_CERTS_SYMBOL: &str =
-    concat!("danger", "_accept", "_invalid", "_certs");
+const DANGER_ACCEPT_INVALID_CERTS_SYMBOL: &str = concat!("danger", "_accept", "_invalid", "_certs");
 const DANGER_ACCEPT_INVALID_HOSTNAMES_SYMBOL: &str =
     concat!("danger", "_accept", "_invalid", "_hostnames");
 
@@ -1547,7 +1544,10 @@ struct StringLiteralState {
 
 const STRIP_STRING_INITIAL_CAPACITY: usize = 256;
 
-fn strip_string_literals(mut state: StringLiteralState, line: &str) -> (String, StringLiteralState) {
+fn strip_string_literals(
+    mut state: StringLiteralState,
+    line: &str,
+) -> (String, StringLiteralState) {
     let bytes = line.as_bytes();
     let mut result = String::with_capacity(STRIP_STRING_INITIAL_CAPACITY);
     let mut i = 0usize;
@@ -1913,13 +1913,8 @@ impl UnsafeSendSyncBoundsRule {
         }
 
         if let Some(idx) = normalized.find('<') {
-            let inner = normalized[idx + 1..]
-                .trim_end_matches('>')
-                .trim();
-            if inner.starts_with("*const")
-                || inner.starts_with("*mut")
-                || inner.starts_with('&')
-            {
+            let inner = normalized[idx + 1..].trim_end_matches('>').trim();
+            if inner.starts_with("*const") || inner.starts_with("*mut") || inner.starts_with('&') {
                 return true;
             }
         }
@@ -2259,14 +2254,8 @@ impl Rule for FfiBufferLeakRule {
 
                 loop {
                     let trimmed_sanitized = current_sanitized.trim();
-                    let opens = current_sanitized
-                        .chars()
-                        .filter(|c| *c == '{')
-                        .count() as i32;
-                    let closes = current_sanitized
-                        .chars()
-                        .filter(|c| *c == '}')
-                        .count() as i32;
+                    let opens = current_sanitized.chars().filter(|c| *c == '{').count() as i32;
+                    let closes = current_sanitized.chars().filter(|c| *c == '}').count() as i32;
                     brace_balance += opens;
                     if brace_balance > 0 {
                         body_started = true;
@@ -2292,7 +2281,8 @@ impl Rule for FfiBufferLeakRule {
                     }
 
                     let next_line = lines[j];
-                    let (next_sanitized, next_state) = strip_string_literals(current_state, next_line);
+                    let (next_sanitized, next_state) =
+                        strip_string_literals(current_state, next_line);
                     current_state = next_state;
 
                     let trimmed_original_next = next_line.trim();
@@ -2709,19 +2699,15 @@ impl Rule for UnboundedAllocationRule {
         let options = prototypes::PrototypeOptions::default();
 
         for function in &package.functions {
-            let specialized = prototypes::detect_content_length_allocations_with_options(
-                function,
-                &options,
-            );
+            let specialized =
+                prototypes::detect_content_length_allocations_with_options(function, &options);
             let specialized_lines: HashSet<_> = specialized
                 .iter()
                 .map(|alloc| alloc.allocation_line.clone())
                 .collect();
 
-            let allocations = prototypes::detect_unbounded_allocations_with_options(
-                function,
-                &options,
-            );
+            let allocations =
+                prototypes::detect_unbounded_allocations_with_options(function, &options);
 
             for allocation in allocations {
                 if specialized_lines.contains(&allocation.allocation_line) {
@@ -2796,10 +2782,7 @@ impl Rule for LengthTruncationCastRule {
                 let mut evidence = vec![cast.cast_line.clone()];
 
                 if !cast.source_vars.is_empty() {
-                    evidence.push(format!(
-                        "length sources: {}",
-                        cast.source_vars.join(", ")
-                    ));
+                    evidence.push(format!("length sources: {}", cast.source_vars.join(", ")));
                 }
 
                 for sink in &cast.sink_lines {
@@ -4129,7 +4112,25 @@ pub fn sarif_report(package: &MirPackage, analysis: &AnalysisResult) -> serde_js
             let origin = rule_meta
                 .map(|meta| meta.origin.label())
                 .unwrap_or_else(|| "unknown".to_string());
-            let artifact_uri = artifact_uri_for(package, &finding.function);
+
+            let mut region = serde_json::Map::new();
+            region.insert(
+                "message".to_string(),
+                json!({"text": finding.function_signature.clone()}),
+            );
+
+            let artifact_uri = if let Some(span) = &finding.span {
+                region.insert("startLine".to_string(), json!(span.start_line));
+                region.insert("startColumn".to_string(), json!(span.start_column));
+                region.insert("endLine".to_string(), json!(span.end_line));
+                region.insert("endColumn".to_string(), json!(span.end_column));
+
+                let path = Path::new(&span.file);
+                file_uri_from_path(path)
+            } else {
+                artifact_uri_for(package, &finding.function)
+            };
+
             json!({
                 "ruleId": finding.rule_id,
                 "level": finding.severity.sarif_level(),
@@ -4140,9 +4141,7 @@ pub fn sarif_report(package: &MirPackage, analysis: &AnalysisResult) -> serde_js
                             "artifactLocation": {
                                 "uri": artifact_uri,
                             },
-                            "region": {
-                                "message": {"text": finding.function_signature.clone()}
-                            }
+                            "region": serde_json::Value::Object(region)
                         },
                         "logicalLocations": [
                             {
@@ -4563,6 +4562,64 @@ fn <impl at C:\\workspace\\demo\\src\\lib.rs:40:1: 40:32>::vec_set_len(_1: &mut 
         assert_eq!(span.end_column, 32);
     }
 
+    #[test]
+    fn sarif_report_includes_span_region() {
+        let span = SourceSpan {
+            file: "/workspace/demo/src/lib.rs".to_string(),
+            start_line: 12,
+            start_column: 5,
+            end_line: 12,
+            end_column: 18,
+        };
+
+        let package = MirPackage {
+            crate_name: "demo".to_string(),
+            crate_root: "/workspace/demo".to_string(),
+            functions: Vec::new(),
+        };
+
+        let rule = RuleMetadata {
+            id: "TEST001".to_string(),
+            name: "demo-rule".to_string(),
+            short_description: "demo description".to_string(),
+            full_description: "demo full description".to_string(),
+            help_uri: None,
+            default_severity: Severity::Medium,
+            origin: RuleOrigin::BuiltIn,
+        };
+
+        let finding = Finding {
+            rule_id: rule.id.clone(),
+            rule_name: rule.name.clone(),
+            severity: rule.default_severity,
+            message: "Something happened".to_string(),
+            function: "demo::example".to_string(),
+            function_signature: "fn demo::example()".to_string(),
+            evidence: vec![],
+            span: Some(span.clone()),
+        };
+
+        let analysis = AnalysisResult {
+            findings: vec![finding],
+            rules: vec![rule],
+        };
+
+        let sarif = sarif_report(&package, &analysis);
+        let result = &sarif["runs"][0]["results"][0];
+        let region = &result["locations"][0]["physicalLocation"]["region"];
+
+        assert_eq!(region["startLine"], json!(span.start_line));
+        assert_eq!(region["startColumn"], json!(span.start_column));
+        assert_eq!(region["endLine"], json!(span.end_line));
+        assert_eq!(region["endColumn"], json!(span.end_column));
+
+        let artifact_uri = result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+            .as_str()
+            .expect("uri missing");
+        let expected_uri = file_uri_from_path(Path::new(&span.file));
+        assert_eq!(artifact_uri, expected_uri);
+    }
+
     #[cfg(windows)]
     #[test]
     fn file_uri_from_path_strips_extended_prefix() {
@@ -4945,7 +5002,9 @@ rules:
         let finding = &findings[0];
         assert_eq!(finding.severity, Severity::Medium);
         assert_eq!(finding.evidence.len(), 1);
-        assert!(finding.message.contains("Process command execution detected"));
+        assert!(finding
+            .message
+            .contains("Process command execution detected"));
     }
 
     #[test]
@@ -5248,7 +5307,8 @@ unsafe impl<T: Send> Send for SafeWrapper<T> {}
         assert!(
             !signatures
                 .iter()
-                .any(|sig| sig.contains("unsafe impl<T: std::marker::Send> Send for QualifiedSafe<T>")),
+                .any(|sig| sig
+                    .contains("unsafe impl<T: std::marker::Send> Send for QualifiedSafe<T>")),
             "QualifiedSafe with fully qualified bound should not be flagged"
         );
         assert!(
@@ -5284,14 +5344,14 @@ edition = "2021"
 path = "src/lib.rs"
 "#,
         )?;
-    fs::write(
-        crate_root.join("src/lib.rs"),
-        r###"pub fn strings() {
+        fs::write(
+            crate_root.join("src/lib.rs"),
+            r###"pub fn strings() {
     let _ = "unsafe impl<T> Send for Maybe<T> {}";
     let _ = r#"unsafe impl<T> Sync for Maybe<T> {}"#;
 }
 "###,
-    )?;
+        )?;
 
         let package = MirPackage {
             crate_name: "unsafe-send-sync-literals".to_string(),
@@ -5611,10 +5671,7 @@ path = "src/lib.rs"
                 signature: "fn doc_only()".to_string(),
                 body: vec![
                     "fn doc_only() {".to_string(),
-                    format!(
-                        "    _1 = \"Documenting {} behavior\";",
-                        VEC_SET_LEN_SYMBOL
-                    ),
+                    format!("    _1 = \"Documenting {} behavior\";", VEC_SET_LEN_SYMBOL),
                     "}".to_string(),
                 ],
                 span: None,
@@ -5651,7 +5708,8 @@ path = "src/lib.rs"
                         "    0x00 │ 56 65 63 3a 3a 73 65 74 5f 6c 65 6e │ {} used in metadata",
                         VEC_SET_LEN_SYMBOL
                     ),
-                    "    0x10 │ 20 75 73 65 64 20 69 6e 20 6d 65 74 │  used in metadata".to_string(),
+                    "    0x10 │ 20 75 73 65 64 20 69 6e 20 6d 65 74 │  used in metadata"
+                        .to_string(),
                     "}".to_string(),
                 ],
                 span: None,
@@ -5730,7 +5788,11 @@ path = "src/lib.rs"
             .iter()
             .any(|finding| finding.rule_id == "RUSTCOLA009");
 
-        assert!(!has_maybe_uninit, "{}::{} rule should not flag mir-extractor crate", MAYBE_UNINIT_TYPE_SYMBOL, MAYBE_UNINIT_ASSUME_INIT_SYMBOL);
+        assert!(
+            !has_maybe_uninit,
+            "{}::{} rule should not flag mir-extractor crate",
+            MAYBE_UNINIT_TYPE_SYMBOL, MAYBE_UNINIT_ASSUME_INIT_SYMBOL
+        );
 
         Ok(())
     }
@@ -5794,8 +5856,7 @@ path = "src/lib.rs"
         assert!(
             !has_mem_uninit,
             "{}::{} rule should not flag mir-extractor crate",
-            MEM_MODULE_SYMBOL,
-            MEM_UNINITIALIZED_SYMBOL
+            MEM_MODULE_SYMBOL, MEM_UNINITIALIZED_SYMBOL
         );
 
         Ok(())
@@ -5876,7 +5937,9 @@ path = "src/lib.rs"
                 signature: "fn encode(len: usize, writer: &mut byteorder::io::Write)".to_string(),
                 body: {
                     let mut body = Vec::with_capacity(6);
-                    body.push("fn encode(len: usize, writer: &mut byteorder::io::Write) {".to_string());
+                    body.push(
+                        "fn encode(len: usize, writer: &mut byteorder::io::Write) {".to_string(),
+                    );
                     body.extend(make_length_truncation_cast_lines("    "));
                     body.push("}".to_string());
                     body
@@ -5894,16 +5957,12 @@ path = "src/lib.rs"
 
         assert_eq!(matches.len(), 1, "expected RUSTCOLA022 to fire");
         let evidence = &matches[0].evidence;
-        assert!(
-            evidence
-                .iter()
-                .any(|line| line.contains(LENGTH_TRUNCATION_CAST_INTTOINT_SYMBOL))
-        );
-        assert!(
-            evidence
-                .iter()
-                .any(|line| line.contains(LENGTH_TRUNCATION_CAST_WRITE_SYMBOL))
-        );
+        assert!(evidence
+            .iter()
+            .any(|line| line.contains(LENGTH_TRUNCATION_CAST_INTTOINT_SYMBOL)));
+        assert!(evidence
+            .iter()
+            .any(|line| line.contains(LENGTH_TRUNCATION_CAST_WRITE_SYMBOL)));
 
         Ok(())
     }
@@ -5970,11 +6029,9 @@ path = "src/lib.rs"
 
         assert_eq!(matches.len(), 1, "expected RUSTCOLA024 to fire");
         let evidence = &matches[0].evidence;
-        assert!(
-            evidence
-                .iter()
-                .any(|line| line.contains(UNBOUNDED_ALLOCATION_WITH_CAPACITY_SYMBOL))
-        );
+        assert!(evidence
+            .iter()
+            .any(|line| line.contains(UNBOUNDED_ALLOCATION_WITH_CAPACITY_SYMBOL)));
 
         Ok(())
     }
@@ -6070,7 +6127,10 @@ path = "src/lib.rs"
             .filter(|finding| finding.rule_id == "RUSTCOLA002")
             .collect();
 
-        assert!(matches.is_empty(), "string literal should not trigger transmute rule");
+        assert!(
+            matches.is_empty(),
+            "string literal should not trigger transmute rule"
+        );
 
         Ok(())
     }
@@ -6503,7 +6563,10 @@ path = "src/lib.rs"
             .iter()
             .any(|finding| finding.rule_id == "RUSTCOLA008");
 
-        assert!(!has_vec_set_len, "Vec::set_len rule should not flag mir-extractor crate");
+        assert!(
+            !has_vec_set_len,
+            "Vec::set_len rule should not flag mir-extractor crate"
+        );
 
         Ok(())
     }

@@ -4,7 +4,7 @@ use clap::{builder::BoolishValueParser, ArgAction, Parser};
 use mir_extractor::{
     analyze_with_engine, extract_with_cache, load_cached_analysis, sarif_report,
     store_cached_analysis, write_findings_json, write_mir_json, write_sarif_json, AnalysisResult,
-    CacheConfig, CacheMissReason, CacheStatus, Finding, MirPackage, RuleEngine,
+    CacheConfig, CacheMissReason, CacheStatus, Finding, MirPackage, RuleEngine, SourceSpan,
 };
 use serde_json::{json, Value};
 use std::collections::HashSet;
@@ -267,6 +267,10 @@ fn main() -> Result<()> {
     println!("- Findings JSON: {}", findings_path.display());
     println!("- SARIF: {}", sarif_path.display());
 
+    if let Some(rendered) = format_findings_output(&aggregated_findings, &aggregated_rules) {
+        print!("{}", rendered);
+    }
+
     if aggregated_findings.is_empty() {
         println!("No findings — great job!");
         return Ok(());
@@ -296,24 +300,144 @@ fn print_summary_single(
     println!("- Findings JSON: {}", findings_path.display());
     println!("- SARIF: {}", sarif_path.display());
 
+    if let Some(rendered) = format_findings_output(findings, rules) {
+        print!("{}", rendered);
+    }
+}
+
+fn format_findings_output(
+    findings: &[Finding],
+    rules: &[mir_extractor::RuleMetadata],
+) -> Option<String> {
     if findings.is_empty() {
-        return;
+        return None;
     }
 
-    println!("Findings:");
+    use std::fmt::Write as _;
+
+    let mut buffer = String::new();
+    let _ = writeln!(&mut buffer, "Findings:");
+
     for finding in findings {
         let rule_name = rules
             .iter()
             .find(|rule| rule.id == finding.rule_id)
             .map(|rule| rule.name.as_str())
             .unwrap_or("unknown-rule");
-        println!(
+        let _ = writeln!(
+            &mut buffer,
             "- [{}|{}|{:?}] {}",
             finding.rule_id, rule_name, finding.severity, finding.message
         );
-        for evidence in &finding.evidence {
-            println!("    evidence: {}", evidence.trim());
+
+        if let Some(span) = &finding.span {
+            let _ = writeln!(&mut buffer, "    location: {}", format_span(span));
+        } else {
+            let _ = writeln!(&mut buffer, "    location: {}", finding.function);
         }
+
+        let _ = writeln!(&mut buffer, "    function: {}", finding.function_signature);
+
+        for evidence in &finding.evidence {
+            let _ = writeln!(&mut buffer, "    evidence: {}", evidence.trim());
+        }
+    }
+
+    Some(buffer)
+}
+
+fn format_span(span: &SourceSpan) -> String {
+    let path = Path::new(&span.file);
+    let display = path.display();
+
+    if span.start_line == span.end_line {
+        if span.start_column == span.end_column {
+            format!("{}:{}:{}", display, span.start_line, span.start_column)
+        } else {
+            format!(
+                "{}:{}:{}-{}",
+                display, span.start_line, span.start_column, span.end_column
+            )
+        }
+    } else {
+        format!(
+            "{}:{}:{}-{}:{}",
+            display, span.start_line, span.start_column, span.end_line, span.end_column
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_span_displays_single_line_range() {
+        let span = SourceSpan {
+            file: "C:/workspace/demo/src/lib.rs".to_string(),
+            start_line: 10,
+            start_column: 5,
+            end_line: 10,
+            end_column: 17,
+        };
+
+        assert_eq!(format_span(&span), "C:/workspace/demo/src/lib.rs:10:5-17");
+    }
+
+    #[test]
+    fn format_span_displays_multi_line_range() {
+        let span = SourceSpan {
+            file: "C:/workspace/demo/src/lib.rs".to_string(),
+            start_line: 3,
+            start_column: 1,
+            end_line: 5,
+            end_column: 8,
+        };
+
+        assert_eq!(format_span(&span), "C:/workspace/demo/src/lib.rs:3:1-5:8");
+    }
+
+    #[test]
+    fn format_findings_output_includes_span_location() {
+        let rules = vec![mir_extractor::RuleMetadata {
+            id: "TEST001".to_string(),
+            name: "demo-rule".to_string(),
+            short_description: "demo short".to_string(),
+            full_description: "demo full".to_string(),
+            help_uri: None,
+            default_severity: mir_extractor::Severity::Medium,
+            origin: mir_extractor::RuleOrigin::BuiltIn,
+        }];
+
+        let findings = vec![Finding {
+            rule_id: "TEST001".to_string(),
+            rule_name: "demo-rule".to_string(),
+            severity: mir_extractor::Severity::Medium,
+            message: "Example finding".to_string(),
+            function: "demo::example".to_string(),
+            function_signature: "fn demo::example()".to_string(),
+            evidence: vec!["evidence line".to_string()],
+            span: Some(SourceSpan {
+                file: "C:/workspace/demo/src/lib.rs".to_string(),
+                start_line: 8,
+                start_column: 1,
+                end_line: 8,
+                end_column: 4,
+            }),
+        }];
+
+        let rendered = format_findings_output(&findings, &rules).expect("should render output");
+        assert!(rendered.contains("Findings:"));
+        assert!(rendered.contains("- [TEST001|demo-rule|"));
+        assert!(rendered.contains("location: C:/workspace/demo/src/lib.rs:8:1-4"));
+        assert!(rendered.contains("function: fn demo::example()"));
+        assert!(rendered.contains("evidence: evidence line"));
+    }
+
+    #[test]
+    fn format_findings_output_returns_none_for_empty_list() {
+        let rules = Vec::new();
+        assert!(format_findings_output(&[], &rules).is_none());
     }
 }
 

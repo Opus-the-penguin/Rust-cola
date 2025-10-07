@@ -11,3 +11,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 mir-extractor = { path = "../mir-extractor" }
 cargo_metadata = "0.18"
+
+[dev-dependencies]
+assert_cmd = "2"
+tempfile = "3"

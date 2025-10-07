@@ -291,12 +291,7 @@ pub fn detect_truncating_len_casts_with_options(
             .iter()
             .any(|source| tainted.contains(source))
         {
-            let sink_lines = collect_sink_lines(
-                function,
-                &dataflow,
-                &assignment.target,
-                options,
-            );
+            let sink_lines = collect_sink_lines(function, &dataflow, &assignment.target, options);
             findings.push(LengthTruncationCast {
                 cast_line: assignment.line.clone(),
                 target_var: assignment.target.clone(),
@@ -309,9 +304,7 @@ pub fn detect_truncating_len_casts_with_options(
     findings
 }
 
-pub fn detect_broadcast_unsync_payloads(
-    function: &MirFunction,
-) -> Vec<BroadcastUnsyncUsage> {
+pub fn detect_broadcast_unsync_payloads(function: &MirFunction) -> Vec<BroadcastUnsyncUsage> {
     detect_broadcast_unsync_payloads_with_options(function, &PrototypeOptions::default())
 }
 
@@ -418,9 +411,7 @@ pub fn detect_command_invocations(function: &MirFunction) -> Vec<CommandInvocati
     findings
 }
 
-pub fn detect_openssl_verify_none(
-    function: &MirFunction,
-) -> Vec<OpensslVerifyNoneInvocation> {
+pub fn detect_openssl_verify_none(function: &MirFunction) -> Vec<OpensslVerifyNoneInvocation> {
     let dataflow = MirDataflow::new(function);
     let mut var_to_lines: HashMap<String, Vec<String>> = HashMap::new();
 
@@ -431,7 +422,8 @@ pub fn detect_openssl_verify_none(
             .push(assignment.line.trim().to_string());
     }
 
-    let tainted_modes = dataflow.taint_from(|assignment| rhs_disables_verification(&assignment.rhs));
+    let tainted_modes =
+        dataflow.taint_from(|assignment| rhs_disables_verification(&assignment.rhs));
     let mut findings: HashMap<String, Vec<String>> = HashMap::new();
 
     for assignment in dataflow.assignments() {
@@ -482,10 +474,12 @@ pub fn detect_openssl_verify_none(
 
     let mut result: Vec<_> = findings
         .into_iter()
-        .map(|(call_line, supporting_lines)| OpensslVerifyNoneInvocation {
-            call_line,
-            supporting_lines,
-        })
+        .map(
+            |(call_line, supporting_lines)| OpensslVerifyNoneInvocation {
+                call_line,
+                supporting_lines,
+            },
+        )
         .collect();
 
     result.sort_by(|a, b| a.call_line.cmp(&b.call_line));
@@ -549,10 +543,7 @@ fn collect_length_seed_vars(
     seeds
 }
 
-fn propagate_length_seeds(
-    dataflow: &MirDataflow,
-    seeds: HashSet<String>,
-) -> HashSet<String> {
+fn propagate_length_seeds(dataflow: &MirDataflow, seeds: HashSet<String>) -> HashSet<String> {
     let mut tainted = seeds;
     if tainted.is_empty() {
         return tainted;
@@ -810,9 +801,7 @@ mod tests {
         let findings = detect_openssl_verify_none(&function);
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].supporting_lines.len(), 1);
-        assert!(findings[0]
-            .supporting_lines[0]
-            .contains("SslVerifyMode::empty"));
+        assert!(findings[0].supporting_lines[0].contains("SslVerifyMode::empty"));
     }
 
     #[test]
@@ -868,9 +857,7 @@ mod tests {
         let casts = detect_truncating_len_casts(&function);
         assert_eq!(casts.len(), 1);
         assert_eq!(casts[0].sink_lines.len(), 1);
-        assert!(casts[0]
-            .sink_lines[0]
-            .contains("WriteBytesExt::write_u16"));
+        assert!(casts[0].sink_lines[0].contains("WriteBytesExt::write_u16"));
     }
 
     #[test]
@@ -925,9 +912,8 @@ mod tests {
 
     #[test]
     fn no_findings_without_taint() {
-        let function = function_from_lines(&[
-            "    _3 = Vec::<u8>::with_capacity(const 4096_usize);",
-        ]);
+        let function =
+            function_from_lines(&["    _3 = Vec::<u8>::with_capacity(const 4096_usize);"]);
 
         let findings = detect_content_length_allocations(&function);
         assert!(findings.is_empty());

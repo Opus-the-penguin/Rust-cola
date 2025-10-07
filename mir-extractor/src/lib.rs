@@ -144,6 +144,65 @@ fn collect_case_insensitive_matches(lines: &[String], patterns: &[&str]) -> Vec<
         .collect()
 }
 
+fn extract_octal_literals(line: &str) -> Vec<u32> {
+    let mut values = Vec::new();
+    let mut search_start = 0;
+
+    while let Some(relative_idx) = line[search_start..].find("0o") {
+        let idx = search_start + relative_idx + 2;
+        let remainder = &line[idx..];
+        let mut digits = String::new();
+        let mut consumed = 0;
+
+        for (byte_idx, ch) in remainder.char_indices() {
+            match ch {
+                '0'..='7' => {
+                    digits.push(ch);
+                    consumed = byte_idx + ch.len_utf8();
+                }
+                '_' => {
+                    consumed = byte_idx + ch.len_utf8();
+                }
+                _ => break,
+            }
+        }
+
+        if !digits.is_empty() {
+            if let Ok(value) = u32::from_str_radix(&digits, 8) {
+                values.push(value);
+            }
+        }
+
+        search_start = idx + consumed + 1;
+    }
+
+    values
+}
+
+fn line_has_world_writable_mode(line: &str) -> bool {
+    let contains_mode_call = [
+        "set_mode(",
+        ".mode(",
+        "::mode(",
+        "from_mode(",
+        "::from_mode(",
+    ]
+    .iter()
+    .any(|pattern| line.contains(pattern));
+
+    if !contains_mode_call && !line.contains("GENERIC_ALL") {
+        return false;
+    }
+
+    if line.contains("GENERIC_ALL") {
+        return true;
+    }
+
+    extract_octal_literals(line)
+        .into_iter()
+        .any(|value| (value & 0o022) != 0)
+}
+
 fn line_contains_md5_usage(line: &str) -> bool {
     let lower = line.to_lowercase();
     let mut search_start = 0;
@@ -1629,6 +1688,134 @@ impl Rule for StaticMutGlobalRule {
                 severity: self.metadata.default_severity,
                 message: format!(
                     "Mutable static global detected in `{}`; prefer interior mutability or synchronization primitives",
+                    function.name
+                ),
+                function: function.name.clone(),
+                function_signature: function.signature.clone(),
+                evidence,
+                span: function.span.clone(),
+            });
+        }
+
+        findings
+    }
+}
+
+struct PermissionsSetReadonlyFalseRule {
+    metadata: RuleMetadata,
+}
+
+impl PermissionsSetReadonlyFalseRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA028".to_string(),
+                name: "permissions-set-readonly-false".to_string(),
+                short_description: "Permissions::set_readonly(false) detected".to_string(),
+                full_description: "Flags calls to std::fs::Permissions::set_readonly(false) which downgrade filesystem permissions and can leave files world-writable on Unix targets.".to_string(),
+                help_uri: None,
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for PermissionsSetReadonlyFalseRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            let mut evidence = Vec::new();
+
+            for line in &function.body {
+                if line.contains("set_readonly(") && line.contains("false") {
+                    evidence.push(line.trim().to_string());
+                }
+            }
+
+            if evidence.is_empty() {
+                continue;
+            }
+
+            findings.push(Finding {
+                rule_id: self.metadata.id.clone(),
+                rule_name: self.metadata.name.clone(),
+                severity: self.metadata.default_severity,
+                message: format!(
+                    "Permissions::set_readonly(false) used in `{}`",
+                    function.name
+                ),
+                function: function.name.clone(),
+                function_signature: function.signature.clone(),
+                evidence,
+                span: function.span.clone(),
+            });
+        }
+
+        findings
+    }
+}
+
+struct WorldWritableModeRule {
+    metadata: RuleMetadata,
+}
+
+impl WorldWritableModeRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA029".to_string(),
+                name: "world-writable-mode".to_string(),
+                short_description: "World-writable file mode detected".to_string(),
+                full_description: "Detects explicit world-writable permission masks (e.g., 0o777/0o666) passed to PermissionsExt::set_mode, OpenOptionsExt::mode, or similar builders, mirroring Snyk's insecure file permission checks.".to_string(),
+                help_uri: None,
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for WorldWritableModeRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            let mut evidence = Vec::new();
+
+            for line in &function.body {
+                if line_has_world_writable_mode(line) {
+                    evidence.push(line.trim().to_string());
+                }
+            }
+
+            if evidence.is_empty() {
+                continue;
+            }
+
+            findings.push(Finding {
+                rule_id: self.metadata.id.clone(),
+                rule_name: self.metadata.name.clone(),
+                severity: self.metadata.default_severity,
+                message: format!(
+                    "World-writable permission mask set in `{}`",
                     function.name
                 ),
                 function: function.name.clone(),
@@ -3787,6 +3974,8 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(OpensslVerifyNoneRule::new()));
     engine.register_rule(Box::new(HardcodedHomePathRule::new()));
     engine.register_rule(Box::new(StaticMutGlobalRule::new()));
+    engine.register_rule(Box::new(PermissionsSetReadonlyFalseRule::new()));
+    engine.register_rule(Box::new(WorldWritableModeRule::new()));
     engine.register_rule(Box::new(NonNullNewUncheckedRule::new()));
     engine.register_rule(Box::new(MemForgetGuardRule::new()));
     engine.register_rule(Box::new(UnsafeSendSyncBoundsRule::new()));
@@ -5148,6 +5337,18 @@ rules:
                     span: None,
                 },
                 MirFunction {
+                    name: "set_readonly_false".to_string(),
+                    signature: "fn set_readonly_false(perm: &mut std::fs::Permissions)".to_string(),
+                    body: vec!["    std::fs::Permissions::set_readonly(move _1, const false);".to_string()],
+                    span: None,
+                },
+                MirFunction {
+                    name: "world_writable_mode".to_string(),
+                    signature: "fn world_writable_mode(opts: &mut std::fs::OpenOptions)".to_string(),
+                    body: vec!["    std::os::unix::fs::OpenOptionsExt::mode(move _1, const 0o777);".to_string()],
+                    span: None,
+                },
+                MirFunction {
                     name: "forget_guard".to_string(),
                     signature: "fn forget_guard(mutex: &std::sync::Mutex<i32>)".to_string(),
                     body: vec![
@@ -5274,6 +5475,14 @@ rules:
             "expected mem::forget guard rule to fire"
         );
         assert!(
+            triggered.contains(&"RUSTCOLA028"),
+            "expected set_readonly(false) rule to fire"
+        );
+        assert!(
+            triggered.contains(&"RUSTCOLA029"),
+            "expected world-writable mode rule to fire"
+        );
+        assert!(
             triggered.contains(&"RUSTCOLA021"),
             "expected content-length allocation rule to fire"
         );
@@ -5349,6 +5558,8 @@ rules:
             "RUSTCOLA025",
             "RUSTCOLA026",
             "RUSTCOLA027",
+            "RUSTCOLA028",
+            "RUSTCOLA029",
             "RUSTCOLA021",
             "RUSTCOLA022",
             "RUSTCOLA024",
@@ -5519,6 +5730,64 @@ rules:
     }
 
     #[test]
+    fn permissions_set_readonly_rule_detects_false() {
+        let rule = PermissionsSetReadonlyFalseRule::new();
+        let package = MirPackage {
+            crate_name: "demo".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "loosen_permissions".to_string(),
+                signature: "fn loosen_permissions(perm: &mut std::fs::Permissions)".to_string(),
+                body: vec!["    std::fs::Permissions::set_readonly(move _1, const false);".to_string()],
+                span: None,
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0]
+            .evidence
+            .iter()
+            .any(|entry| entry.contains("set_readonly")));
+    }
+
+    #[test]
+    fn permissions_set_readonly_rule_skips_analyzer_crate() {
+        let rule = PermissionsSetReadonlyFalseRule::new();
+        let package = MirPackage {
+            crate_name: "mir-extractor".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "loosen_permissions".to_string(),
+                signature: "fn loosen_permissions(perm: &mut std::fs::Permissions)".to_string(),
+                body: vec!["    std::fs::Permissions::set_readonly(move _1, const false);".to_string()],
+                span: None,
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn permissions_set_readonly_rule_ignores_true() {
+        let rule = PermissionsSetReadonlyFalseRule::new();
+        let package = MirPackage {
+            crate_name: "demo".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "harden_permissions".to_string(),
+                signature: "fn harden_permissions(perm: &mut std::fs::Permissions)".to_string(),
+                body: vec!["    std::fs::Permissions::set_readonly(move _1, const true);".to_string()],
+                span: None,
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
     fn nonnull_rule_detects_new_unchecked() {
         let rule = NonNullNewUncheckedRule::new();
         let package = MirPackage {
@@ -5622,6 +5891,64 @@ rules:
                 body: vec![
                     "    std::mem::forget(move _1);".to_string(),
                 ],
+                span: None,
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn world_writable_mode_rule_detects_set_mode() {
+        let rule = WorldWritableModeRule::new();
+        let package = MirPackage {
+            crate_name: "demo".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "make_world_writable".to_string(),
+                signature: "fn make_world_writable(perm: &mut std::os::unix::fs::PermissionsExt)".to_string(),
+                body: vec!["    std::os::unix::fs::PermissionsExt::set_mode(move _1, const 0o777);".to_string()],
+                span: None,
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0]
+            .evidence
+            .iter()
+            .any(|entry| entry.contains("0o777")));
+    }
+
+    #[test]
+    fn world_writable_mode_rule_skips_analyzer_crate() {
+        let rule = WorldWritableModeRule::new();
+        let package = MirPackage {
+            crate_name: "mir-extractor".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "make_world_writable".to_string(),
+                signature: "fn make_world_writable(perm: &mut std::os::unix::fs::PermissionsExt)".to_string(),
+                body: vec!["    std::os::unix::fs::PermissionsExt::set_mode(move _1, const 0o777);".to_string()],
+                span: None,
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn world_writable_mode_rule_ignores_safe_mask() {
+        let rule = WorldWritableModeRule::new();
+        let package = MirPackage {
+            crate_name: "demo".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "make_restrictive".to_string(),
+                signature: "fn make_restrictive(perm: &mut std::os::unix::fs::PermissionsExt)".to_string(),
+                body: vec!["    std::os::unix::fs::PermissionsExt::set_mode(move _1, const 0o755);".to_string()],
                 span: None,
             }],
         };

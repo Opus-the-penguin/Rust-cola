@@ -3,9 +3,18 @@ name = "mir-extractor"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+hir-driver = []
+
 [lib]
 name = "mir_extractor"
 path = "src/lib.rs"
+
+[[bin]]
+name = "hir-spike"
+path = "src/bin/hir_spike.rs"
+required-features = ["hir-driver"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

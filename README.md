@@ -18,10 +18,29 @@ In addition to the shipped rules, we maintain MIR-based research prototypes for 
 > **Prerequisites**
 > - Rust (nightly toolchain) via `rustup`.
 > - On Windows, Visual Studio Build Tools with the C++ workload (for `link.exe`).
+> - On macOS, install the Xcode Command Line Tools (`xcode-select --install`) for Clang and the system linker.
+> - On Linux, install a C/C++ toolchain and linker (for example on Debian/Ubuntu: `sudo apt install build-essential pkg-config libssl-dev`).
+
+Install `rustup` if it is not already present:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+rustup toolchain install nightly
+```
+
+Restart your shell (or source `$HOME/.cargo/env`) so that `cargo` and `rustc` are on your `PATH`.
 
 Run the prototype analysis against the bundled example crate:
 
 ```powershell
+# Windows PowerShell
+cd Rust-cola
+cargo run -p cargo-cola -- --crate-path examples/simple --out-dir out/cola --sarif out/cola/cola.sarif --fail-on-findings=false
+```
+
+```bash
+# macOS/Linux (bash/zsh)
 cd Rust-cola
 cargo run -p cargo-cola -- --crate-path examples/simple --out-dir out/cola --sarif out/cola/cola.sarif --fail-on-findings=false
 ```
@@ -36,7 +55,13 @@ This command will:
 Inspect the structured MIR directly:
 
 ```powershell
+# Windows PowerShell
 Get-Content out/cola/mir.json | Select-Object -First 40
+```
+
+```bash
+# macOS/Linux (bash/zsh)
+head -n 40 out/cola/mir.json
 ```
 
 ### Using rulepacks
@@ -44,6 +69,12 @@ Get-Content out/cola/mir.json | Select-Object -First 40
 You can extend the analysis with YAML rulepacks. A starter pack lives at `examples/rulepacks/example-basic.yaml`.
 
 ```powershell
+# Windows PowerShell
+cargo run -p cargo-cola -- --crate-path examples/simple --out-dir out/cola --rulepack examples/rulepacks/example-basic.yaml --fail-on-findings=false
+```
+
+```bash
+# macOS/Linux (bash/zsh)
 cargo run -p cargo-cola -- --crate-path examples/simple --out-dir out/cola --rulepack examples/rulepacks/example-basic.yaml --fail-on-findings=false
 ```
 
@@ -59,27 +90,53 @@ Curious what’s coming next? The living backlog in [`docs/security-rule-backlog
 
 ## Example commands
 
+> Choose the snippet that matches your shell. Forward slashes in paths work on both Windows and Unix-like systems; feel free to use backslashes in PowerShell if you prefer.
+
 - **Scan the current project** (writes MIR, findings, and SARIF to `out/my-project`):
 
 	```powershell
+	# Windows PowerShell
+	cargo run -p cargo-cola -- --crate-path . --out-dir out/my-project --sarif out/my-project/cola.sarif --fail-on-findings=true
+	```
+
+	```bash
+	# macOS/Linux (bash/zsh)
 	cargo run -p cargo-cola -- --crate-path . --out-dir out/my-project --sarif out/my-project/cola.sarif --fail-on-findings=true
 	```
 
 - **Scan another workspace without failing the build**:
 
 	```powershell
-	cargo run -p cargo-cola -- --crate-path path\to\crate --out-dir out/full-scan --fail-on-findings=false
+	# Windows PowerShell
+	cargo run -p cargo-cola -- --crate-path path/to/crate --out-dir out/full-scan --fail-on-findings=false
+	```
+
+	```bash
+	# macOS/Linux (bash/zsh)
+	cargo run -p cargo-cola -- --crate-path path/to/crate --out-dir out/full-scan --fail-on-findings=false
 	```
 
 - **Run the extractor CLI directly** (same engine underpinning `cargo cola`):
 
 	```powershell
+	# Windows PowerShell
+	cargo run -p mir-extractor -- --crate-path examples/simple --out-dir out/mir --sarif out/mir/cola.sarif
+	```
+
+	```bash
+	# macOS/Linux (bash/zsh)
 	cargo run -p mir-extractor -- --crate-path examples/simple --out-dir out/mir --sarif out/mir/cola.sarif
 	```
 
 - **Extend the rule set with a YAML rulepack**:
 
 	```powershell
+	# Windows PowerShell
+	cargo run -p cargo-cola -- --crate-path examples/simple --out-dir out/rulepack --rulepack examples/rulepacks/example-basic.yaml --fail-on-findings=false
+	```
+
+	```bash
+	# macOS/Linux (bash/zsh)
 	cargo run -p cargo-cola -- --crate-path examples/simple --out-dir out/rulepack --rulepack examples/rulepacks/example-basic.yaml --fail-on-findings=false
 	```
 

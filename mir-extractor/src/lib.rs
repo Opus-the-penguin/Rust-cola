@@ -1642,6 +1642,73 @@ impl Rule for StaticMutGlobalRule {
     }
 }
 
+struct NonNullNewUncheckedRule {
+    metadata: RuleMetadata,
+}
+
+impl NonNullNewUncheckedRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA026".to_string(),
+                name: "nonnull-new-unchecked".to_string(),
+                short_description: "NonNull::new_unchecked without prior null guard".to_string(),
+                full_description: "Flags calls to NonNull::new_unchecked, which require proving the pointer is non-null before use; prefer NonNull::new or ensure an explicit null check.".to_string(),
+                help_uri: None,
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for NonNullNewUncheckedRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            let mut evidence = Vec::new();
+
+            for line in &function.body {
+                let trimmed = line.trim();
+                if trimmed.contains("NonNull::new_unchecked")
+                    || (trimmed.contains("NonNull::<") && trimmed.contains("::new_unchecked"))
+                {
+                    evidence.push(trimmed.to_string());
+                }
+            }
+
+            if evidence.is_empty() {
+                continue;
+            }
+
+            findings.push(Finding {
+                rule_id: self.metadata.id.clone(),
+                rule_name: self.metadata.name.clone(),
+                severity: self.metadata.default_severity,
+                message: format!(
+                    "NonNull::new_unchecked used in `{}`; ensure the pointer is proven non-null first",
+                    function.name
+                ),
+                function: function.name.clone(),
+                function_signature: function.signature.clone(),
+                evidence,
+                span: function.span.clone(),
+            });
+        }
+
+        findings
+    }
+}
+
 struct UnsafeSendSyncBoundsRule {
     metadata: RuleMetadata,
 }
@@ -3542,6 +3609,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(OpensslVerifyNoneRule::new()));
     engine.register_rule(Box::new(HardcodedHomePathRule::new()));
     engine.register_rule(Box::new(StaticMutGlobalRule::new()));
+    engine.register_rule(Box::new(NonNullNewUncheckedRule::new()));
     engine.register_rule(Box::new(UnsafeSendSyncBoundsRule::new()));
     engine.register_rule(Box::new(FfiBufferLeakRule::new()));
     engine.register_rule(Box::new(AllocatorMismatchRule::new()));
@@ -4901,6 +4969,12 @@ rules:
                     span: None,
                 },
                 MirFunction {
+                    name: "nonnull_unchecked".to_string(),
+                    signature: "fn nonnull_unchecked(ptr: *mut u8)".to_string(),
+                    body: vec!["    _0 = core::ptr::NonNull::<u8>::new_unchecked(_1);".to_string()],
+                    span: None,
+                },
+                MirFunction {
                     name: "content_length_allocation".to_string(),
                     signature: "fn content_length_allocation(resp: reqwest::Response)".to_string(),
                     body: vec![
@@ -5003,6 +5077,10 @@ rules:
             "expected static mut global rule to fire"
         );
         assert!(
+            triggered.contains(&"RUSTCOLA026"),
+            "expected NonNull::new_unchecked rule to fire"
+        );
+        assert!(
             triggered.contains(&"RUSTCOLA021"),
             "expected content-length allocation rule to fire"
         );
@@ -5076,6 +5154,7 @@ rules:
             "RUSTCOLA013",
             "RUSTCOLA014",
             "RUSTCOLA025",
+            "RUSTCOLA026",
             "RUSTCOLA021",
             "RUSTCOLA022",
             "RUSTCOLA024",
@@ -5237,6 +5316,46 @@ rules:
                 name: "global".to_string(),
                 signature: "fn global()".to_string(),
                 body: vec!["    static mut COUNTER: usize = 0;".to_string()],
+                span: None,
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn nonnull_rule_detects_new_unchecked() {
+        let rule = NonNullNewUncheckedRule::new();
+        let package = MirPackage {
+            crate_name: "demo".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "make_nonnull".to_string(),
+                signature: "fn make_nonnull(ptr: *mut u8)".to_string(),
+                body: vec!["    _2 = core::ptr::NonNull::<u8>::new_unchecked(_1);".to_string()],
+                span: None,
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0]
+            .evidence
+            .iter()
+            .any(|entry| entry.contains("NonNull")));
+    }
+
+    #[test]
+    fn nonnull_rule_skips_analyzer_crate() {
+        let rule = NonNullNewUncheckedRule::new();
+        let package = MirPackage {
+            crate_name: "mir-extractor".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "make_nonnull".to_string(),
+                signature: "fn make_nonnull(ptr: *mut u8)".to_string(),
+                body: vec!["    _2 = core::ptr::NonNull::<u8>::new_unchecked(_1);".to_string()],
                 span: None,
             }],
         };

@@ -40,6 +40,7 @@ cargo run -p cargo-cola -- --crate-path examples/simple --out-dir out/cola --sar
 ```
 
 ```bash
+> Tip: Prefer tool-specific inspection? `readelf --notes target/auditable/release/cargo-cola` (Linux) or `otool -l target/auditable/release/cargo-cola` (macOS) will also display the embedded metadata.
 # macOS/Linux (bash/zsh)
 cd Rust-cola
 cargo run -p cargo-cola -- --crate-path examples/simple --out-dir out/cola --sarif out/cola/cola.sarif --fail-on-findings=false
@@ -144,28 +145,48 @@ All commands accept `--mir-json` and `--findings-json` to override output paths,
 
 ## Auditable release builds
 
-Supply-chain metadata is embedded in the release binary using [`cargo-auditable`](https://github.com/rust-secure-code/cargo-auditable). The CI workflow installs the plugin, produces an auditable `cargo-cola` binary, and verifies the resulting ELF contains the `note.auditable` section. To reproduce locally:
+Supply-chain metadata is embedded in the release binary using [`cargo-auditable`](https://github.com/rust-secure-code/cargo-auditable). The CI workflow installs the plugin, produces an auditable `cargo-cola` binary, and asserts that the artifact includes the `cargo-auditable` metadata marker. To reproduce the same check locally:
 
 ```powershell
 # Windows PowerShell
 cargo install --locked cargo-auditable
 cargo auditable build -p cargo-cola --release --target-dir target/auditable
+$bytes = [System.IO.File]::ReadAllBytes('target/auditable/release/cargo-cola.exe')
+if (-not ([System.Text.Encoding]::ASCII.GetString($bytes).ToLower().Contains('cargo-auditable'))) {
+	throw 'cargo-auditable metadata marker not found'
+}
 ```
 
 ```bash
 # Linux (bash/zsh)
 cargo install --locked cargo-auditable
 cargo auditable build -p cargo-cola --release --target-dir target/auditable
-readelf --notes target/auditable/release/cargo-cola | grep -i auditable
+python - <<'PY'
+from pathlib import Path
+
+binary = Path("target/auditable/release/cargo-cola")
+data = binary.read_bytes()
+if b"cargo-auditable" not in data:
+	raise SystemExit("cargo-auditable metadata marker not found")
+PY
 ```
 
 ```bash
 # macOS (bash/zsh)
 cargo install --locked cargo-auditable
 cargo auditable build -p cargo-cola --release --target-dir target/auditable
-otool -l target/auditable/release/cargo-cola | grep -i auditable
+python3 - <<'PY'
+from pathlib import Path
+
+binary = Path("target/auditable/release/cargo-cola")
+data = binary.read_bytes()
+if b"cargo-auditable" not in data:
+	raise SystemExit("cargo-auditable metadata marker not found")
+PY
 ```
-The generated binary now carries provenance metadata so downstream consumers can run `cargo auditable audit` or other supply-chain scanners without rebuilding from source.
+> Tip: Prefer tool-specific inspection? `readelf --notes target/auditable/release/cargo-cola` (Linux) or `otool -l target/auditable/release/cargo-cola` (macOS) will also display the embedded metadata.
+
+The generated binary now carries provenance metadata so downstream consumers can run `cargo auditable` tooling or other supply-chain scanners without rebuilding from source.
 
 ## Roadmap (abridged)
 

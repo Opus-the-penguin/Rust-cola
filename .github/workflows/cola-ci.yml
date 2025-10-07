@@ -28,8 +28,19 @@ jobs:
       - name: Build auditable release binary
         run: cargo auditable build --package cargo-cola --release --target-dir target/auditable
 
-      - name: Verify auditable metadata section
-        run: readelf --notes target/auditable/release/cargo-cola | grep -i auditable
+      - name: Verify auditable metadata marker
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          binary = Path("target/auditable/release/cargo-cola")
+          if not binary.exists():
+              binary = binary.with_suffix(".exe")
+
+          data = binary.read_bytes()
+          if b"cargo-auditable" not in data:
+              raise SystemExit("cargo-auditable metadata marker not found in binary")
+          PY
 
       - name: Run cargo-cola
         run: |

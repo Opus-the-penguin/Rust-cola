@@ -1709,6 +1709,184 @@ impl Rule for NonNullNewUncheckedRule {
     }
 }
 
+struct MemForgetGuardRule {
+    metadata: RuleMetadata,
+}
+
+impl MemForgetGuardRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA027".to_string(),
+                name: "mem-forget-guard".to_string(),
+                short_description: "mem::forget called on RAII guard".to_string(),
+                full_description: "Detects std::mem::forget or core::mem::forget invocations on synchronization guards (MutexGuard, RwLockGuard, Semaphore permits, etc.), which leak the underlying lock or permit and risk deadlocks or resource exhaustion.".to_string(),
+                help_uri: None,
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn guard_type_tokens() -> &'static [&'static str] {
+        &[
+            "MutexGuard",
+            "RwLockReadGuard",
+            "RwLockWriteGuard",
+            "MappedMutexGuard",
+            "MappedRwLockReadGuard",
+            "MappedRwLockWriteGuard",
+            "SemaphorePermit",
+            "OwnedSemaphorePermit",
+            "OnceGuard",
+            "BlockingMutexGuard",
+            "FairMutexGuard",
+        ]
+    }
+
+    fn guard_method_tokens() -> &'static [&'static str] {
+        &[
+            "::lock(",
+            "::blocking_lock(",
+            "::try_lock(",
+            "::read(",
+            "::write(",
+            "::blocking_read(",
+            "::blocking_write(",
+            "::try_read(",
+            "::try_write(",
+            "::acquire(",
+            "::acquire_owned(",
+            "::try_acquire(",
+            "::try_acquire_owned(",
+            "::acquire_many(",
+            "::acquire_many_owned(",
+            "::try_acquire_many(",
+            "::try_acquire_many_owned(",
+        ]
+    }
+
+    fn assignment_has_guard_signal(assignment: &Assignment) -> bool {
+        let rhs = assignment.rhs.as_str();
+
+        if Self::guard_type_tokens()
+            .iter()
+            .any(|token| rhs.contains(token))
+        {
+            return true;
+        }
+
+        if Self::guard_method_tokens()
+            .iter()
+            .any(|token| rhs.contains(token))
+            && (rhs.contains("Mutex") || rhs.contains("RwLock") || rhs.contains("Semaphore"))
+        {
+            return true;
+        }
+
+        false
+    }
+
+    fn collect_guard_vars(function: &MirFunction) -> (HashSet<String>, HashMap<String, String>) {
+        let dataflow = MirDataflow::new(function);
+        let mut guard_vars: HashSet<String> = HashSet::new();
+        let mut guard_sources: HashMap<String, String> = HashMap::new();
+
+        for assignment in dataflow.assignments() {
+            if Self::assignment_has_guard_signal(assignment) {
+                guard_vars.insert(assignment.target.clone());
+                guard_sources
+                    .entry(assignment.target.clone())
+                    .or_insert_with(|| assignment.line.clone());
+            }
+        }
+
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for assignment in dataflow.assignments() {
+                if guard_vars.contains(&assignment.target) {
+                    continue;
+                }
+
+                if assignment
+                    .sources
+                    .iter()
+                    .any(|source| guard_vars.contains(source))
+                {
+                    guard_vars.insert(assignment.target.clone());
+                    guard_sources
+                        .entry(assignment.target.clone())
+                        .or_insert_with(|| assignment.line.clone());
+                    changed = true;
+                }
+            }
+        }
+
+        (guard_vars, guard_sources)
+    }
+}
+
+impl Rule for MemForgetGuardRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            let (guard_vars, guard_sources) = Self::collect_guard_vars(function);
+            if guard_vars.is_empty() {
+                continue;
+            }
+
+            for line in &function.body {
+                if !line.contains("mem::forget") {
+                    continue;
+                }
+
+                let trimmed = line.trim().to_string();
+                let referenced_guard = guard_vars
+                    .iter()
+                    .find(|var| trimmed.contains(var.as_str()))
+                    .cloned();
+
+                let Some(var) = referenced_guard else {
+                    continue;
+                };
+
+                let mut evidence = vec![trimmed.clone()];
+                if let Some(source_line) = guard_sources.get(&var) {
+                    if !evidence.contains(source_line) {
+                        evidence.push(source_line.clone());
+                    }
+                }
+
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "mem::forget called on synchronization guard `{}` in `{}`",
+                        var, function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence,
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        findings
+    }
+}
+
 struct UnsafeSendSyncBoundsRule {
     metadata: RuleMetadata,
 }
@@ -3610,6 +3788,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(HardcodedHomePathRule::new()));
     engine.register_rule(Box::new(StaticMutGlobalRule::new()));
     engine.register_rule(Box::new(NonNullNewUncheckedRule::new()));
+    engine.register_rule(Box::new(MemForgetGuardRule::new()));
     engine.register_rule(Box::new(UnsafeSendSyncBoundsRule::new()));
     engine.register_rule(Box::new(FfiBufferLeakRule::new()));
     engine.register_rule(Box::new(AllocatorMismatchRule::new()));
@@ -4969,6 +5148,16 @@ rules:
                     span: None,
                 },
                 MirFunction {
+                    name: "forget_guard".to_string(),
+                    signature: "fn forget_guard(mutex: &std::sync::Mutex<i32>)".to_string(),
+                    body: vec![
+                        "    _1 = std::sync::Mutex::lock(move _0) -> [return: bb1, unwind: bb2];".to_string(),
+                        "    _2 = core::result::Result::<std::sync::MutexGuard<'_, i32>, _>::unwrap(move _1);".to_string(),
+                        "    std::mem::forget(move _2);".to_string(),
+                    ],
+                    span: None,
+                },
+                MirFunction {
                     name: "nonnull_unchecked".to_string(),
                     signature: "fn nonnull_unchecked(ptr: *mut u8)".to_string(),
                     body: vec!["    _0 = core::ptr::NonNull::<u8>::new_unchecked(_1);".to_string()],
@@ -5081,6 +5270,10 @@ rules:
             "expected NonNull::new_unchecked rule to fire"
         );
         assert!(
+            triggered.contains(&"RUSTCOLA027"),
+            "expected mem::forget guard rule to fire"
+        );
+        assert!(
             triggered.contains(&"RUSTCOLA021"),
             "expected content-length allocation rule to fire"
         );
@@ -5155,6 +5348,7 @@ rules:
             "RUSTCOLA014",
             "RUSTCOLA025",
             "RUSTCOLA026",
+            "RUSTCOLA027",
             "RUSTCOLA021",
             "RUSTCOLA022",
             "RUSTCOLA024",
@@ -5356,6 +5550,78 @@ rules:
                 name: "make_nonnull".to_string(),
                 signature: "fn make_nonnull(ptr: *mut u8)".to_string(),
                 body: vec!["    _2 = core::ptr::NonNull::<u8>::new_unchecked(_1);".to_string()],
+                span: None,
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn mem_forget_guard_rule_detects_guard_leak() {
+        let rule = MemForgetGuardRule::new();
+        let package = MirPackage {
+            crate_name: "demo".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "forget_guard".to_string(),
+                signature: "fn forget_guard(mutex: &std::sync::Mutex<i32>)".to_string(),
+                body: vec![
+                    "    _1 = std::sync::Mutex::lock(move _0) -> [return: bb1, unwind: bb2];".to_string(),
+                    "    _2 = core::result::Result::<std::sync::MutexGuard<'_, i32>, _>::unwrap(move _1);".to_string(),
+                    "    std::mem::forget(move _2);".to_string(),
+                ],
+                span: None,
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0]
+            .evidence
+            .iter()
+            .any(|entry| entry.contains("mem::forget")));
+        assert!(findings[0]
+            .evidence
+            .iter()
+            .any(|entry| entry.contains("MutexGuard")));
+    }
+
+    #[test]
+    fn mem_forget_guard_rule_skips_analyzer_crate() {
+        let rule = MemForgetGuardRule::new();
+        let package = MirPackage {
+            crate_name: "mir-extractor".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "forget_guard".to_string(),
+                signature: "fn forget_guard(mutex: &std::sync::Mutex<i32>)".to_string(),
+                body: vec![
+                    "    _1 = std::sync::Mutex::lock(move _0) -> [return: bb1, unwind: bb2];".to_string(),
+                    "    _2 = core::result::Result::<std::sync::MutexGuard<'_, i32>, _>::unwrap(move _1);".to_string(),
+                    "    std::mem::forget(move _2);".to_string(),
+                ],
+                span: None,
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn mem_forget_guard_rule_ignores_non_guard_forget() {
+        let rule = MemForgetGuardRule::new();
+        let package = MirPackage {
+            crate_name: "demo".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "forget_vec".to_string(),
+                signature: "fn forget_vec(buffer: Vec<u8>)".to_string(),
+                body: vec![
+                    "    std::mem::forget(move _1);".to_string(),
+                ],
                 span: None,
             }],
         };

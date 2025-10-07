@@ -20,7 +20,7 @@ Feasibility legend:
 8. **Unsafe Send/Sync impls** *(RUSTCOLA015 shipped for missing generic bounds; doc commentary lint pending)* – Highlight `unsafe impl Send/Sync` without safety commentary. **Feasibility:** Heuristic (doc-aware).
 9. **static mut globals** *(shipped — RUSTCOLA025)* – Warn about mutable statics that break thread safety. **Feasibility:** Heuristic.
 10. **NonNull::new_unchecked misuse** *(shipped — RUSTCOLA026)* – Ensure null checks before `new_unchecked`. **Feasibility:** Heuristic.
-11. **mem::forget on guards** – Catch forgetting RAII guards that release locks/resources. **Feasibility:** MIR dataflow.
+11. **mem::forget on guards** *(shipped — RUSTCOLA027)* – Catch forgetting RAII guards that release locks/resources. **Feasibility:** MIR dataflow.
 12. **repr(packed) field references** – Avoid taking references to packed struct fields. **Feasibility:** Heuristic.
 13. **slice::from_raw_parts length inflation** – Validate slice length when constructed from raw pointers. **Feasibility:** Advanced.
 14. **ptr::copy overlap** – Ensure non-overlapping regions for `copy_nonoverlapping`. **Feasibility:** Advanced.

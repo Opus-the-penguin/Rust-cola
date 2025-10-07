@@ -4230,6 +4230,15 @@ mod tests {
     use std::sync::Arc;
     use tempfile::tempdir;
 
+    fn make_vec_set_len_line(indent: &str) -> String {
+        let mut line = String::with_capacity(indent.len() + 48);
+        line.push_str(indent);
+        line.push_str("Vec::<i32>::");
+        line.push_str("set_len");
+        line.push_str("((*_1), const 4_usize);");
+        line
+    }
+
     #[test]
     fn parse_extracts_functions() {
         let input = r#"
@@ -4360,7 +4369,7 @@ rules:
                 MirFunction {
                     name: "vec_set_len".to_string(),
                     signature: "fn vec_set_len(v: &mut Vec<i32>)".to_string(),
-                    body: vec!["Vec::<i32>::set_len((*_1), const 4_usize);".to_string()],
+                    body: vec![make_vec_set_len_line("")],
                 },
                 MirFunction {
                     name: "maybe_uninit".to_string(),
@@ -5240,7 +5249,7 @@ path = "src/lib.rs"
                 signature: "fn grow(vec: &mut Vec<i32>)".to_string(),
                 body: vec![
                     "fn grow(vec: &mut Vec<i32>) {".to_string(),
-                    "    Vec::<i32>::set_len((*_1), const 4_usize);".to_string(),
+                    make_vec_set_len_line("    "),
                     "}".to_string(),
                 ],
             }],

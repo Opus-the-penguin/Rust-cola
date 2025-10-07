@@ -2,3 +2,7 @@ target/
 out/
 **/target/
 **/*.rs.bk
+
+Cargo.lock
+
+rustup-init.exe

@@ -1471,6 +1471,24 @@ fn strip_string_literals(mut state: StringLiteralState, line: &str) -> (String, 
     (result, state)
 }
 
+fn collect_sanitized_matches(lines: &[String], patterns: &[&str]) -> Vec<String> {
+    let mut state = StringLiteralState::default();
+
+    lines
+        .iter()
+        .filter_map(|line| {
+            let (sanitized, next_state) = strip_string_literals(state, line);
+            state = next_state;
+
+            if patterns.iter().any(|needle| sanitized.contains(needle)) {
+                Some(line.trim().to_string())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 impl UnsafeSendSyncBoundsRule {
     fn new() -> Self {
         Self {
@@ -2332,13 +2350,13 @@ impl Rule for AllocatorMismatchRule {
                     .unwrap_or_else(|| block_lines.first().cloned().unwrap_or_default());
 
                 let rust_alloc_hits =
-                    collect_matches(&block_lines, Self::rust_allocation_patterns());
+                    collect_sanitized_matches(&block_lines, Self::rust_allocation_patterns());
                 let rust_free_hits =
-                    collect_matches(&block_lines, Self::rust_deallocation_patterns());
+                    collect_sanitized_matches(&block_lines, Self::rust_deallocation_patterns());
                 let foreign_alloc_hits =
-                    collect_matches(&block_lines, Self::foreign_allocation_patterns());
+                    collect_sanitized_matches(&block_lines, Self::foreign_allocation_patterns());
                 let foreign_free_hits =
-                    collect_matches(&block_lines, Self::foreign_deallocation_patterns());
+                    collect_sanitized_matches(&block_lines, Self::foreign_deallocation_patterns());
 
                 let rust_to_foreign = !rust_alloc_hits.is_empty() && !foreign_free_hits.is_empty();
                 let foreign_to_rust = !foreign_alloc_hits.is_empty() && !rust_free_hits.is_empty();
@@ -4976,6 +4994,56 @@ pub extern "C" fn ffi_allocate(target: *mut *mut u8, len: usize) -> Result<(), &
         assert!(
             matches.is_empty(),
             "string literal containing FFI example should not trigger RUSTCOLA016",
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn allocator_mismatch_rule_ignores_string_literals() -> Result<()> {
+        let temp = tempdir().expect("temp dir");
+        let crate_root = temp.path();
+
+        fs::create_dir_all(crate_root.join("src"))?;
+        fs::write(
+            crate_root.join("Cargo.toml"),
+            r#"[package]
+name = "allocator-mismatch-string-literals"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+"#,
+        )?;
+        fs::write(
+            crate_root.join("src/lib.rs"),
+            r###"pub fn literal_patterns() {
+    let message = "Box::into_raw should not trigger";
+    let raw_literal = r#"libc::free mentioned here"#;
+    let multiline = r#"Vec::from_raw_parts in documentation"#;
+    let combined = format!("{} {}", message, raw_literal);
+    drop((multiline, combined));
+}
+"###,
+        )?;
+
+        let package = MirPackage {
+            crate_name: "allocator-mismatch-string-literals".to_string(),
+            crate_root: crate_root.to_string_lossy().to_string(),
+            functions: Vec::new(),
+        };
+
+        let analysis = RuleEngine::with_builtin_rules().run(&package);
+        let findings: Vec<_> = analysis
+            .findings
+            .iter()
+            .filter(|finding| finding.rule_id == "RUSTCOLA017")
+            .collect();
+
+        assert!(
+            findings.is_empty(),
+            "string literals referencing allocator names should not trigger RUSTCOLA017"
         );
 
         Ok(())

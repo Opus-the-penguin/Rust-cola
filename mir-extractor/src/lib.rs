@@ -939,16 +939,51 @@ impl Rule for UntrustedEnvInputRule {
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
         let mut findings = Vec::new();
-        let patterns = [
-            "env::var",
-            "env::vars",
-            "env::var_os",
-            "env::args",
-            "env::args_os",
-        ];
-
         for function in &package.functions {
-            let evidence = collect_case_insensitive_matches(&function.body, &patterns);
+            let mut evidence = Vec::new();
+            let mut seen = HashSet::new();
+
+            for line in &function.body {
+                let lowered = line.to_lowercase();
+
+                let patterns = [
+                    "env::var",
+                    "env::vars",
+                    "env::var_os",
+                    "env::args",
+                    "env::args_os",
+                ];
+
+                let matches_call = patterns.iter().any(|pattern| {
+                    let suffix = format!("{}(", pattern);
+                    let std_suffix = if let Some(rest) = pattern.strip_prefix("env::") {
+                        Some(format!("std::env::{}(", rest))
+                    } else {
+                        None
+                    };
+                    let std_root_suffix = if let Some(rest) = pattern.strip_prefix("env::") {
+                        Some(format!("::std::env::{}(", rest))
+                    } else {
+                        None
+                    };
+
+                    lowered.contains(&suffix)
+                        || std_suffix
+                            .as_ref()
+                            .map_or(false, |candidate| lowered.contains(candidate))
+                        || std_root_suffix
+                            .as_ref()
+                            .map_or(false, |candidate| lowered.contains(candidate))
+                });
+
+                if matches_call {
+                    let trimmed = line.trim().to_string();
+                    if seen.insert(trimmed.clone()) {
+                        evidence.push(trimmed);
+                    }
+                }
+            }
+
             if evidence.is_empty() {
                 continue;
             }
@@ -5017,6 +5052,45 @@ rules:
         assert!(finding
             .message
             .contains("Process command execution detected"));
+    }
+
+    #[test]
+    fn untrusted_env_rule_detects_env_call() {
+        let rule = UntrustedEnvInputRule::new();
+        let package = MirPackage {
+            crate_name: "demo".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "read_env".to_string(),
+                signature: "fn read_env()".to_string(),
+                body: vec!["    _1 = std::env::var(const \"FOO\");".to_string()],
+                span: None,
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert_eq!(findings.len(), 1);
+        let evidence = &findings[0].evidence;
+        assert_eq!(evidence.len(), 1);
+        assert!(evidence[0].contains("std::env::var"));
+    }
+
+    #[test]
+    fn untrusted_env_rule_ignores_string_literal() {
+        let rule = UntrustedEnvInputRule::new();
+        let package = MirPackage {
+            crate_name: "demo".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "constant".to_string(),
+                signature: "fn constant()".to_string(),
+                body: vec!["    const _: &str = \"std::env::var\";".to_string()],
+                span: None,
+            }],
+        };
+
+        let findings = rule.evaluate(&package);
+        assert!(findings.is_empty());
     }
 
     #[test]

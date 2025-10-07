@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
 use crate::{dataflow::extract_variables, MirDataflow, MirFunction};
 
@@ -55,12 +55,20 @@ impl Default for PrototypeOptions {
             serialization_sinks: vec![
                 "put_i32".to_string(),
                 "put_u32".to_string(),
+                "put_u64".to_string(),
                 "put_i16".to_string(),
                 "put_u16".to_string(),
+                "put_u8".to_string(),
                 "write_i32".to_string(),
                 "write_u32".to_string(),
+                "write_u64".to_string(),
                 "write_i16".to_string(),
                 "write_u16".to_string(),
+                "write_u8".to_string(),
+                "unwrap(".to_string(),
+                "::unwrap(".to_string(),
+                "expect(".to_string(),
+                "::expect(".to_string(),
             ],
             length_identifiers: vec![
                 "len".to_string(),
@@ -113,12 +121,7 @@ pub fn detect_content_length_allocations_with_options(
     options: &PrototypeOptions,
 ) -> Vec<ContentLengthAllocation> {
     let dataflow = MirDataflow::new(function);
-    let tainted = dataflow.taint_from(|assignment| {
-        let rhs_lower = assignment.rhs.to_lowercase();
-        rhs_lower.contains("content_length")
-            || rhs_lower.contains("\"content-length\"")
-            || rhs_lower.contains("header::content_length")
-    });
+    let tainted = dataflow.taint_from(|assignment| rhs_mentions_content_length(&assignment.rhs));
 
     if tainted.is_empty() {
         return Vec::new();
@@ -203,6 +206,21 @@ fn extract_capacity_variable(line: &str) -> Option<String> {
     let inside = &remainder[1..closing];
     let vars = extract_variables(inside);
     vars.into_iter().next()
+}
+
+fn rhs_mentions_content_length(rhs: &str) -> bool {
+    let lower = rhs.to_lowercase();
+    if lower.contains("content_length")
+        || lower.contains("\"content-length\"")
+        || lower.contains("header::content-length")
+        || lower.contains("headername::from_static(\"content-length\"")
+        || lower.contains("headervalue::from_static(\"content-length\"")
+        || lower.contains("from_bytes(b\"content-length\")")
+    {
+        return true;
+    }
+
+    rhs.contains("CONTENT_LENGTH")
 }
 
 fn is_guarded_capacity(
@@ -312,23 +330,51 @@ pub fn detect_broadcast_unsync_payloads_with_options(
     function: &MirFunction,
     options: &PrototypeOptions,
 ) -> Vec<BroadcastUnsyncUsage> {
-    let mut findings = Vec::new();
+    let dataflow = MirDataflow::new(function);
+    let mut seed_lines = Vec::new();
 
-    for line in &function.body {
-        if !(line.contains("tokio::sync::broadcast::channel")
-            || line.contains("tokio::sync::broadcast::Sender::"))
+    let unsync_vars = dataflow.taint_from(|assignment| {
+        if is_broadcast_constructor(&assignment.rhs) && payload_looks_unsync(&assignment.rhs, options)
         {
+            seed_lines.push(assignment.line.trim().to_string());
+            return true;
+        }
+
+        false
+    });
+
+    if unsync_vars.is_empty() {
+        return seed_lines
+            .into_iter()
+            .map(|line| BroadcastUnsyncUsage { line })
+            .collect();
+    }
+
+    let mut lines: BTreeSet<String> = seed_lines.into_iter().collect();
+
+    for raw_line in &function.body {
+        let trimmed = raw_line.trim();
+        if trimmed.is_empty() {
             continue;
         }
 
-        if payload_looks_unsync(line, options) {
-            findings.push(BroadcastUnsyncUsage {
-                line: line.trim().to_string(),
-            });
+        let lower = trimmed.to_lowercase();
+        let references_unsync_var = unsync_vars.iter().any(|var| trimmed.contains(var));
+
+        if payload_looks_unsync(trimmed, options) && lower.contains("tokio::sync::broadcast") {
+            lines.insert(trimmed.to_string());
+            continue;
+        }
+
+        if references_unsync_var && line_mentions_broadcast_usage(&lower) {
+            lines.insert(trimmed.to_string());
         }
     }
 
-    findings
+    lines
+        .into_iter()
+        .map(|line| BroadcastUnsyncUsage { line })
+        .collect()
 }
 
 pub fn detect_command_invocations(function: &MirFunction) -> Vec<CommandInvocation> {
@@ -687,6 +733,26 @@ fn is_try_into_narrow(rhs_lower: &str, options: &PrototypeOptions) -> bool {
         .try_into_targets
         .iter()
         .any(|target| rhs_lower.contains(target))
+}
+
+fn is_broadcast_constructor(rhs: &str) -> bool {
+    let lower = rhs.to_lowercase();
+    lower.contains("tokio::sync::broadcast::channel")
+        || lower.contains("tokio::sync::broadcast::sender::")
+        || lower.contains("tokio::sync::broadcast::receiver::")
+}
+
+fn line_mentions_broadcast_usage(lower: &str) -> bool {
+    [
+        "tokio::sync::broadcast::",
+        ".send(",
+        "::send(",
+        "::send_ref(",
+        ".subscribe(",
+        "::subscribe(",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker))
 }
 
 fn payload_looks_unsync(line: &str, options: &PrototypeOptions) -> bool {

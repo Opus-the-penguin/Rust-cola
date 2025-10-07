@@ -14,30 +14,32 @@ RustSec advisories [RUSTSEC-2024-0363](https://rustsec.org/advisories/RUSTSEC-20
 
 - Added `detect_truncating_len_casts` in `mir-extractor/src/prototypes.rs`.
 - Seeds taint from `debug` statements with names containing `len`, `length`, `size`, or `payload`, and from assignments that call `.len()`/`length` helpers.
-- Propagates taint through MIR assignments via the existing dataflow helper.
-- Flags casts whose RHS contains both `IntToInt` and a narrow target (`as i32`, `as u16`, etc.) when fed by tainted sources.
-- Covered by new unit tests under `prototypes::tests`.
+- Propagates taint through MIR assignments via the existing dataflow helper and collects downstream serialization sinks (`BufMut::put_*`, `write_*`) tied to the narrowed value.
+- Flags casts whose RHS contains both `IntToInt` and a narrow target (`as i32`, `as u16`, etc.) or invokes `.try_into()` for those types when fed by tainted sources.
+- Covered by unit tests under `prototypes::tests`.
 
 ## Current coverage
 
 - Detects direct `as i32`/`as u32` conversions of tainted length values, even when they flow through intermediate temporaries.
+- Catches `.try_into::<u32>()` / `.try_into::<i32>()` (and similar) chains, including the common `.unwrap()` / `.expect()` follow-ups.
+- Links findings to the MIR lines that serialize the narrowed value via `BufMut::put_*` or `write_*`, helping confirm exploitable sinks.
 - Ignores widening casts (e.g., `as i64`), reducing false positives for safe promotions.
 - Runs as part of `cargo test -p mir-extractor`, keeping feedback tight.
 
 ## Limitations & open questions
 
-- Only matches explicit `as` casts; conversions using `try_into`, `clamp`, or manual byte-splitting are currently invisible.
 - Keyword-based seeding may miss bespoke field names (e.g., `frame_bytes`). We may need configuration or richer semantic cues.
-- The prototype does not yet reason about protocol writers—future work should correlate the cast with serialization sinks.
+- The serialization sink list is heuristic; it could benefit from configuration to cover crate-specific helpers.
+- The prototype still treats any guard as textual; we could tighten the signal by correlating casts with explicit bound checks.
 
 ## Next steps
 
-1. Expand detection to cover `.try_into()` + `.unwrap()` style narrowing conversions.
-2. Track whether the narrowed value reaches network write helpers (`BufMut::put_u32`, etc.).
+1. Allow rulepacks or configuration to teach additional length identifiers and serialization sinks.
+2. Correlate casts with protocol-level context (e.g., specific SQL wire builders) to prioritize high-risk findings.
 3. Integrate into a real rule with SARIF metadata and tunable severity once signal quality is confirmed.
 
 ## Artifacts
 
 - `mir-extractor/src/prototypes.rs` — `detect_truncating_len_casts` implementation and helpers.
-- Unit tests in `mir-extractor/src/prototypes.rs` (`detects_truncating_len_cast`, `ignores_wide_len_cast`).
+- Unit tests in `mir-extractor/src/prototypes.rs` (`detects_truncating_len_cast`, `detects_try_into_len_cast`, `captures_serialization_sinks`, `ignores_wide_len_cast`).
 - Verified with `cargo test -p mir-extractor`.

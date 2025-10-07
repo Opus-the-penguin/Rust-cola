@@ -13,12 +13,12 @@ RustSec advisory [RUSTSEC-2025-0015](https://rustsec.org/advisories/RUSTSEC-2025
 ## Implementation snapshot
 
 - Added a lightweight MIR assignment parser (`MirDataflow`) that collects `_n = ...` statements and extracts their operand dependencies. The helper performs fixed-point propagation of tainted variables.
-- Built `detect_content_length_allocations` on top of the helper. It marks variables as tainted when their defining expression references `content_length` invocations or `"content-length"` literals, then scans for `with_capacity` / `reserve*` calls whose argument variables are tainted.
+- Built `detect_content_length_allocations` on top of the helper. It now seeds taint when the defining expression references `content_length` invocations, lowercase header literals, or typed helpers such as `HeaderName::from_static("content-length")`, `HeaderValue::from_static`, and their `from_bytes(b"content-length")` equivalents. `CONTENT_LENGTH` constants count as sources as well.
 - Captured the functionality in unit tests inside `mir-extractor` so the proof-of-concept runs during `cargo test`.
 
 ## Current coverage
 
-- Detects simple flows where `Response::content_length` or a header lookup feeds directly or indirectly into `Vec::with_capacity`.
+- Detects flows where `Response::content_length`, header string literals, typed constants (`CONTENT_LENGTH`), or helper constructors (`HeaderName::from_static`, `HeaderValue::from_static`, `from_bytes(b"content-length")`) feed directly or indirectly into `Vec::with_capacity`.
 - Propagates through multiple assignment hops and survives conversions such as copies or moves.
 - Handles tuple destructuring (`(_1, _2) = ...`) and Option projections (`(_5.0: Option<_>)`) so taint survives common unwrapping patterns.
 - Recognizes upper-bound guards such as `core::cmp::min`, `.clamp(...)`, and `assert!(len <= MAX)` so guarded allocations are suppressed.
@@ -26,7 +26,7 @@ RustSec advisory [RUSTSEC-2025-0015](https://rustsec.org/advisories/RUSTSEC-2025
 
 ## Limitations & open questions
 
-- Sources only trigger on textual matches; we should generalize to typed paths (e.g., `http::header::CONTENT_LENGTH` constants).
+- Source detection still relies on textual heuristics, even though we now match common typed helpers. We should eventually bind directly to semantic paths so aliases or reexports do not slip through.
 - Complex aggregation (e.g., storing lengths inside structs or slices) can still hide taint from the current parser.
 - Guard detection ignores custom helper functions that enforce bounds; we should surface a way to configure trusted clamps.
 

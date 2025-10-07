@@ -1536,6 +1536,43 @@ impl UnsafeSendSyncBoundsRule {
             return true;
         }
 
+        if let Some(start) = normalized.find('<') {
+            let (path, generics) = normalized.split_at(start);
+            if Self::bound_matches_trait(path.trim_end_matches('<'), trait_name) {
+                return generics
+                    .trim_matches(|c| c == '<' || c == '>')
+                    .split(',')
+                    .any(|part| Self::bound_matches_trait(part, trait_name));
+            }
+        }
+
+        if let Some(idx) = normalized.find('<') {
+            let inner = normalized[idx + 1..]
+                .trim_end_matches('>')
+                .trim();
+            if inner.starts_with("*const")
+                || inner.starts_with("*mut")
+                || inner.starts_with('&')
+            {
+                return true;
+            }
+        }
+
+        let mut tokens = normalized
+            .split(|c: char| c == ':' || c == '+' || c == ',' || c.is_whitespace())
+            .filter(|token| !token.is_empty())
+            .peekable();
+
+        if tokens.clone().any(|token| token == trait_name) {
+            return true;
+        }
+
+        if trait_name == "Send"
+            && tokens.any(|token| token == "Sync" || token.ends_with("::Sync"))
+        {
+            return true;
+        }
+
         false
     }
 }
@@ -4436,6 +4473,10 @@ unsafe impl<T: Send> Send for SafeWrapper<T> {}
 
         unsafe impl<T: std::marker::Send> Send for QualifiedSafe<T> {}
 
+        pub struct PointerWrapper<T>(PhantomData<*const T>);
+
+        unsafe impl<T: Sync> Send for PointerWrapper<T> {}
+
         pub struct WhereSync<T>(PhantomData<T>);
 
         unsafe impl<T> Sync for WhereSync<T>
@@ -4508,6 +4549,12 @@ unsafe impl<T: Send> Send for SafeWrapper<T> {}
                 .iter()
                 .any(|sig| sig.contains("unsafe impl<T: std::marker::Send> Send for QualifiedSafe<T>")),
             "QualifiedSafe with fully qualified bound should not be flagged"
+        );
+        assert!(
+            !signatures
+                .iter()
+                .any(|sig| sig.contains("unsafe impl<T: Sync> Send for PointerWrapper<T>")),
+            "PointerWrapper requires Sync on T and should not be flagged"
         );
 
         Ok(())

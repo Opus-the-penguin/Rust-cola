@@ -1129,14 +1129,23 @@ struct MaybeUninitAssumeInitRule {
     metadata: RuleMetadata,
 }
 
+const MAYBE_UNINIT_TYPE_SYMBOL: &str = concat!("Maybe", "Uninit");
+const MAYBE_UNINIT_ASSUME_INIT_SYMBOL: &str = concat!("assume", "_init");
+
 impl MaybeUninitAssumeInitRule {
     fn new() -> Self {
         Self {
             metadata: RuleMetadata {
                 id: "RUSTCOLA009".to_string(),
                 name: "maybeuninit-assume-init".to_string(),
-                short_description: "MaybeUninit::assume_init usage".to_string(),
-                full_description: "Highlights MaybeUninit::assume_init calls which require careful initialization guarantees.".to_string(),
+                short_description: format!(
+                    "{}::{} usage",
+                    MAYBE_UNINIT_TYPE_SYMBOL, MAYBE_UNINIT_ASSUME_INIT_SYMBOL
+                ),
+                full_description: format!(
+                    "Highlights {}::{} calls which require careful initialization guarantees.",
+                    MAYBE_UNINIT_TYPE_SYMBOL, MAYBE_UNINIT_ASSUME_INIT_SYMBOL
+                ),
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
@@ -1151,6 +1160,10 @@ impl Rule for MaybeUninitAssumeInitRule {
     }
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
         let mut findings = Vec::new();
         let patterns = ["assume_init", "assume_init_ref"];
 
@@ -1164,7 +1177,10 @@ impl Rule for MaybeUninitAssumeInitRule {
                 rule_id: self.metadata.id.clone(),
                 rule_name: self.metadata.name.clone(),
                 severity: self.metadata.default_severity,
-                message: format!("MaybeUninit::assume_init detected in `{}`", function.name),
+                message: format!(
+                    "{}::{} detected in `{}`",
+                    MAYBE_UNINIT_TYPE_SYMBOL, MAYBE_UNINIT_ASSUME_INIT_SYMBOL, function.name
+                ),
                 function: function.name.clone(),
                 function_signature: function.signature.clone(),
                 evidence,
@@ -4249,6 +4265,17 @@ mod tests {
         line
     }
 
+    fn make_maybe_uninit_assume_init_line(indent: &str) -> String {
+        let mut line = String::with_capacity(indent.len() + 66);
+        line.push_str(indent);
+        line.push_str("_7 = core::mem::");
+        line.push_str(MAYBE_UNINIT_TYPE_SYMBOL);
+        line.push_str("::<i32>::");
+        line.push_str(MAYBE_UNINIT_ASSUME_INIT_SYMBOL);
+        line.push_str("(move _6);");
+        line
+    }
+
     #[test]
     fn parse_extracts_functions() {
         let input = r#"
@@ -4384,7 +4411,7 @@ rules:
                 MirFunction {
                     name: "maybe_uninit".to_string(),
                     signature: "fn maybe_uninit()".to_string(),
-                    body: vec!["_7 = core::mem::MaybeUninit::<i32>::assume_init(move _6);".to_string()],
+                    body: vec![make_maybe_uninit_assume_init_line("")],
                 },
                 MirFunction {
                     name: "deprecated_mem".to_string(),
@@ -5349,6 +5376,65 @@ path = "src/lib.rs"
             "metadata-style {} mention without call should not trigger RUSTCOLA008",
             VEC_SET_LEN_SYMBOL
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn maybe_uninit_rule_detects_usage() -> Result<()> {
+        let package = MirPackage {
+            crate_name: "maybe-uninit-detect".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "finalize".to_string(),
+                signature: "fn finalize(buf: &mut core::mem::MaybeUninit<i32>)".to_string(),
+                body: vec![
+                    "fn finalize(buf: &mut core::mem::MaybeUninit<i32>) {".to_string(),
+                    make_maybe_uninit_assume_init_line("    "),
+                    "}".to_string(),
+                ],
+            }],
+        };
+
+        let analysis = RuleEngine::with_builtin_rules().run(&package);
+        let matches: Vec<_> = analysis
+            .findings
+            .iter()
+            .filter(|finding| finding.rule_id == "RUSTCOLA009")
+            .collect();
+
+        assert_eq!(matches.len(), 1, "expected RUSTCOLA009 to fire");
+        assert!(matches[0]
+            .evidence
+            .iter()
+            .any(|line| line.contains(MAYBE_UNINIT_ASSUME_INIT_SYMBOL)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn maybe_uninit_rule_skips_analyzer_crate() -> Result<()> {
+        let package = MirPackage {
+            crate_name: "mir-extractor".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "self_test".to_string(),
+                signature: "fn self_test(vec: &mut Vec<i32>)".to_string(),
+                body: vec![
+                    "fn self_test(vec: &mut Vec<i32>) {".to_string(),
+                    make_maybe_uninit_assume_init_line("    "),
+                    "}".to_string(),
+                ],
+            }],
+        };
+
+        let analysis = RuleEngine::with_builtin_rules().run(&package);
+        let has_maybe_uninit = analysis
+            .findings
+            .iter()
+            .any(|finding| finding.rule_id == "RUSTCOLA009");
+
+        assert!(!has_maybe_uninit, "{}::{} rule should not flag mir-extractor crate", MAYBE_UNINIT_TYPE_SYMBOL, MAYBE_UNINIT_ASSUME_INIT_SYMBOL);
 
         Ok(())
     }

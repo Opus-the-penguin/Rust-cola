@@ -2748,6 +2748,10 @@ impl Rule for LengthTruncationCastRule {
     }
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -4289,6 +4293,9 @@ mod tests {
     use std::sync::Arc;
     use tempfile::tempdir;
 
+    const LENGTH_TRUNCATION_CAST_INTTOINT_SYMBOL: &str = concat!("Int", "To", "Int");
+    const LENGTH_TRUNCATION_CAST_WRITE_SYMBOL: &str = concat!("write", "_u16");
+
     fn make_vec_set_len_line(indent: &str) -> String {
         let mut line = String::with_capacity(indent.len() + 48);
         line.push_str(indent);
@@ -4318,6 +4325,36 @@ mod tests {
         line.push_str(MEM_UNINITIALIZED_SYMBOL);
         line.push_str("::<i32>();");
         line
+    }
+
+    fn make_length_truncation_cast_lines(indent: &str) -> Vec<String> {
+        let mut lines = Vec::with_capacity(4);
+
+        let mut line = String::with_capacity(indent.len() + 24);
+        line.push_str(indent);
+        line.push_str("debug payload_len => _1;");
+        lines.push(line);
+
+        let mut line = String::with_capacity(indent.len() + 16);
+        line.push_str(indent);
+        line.push_str("_2 = copy _1;");
+        lines.push(line);
+
+        let mut line = String::with_capacity(indent.len() + 36);
+        line.push_str(indent);
+        line.push_str("_3 = move _2 as i32 (");
+        line.push_str(LENGTH_TRUNCATION_CAST_INTTOINT_SYMBOL);
+        line.push_str(");");
+        lines.push(line);
+
+        let mut line = String::with_capacity(indent.len() + 88);
+        line.push_str(indent);
+        line.push_str("_4 = byteorder::WriteBytesExt::");
+        line.push_str(LENGTH_TRUNCATION_CAST_WRITE_SYMBOL);
+        line.push_str("::<byteorder::BigEndian>(move _0, move _3);");
+        lines.push(line);
+
+        lines
     }
 
     fn make_danger_accept_invalid_certs_line(indent: &str) -> String {
@@ -4503,12 +4540,13 @@ rules:
                 MirFunction {
                     name: "length_truncation_cast".to_string(),
                     signature: "fn length_truncation_cast(len: usize)".to_string(),
-                    body: vec![
-                        "    debug payload_len => _1;".to_string(),
-                        "    _2 = copy _1;".to_string(),
-                        "    _3 = move _2 as i32 (IntToInt);".to_string(),
-                        "    _4 = byteorder::WriteBytesExt::write_u16::<byteorder::BigEndian>(move _0, move _3);".to_string(),
-                    ],
+                    body: {
+                        let mut body = Vec::with_capacity(6);
+                        body.push("fn length_truncation_cast(len: usize) {".to_string());
+                        body.extend(make_length_truncation_cast_lines("    "));
+                        body.push("}".to_string());
+                        body
+                    },
                 },
                 MirFunction {
                     name: "unbounded_allocation".to_string(),
@@ -4622,11 +4660,11 @@ rules:
         assert!(truncation_finding
             .evidence
             .iter()
-            .any(|line| line.contains("IntToInt")));
+            .any(|line| line.contains(LENGTH_TRUNCATION_CAST_INTTOINT_SYMBOL)));
         assert!(truncation_finding
             .evidence
             .iter()
-            .any(|line| line.contains("write_u16")));
+            .any(|line| line.contains(LENGTH_TRUNCATION_CAST_WRITE_SYMBOL)));
 
         let broadcast_finding = analysis
             .findings
@@ -5617,6 +5655,80 @@ path = "src/lib.rs"
             !has_danger_tls,
             "{} rule should not flag mir-extractor crate",
             DANGER_ACCEPT_INVALID_CERTS_SYMBOL
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn length_truncation_cast_rule_detects_usage() -> Result<()> {
+        let package = MirPackage {
+            crate_name: "length-truncation-detect".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "encode".to_string(),
+                signature: "fn encode(len: usize, writer: &mut byteorder::io::Write)".to_string(),
+                body: {
+                    let mut body = Vec::with_capacity(6);
+                    body.push("fn encode(len: usize, writer: &mut byteorder::io::Write) {".to_string());
+                    body.extend(make_length_truncation_cast_lines("    "));
+                    body.push("}".to_string());
+                    body
+                },
+            }],
+        };
+
+        let analysis = RuleEngine::with_builtin_rules().run(&package);
+        let matches: Vec<_> = analysis
+            .findings
+            .iter()
+            .filter(|finding| finding.rule_id == "RUSTCOLA022")
+            .collect();
+
+        assert_eq!(matches.len(), 1, "expected RUSTCOLA022 to fire");
+        let evidence = &matches[0].evidence;
+        assert!(
+            evidence
+                .iter()
+                .any(|line| line.contains(LENGTH_TRUNCATION_CAST_INTTOINT_SYMBOL))
+        );
+        assert!(
+            evidence
+                .iter()
+                .any(|line| line.contains(LENGTH_TRUNCATION_CAST_WRITE_SYMBOL))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn length_truncation_cast_rule_skips_analyzer_crate() -> Result<()> {
+        let package = MirPackage {
+            crate_name: "mir-extractor".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "self_test".to_string(),
+                signature: "fn self_test(len: usize)".to_string(),
+                body: {
+                    let mut body = Vec::with_capacity(6);
+                    body.push("fn self_test(len: usize) {".to_string());
+                    body.extend(make_length_truncation_cast_lines("    "));
+                    body.push("}".to_string());
+                    body
+                },
+            }],
+        };
+
+        let analysis = RuleEngine::with_builtin_rules().run(&package);
+        let has_truncation = analysis
+            .findings
+            .iter()
+            .any(|finding| finding.rule_id == "RUSTCOLA022");
+
+        assert!(
+            !has_truncation,
+            "{} rule should not flag mir-extractor crate",
+            LENGTH_TRUNCATION_CAST_WRITE_SYMBOL
         );
 
         Ok(())

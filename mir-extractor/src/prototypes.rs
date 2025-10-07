@@ -345,12 +345,47 @@ pub fn detect_command_invocations(function: &MirFunction) -> Vec<CommandInvocati
 
     let mut findings = Vec::new();
 
+    fn pattern_outside_quotes(text: &str, idx: usize) -> bool {
+        let bytes = text.as_bytes();
+        let mut in_quotes = false;
+        let mut escaped = false;
+
+        for (pos, byte) in bytes.iter().enumerate() {
+            if pos >= idx {
+                break;
+            }
+
+            if escaped {
+                escaped = false;
+                continue;
+            }
+
+            match byte {
+                b'\\' => escaped = true,
+                b'"' => in_quotes = !in_quotes,
+                _ => {}
+            }
+        }
+
+        !in_quotes
+    }
+
     for assignment in dataflow.assignments() {
         let lowered = assignment.rhs.to_lowercase();
-        if !(lowered.contains("std::process::command::new")
-            || lowered.contains("command::new(")
-            || lowered.contains("command::new::<"))
-        {
+        let first_paren = lowered.find('(').unwrap_or(lowered.len());
+
+        let is_process_command = [
+            "::std::process::command::new",
+            "std::process::command::new",
+        ]
+        .into_iter()
+        .any(|pattern| {
+            lowered.find(pattern).map_or(false, |idx| {
+                idx < first_paren && pattern_outside_quotes(&assignment.rhs, idx)
+            })
+        });
+
+        if !is_process_command {
             continue;
         }
 
@@ -777,6 +812,27 @@ mod tests {
         let invocations = detect_command_invocations(&function);
         assert_eq!(invocations.len(), 1);
         assert!(invocations[0].tainted_args.is_empty());
+    }
+
+    #[test]
+    fn ignores_clap_command_builder() {
+        let function = function_from_lines(&[
+            "    _1 = clap::Command::new(const \"cargo-cola\");",
+            "    _2 = clap::Command::arg(move _1, const \"--help\");",
+        ]);
+
+        let invocations = detect_command_invocations(&function);
+        assert!(invocations.is_empty());
+    }
+
+    #[test]
+    fn ignores_command_string_literal_checks() {
+        let function = function_from_lines(&[
+            "    _1 = core::str::<impl str>::contains::<&str>(copy _0, const \"std::process::Command::new\");",
+        ]);
+
+        let invocations = detect_command_invocations(&function);
+        assert!(invocations.is_empty());
     }
 
     #[test]

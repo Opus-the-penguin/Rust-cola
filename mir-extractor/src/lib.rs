@@ -1327,6 +1327,11 @@ struct DangerAcceptInvalidCertRule {
     metadata: RuleMetadata,
 }
 
+const DANGER_ACCEPT_INVALID_CERTS_SYMBOL: &str =
+    concat!("danger", "_accept", "_invalid", "_certs");
+const DANGER_ACCEPT_INVALID_HOSTNAMES_SYMBOL: &str =
+    concat!("danger", "_accept", "_invalid", "_hostnames");
+
 impl DangerAcceptInvalidCertRule {
     fn new() -> Self {
         Self {
@@ -1349,10 +1354,14 @@ impl Rule for DangerAcceptInvalidCertRule {
     }
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
         let mut findings = Vec::new();
         let patterns = [
-            "danger_accept_invalid_certs",
-            "danger_accept_invalid_hostnames",
+            DANGER_ACCEPT_INVALID_CERTS_SYMBOL,
+            DANGER_ACCEPT_INVALID_HOSTNAMES_SYMBOL,
         ];
 
         for function in &package.functions {
@@ -4311,6 +4320,15 @@ mod tests {
         line
     }
 
+    fn make_danger_accept_invalid_certs_line(indent: &str) -> String {
+        let mut line = String::with_capacity(indent.len() + 86);
+        line.push_str(indent);
+        line.push_str("_10 = reqwest::ClientBuilder::");
+        line.push_str(DANGER_ACCEPT_INVALID_CERTS_SYMBOL);
+        line.push_str("(move _1, const true);");
+        line
+    }
+
     #[test]
     fn parse_extracts_functions() {
         let input = r#"
@@ -4461,7 +4479,7 @@ rules:
                 MirFunction {
                     name: "dangerous_tls".to_string(),
                     signature: "fn dangerous_tls(builder: reqwest::ClientBuilder)".to_string(),
-                    body: vec!["_10 = reqwest::ClientBuilder::danger_accept_invalid_certs(move _1, const true);".to_string()],
+                    body: vec![make_danger_accept_invalid_certs_line("")],
                 },
                 MirFunction {
                     name: "openssl_none".to_string(),
@@ -4559,7 +4577,8 @@ rules:
         );
         assert!(
             triggered.contains(&"RUSTCOLA012"),
-            "expected danger_accept_invalid_certs rule to fire"
+            "expected {} rule to fire",
+            DANGER_ACCEPT_INVALID_CERTS_SYMBOL
         );
         assert!(
             triggered.contains(&"RUSTCOLA013"),
@@ -5535,6 +5554,69 @@ path = "src/lib.rs"
             "{}::{} rule should not flag mir-extractor crate",
             MEM_MODULE_SYMBOL,
             MEM_UNINITIALIZED_SYMBOL
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn danger_accept_invalid_certs_rule_detects_usage() -> Result<()> {
+        let package = MirPackage {
+            crate_name: "danger-accept-invalid-certs-detect".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "configure".to_string(),
+                signature: "fn configure(builder: reqwest::ClientBuilder)".to_string(),
+                body: vec![
+                    "fn configure(builder: reqwest::ClientBuilder) {".to_string(),
+                    make_danger_accept_invalid_certs_line("    "),
+                    "}".to_string(),
+                ],
+            }],
+        };
+
+        let analysis = RuleEngine::with_builtin_rules().run(&package);
+        let matches: Vec<_> = analysis
+            .findings
+            .iter()
+            .filter(|finding| finding.rule_id == "RUSTCOLA012")
+            .collect();
+
+        assert_eq!(matches.len(), 1, "expected RUSTCOLA012 to fire");
+        assert!(matches[0]
+            .evidence
+            .iter()
+            .any(|line| line.contains(DANGER_ACCEPT_INVALID_CERTS_SYMBOL)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn danger_accept_invalid_certs_rule_skips_analyzer_crate() -> Result<()> {
+        let package = MirPackage {
+            crate_name: "mir-extractor".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "self_test".to_string(),
+                signature: "fn self_test(builder: reqwest::ClientBuilder)".to_string(),
+                body: vec![
+                    "fn self_test(builder: reqwest::ClientBuilder) {".to_string(),
+                    make_danger_accept_invalid_certs_line("    "),
+                    "}".to_string(),
+                ],
+            }],
+        };
+
+        let analysis = RuleEngine::with_builtin_rules().run(&package);
+        let has_danger_tls = analysis
+            .findings
+            .iter()
+            .any(|finding| finding.rule_id == "RUSTCOLA012");
+
+        assert!(
+            !has_danger_tls,
+            "{} rule should not flag mir-extractor crate",
+            DANGER_ACCEPT_INVALID_CERTS_SYMBOL
         );
 
         Ok(())

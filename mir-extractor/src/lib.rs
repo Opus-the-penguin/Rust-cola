@@ -1064,7 +1064,14 @@ impl VecSetLenRule {
             state = next_state;
 
             let without_comments = strip_comments(&sanitized, &mut in_block_comment);
-            if text_contains_word_case_insensitive(&without_comments, "set_len") {
+            let trimmed = without_comments.trim_start();
+            if trimmed.starts_with("0x") || without_comments.contains('│') {
+                continue;
+            }
+
+            let has_call = without_comments.contains("set_len(");
+            let has_turbofish = without_comments.contains("set_len::<");
+            if has_call || has_turbofish {
                 let entry = line.trim().to_string();
                 if seen.insert(entry.clone()) {
                     evidence.push(entry);
@@ -5281,6 +5288,38 @@ path = "src/lib.rs"
         assert!(
             matches.is_empty(),
             "string literal mentioning Vec::set_len should not trigger RUSTCOLA008"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn vec_set_len_rule_ignores_metadata_lines() -> Result<()> {
+        let package = MirPackage {
+            crate_name: "vec-set-len-metadata".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "meta".to_string(),
+                signature: "fn meta()".to_string(),
+                body: vec![
+                    "fn meta() {".to_string(),
+                    "    0x00 │ 56 65 63 3a 3a 73 65 74 5f 6c 65 6e │ Vec::set_len used in metadata".to_string(),
+                    "    0x10 │ 20 75 73 65 64 20 69 6e 20 6d 65 74 │  used in metadata".to_string(),
+                    "}".to_string(),
+                ],
+            }],
+        };
+
+        let analysis = RuleEngine::with_builtin_rules().run(&package);
+        let matches: Vec<_> = analysis
+            .findings
+            .iter()
+            .filter(|finding| finding.rule_id == "RUSTCOLA008")
+            .collect();
+
+        assert!(
+            matches.is_empty(),
+            "metadata-style Vec::set_len mention without call should not trigger RUSTCOLA008"
         );
 
         Ok(())

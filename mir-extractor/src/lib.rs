@@ -1558,17 +1558,27 @@ impl UnsafeSendSyncBoundsRule {
             }
         }
 
-        let mut tokens = normalized
+        let tokens: Vec<_> = normalized
             .split(|c: char| c == ':' || c == '+' || c == ',' || c.is_whitespace())
             .filter(|token| !token.is_empty())
-            .peekable();
+            .collect();
 
-        if tokens.clone().any(|token| token == trait_name) {
+        if tokens.iter().any(|token| token == &trait_name) {
             return true;
         }
 
         if trait_name == "Send"
-            && tokens.any(|token| token == "Sync" || token.ends_with("::Sync"))
+            && tokens
+                .iter()
+                .any(|token| *token == "Sync" || token.ends_with("::Sync"))
+        {
+            return true;
+        }
+
+        if trait_name == "Sync"
+            && tokens
+                .iter()
+                .any(|token| *token == "Send" || token.ends_with("::Send"))
         {
             return true;
         }
@@ -4483,6 +4493,10 @@ unsafe impl<T: Send> Send for SafeWrapper<T> {}
         where
             T: Sync,
         {}
+
+    pub struct SendBoundSync<T>(PhantomData<T>);
+
+    unsafe impl<T: Send> Sync for SendBoundSync<T> {}
 "#,
         )?;
 
@@ -4555,6 +4569,12 @@ unsafe impl<T: Send> Send for SafeWrapper<T> {}
                 .iter()
                 .any(|sig| sig.contains("unsafe impl<T: Sync> Send for PointerWrapper<T>")),
             "PointerWrapper requires Sync on T and should not be flagged"
+        );
+        assert!(
+            !signatures
+                .iter()
+                .any(|sig| sig.contains("unsafe impl<T: Send> Sync for SendBoundSync<T>")),
+            "SendBoundSync requires Send on T and should not be flagged"
         );
 
         Ok(())

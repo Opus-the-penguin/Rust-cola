@@ -3267,9 +3267,21 @@ impl CargoAuditableMetadataRule {
     }
 
     fn ci_mentions_cargo_auditable(crate_root: &Path) -> bool {
+        const MAX_ANCESTOR_SEARCH: usize = 5;
+
+        for ancestor in crate_root.ancestors().take(MAX_ANCESTOR_SEARCH) {
+            if Self::ci_markers_within(ancestor) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn ci_markers_within(base: &Path) -> bool {
         let search_dirs = [".github", ".gitlab", "ci", "scripts"];
         for dir in &search_dirs {
-            let path = crate_root.join(dir);
+            let path = base.join(dir);
             if !path.exists() {
                 continue;
             }
@@ -3305,7 +3317,7 @@ impl CargoAuditableMetadataRule {
 
         let marker_files = ["Makefile", "makefile", "Justfile", "justfile"];
         for file in &marker_files {
-            let path = crate_root.join(file);
+            let path = base.join(file);
             if !path.exists() {
                 continue;
             }
@@ -6431,6 +6443,52 @@ auditable = "0.1"
         assert!(
             !finding_exists,
             "auditable dependency marker should suppress findings"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn cargo_auditable_rule_detects_workspace_ci_markers() -> Result<()> {
+        let temp = tempdir().expect("temp dir");
+        let workspace_root = temp.path();
+
+        fs::create_dir_all(workspace_root.join(".github/workflows"))?;
+        fs::write(
+            workspace_root.join(".github/workflows/ci.yml"),
+            "run: cargo auditable build --release\n",
+        )?;
+
+        let crate_root = workspace_root.join("workspace-bin");
+        fs::create_dir_all(crate_root.join("src"))?;
+        fs::write(
+            crate_root.join("Cargo.toml"),
+            r#"[package]
+name = "workspace-bin"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )?;
+        fs::write(
+            crate_root.join("src/main.rs"),
+            "fn main() { println!(\"hi\"); }",
+        )?;
+
+        let package = MirPackage {
+            crate_name: "workspace-bin".to_string(),
+            crate_root: crate_root.to_string_lossy().to_string(),
+            functions: Vec::new(),
+        };
+
+        let analysis = RuleEngine::with_builtin_rules().run(&package);
+        let finding_exists = analysis
+            .findings
+            .iter()
+            .any(|finding| finding.rule_id == "RUSTCOLA020");
+
+        assert!(
+            !finding_exists,
+            "workspace CI markers should suppress cargo auditable warning"
         );
 
         Ok(())

@@ -141,7 +141,7 @@ Feasibility legend:
 
 91. **RustSec unsound dependency** *(quick win)* – Mirror `cargo audit` informational warnings by flagging dependency versions listed in the RustSec DB as `informational = "unsound"`, so consumers patch or sandbox them. **Signal:** Cross-reference `Cargo.lock` packages against curated RustSec unsound advisories and alert even when builds succeed. **Feasibility:** Heuristic.
 92. **Yanked crate version in lockfile** – Surface dependencies that `cargo audit` would mark as yanked, prompting upgrades before the registry drops them. **Signal:** Enrich lockfile analysis with crates.io index metadata (or local cache) to report yanked versions during review. **Feasibility:** Heuristic.
-93. **Release binaries missing auditable metadata** – Encourage projects shipping binaries to embed `cargo auditable` metadata so `cargo audit bin` can produce complete reports. **Signal:** Inspect release automation for `cargo auditable` integration (feature flag, build script, or CI job) and suggest adoption when missing. **Feasibility:** Heuristic.
+93. **Release binaries missing auditable metadata** – Encourage projects shipping binaries to embed `cargo auditable` metadata so `cargo audit bin` can produce complete reports. **Signal:** Inspect release automation for `cargo auditable` integration (feature flag, build script, or CI job) and suggest adoption when missing. **Feasibility:** Heuristic. **Severity:** Informational (policy) – highlight for teams that opt into supply-chain attestation profiles while keeping it ignorable for others.
 
 ## Additional CodeQL Candidates (Apr 2024 sweep)
 

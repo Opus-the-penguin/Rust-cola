@@ -2671,6 +2671,10 @@ impl Rule for UnboundedAllocationRule {
     }
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
         let mut findings = Vec::new();
         let options = prototypes::PrototypeOptions::default();
 
@@ -4295,6 +4299,7 @@ mod tests {
 
     const LENGTH_TRUNCATION_CAST_INTTOINT_SYMBOL: &str = concat!("Int", "To", "Int");
     const LENGTH_TRUNCATION_CAST_WRITE_SYMBOL: &str = concat!("write", "_u16");
+    const UNBOUNDED_ALLOCATION_WITH_CAPACITY_SYMBOL: &str = concat!("with", "_capacity");
 
     fn make_vec_set_len_line(indent: &str) -> String {
         let mut line = String::with_capacity(indent.len() + 48);
@@ -4353,6 +4358,31 @@ mod tests {
         line.push_str(LENGTH_TRUNCATION_CAST_WRITE_SYMBOL);
         line.push_str("::<byteorder::BigEndian>(move _0, move _3);");
         lines.push(line);
+
+        lines
+    }
+
+    fn make_unbounded_allocation_lines(indent: &str, debug_ident: &str) -> Vec<String> {
+        let mut lines = Vec::with_capacity(3);
+
+        let mut debug_line = String::with_capacity(indent.len() + debug_ident.len() + 16);
+        debug_line.push_str(indent);
+        debug_line.push_str("debug ");
+        debug_line.push_str(debug_ident);
+        debug_line.push_str(" => _1;");
+        lines.push(debug_line);
+
+        let mut copy_line = String::with_capacity(indent.len() + 16);
+        copy_line.push_str(indent);
+        copy_line.push_str("_2 = copy _1;");
+        lines.push(copy_line);
+
+        let mut alloc_line = String::with_capacity(indent.len() + 64);
+        alloc_line.push_str(indent);
+        alloc_line.push_str("_3 = Vec::<u8>::");
+        alloc_line.push_str(UNBOUNDED_ALLOCATION_WITH_CAPACITY_SYMBOL);
+        alloc_line.push_str("(move _2);");
+        lines.push(alloc_line);
 
         lines
     }
@@ -4551,11 +4581,7 @@ rules:
                 MirFunction {
                     name: "unbounded_allocation".to_string(),
                     signature: "fn unbounded_allocation(len: usize)".to_string(),
-                    body: vec![
-                        "    debug len => _1;".to_string(),
-                        "    _2 = copy _1;".to_string(),
-                        "    _3 = Vec::<u8>::with_capacity(move _2);".to_string(),
-                    ],
+                    body: make_unbounded_allocation_lines("    ", "len"),
                 },
                 MirFunction {
                     name: "broadcast_unsync".to_string(),
@@ -4684,7 +4710,7 @@ rules:
         assert!(unbounded_finding
             .evidence
             .iter()
-            .any(|line| line.contains("with_capacity")));
+            .any(|line| line.contains(UNBOUNDED_ALLOCATION_WITH_CAPACITY_SYMBOL)));
 
         for id in &[
             "RUSTCOLA003",
@@ -5729,6 +5755,75 @@ path = "src/lib.rs"
             !has_truncation,
             "{} rule should not flag mir-extractor crate",
             LENGTH_TRUNCATION_CAST_WRITE_SYMBOL
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn unbounded_allocation_rule_detects_usage() -> Result<()> {
+        let package = MirPackage {
+            crate_name: "unbounded-allocation-detect".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "allocate".to_string(),
+                signature: "fn allocate(len: usize)".to_string(),
+                body: {
+                    let mut body = Vec::with_capacity(5);
+                    body.push("fn allocate(len: usize) {".to_string());
+                    body.extend(make_unbounded_allocation_lines("    ", "len"));
+                    body.push("}".to_string());
+                    body
+                },
+            }],
+        };
+
+        let analysis = RuleEngine::with_builtin_rules().run(&package);
+        let matches: Vec<_> = analysis
+            .findings
+            .iter()
+            .filter(|finding| finding.rule_id == "RUSTCOLA024")
+            .collect();
+
+        assert_eq!(matches.len(), 1, "expected RUSTCOLA024 to fire");
+        let evidence = &matches[0].evidence;
+        assert!(
+            evidence
+                .iter()
+                .any(|line| line.contains(UNBOUNDED_ALLOCATION_WITH_CAPACITY_SYMBOL))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn unbounded_allocation_rule_skips_analyzer_crate() -> Result<()> {
+        let package = MirPackage {
+            crate_name: "mir-extractor".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "self_test".to_string(),
+                signature: "fn self_test(len: usize)".to_string(),
+                body: {
+                    let mut body = Vec::with_capacity(5);
+                    body.push("fn self_test(len: usize) {".to_string());
+                    body.extend(make_unbounded_allocation_lines("    ", "len"));
+                    body.push("}".to_string());
+                    body
+                },
+            }],
+        };
+
+        let analysis = RuleEngine::with_builtin_rules().run(&package);
+        let has_unbounded = analysis
+            .findings
+            .iter()
+            .any(|finding| finding.rule_id == "RUSTCOLA024");
+
+        assert!(
+            !has_unbounded,
+            "{} rule should not flag mir-extractor crate",
+            UNBOUNDED_ALLOCATION_WITH_CAPACITY_SYMBOL
         );
 
         Ok(())

@@ -1336,6 +1336,12 @@ struct UnsafeSendSyncBoundsRule {
     metadata: RuleMetadata,
 }
 
+#[derive(Clone, Copy, Default)]
+struct StringLiteralState {
+    in_normal_string: bool,
+    raw_hashes: Option<usize>,
+}
+
 impl UnsafeSendSyncBoundsRule {
     fn new() -> Self {
         Self {
@@ -1513,6 +1519,100 @@ impl UnsafeSendSyncBoundsRule {
             .collect()
     }
 
+    fn scan_string_state(
+        mut state: StringLiteralState,
+        line: &str,
+    ) -> (bool, StringLiteralState) {
+        let bytes = line.as_bytes();
+        let mut i = 0usize;
+        let mut found = false;
+
+        while i < bytes.len() {
+            if let Some(raw_hashes) = state.raw_hashes {
+                if bytes[i] == b'"' {
+                    let mut matched = true;
+                    for k in 0..raw_hashes {
+                        if i + 1 + k >= bytes.len() || bytes[i + 1 + k] != b'#' {
+                            matched = false;
+                            break;
+                        }
+                    }
+                    if matched {
+                        i += 1 + raw_hashes;
+                        state.raw_hashes = None;
+                        continue;
+                    }
+                }
+                i += 1;
+                continue;
+            }
+
+            if state.in_normal_string {
+                if bytes[i] == b'\\' {
+                    i += 1;
+                    if i < bytes.len() {
+                        i += 1;
+                    }
+                    continue;
+                }
+
+                if bytes[i] == b'"' {
+                    state.in_normal_string = false;
+                }
+                i += 1;
+                continue;
+            }
+
+            match bytes[i] {
+                b'"' => {
+                    state.in_normal_string = true;
+                    i += 1;
+                }
+                b'r' => {
+                    let mut j = i + 1;
+                    let mut hashes = 0usize;
+                    while j < bytes.len() && bytes[j] == b'#' {
+                        hashes += 1;
+                        j += 1;
+                    }
+                    if j < bytes.len() && bytes[j] == b'"' {
+                        state.raw_hashes = Some(hashes);
+                        i = j + 1;
+                    } else {
+                        i += 1;
+                    }
+                }
+                b'\'' => {
+                    i += 1;
+                    let mut escaped = false;
+                    while i < bytes.len() {
+                        let ch = bytes[i];
+                        if !escaped && ch == b'\\' {
+                            escaped = true;
+                        } else if !escaped && ch == b'\'' {
+                            i += 1;
+                            break;
+                        } else {
+                            escaped = false;
+                        }
+                        i += 1;
+                    }
+                }
+                b'u' => {
+                    if line[i..].starts_with("unsafe impl") {
+                        found = true;
+                    }
+                    i += 1;
+                }
+                _ => {
+                    i += 1;
+                }
+            }
+        }
+
+        (found, state)
+    }
+
     fn bound_matches_trait(bound: &str, trait_name: &str) -> bool {
         let normalized = bound.trim();
         if normalized.is_empty() {
@@ -1630,25 +1730,48 @@ impl Rule for UnsafeSendSyncBoundsRule {
 
             let lines: Vec<&str> = source.lines().collect();
             let mut idx = 0usize;
+            let mut string_state = StringLiteralState::default();
 
             while idx < lines.len() {
                 let line = lines[idx];
-                if !(line.contains("unsafe impl")
-                    && (line.contains("Send for") || line.contains("Sync for")))
-                {
+                let (has_impl, mut state_after_line) =
+                    Self::scan_string_state(string_state, line);
+
+                if !has_impl {
+                    string_state = state_after_line;
                     idx += 1;
                     continue;
                 }
 
                 let mut block_lines = Vec::new();
+                let trimmed_first = line.trim();
+                if !trimmed_first.is_empty() {
+                    block_lines.push(trimmed_first.to_string());
+                }
+
                 let mut j = idx;
-                while j < lines.len() {
-                    let trimmed = lines[j].trim();
+                while j + 1 < lines.len() {
+                    let next_line = lines[j + 1];
+                    let (next_has_impl, next_state) =
+                        Self::scan_string_state(state_after_line, next_line);
+                    let trimmed = next_line.trim();
+                    let mut appended = false;
+
                     if !trimmed.is_empty() {
                         block_lines.push(trimmed.to_string());
+                        appended = true;
                     }
 
+                    state_after_line = next_state;
+
                     if trimmed.contains('{') || trimmed.ends_with(';') {
+                        break;
+                    }
+
+                    if next_has_impl {
+                        if appended {
+                            block_lines.pop();
+                        }
                         break;
                     }
 
@@ -1681,6 +1804,7 @@ impl Rule for UnsafeSendSyncBoundsRule {
                     });
                 }
 
+                string_state = state_after_line;
                 idx = j + 1;
             }
         }
@@ -4575,6 +4699,54 @@ unsafe impl<T: Send> Send for SafeWrapper<T> {}
                 .iter()
                 .any(|sig| sig.contains("unsafe impl<T: Send> Sync for SendBoundSync<T>")),
             "SendBoundSync requires Send on T and should not be flagged"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn unsafe_send_sync_bounds_rule_ignores_string_literals() -> Result<()> {
+        let temp = tempdir().expect("temp dir");
+        let crate_root = temp.path();
+
+        fs::create_dir_all(crate_root.join("src"))?;
+        fs::write(
+            crate_root.join("Cargo.toml"),
+            r#"[package]
+name = "unsafe-send-sync-literals"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+"#,
+        )?;
+    fs::write(
+        crate_root.join("src/lib.rs"),
+        r###"pub fn strings() {
+    let _ = "unsafe impl<T> Send for Maybe<T> {}";
+    let _ = r#"unsafe impl<T> Sync for Maybe<T> {}"#;
+}
+"###,
+    )?;
+
+        let package = MirPackage {
+            crate_name: "unsafe-send-sync-literals".to_string(),
+            crate_root: crate_root.to_string_lossy().to_string(),
+            functions: Vec::new(),
+        };
+
+        let analysis = RuleEngine::with_builtin_rules().run(&package);
+
+        let matches: Vec<_> = analysis
+            .findings
+            .iter()
+            .filter(|finding| finding.rule_id == "RUSTCOLA015")
+            .collect();
+
+        assert!(
+            matches.is_empty(),
+            "string literals should not trigger unsafe send/sync findings",
         );
 
         Ok(())

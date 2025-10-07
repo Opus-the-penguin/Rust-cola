@@ -71,6 +71,15 @@ pub struct RuleMetadata {
     pub origin: RuleOrigin,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceSpan {
+    pub file: String,
+    pub start_line: u32,
+    pub start_column: u32,
+    pub end_line: u32,
+    pub end_column: u32,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Finding {
     pub rule_id: String,
@@ -80,6 +89,7 @@ pub struct Finding {
     pub function: String,
     pub function_signature: String,
     pub evidence: Vec<String>,
+    pub span: Option<SourceSpan>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -87,6 +97,7 @@ pub struct MirFunction {
     pub name: String,
     pub signature: String,
     pub body: Vec<String>,
+    pub span: Option<SourceSpan>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -493,6 +504,7 @@ impl Rule for DeclarativeRule {
                 function: function.name.clone(),
                 function_signature: function.signature.clone(),
                 evidence,
+                span: function.span.clone(),
             });
         }
 
@@ -597,6 +609,7 @@ impl Rule for BoxIntoRawRule {
                 function: function.name.clone(),
                 function_signature: function.signature.clone(),
                 evidence,
+                span: function.span.clone(),
             });
         }
 
@@ -690,6 +703,7 @@ impl Rule for TransmuteRule {
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence: transmute_lines,
+                    span: function.span.clone(),
                 });
             }
         }
@@ -774,6 +788,7 @@ impl Rule for UnsafeUsageRule {
                 function: function.name.clone(),
                 function_signature: function.signature.clone(),
                 evidence,
+                span: function.span.clone(),
             });
         }
 
@@ -828,6 +843,7 @@ impl Rule for InsecureMd5Rule {
                 function: function.name.clone(),
                 function_signature: function.signature.clone(),
                 evidence,
+                span: function.span.clone(),
             });
         }
 
@@ -889,6 +905,7 @@ impl Rule for InsecureSha1Rule {
                 function: function.name.clone(),
                 function_signature: function.signature.clone(),
                 evidence,
+                span: function.span.clone(),
             });
         }
 
@@ -945,6 +962,7 @@ impl Rule for UntrustedEnvInputRule {
                 function: function.name.clone(),
                 function_signature: function.signature.clone(),
                 evidence,
+                span: function.span.clone(),
             });
         }
 
@@ -1025,6 +1043,7 @@ impl Rule for CommandInjectionRiskRule {
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence,
+                    span: function.span.clone(),
                 });
             }
         }
@@ -1117,6 +1136,7 @@ impl Rule for VecSetLenRule {
                 function: function.name.clone(),
                 function_signature: function.signature.clone(),
                 evidence,
+                span: function.span.clone(),
             });
         }
 
@@ -1183,6 +1203,7 @@ impl Rule for MaybeUninitAssumeInitRule {
                 function: function.name.clone(),
                 function_signature: function.signature.clone(),
                 evidence,
+                span: function.span.clone(),
             });
         }
 
@@ -1266,6 +1287,7 @@ impl Rule for MemUninitZeroedRule {
                 function: function.name.clone(),
                 function_signature: function.signature.clone(),
                 evidence,
+                span: function.span.clone(),
             });
         }
 
@@ -1316,6 +1338,7 @@ impl Rule for NonHttpsUrlRule {
                 function: function.name.clone(),
                 function_signature: function.signature.clone(),
                 evidence,
+                span: function.span.clone(),
             });
         }
 
@@ -1388,6 +1411,7 @@ impl Rule for DangerAcceptInvalidCertRule {
                 function: function.name.clone(),
                 function_signature: function.signature.clone(),
                 evidence: lines,
+                span: function.span.clone(),
             });
         }
 
@@ -1448,6 +1472,7 @@ impl Rule for OpensslVerifyNoneRule {
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence,
+                    span: function.span.clone(),
                 });
             }
         }
@@ -1502,6 +1527,7 @@ impl Rule for HardcodedHomePathRule {
                 function: function.name.clone(),
                 function_signature: function.signature.clone(),
                 evidence,
+                span: function.span.clone(),
             });
         }
 
@@ -2045,6 +2071,7 @@ impl Rule for UnsafeSendSyncBoundsRule {
                             .cloned()
                             .unwrap_or_else(|| trait_name.to_string()),
                         evidence: block_lines.clone(),
+                        span: None,
                     });
                 }
 
@@ -2335,6 +2362,7 @@ impl Rule for FfiBufferLeakRule {
                         function: location,
                         function_signature: signature_line,
                         evidence,
+                        span: None,
                     });
                 }
 
@@ -2573,6 +2601,7 @@ impl Rule for AllocatorMismatchRule {
                         function: location,
                         function_signature: signature,
                         evidence,
+                        span: None,
                     });
                 }
 
@@ -2637,6 +2666,7 @@ impl Rule for ContentLengthAllocationRule {
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence,
+                    span: function.span.clone(),
                 });
             }
         }
@@ -2718,6 +2748,7 @@ impl Rule for UnboundedAllocationRule {
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence,
+                    span: function.span.clone(),
                 });
             }
         }
@@ -2788,6 +2819,7 @@ impl Rule for LengthTruncationCastRule {
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence,
+                    span: function.span.clone(),
                 });
             }
         }
@@ -2839,6 +2871,7 @@ impl Rule for BroadcastUnsyncPayloadRule {
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence: vec![usage.line.clone()],
+                    span: function.span.clone(),
                 });
             }
         }
@@ -2983,6 +3016,7 @@ impl Rule for RustsecUnsoundDependencyRule {
                     function: relative_lock.clone(),
                     function_signature: format!("{} {}", name, version_str),
                     evidence,
+                    span: None,
                 });
             }
         }
@@ -3099,6 +3133,7 @@ impl Rule for YankedCrateRule {
                     function: relative_lock.clone(),
                     function_signature: format!("{} {}", name, version),
                     evidence,
+                    span: None,
                 });
             }
         }
@@ -3379,6 +3414,7 @@ impl Rule for CargoAuditableMetadataRule {
             function: relative_manifest,
             function_signature: package_name.to_string(),
             evidence,
+            span: None,
         });
 
         findings
@@ -4220,10 +4256,12 @@ impl MirFunction {
     fn from_parts(signature: String, mut body: Vec<String>) -> MirFunction {
         trim_trailing_blanks(&mut body);
         let name = extract_name(&signature).unwrap_or_else(|| "unknown".to_string());
+        let span = extract_span(&signature);
         MirFunction {
             name,
             signature,
             body,
+            span,
         }
     }
 }
@@ -4234,6 +4272,34 @@ fn extract_name(signature: &str) -> Option<String> {
         .strip_prefix("fn ")
         .and_then(|rest| rest.split('(').next())
         .map(|s| s.trim().to_string())
+}
+
+fn extract_span(signature: &str) -> Option<SourceSpan> {
+    const MARKER: &str = " at ";
+    let marker_idx = signature.find(MARKER)? + MARKER.len();
+    let after_marker = &signature[marker_idx..];
+    let location_end = after_marker.find('>')?;
+    let location = after_marker[..location_end].trim();
+
+    let (before_end_column, end_column_str) = location.rsplit_once(':')?;
+    let end_column = end_column_str.trim().parse().ok()?;
+
+    let (before_end_line, end_line_str) = before_end_column.rsplit_once(':')?;
+    let end_line = end_line_str.trim().parse().ok()?;
+
+    let (before_start_column, start_column_str) = before_end_line.rsplit_once(':')?;
+    let start_column = start_column_str.trim().parse().ok()?;
+
+    let (path_str, start_line_str) = before_start_column.rsplit_once(':')?;
+    let start_line = start_line_str.trim().parse().ok()?;
+
+    Some(SourceSpan {
+        file: path_str.trim().replace('\\', "/"),
+        start_line,
+        start_column,
+        end_line,
+        end_column,
+    })
 }
 
 fn trim_trailing_blanks(lines: &mut Vec<String>) {
@@ -4420,6 +4486,83 @@ fn bar(_1: i32) -> i32 {
         assert_eq!(functions[1].name, "bar");
     }
 
+    #[test]
+    fn parse_extracts_function_spans() {
+        let input = r#"
+fn <impl at C:\\workspace\\demo\\src\\lib.rs:42:5: 42:27>::vec_set_len(_1: &mut Vec<u8>) -> () {
+    bb0: {
+        _0 = ();
+        return;
+    }
+}
+"#;
+
+        let functions = parse_mir_dump(input);
+        assert_eq!(functions.len(), 1);
+        let span = functions[0].span.as_ref().expect("missing span");
+        let normalized_path = span
+            .file
+            .split(|c| c == '/' || c == '\\')
+            .filter(|segment| !segment.is_empty())
+            .collect::<Vec<_>>()
+            .join("/");
+        assert!(
+            normalized_path.ends_with("workspace/demo/src/lib.rs"),
+            "unexpected file: {}",
+            span.file
+        );
+        assert_eq!(span.start_line, 42);
+        assert_eq!(span.start_column, 5);
+        assert_eq!(span.end_line, 42);
+        assert_eq!(span.end_column, 27);
+    }
+
+    #[test]
+    fn rule_finding_carries_function_span() {
+        let input = r#"
+fn <impl at C:\\workspace\\demo\\src\\lib.rs:40:1: 40:32>::vec_set_len(_1: &mut Vec<u8>) -> () {
+    bb0: {
+        _2 = Vec::<u8>::set_len(move _1, const 4_usize);
+        return;
+    }
+}
+"#;
+
+        let functions = parse_mir_dump(input);
+        assert_eq!(functions.len(), 1);
+
+        let package = MirPackage {
+            crate_name: "demo".to_string(),
+            crate_root: "C:/workspace/demo".to_string(),
+            functions,
+        };
+
+        let engine = RuleEngine::with_builtin_rules();
+        let analysis = engine.run(&package);
+        let finding = analysis
+            .findings
+            .iter()
+            .find(|finding| finding.rule_id == "RUSTCOLA008")
+            .expect("vec-set-len finding not emitted");
+
+        let span = finding.span.as_ref().expect("finding missing span");
+        let normalized_path = span
+            .file
+            .split(|c| c == '/' || c == '\\')
+            .filter(|segment| !segment.is_empty())
+            .collect::<Vec<_>>()
+            .join("/");
+        assert!(
+            normalized_path.ends_with("workspace/demo/src/lib.rs"),
+            "unexpected file: {}",
+            span.file
+        );
+        assert_eq!(span.start_line, 40);
+        assert_eq!(span.start_column, 1);
+        assert_eq!(span.end_line, 40);
+        assert_eq!(span.end_column, 32);
+    }
+
     #[cfg(windows)]
     #[test]
     fn file_uri_from_path_strips_extended_prefix() {
@@ -4480,6 +4623,7 @@ rules:
                 name: "ffi_create".to_string(),
                 signature: "fn ffi_create()".to_string(),
                 body: vec!["_0 = Box::into_raw(move _1);".to_string()],
+                span: None,
             }],
         };
 
@@ -4502,61 +4646,73 @@ rules:
                     name: "unsafe_helper".to_string(),
                     signature: "unsafe fn unsafe_helper()".to_string(),
                     body: vec!["unsafe { core::ptr::read(_1); }".to_string()],
+                    span: None,
                 },
                 MirFunction {
                     name: "md5_hash".to_string(),
                     signature: "fn md5_hash()".to_string(),
                     body: vec!["_2 = md5::Md5::new();".to_string()],
+                    span: None,
                 },
                 MirFunction {
                     name: "sha1_hash".to_string(),
                     signature: "fn sha1_hash()".to_string(),
                     body: vec!["_3 = sha1::Sha1::new();".to_string()],
+                    span: None,
                 },
                 MirFunction {
                     name: "env_usage".to_string(),
                     signature: "fn env_usage()".to_string(),
                     body: vec!["_4 = std::env::var(_1);".to_string()],
+                    span: None,
                 },
                 MirFunction {
                     name: "command_spawn".to_string(),
                     signature: "fn command_spawn()".to_string(),
                     body: vec!["_5 = std::process::Command::new(_1);".to_string()],
+                    span: None,
                 },
                 MirFunction {
                     name: "vec_set_len".to_string(),
                     signature: "fn vec_set_len(v: &mut Vec<i32>)".to_string(),
                     body: vec![make_vec_set_len_line("")],
+                    span: None,
                 },
                 MirFunction {
                     name: "maybe_uninit".to_string(),
                     signature: "fn maybe_uninit()".to_string(),
                     body: vec![make_maybe_uninit_assume_init_line("")],
+                    span: None,
                 },
                 MirFunction {
                     name: "deprecated_mem".to_string(),
                     signature: "fn deprecated_mem()".to_string(),
                     body: vec![make_mem_uninitialized_line("")],
+                    span: None,
                 },
                 MirFunction {
                     name: "http_url".to_string(),
                     signature: "fn http_url()".to_string(),
                     body: vec!["_9 = const \"http://example.com\";".to_string()],
+                    span: None,
                 },
                 MirFunction {
                     name: "dangerous_tls".to_string(),
                     signature: "fn dangerous_tls(builder: reqwest::ClientBuilder)".to_string(),
                     body: vec![make_danger_accept_invalid_certs_line("")],
+                    span: None,
                 },
                 MirFunction {
                     name: "openssl_none".to_string(),
                     signature: "fn openssl_none(ctx: &mut SslContextBuilder)".to_string(),
                     body: vec!["openssl::ssl::SslContextBuilder::set_verify((*_1), openssl::ssl::SslVerifyMode::NONE);".to_string()],
+                    span: None,
                 },
                 MirFunction {
                     name: "home_path_literal".to_string(),
                     signature: "fn home_path_literal()".to_string(),
                     body: vec!["_11 = const \"/home/alice/.ssh/id_rsa\";".to_string()],
+                    span: None,
                 },
                 MirFunction {
                     name: "content_length_allocation".to_string(),
@@ -4566,6 +4722,7 @@ rules:
                         "    _2 = copy _1;".to_string(),
                         "    _3 = Vec::<u8>::with_capacity(move _2);".to_string(),
                     ],
+                    span: None,
                 },
                 MirFunction {
                     name: "length_truncation_cast".to_string(),
@@ -4577,11 +4734,13 @@ rules:
                         body.push("}".to_string());
                         body
                     },
+                    span: None,
                 },
                 MirFunction {
                     name: "unbounded_allocation".to_string(),
                     signature: "fn unbounded_allocation(len: usize)".to_string(),
                     body: make_unbounded_allocation_lines("    ", "len"),
+                    span: None,
                 },
                 MirFunction {
                     name: "broadcast_unsync".to_string(),
@@ -4589,6 +4748,7 @@ rules:
                     body: vec![
                         "    _5 = tokio::sync::broadcast::channel::<std::rc::Rc<String>>(const 16_usize);".to_string(),
                     ],
+                    span: None,
                 },
             ],
         };
@@ -4748,6 +4908,7 @@ rules:
                     "    _2 = std::process::Command::new(const \"/bin/sh\");".to_string(),
                     "    _3 = std::process::Command::arg(move _2, move _1);".to_string(),
                 ],
+                span: None,
             }],
         };
 
@@ -4775,6 +4936,7 @@ rules:
                     "    _1 = std::process::Command::new(const \"git\");".to_string(),
                     "    _2 = std::process::Command::arg(move _1, const \"status\");".to_string(),
                 ],
+                span: None,
             }],
         };
 
@@ -4799,6 +4961,7 @@ rules:
                     "    _1 = openssl::ssl::SslContextBuilder::set_verify(move _0, openssl::ssl::SslVerifyMode::NONE);"
                         .to_string(),
                 ],
+                span: None,
             }],
         };
 
@@ -4824,6 +4987,7 @@ rules:
                     "    _2 = openssl::ssl::SslContextBuilder::set_verify(move _0, move _1);"
                         .to_string(),
                 ],
+                span: None,
             }],
         };
 
@@ -4846,6 +5010,7 @@ rules:
                 name: "doc_only".to_string(),
                 signature: "fn doc_only()".to_string(),
                 body: vec!["const _: &str = \"Detects use of MD5 hashing\";".to_string()],
+                span: None,
             }],
         };
 
@@ -4870,6 +5035,7 @@ rules:
                 name: "doc_only_sha".to_string(),
                 signature: "fn doc_only_sha()".to_string(),
                 body: vec!["const _: &str = \"Usage of SHA-1 hashing\";".to_string()],
+                span: None,
             }],
         };
 
@@ -4894,6 +5060,7 @@ rules:
                 name: "detect_rustc_version".to_string(),
                 signature: "fn detect_rustc_version()".to_string(),
                 body: vec!["_0 = std::process::Command::new(const \"rustc\");".to_string()],
+                span: None,
             }],
         };
 
@@ -4918,6 +5085,7 @@ rules:
                 name: "discover_rustc_targets".to_string(),
                 signature: "fn discover_rustc_targets()".to_string(),
                 body: vec!["_0 = std::process::Command::new(const \"cargo\");".to_string()],
+                span: None,
             }],
         };
 
@@ -4942,6 +5110,7 @@ rules:
                 name: "detect_crate_name".to_string(),
                 signature: "fn detect_crate_name()".to_string(),
                 body: vec!["_0 = MetadataCommand::new();".to_string()],
+                span: None,
             }],
         };
 
@@ -5347,6 +5516,7 @@ path = "src/lib.rs"
                     "    unsafe { core::ptr::read(_1); }".to_string(),
                     "}".to_string(),
                 ],
+                span: None,
             }],
         };
 
@@ -5379,6 +5549,7 @@ path = "src/lib.rs"
                     "    _1 = \"This string mentions unsafe code\";".to_string(),
                     "}".to_string(),
                 ],
+                span: None,
             }],
         };
 
@@ -5410,6 +5581,7 @@ path = "src/lib.rs"
                     make_vec_set_len_line("    "),
                     "}".to_string(),
                 ],
+                span: None,
             }],
         };
 
@@ -5445,6 +5617,7 @@ path = "src/lib.rs"
                     ),
                     "}".to_string(),
                 ],
+                span: None,
             }],
         };
 
@@ -5481,6 +5654,7 @@ path = "src/lib.rs"
                     "    0x10 │ 20 75 73 65 64 20 69 6e 20 6d 65 74 │  used in metadata".to_string(),
                     "}".to_string(),
                 ],
+                span: None,
             }],
         };
 
@@ -5513,6 +5687,7 @@ path = "src/lib.rs"
                     make_maybe_uninit_assume_init_line("    "),
                     "}".to_string(),
                 ],
+                span: None,
             }],
         };
 
@@ -5545,6 +5720,7 @@ path = "src/lib.rs"
                     make_maybe_uninit_assume_init_line("    "),
                     "}".to_string(),
                 ],
+                span: None,
             }],
         };
 
@@ -5572,6 +5748,7 @@ path = "src/lib.rs"
                     make_mem_uninitialized_line("    "),
                     "}".to_string(),
                 ],
+                span: None,
             }],
         };
 
@@ -5604,6 +5781,7 @@ path = "src/lib.rs"
                     make_mem_uninitialized_line("    "),
                     "}".to_string(),
                 ],
+                span: None,
             }],
         };
 
@@ -5636,6 +5814,7 @@ path = "src/lib.rs"
                     make_danger_accept_invalid_certs_line("    "),
                     "}".to_string(),
                 ],
+                span: None,
             }],
         };
 
@@ -5668,6 +5847,7 @@ path = "src/lib.rs"
                     make_danger_accept_invalid_certs_line("    "),
                     "}".to_string(),
                 ],
+                span: None,
             }],
         };
 
@@ -5701,6 +5881,7 @@ path = "src/lib.rs"
                     body.push("}".to_string());
                     body
                 },
+                span: None,
             }],
         };
 
@@ -5742,6 +5923,7 @@ path = "src/lib.rs"
                     body.push("}".to_string());
                     body
                 },
+                span: None,
             }],
         };
 
@@ -5775,6 +5957,7 @@ path = "src/lib.rs"
                     body.push("}".to_string());
                     body
                 },
+                span: None,
             }],
         };
 
@@ -5811,6 +5994,7 @@ path = "src/lib.rs"
                     body.push("}".to_string());
                     body
                 },
+                span: None,
             }],
         };
 
@@ -5842,6 +6026,7 @@ path = "src/lib.rs"
                     "    std::mem::transmute(value)".to_string(),
                     "}".to_string(),
                 ],
+                span: None,
             }],
         };
 
@@ -5874,6 +6059,7 @@ path = "src/lib.rs"
                     "    \"std::mem::transmute should not trigger\"".to_string(),
                     "}".to_string(),
                 ],
+                span: None,
             }],
         };
 
@@ -6253,6 +6439,7 @@ path = "src/lib.rs"
                 name: "cached".to_string(),
                 signature: "fn cached() -> i32".to_string(),
                 body: vec!["_0 = const 42_i32;".to_string()],
+                span: None,
             }],
         };
 
@@ -6306,6 +6493,7 @@ path = "src/lib.rs"
                     make_vec_set_len_line("    "),
                     "}".to_string(),
                 ],
+                span: None,
             }],
         };
 

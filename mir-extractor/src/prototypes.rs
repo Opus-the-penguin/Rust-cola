@@ -680,6 +680,7 @@ mod tests {
             name: "demo".to_string(),
             signature: "fn demo()".to_string(),
             body: lines.iter().map(|l| l.to_string()).collect(),
+            span: None,
         }
     }
 

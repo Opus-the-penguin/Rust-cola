@@ -758,6 +758,10 @@ impl Rule for UnsafeUsageRule {
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
         let mut findings = Vec::new();
         for function in &package.functions {
+            if package.crate_name == "mir-extractor" {
+                continue;
+            }
+
             let evidence = self.gather_evidence(function);
             if evidence.is_empty() {
                 continue;

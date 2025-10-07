@@ -1342,6 +1342,122 @@ struct StringLiteralState {
     raw_hashes: Option<usize>,
 }
 
+fn strip_string_literals(mut state: StringLiteralState, line: &str) -> (String, StringLiteralState) {
+    let bytes = line.as_bytes();
+    let mut result = String::with_capacity(line.len());
+    let mut i = 0usize;
+
+    while i < bytes.len() {
+        if let Some(hashes) = state.raw_hashes {
+            result.push(' ');
+            if bytes[i] == b'"' {
+                let mut matched = true;
+                for k in 0..hashes {
+                    if i + 1 + k >= bytes.len() || bytes[i + 1 + k] != b'#' {
+                        matched = false;
+                        break;
+                    }
+                }
+                if matched {
+                    for _ in 0..hashes {
+                        result.push(' ');
+                    }
+                    state.raw_hashes = None;
+                    i += 1 + hashes;
+                    continue;
+                }
+            }
+            i += 1;
+            continue;
+        }
+
+        if state.in_normal_string {
+            result.push(' ');
+            if bytes[i] == b'\\' {
+                i += 1;
+                if i < bytes.len() {
+                    result.push(' ');
+                    i += 1;
+                    continue;
+                } else {
+                    break;
+                }
+            }
+            if bytes[i] == b'"' {
+                state.in_normal_string = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        let ch = bytes[i];
+        if ch == b'"' {
+            state.in_normal_string = true;
+            result.push(' ');
+            i += 1;
+            continue;
+        }
+
+        if ch == b'r' {
+            let mut j = i + 1;
+            let mut hashes = 0usize;
+            while j < bytes.len() && bytes[j] == b'#' {
+                hashes += 1;
+                j += 1;
+            }
+            if j < bytes.len() && bytes[j] == b'"' {
+                state.raw_hashes = Some(hashes);
+                result.push(' ');
+                for _ in 0..hashes {
+                    result.push(' ');
+                }
+                result.push(' ');
+                i = j + 1;
+                continue;
+            }
+        }
+
+        if ch == b'\'' {
+            let mut j = i + 1;
+            let mut escaped = false;
+            let mut found_closing = false;
+
+            while j < bytes.len() {
+                let current = bytes[j];
+                if escaped {
+                    escaped = false;
+                } else if current == b'\\' {
+                    escaped = true;
+                } else if current == b'\'' {
+                    found_closing = true;
+                    break;
+                }
+
+                j += 1;
+            }
+
+            if found_closing {
+                result.push(' ');
+                i += 1;
+                while i <= j {
+                    result.push(' ');
+                    i += 1;
+                }
+                continue;
+            } else {
+                result.push('\'');
+                i += 1;
+                continue;
+            }
+        }
+
+        result.push(ch as char);
+        i += 1;
+    }
+
+    (result, state)
+}
+
 impl UnsafeSendSyncBoundsRule {
     fn new() -> Self {
         Self {
@@ -1520,97 +1636,13 @@ impl UnsafeSendSyncBoundsRule {
     }
 
     fn scan_string_state(
-        mut state: StringLiteralState,
+        state: StringLiteralState,
         line: &str,
-    ) -> (bool, StringLiteralState) {
-        let bytes = line.as_bytes();
-        let mut i = 0usize;
-        let mut found = false;
-
-        while i < bytes.len() {
-            if let Some(raw_hashes) = state.raw_hashes {
-                if bytes[i] == b'"' {
-                    let mut matched = true;
-                    for k in 0..raw_hashes {
-                        if i + 1 + k >= bytes.len() || bytes[i + 1 + k] != b'#' {
-                            matched = false;
-                            break;
-                        }
-                    }
-                    if matched {
-                        i += 1 + raw_hashes;
-                        state.raw_hashes = None;
-                        continue;
-                    }
-                }
-                i += 1;
-                continue;
-            }
-
-            if state.in_normal_string {
-                if bytes[i] == b'\\' {
-                    i += 1;
-                    if i < bytes.len() {
-                        i += 1;
-                    }
-                    continue;
-                }
-
-                if bytes[i] == b'"' {
-                    state.in_normal_string = false;
-                }
-                i += 1;
-                continue;
-            }
-
-            match bytes[i] {
-                b'"' => {
-                    state.in_normal_string = true;
-                    i += 1;
-                }
-                b'r' => {
-                    let mut j = i + 1;
-                    let mut hashes = 0usize;
-                    while j < bytes.len() && bytes[j] == b'#' {
-                        hashes += 1;
-                        j += 1;
-                    }
-                    if j < bytes.len() && bytes[j] == b'"' {
-                        state.raw_hashes = Some(hashes);
-                        i = j + 1;
-                    } else {
-                        i += 1;
-                    }
-                }
-                b'\'' => {
-                    i += 1;
-                    let mut escaped = false;
-                    while i < bytes.len() {
-                        let ch = bytes[i];
-                        if !escaped && ch == b'\\' {
-                            escaped = true;
-                        } else if !escaped && ch == b'\'' {
-                            i += 1;
-                            break;
-                        } else {
-                            escaped = false;
-                        }
-                        i += 1;
-                    }
-                }
-                b'u' => {
-                    if line[i..].starts_with("unsafe impl") {
-                        found = true;
-                    }
-                    i += 1;
-                }
-                _ => {
-                    i += 1;
-                }
-            }
-        }
-
-        (found, state)
+    ) -> (bool, String, StringLiteralState) {
+        let (sanitized, state_after) = strip_string_literals(state, line);
+        let has_impl = sanitized.contains("unsafe impl")
+            && (sanitized.contains(" Send for") || sanitized.contains(" Sync for"));
+        (has_impl, sanitized, state_after)
     }
 
     fn bound_matches_trait(bound: &str, trait_name: &str) -> bool {
@@ -1734,8 +1766,9 @@ impl Rule for UnsafeSendSyncBoundsRule {
 
             while idx < lines.len() {
                 let line = lines[idx];
-                let (has_impl, mut state_after_line) =
+                let (has_impl, sanitized_line, mut state_after_line) =
                     Self::scan_string_state(string_state, line);
+                let trimmed_sanitized = sanitized_line.trim();
 
                 if !has_impl {
                     string_state = state_after_line;
@@ -1749,24 +1782,26 @@ impl Rule for UnsafeSendSyncBoundsRule {
                     block_lines.push(trimmed_first.to_string());
                 }
 
+                let mut block_complete =
+                    trimmed_sanitized.contains('{') || trimmed_sanitized.ends_with(';');
+
                 let mut j = idx;
-                while j + 1 < lines.len() {
+                while !block_complete && j + 1 < lines.len() {
                     let next_line = lines[j + 1];
-                    let (next_has_impl, next_state) =
+                    let (next_has_impl, next_sanitized, next_state) =
                         Self::scan_string_state(state_after_line, next_line);
-                    let trimmed = next_line.trim();
+                    let trimmed_original = next_line.trim();
+                    let trimmed_sanitized_next = next_sanitized.trim();
                     let mut appended = false;
 
-                    if !trimmed.is_empty() {
-                        block_lines.push(trimmed.to_string());
+                    if !trimmed_original.is_empty() {
+                        block_lines.push(trimmed_original.to_string());
                         appended = true;
                     }
 
                     state_after_line = next_state;
-
-                    if trimmed.contains('{') || trimmed.ends_with(';') {
-                        break;
-                    }
+                    block_complete = trimmed_sanitized_next.contains('{')
+                        || trimmed_sanitized_next.ends_with(';');
 
                     if next_has_impl {
                         if appended {
@@ -1784,7 +1819,8 @@ impl Rule for UnsafeSendSyncBoundsRule {
                 } else if block_text.contains(" Sync for") {
                     "Sync"
                 } else {
-                    idx += 1;
+                    string_state = state_after_line;
+                    idx = j + 1;
                     continue;
                 };
 
@@ -1915,21 +1951,27 @@ impl Rule for FfiBufferLeakRule {
 
             let lines: Vec<&str> = source.lines().collect();
             let mut idx = 0usize;
+            let mut string_state = StringLiteralState::default();
             let mut pending_no_mangle: Option<usize> = None;
             let mut pending_extern: Option<usize> = None;
 
             while idx < lines.len() {
                 let raw_line = lines[idx];
-                let trimmed = raw_line.trim();
+                let (sanitized_line, state_after_line) =
+                    strip_string_literals(string_state, raw_line);
+                let trimmed = sanitized_line.trim();
+                let trimmed_original = raw_line.trim();
 
                 if trimmed.starts_with("#[no_mangle") {
                     pending_no_mangle = Some(idx);
+                    string_state = state_after_line;
                     idx += 1;
                     continue;
                 }
 
                 if trimmed.contains("extern \"C\"") && !trimmed.contains("fn ") {
                     pending_extern = Some(idx);
+                    string_state = state_after_line;
                     idx += 1;
                     continue;
                 }
@@ -1952,50 +1994,79 @@ impl Rule for FfiBufferLeakRule {
                         pending_no_mangle = None;
                         pending_extern = None;
                     }
+                    string_state = state_after_line;
                     idx += 1;
                     continue;
                 }
 
                 let mut block_lines: Vec<String> = Vec::new();
+                let mut sanitized_block: Vec<String> = Vec::new();
                 if start_idx < idx {
                     for attr_idx in start_idx..idx {
                         let attr_line = lines[attr_idx].trim();
                         if !attr_line.is_empty() {
                             block_lines.push(attr_line.to_string());
+                            sanitized_block.push(attr_line.to_string());
                         }
                     }
+                }
+
+                if !trimmed_original.is_empty() {
+                    block_lines.push(trimmed_original.to_string());
+                    sanitized_block.push(trimmed.to_string());
                 }
 
                 let mut brace_balance: i32 = 0;
                 let mut body_started = false;
                 let mut j = idx;
+                let mut current_state = state_after_line;
+                let mut current_sanitized = sanitized_line;
 
-                while j < lines.len() {
-                    let current = lines[j];
-                    let trimmed_current = current.trim();
-                    if !trimmed_current.is_empty() {
-                        block_lines.push(trimmed_current.to_string());
-                    }
-
-                    let opens = current.chars().filter(|c| *c == '{').count() as i32;
-                    let closes = current.chars().filter(|c| *c == '}').count() as i32;
+                loop {
+                    let trimmed_sanitized = current_sanitized.trim();
+                    let opens = current_sanitized
+                        .chars()
+                        .filter(|c| *c == '{')
+                        .count() as i32;
+                    let closes = current_sanitized
+                        .chars()
+                        .filter(|c| *c == '}')
+                        .count() as i32;
                     brace_balance += opens;
                     if brace_balance > 0 {
                         body_started = true;
                     }
                     brace_balance -= closes;
 
-                    if body_started && brace_balance <= 0 {
-                        j += 1;
-                        break;
-                    }
+                    let body_done = if body_started && brace_balance <= 0 {
+                        true
+                    } else if !body_started && trimmed_sanitized.ends_with(';') {
+                        true
+                    } else {
+                        false
+                    };
 
-                    if !body_started && trimmed_current.ends_with(';') {
+                    if body_done {
                         j += 1;
                         break;
                     }
 
                     j += 1;
+                    if j >= lines.len() {
+                        break;
+                    }
+
+                    let next_line = lines[j];
+                    let (next_sanitized, next_state) = strip_string_literals(current_state, next_line);
+                    current_state = next_state;
+
+                    let trimmed_original_next = next_line.trim();
+                    if !trimmed_original_next.is_empty() {
+                        block_lines.push(trimmed_original_next.to_string());
+                        sanitized_block.push(next_sanitized.trim().to_string());
+                    }
+
+                    current_sanitized = next_sanitized;
                 }
 
                 let signature_line = block_lines
@@ -2004,23 +2075,29 @@ impl Rule for FfiBufferLeakRule {
                     .cloned()
                     .unwrap_or_else(|| block_lines.first().cloned().unwrap_or_default());
 
-                let last_index = block_lines
+                let last_index = sanitized_block
                     .iter()
                     .rposition(|line| !line.trim().is_empty())
                     .unwrap_or(0);
 
                 let pointer_lines: Vec<String> = block_lines
                     .iter()
-                    .filter(|line| Self::is_pointer_escape(line))
-                    .cloned()
+                    .zip(sanitized_block.iter())
+                    .filter_map(|(line, sanitized)| {
+                        if Self::is_pointer_escape(sanitized) {
+                            Some(line.clone())
+                        } else {
+                            None
+                        }
+                    })
                     .collect();
 
-                let early_lines: Vec<(usize, String)> = block_lines
+                let early_lines: Vec<(usize, String)> = sanitized_block
                     .iter()
                     .enumerate()
-                    .filter_map(|(pos, line)| {
-                        if Self::captures_early_exit(line, pos, last_index) {
-                            Some((pos, line.clone()))
+                    .filter_map(|(pos, sanitized)| {
+                        if Self::captures_early_exit(sanitized, pos, last_index) {
+                            Some((pos, block_lines[pos].clone()))
                         } else {
                             None
                         }
@@ -2055,6 +2132,7 @@ impl Rule for FfiBufferLeakRule {
 
                 pending_no_mangle = None;
                 pending_extern = None;
+                string_state = current_state;
                 idx = j;
             }
         }
@@ -4818,6 +4896,62 @@ pub extern "C" fn ffi_allocate(target: *mut *mut u8, len: usize) -> Result<(), &
             .evidence
             .iter()
             .any(|line| line.contains("return Err")));
+
+        Ok(())
+    }
+
+    #[test]
+    fn ffi_buffer_leak_rule_ignores_string_literals() -> Result<()> {
+        let temp = tempdir().expect("temp dir");
+        let crate_root = temp.path();
+
+        fs::create_dir_all(crate_root.join("src"))?;
+        fs::write(
+            crate_root.join("Cargo.toml"),
+            r#"[package]
+name = "ffi-buffer-literal"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+"#,
+        )?;
+        fs::write(
+            crate_root.join("src/lib.rs"),
+            r###"pub fn fixtures() {
+    let _ = r#"
+#[no_mangle]
+pub extern "C" fn ffi_allocate(target: *mut *mut u8, len: usize) -> Result<(), &'static str> {
+    let mut buffer = Vec::with_capacity(len);
+    if len == 0 {
+        return Err("len must be > 0");
+    }
+    std::mem::forget(buffer);
+    Ok(())
+}
+"#;
+}
+"###,
+        )?;
+
+        let package = MirPackage {
+            crate_name: "ffi-buffer-literal".to_string(),
+            crate_root: crate_root.to_string_lossy().to_string(),
+            functions: Vec::new(),
+        };
+
+        let analysis = RuleEngine::with_builtin_rules().run(&package);
+        let matches: Vec<_> = analysis
+            .findings
+            .iter()
+            .filter(|finding| finding.rule_id == "RUSTCOLA016")
+            .collect();
+
+        assert!(
+            matches.is_empty(),
+            "string literal containing FFI example should not trigger RUSTCOLA016",
+        );
 
         Ok(())
     }

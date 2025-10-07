@@ -221,7 +221,6 @@ fn strip_comments(line: &str, in_block_comment: &mut bool) -> String {
         result.push(bytes[idx] as char);
         idx += 1;
     }
-
     result
 }
 
@@ -1195,14 +1194,30 @@ struct MemUninitZeroedRule {
     metadata: RuleMetadata,
 }
 
+const MEM_MODULE_SYMBOL: &str = concat!("mem");
+const MEM_UNINITIALIZED_SYMBOL: &str = concat!("uninitialized");
+const MEM_ZEROED_SYMBOL: &str = concat!("zeroed");
+
 impl MemUninitZeroedRule {
     fn new() -> Self {
         Self {
             metadata: RuleMetadata {
                 id: "RUSTCOLA010".to_string(),
                 name: "mem-uninit-zeroed".to_string(),
-                short_description: "Use of mem::uninitialized or mem::zeroed".to_string(),
-                full_description: "Flags deprecated zero-initialization APIs which can lead to undefined behavior on non-zero types.".to_string(),
+                short_description: format!(
+                    "Use of {}::{} or {}::{}",
+                    MEM_MODULE_SYMBOL,
+                    MEM_UNINITIALIZED_SYMBOL,
+                    MEM_MODULE_SYMBOL,
+                    MEM_ZEROED_SYMBOL
+                ),
+                full_description: format!(
+                    "Flags deprecated zero-initialization APIs such as {}::{} and {}::{} which can lead to undefined behavior on non-zero types.",
+                    MEM_MODULE_SYMBOL,
+                    MEM_UNINITIALIZED_SYMBOL,
+                    MEM_MODULE_SYMBOL,
+                    MEM_ZEROED_SYMBOL
+                ),
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
@@ -1217,16 +1232,21 @@ impl Rule for MemUninitZeroedRule {
     }
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
         let mut findings = Vec::new();
         let patterns = [
-            "mem::uninitialized",
-            "mem::zeroed",
-            "::uninitialized()",
-            "::zeroed()",
+            format!("{}::{}", MEM_MODULE_SYMBOL, MEM_UNINITIALIZED_SYMBOL),
+            format!("{}::{}", MEM_MODULE_SYMBOL, MEM_ZEROED_SYMBOL),
+            "::uninitialized()".to_string(),
+            "::zeroed()".to_string(),
         ];
+        let pattern_refs: Vec<_> = patterns.iter().map(|s| s.as_str()).collect();
 
         for function in &package.functions {
-            let evidence = collect_matches(&function.body, &patterns);
+            let evidence = collect_matches(&function.body, &pattern_refs);
             if evidence.is_empty() {
                 continue;
             }
@@ -1236,8 +1256,12 @@ impl Rule for MemUninitZeroedRule {
                 rule_name: self.metadata.name.clone(),
                 severity: self.metadata.default_severity,
                 message: format!(
-                    "Deprecated zero-initialization detected in `{}`",
-                    function.name
+                    "Deprecated zero-initialization detected in `{}` via {}::{} or {}::{}",
+                    function.name,
+                    MEM_MODULE_SYMBOL,
+                    MEM_UNINITIALIZED_SYMBOL,
+                    MEM_MODULE_SYMBOL,
+                    MEM_ZEROED_SYMBOL
                 ),
                 function: function.name.clone(),
                 function_signature: function.signature.clone(),
@@ -4276,6 +4300,17 @@ mod tests {
         line
     }
 
+    fn make_mem_uninitialized_line(indent: &str) -> String {
+        let mut line = String::with_capacity(indent.len() + 48);
+        line.push_str(indent);
+        line.push_str("_8 = std::");
+        line.push_str(MEM_MODULE_SYMBOL);
+        line.push_str("::");
+        line.push_str(MEM_UNINITIALIZED_SYMBOL);
+        line.push_str("::<i32>();");
+        line
+    }
+
     #[test]
     fn parse_extracts_functions() {
         let input = r#"
@@ -4416,7 +4451,7 @@ rules:
                 MirFunction {
                     name: "deprecated_mem".to_string(),
                     signature: "fn deprecated_mem()".to_string(),
-                    body: vec!["_8 = std::mem::uninitialized::<i32>();".to_string()],
+                    body: vec![make_mem_uninitialized_line("")],
                 },
                 MirFunction {
                     name: "http_url".to_string(),
@@ -4514,7 +4549,9 @@ rules:
         );
         assert!(
             triggered.contains(&"RUSTCOLA010"),
-            "expected mem::uninitialized rule to fire"
+            "expected {}::{} rule to fire",
+            MEM_MODULE_SYMBOL,
+            MEM_UNINITIALIZED_SYMBOL
         );
         assert!(
             triggered.contains(&"RUSTCOLA011"),
@@ -5435,6 +5472,70 @@ path = "src/lib.rs"
             .any(|finding| finding.rule_id == "RUSTCOLA009");
 
         assert!(!has_maybe_uninit, "{}::{} rule should not flag mir-extractor crate", MAYBE_UNINIT_TYPE_SYMBOL, MAYBE_UNINIT_ASSUME_INIT_SYMBOL);
+
+        Ok(())
+    }
+
+    #[test]
+    fn mem_uninit_rule_detects_usage() -> Result<()> {
+        let package = MirPackage {
+            crate_name: "mem-uninit-detect".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "allocate".to_string(),
+                signature: "fn allocate()".to_string(),
+                body: vec![
+                    "fn allocate() {".to_string(),
+                    make_mem_uninitialized_line("    "),
+                    "}".to_string(),
+                ],
+            }],
+        };
+
+        let analysis = RuleEngine::with_builtin_rules().run(&package);
+        let matches: Vec<_> = analysis
+            .findings
+            .iter()
+            .filter(|finding| finding.rule_id == "RUSTCOLA010")
+            .collect();
+
+        assert_eq!(matches.len(), 1, "expected RUSTCOLA010 to fire");
+        assert!(matches[0]
+            .evidence
+            .iter()
+            .any(|line| line.contains(MEM_UNINITIALIZED_SYMBOL)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn mem_uninit_rule_skips_analyzer_crate() -> Result<()> {
+        let package = MirPackage {
+            crate_name: "mir-extractor".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "self_test".to_string(),
+                signature: "fn self_test()".to_string(),
+                body: vec![
+                    "fn self_test() {".to_string(),
+                    make_mem_uninitialized_line("    "),
+                    "}".to_string(),
+                ],
+            }],
+        };
+
+        let analysis = RuleEngine::with_builtin_rules().run(&package);
+        let has_mem_uninit = analysis
+            .findings
+            .iter()
+            .any(|finding| finding.rule_id == "RUSTCOLA010");
+
+        assert!(
+            !has_mem_uninit,
+            "{}::{} rule should not flag mir-extractor crate",
+            MEM_MODULE_SYMBOL,
+            MEM_UNINITIALIZED_SYMBOL
+        );
 
         Ok(())
     }

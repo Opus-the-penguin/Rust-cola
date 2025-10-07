@@ -190,6 +190,41 @@ fn text_contains_word_case_insensitive(text: &str, needle: &str) -> bool {
         .any(|token| token == target)
 }
 
+fn strip_comments(line: &str, in_block_comment: &mut bool) -> String {
+    let mut result = String::with_capacity(line.len());
+    let bytes = line.as_bytes();
+    let mut idx = 0usize;
+
+    while idx < bytes.len() {
+        if *in_block_comment {
+            if bytes[idx] == b'*' && idx + 1 < bytes.len() && bytes[idx + 1] == b'/' {
+                *in_block_comment = false;
+                idx += 2;
+            } else {
+                idx += 1;
+            }
+            continue;
+        }
+
+        if bytes[idx] == b'/' && idx + 1 < bytes.len() {
+            match bytes[idx + 1] {
+                b'/' => break,
+                b'*' => {
+                    *in_block_comment = true;
+                    idx += 2;
+                    continue;
+                }
+                _ => {}
+            }
+        }
+
+        result.push(bytes[idx] as char);
+        idx += 1;
+    }
+
+    result
+}
+
 pub struct RuleEngine {
     rules: Vec<Box<dyn Rule>>,
 }
@@ -686,15 +721,24 @@ impl UnsafeUsageRule {
         let mut evidence = Vec::new();
         let mut seen = HashSet::new();
 
-        if text_contains_word_case_insensitive(&function.signature, "unsafe") {
+        let (sanitized_sig, _) =
+            strip_string_literals(StringLiteralState::default(), &function.signature);
+        if text_contains_word_case_insensitive(&sanitized_sig, "unsafe") {
             let sig = format!("signature: {}", function.signature.trim());
             if seen.insert(sig.clone()) {
                 evidence.push(sig);
             }
         }
 
+        let mut state = StringLiteralState::default();
+        let mut in_block_comment = false;
+
         for line in &function.body {
-            if text_contains_word_case_insensitive(line, "unsafe") {
+            let (sanitized, next_state) = strip_string_literals(state, line);
+            state = next_state;
+
+            let without_comments = strip_comments(&sanitized, &mut in_block_comment);
+            if text_contains_word_case_insensitive(&without_comments, "unsafe") {
                 let entry = line.trim().to_string();
                 if seen.insert(entry.clone()) {
                     evidence.push(entry);
@@ -5086,6 +5130,69 @@ path = "src/lib.rs"
         assert!(
             findings.is_empty(),
             "string literals referencing allocator names should not trigger RUSTCOLA017"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn unsafe_usage_rule_detects_unsafe_block() -> Result<()> {
+        let package = MirPackage {
+            crate_name: "unsafe-detect".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "danger".to_string(),
+                signature: "fn danger()".to_string(),
+                body: vec![
+                    "fn danger() {".to_string(),
+                    "    unsafe { core::ptr::read(_1); }".to_string(),
+                    "}".to_string(),
+                ],
+            }],
+        };
+
+        let analysis = RuleEngine::with_builtin_rules().run(&package);
+        let matches: Vec<_> = analysis
+            .findings
+            .iter()
+            .filter(|finding| finding.rule_id == "RUSTCOLA003")
+            .collect();
+
+        assert_eq!(matches.len(), 1, "expected RUSTCOLA003 to fire");
+        assert!(matches[0]
+            .evidence
+            .iter()
+            .any(|line| line.contains("unsafe")));
+
+        Ok(())
+    }
+
+    #[test]
+    fn unsafe_usage_rule_ignores_string_literals() -> Result<()> {
+        let package = MirPackage {
+            crate_name: "unsafe-literal".to_string(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "doc_example".to_string(),
+                signature: "fn doc_example()".to_string(),
+                body: vec![
+                    "fn doc_example() {".to_string(),
+                    "    _1 = \"This string mentions unsafe code\";".to_string(),
+                    "}".to_string(),
+                ],
+            }],
+        };
+
+        let analysis = RuleEngine::with_builtin_rules().run(&package);
+        let matches: Vec<_> = analysis
+            .findings
+            .iter()
+            .filter(|finding| finding.rule_id == "RUSTCOLA003")
+            .collect();
+
+        assert!(
+            matches.is_empty(),
+            "string literal mentioning unsafe should not trigger RUSTCOLA003"
         );
 
         Ok(())

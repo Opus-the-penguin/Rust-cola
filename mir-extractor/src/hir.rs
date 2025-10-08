@@ -3,10 +3,17 @@
 use super::{detect_crate_name, discover_rustc_targets, RustcTarget};
 use crate::SourceSpan;
 use anyhow::{anyhow, Context, Result};
-use rustc_hir::def::DefKind;
-use rustc_hir::def_id::DefId;
-use rustc_middle::ty::TyCtxt;
-use rustc_span::Span;
+use rustc_ast::{AttrKind, Attribute};
+use rustc_hir::definitions::{DisambiguatedDefPathData, CRATE_DEF_INDEX};
+use rustc_hir::{
+    self,
+    def::{CtorKind, DefKind},
+    def_id::DefId,
+    def_id::LocalDefId,
+    Node,
+};
+use rustc_middle::ty::{self, print::with_no_trimmed_paths, ImplPolarity, TyCtxt};
+use rustc_span::{symbol::kw, Span, Symbol};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -24,6 +31,161 @@ pub struct HirItem {
     pub span: Option<SourceSpan>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attributes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<HirVisibility>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<HirSymbol>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<HirItemKind>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "scope", rename_all = "snake_case")]
+pub enum HirVisibility {
+    Public,
+    Crate { crate_name: String },
+    Restricted { parent: String },
+    Private,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HirSymbol {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disambiguator: Option<u32>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", content = "data", rename_all = "snake_case")]
+pub enum HirItemKind {
+    Module(HirNamedItem),
+    Struct(HirStruct),
+    Enum(HirEnum),
+    Union(HirStruct),
+    Trait(HirTrait),
+    Impl(HirImpl),
+    TypeAlias(HirTypeAlias),
+    Const(HirConst),
+    Static(HirStatic),
+    Use(HirUse),
+    ExternCrate(HirExternCrate),
+    ForeignMod(HirForeignMod),
+    Function(HirFunction),
+    Macro(HirNamedItem),
+    Other(HirNamedItem),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HirNamedItem {
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HirStruct {
+    pub name: String,
+    pub kind: HirStructKind,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HirStructKind {
+    Record,
+    Tuple,
+    Unit,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HirEnum {
+    pub name: String,
+    pub variants: usize,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HirTrait {
+    pub name: String,
+    pub is_auto: bool,
+    pub is_unsafe: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HirImpl {
+    pub self_ty: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trait_ref: Option<String>,
+    pub polarity: HirImplPolarity,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HirImplPolarity {
+    Positive,
+    Negative,
+    Reservation,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HirTypeAlias {
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HirConst {
+    pub name: String,
+    pub ty: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HirStatic {
+    pub name: String,
+    pub mutable: bool,
+    pub ty: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HirUse {
+    pub path: String,
+    pub is_glob: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HirExternCrate {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HirForeignMod {
+    pub abi: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HirFunction {
+    pub name: String,
+    pub asyncness: bool,
+    pub constness: bool,
+    pub unsafety: bool,
+    pub abi: String,
+    pub has_body: bool,
+    pub owner: HirFunctionOwner,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "owner", content = "data", rename_all = "snake_case")]
+pub enum HirFunctionOwner {
+    Free,
+    Impl {
+        self_ty: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trait_ref: Option<String>,
+    },
+    Trait {
+        trait_name: String,
+        provided: bool,
+    },
+    Foreign {
+        abi: String,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -258,7 +420,10 @@ pub fn collect_crate_snapshot<'tcx>(
         let def_path = tcx.def_path_str(def_id);
         let def_kind = format!("{:?}", tcx.def_kind(def_id));
         let span = span_to_source_span(tcx, tcx.def_span(def_id));
-        let attributes = Vec::new();
+        let attributes = collect_attributes(tcx, def_id);
+        let visibility = to_hir_visibility(tcx, def_id);
+        let symbol = build_symbol(tcx, def_id);
+        let kind = classify_item(tcx, def_id, local_def_id);
 
         if matches!(
             tcx.def_kind(def_id),
@@ -277,6 +442,9 @@ pub fn collect_crate_snapshot<'tcx>(
             def_kind,
             span,
             attributes,
+            visibility,
+            symbol,
+            kind,
         });
     }
 
@@ -286,6 +454,280 @@ pub fn collect_crate_snapshot<'tcx>(
         target: target.clone(),
         items,
         functions,
+    }
+}
+
+fn collect_attributes(tcx: TyCtxt<'_>, def_id: DefId) -> Vec<String> {
+    tcx.get_attrs(def_id).iter().map(attribute_name).collect()
+}
+
+fn attribute_name(attr: &Attribute) -> String {
+    match &attr.kind {
+        AttrKind::Normal(normal) => normal
+            .item
+            .path
+            .segments
+            .iter()
+            .map(|segment| segment.ident.name.to_string())
+            .collect::<Vec<_>>()
+            .join("::"),
+        AttrKind::DocComment(..) => "doc".to_string(),
+    }
+}
+
+fn to_hir_visibility(tcx: TyCtxt<'_>, def_id: DefId) -> Option<HirVisibility> {
+    match tcx.visibility(def_id) {
+        ty::Visibility::Public => Some(HirVisibility::Public),
+        ty::Visibility::Restricted(scope) => {
+            let parent = tcx.opt_parent(def_id);
+            if parent == Some(scope) {
+                Some(HirVisibility::Private)
+            } else if scope.index == CRATE_DEF_INDEX {
+                let crate_name = tcx.crate_name(scope.krate).to_string();
+                Some(HirVisibility::Crate { crate_name })
+            } else {
+                let parent = tcx.def_path_str(scope);
+                Some(HirVisibility::Restricted { parent })
+            }
+        }
+    }
+}
+
+fn build_symbol(tcx: TyCtxt<'_>, def_id: DefId) -> Option<HirSymbol> {
+    let name = tcx.opt_item_name(def_id)?;
+    let disambiguator = tcx
+        .def_path(def_id)
+        .data
+        .last()
+        .map(|DisambiguatedDefPathData { disambiguator, .. }| *disambiguator);
+    Some(HirSymbol {
+        name: name.to_string(),
+        disambiguator,
+    })
+}
+
+fn classify_item<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    def_id: DefId,
+    local_def_id: LocalDefId,
+) -> Option<HirItemKind> {
+    let hir = tcx.hir();
+    let hir_id = hir.local_def_id_to_hir_id(local_def_id);
+    Some(match hir.get(hir_id) {
+        Node::Item(item) => classify_crate_item(tcx, def_id, item),
+        Node::ImplItem(item) => classify_impl_item(tcx, def_id, item),
+        Node::TraitItem(item) => classify_trait_item(tcx, def_id, item),
+        Node::ForeignItem(item) => classify_foreign_item(tcx, def_id, item),
+        _ => return None,
+    })
+}
+
+fn classify_crate_item<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    def_id: DefId,
+    item: &'tcx hir::Item<'tcx>,
+) -> HirItemKind {
+    let name = item.ident.name.to_string();
+    match &item.kind {
+        hir::ItemKind::Mod(..) => HirItemKind::Module(HirNamedItem { name }),
+        hir::ItemKind::Struct(_, _, data) => HirItemKind::Struct(HirStruct {
+            name,
+            kind: struct_kind_from_variant(data),
+        }),
+        hir::ItemKind::Union(_, _, data) => HirItemKind::Union(HirStruct {
+            name,
+            kind: struct_kind_from_variant(data),
+        }),
+        hir::ItemKind::Enum(_, _, enum_def) => HirItemKind::Enum(HirEnum {
+            name,
+            variants: enum_def.variants.len(),
+        }),
+        hir::ItemKind::Trait(_, is_auto, safety, ..) => HirItemKind::Trait(HirTrait {
+            name,
+            is_auto: matches!(is_auto, hir::IsAuto::Yes),
+            is_unsafe: matches!(safety, hir::Safety::Unsafe),
+        }),
+        hir::ItemKind::Impl(..) => HirItemKind::Impl(build_impl_info(tcx, def_id)),
+        hir::ItemKind::Fn { sig, has_body, .. } => {
+            HirItemKind::Function(build_function(sig, *has_body, HirFunctionOwner::Free, name))
+        }
+        hir::ItemKind::Const(..) => HirItemKind::Const(HirConst {
+            name,
+            ty: format_type_of(tcx, def_id),
+        }),
+        hir::ItemKind::Static(mutability, ..) => HirItemKind::Static(HirStatic {
+            name,
+            mutable: matches!(mutability, hir::Mutability::Mut),
+            ty: format_type_of(tcx, def_id),
+        }),
+        hir::ItemKind::TyAlias(..) | hir::ItemKind::TraitAlias(..) => {
+            HirItemKind::TypeAlias(HirTypeAlias { name })
+        }
+        hir::ItemKind::Use(path, kind) => HirItemKind::Use(HirUse {
+            path: use_path_to_string(path),
+            is_glob: matches!(kind, hir::UseKind::Glob),
+        }),
+        hir::ItemKind::ExternCrate(original, _) => HirItemKind::ExternCrate(HirExternCrate {
+            name,
+            original: original.map(|sym: Symbol| sym.to_string()),
+        }),
+        hir::ItemKind::ForeignMod { abi, .. } => HirItemKind::ForeignMod(HirForeignMod {
+            abi: abi.name().to_string(),
+        }),
+        hir::ItemKind::Macro(..) => HirItemKind::Macro(HirNamedItem { name }),
+        _ => HirItemKind::Other(HirNamedItem { name }),
+    }
+}
+
+fn classify_impl_item(tcx: TyCtxt<'_>, def_id: DefId, item: &hir::ImplItem<'_>) -> HirItemKind {
+    let name = item.ident.name.to_string();
+    match item.kind {
+        hir::ImplItemKind::Fn(ref sig, _) => {
+            let parent_impl = tcx.parent(def_id).expect("impl item without parent impl");
+            let owner = impl_owner_info(tcx, parent_impl);
+            HirItemKind::Function(build_function(sig, true, owner, name))
+        }
+        hir::ImplItemKind::Const(..) => HirItemKind::Const(HirConst {
+            name,
+            ty: format_type_of(tcx, def_id),
+        }),
+        hir::ImplItemKind::Type(..) => HirItemKind::TypeAlias(HirTypeAlias { name }),
+    }
+}
+
+fn classify_trait_item(tcx: TyCtxt<'_>, def_id: DefId, item: &hir::TraitItem<'_>) -> HirItemKind {
+    let name = item.ident.name.to_string();
+    match item.kind {
+        hir::TraitItemKind::Fn(ref sig, ref trait_fn) => {
+            let provided = matches!(trait_fn, hir::TraitFn::Provided(_));
+            let owner = trait_owner_info(tcx, def_id, provided);
+            HirItemKind::Function(build_function(sig, provided, owner, name))
+        }
+        hir::TraitItemKind::Const(..) => HirItemKind::Const(HirConst {
+            name,
+            ty: format_type_of(tcx, def_id),
+        }),
+        hir::TraitItemKind::Type(..) => HirItemKind::TypeAlias(HirTypeAlias { name }),
+    }
+}
+
+fn classify_foreign_item(
+    tcx: TyCtxt<'_>,
+    def_id: DefId,
+    item: &hir::ForeignItem<'_>,
+) -> HirItemKind {
+    let name = item.ident.name.to_string();
+    match item.kind {
+        hir::ForeignItemKind::Fn(ref sig, ..) => {
+            let abi = sig.header.abi.name().to_string();
+            HirItemKind::Function(build_function(
+                sig,
+                false,
+                HirFunctionOwner::Foreign { abi },
+                name,
+            ))
+        }
+        hir::ForeignItemKind::Static(_, mutability, _) => HirItemKind::Static(HirStatic {
+            name,
+            mutable: matches!(mutability, hir::Mutability::Mut),
+            ty: format_type_of(tcx, def_id),
+        }),
+        hir::ForeignItemKind::Type => HirItemKind::TypeAlias(HirTypeAlias { name }),
+    }
+}
+
+fn build_impl_info(tcx: TyCtxt<'_>, def_id: DefId) -> HirImpl {
+    let self_ty = format_type_of(tcx, def_id);
+    let trait_ref = tcx
+        .impl_trait_ref(def_id)
+        .map(|trait_ref| format_trait_ref(tcx, trait_ref));
+    let polarity = map_impl_polarity(tcx.impl_polarity(def_id));
+    HirImpl {
+        self_ty,
+        trait_ref,
+        polarity,
+    }
+}
+
+fn impl_owner_info(tcx: TyCtxt<'_>, impl_def_id: DefId) -> HirFunctionOwner {
+    let self_ty = format_type_of(tcx, impl_def_id);
+    let trait_ref = tcx
+        .impl_trait_ref(impl_def_id)
+        .map(|trait_ref| format_trait_ref(tcx, trait_ref));
+    HirFunctionOwner::Impl { self_ty, trait_ref }
+}
+
+fn map_impl_polarity(polarity: ImplPolarity) -> HirImplPolarity {
+    match polarity {
+        ImplPolarity::Positive => HirImplPolarity::Positive,
+        ImplPolarity::Negative => HirImplPolarity::Negative,
+        ImplPolarity::Reservation => HirImplPolarity::Reservation,
+    }
+}
+
+fn build_function(
+    sig: &hir::FnSig<'_>,
+    has_body: bool,
+    owner: HirFunctionOwner,
+    name: String,
+) -> HirFunction {
+    let header = &sig.header;
+    HirFunction {
+        name,
+        asyncness: header.is_async(),
+        constness: header.is_const(),
+        unsafety: header.is_unsafe(),
+        abi: header.abi.name().to_string(),
+        has_body,
+        owner,
+    }
+}
+
+fn trait_owner_info(tcx: TyCtxt<'_>, def_id: DefId, provided: bool) -> HirFunctionOwner {
+    let trait_def_id = tcx.parent(def_id).expect("trait item without parent trait");
+    let trait_name = tcx.item_name(trait_def_id).to_string();
+    HirFunctionOwner::Trait {
+        trait_name,
+        provided,
+    }
+}
+
+fn format_type_of(tcx: TyCtxt<'_>, def_id: DefId) -> String {
+    with_no_trimmed_paths(|| tcx.type_of(def_id).skip_binder().to_string())
+}
+
+fn format_trait_ref<'tcx>(tcx: TyCtxt<'tcx>, trait_ref: ty::TraitRef<'tcx>) -> String {
+    with_no_trimmed_paths(|| trait_ref.to_string())
+}
+
+fn struct_kind_from_variant(data: &hir::VariantData<'_>) -> HirStructKind {
+    match data.ctor_kind() {
+        Some(CtorKind::Const) => HirStructKind::Unit,
+        Some(CtorKind::Fn) => HirStructKind::Tuple,
+        Some(CtorKind::Fictive) | None => {
+            if data.fields().is_empty() {
+                HirStructKind::Unit
+            } else {
+                HirStructKind::Record
+            }
+        }
+    }
+}
+
+fn use_path_to_string(path: &hir::UsePath<'_>) -> String {
+    let mut segments = Vec::with_capacity(path.segments.len());
+    for segment in path.segments {
+        let name = segment.ident.name;
+        if name == kw::PathRoot {
+            continue;
+        }
+        segments.push(name.to_string());
+    }
+    let joined = segments.join("::");
+    if path.is_global() {
+        format!("::{joined}")
+    } else {
+        joined
     }
 }
 

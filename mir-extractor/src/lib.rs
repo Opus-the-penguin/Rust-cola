@@ -1,6 +1,8 @@
 #![cfg_attr(feature = "hir-driver", feature(rustc_private))]
 
 #[cfg(feature = "hir-driver")]
+extern crate rustc_ast;
+#[cfg(feature = "hir-driver")]
 extern crate rustc_driver;
 #[cfg(feature = "hir-driver")]
 extern crate rustc_hir;

@@ -4528,7 +4528,13 @@ pub(crate) fn discover_rustc_targets(crate_path: &Path) -> Result<Vec<RustcTarge
     };
 
     let mut targets = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
     for target in &package.targets {
+        if !target.required_features.is_empty() {
+            skipped.push(target.name.clone());
+            continue;
+        }
+
         if target
             .kind
             .iter()
@@ -4543,6 +4549,14 @@ pub(crate) fn discover_rustc_targets(crate_path: &Path) -> Result<Vec<RustcTarge
     }
 
     if targets.is_empty() {
+        if !skipped.is_empty() {
+            return Err(anyhow!(
+                "package {} has no lib or bin targets enabled without additional features (skipped targets: {})",
+                package.name,
+                skipped.join(", ")
+            ));
+        }
+
         return Err(anyhow!(
             "package {} has no lib or bin targets; cannot extract MIR",
             package.name

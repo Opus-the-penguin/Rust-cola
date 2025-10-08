@@ -1,8 +1,25 @@
+#![cfg_attr(feature = "hir-driver", feature(rustc_private))]
+
+#[cfg(feature = "hir-driver")]
+extern crate rustc_driver;
+#[cfg(feature = "hir-driver")]
+extern crate rustc_hir;
+#[cfg(feature = "hir-driver")]
+extern crate rustc_interface;
+#[cfg(feature = "hir-driver")]
+extern crate rustc_middle;
+#[cfg(feature = "hir-driver")]
+extern crate rustc_session;
+#[cfg(feature = "hir-driver")]
+extern crate rustc_span;
+
 use anyhow::{Context, Result};
 use clap::{ArgAction, Parser};
-use mir_extractor::{
-    analyze_with_engine, extract_with_cache, CacheConfig, CacheMissReason, CacheStatus, RuleEngine,
-};
+#[cfg(not(feature = "hir-driver"))]
+use mir_extractor::extract_with_cache;
+#[cfg(feature = "hir-driver")]
+use mir_extractor::extract_with_cache_full;
+use mir_extractor::{analyze_with_engine, CacheConfig, CacheMissReason, CacheStatus, RuleEngine};
 use std::fs;
 use std::path::PathBuf;
 
@@ -59,6 +76,12 @@ fn main() -> Result<()> {
 
     println!("Extracting MIR from {}", args.crate_path.display());
 
+    #[cfg(feature = "hir-driver")]
+    let (artifacts, cache_status) = extract_with_cache_full(&args.crate_path, &cache_config)?;
+    #[cfg(feature = "hir-driver")]
+    let package = artifacts.mir.clone();
+
+    #[cfg(not(feature = "hir-driver"))]
     let (package, cache_status) = extract_with_cache(&args.crate_path, &cache_config)?;
 
     match cache_status {
@@ -90,6 +113,17 @@ fn main() -> Result<()> {
         .mir_json
         .unwrap_or_else(|| args.out_dir.join("mir.json"));
     mir_extractor::write_mir_json(&mir_json_path, &package)?;
+
+    #[cfg(feature = "hir-driver")]
+    if let Some(hir_package) = &artifacts.hir {
+        let hir_json_path = args.out_dir.join("hir.json");
+        mir_extractor::write_hir_json(&hir_json_path, hir_package)?;
+        println!(
+            "Captured HIR snapshot for {} -> {}",
+            hir_package.crate_name,
+            hir_json_path.display()
+        );
+    }
 
     let mut engine = RuleEngine::with_builtin_rules();
 

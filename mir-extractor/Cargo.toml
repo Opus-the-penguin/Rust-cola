@@ -16,6 +16,11 @@ name = "hir-spike"
 path = "src/bin/hir_spike.rs"
 required-features = ["hir-driver"]
 
+[[bin]]
+name = "hir-driver-wrapper"
+path = "src/bin/hir_driver_wrapper.rs"
+required-features = ["hir-driver"]
+
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 anyhow = "1.0"

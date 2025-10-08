@@ -1,3 +1,18 @@
+#![cfg_attr(feature = "hir-driver", feature(rustc_private))]
+
+#[cfg(feature = "hir-driver")]
+extern crate rustc_driver;
+#[cfg(feature = "hir-driver")]
+extern crate rustc_hir;
+#[cfg(feature = "hir-driver")]
+extern crate rustc_interface;
+#[cfg(feature = "hir-driver")]
+extern crate rustc_middle;
+#[cfg(feature = "hir-driver")]
+extern crate rustc_session;
+#[cfg(feature = "hir-driver")]
+extern crate rustc_span;
+
 use anyhow::{anyhow, Context, Result};
 use cargo_metadata::MetadataCommand;
 use semver::{Version, VersionReq};
@@ -14,9 +29,16 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use walkdir::{DirEntry, WalkDir};
 
 mod dataflow;
+#[cfg(feature = "hir-driver")]
+mod hir;
 mod prototypes;
 
 pub use dataflow::{Assignment, MirDataflow};
+#[cfg(feature = "hir-driver")]
+pub use hir::{
+    capture_root_from_env, collect_crate_snapshot, target_spec_from_env, HirFunctionBody, HirIndex,
+    HirItem, HirPackage, HirTargetSpec,
+};
 pub use prototypes::{
     detect_broadcast_unsync_payloads, detect_command_invocations,
     detect_content_length_allocations, detect_openssl_verify_none, detect_truncating_len_casts,
@@ -104,6 +126,13 @@ pub struct MirPackage {
     pub crate_name: String,
     pub crate_root: String,
     pub functions: Vec<MirFunction>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ExtractionArtifacts {
+    pub mir: MirPackage,
+    #[cfg(feature = "hir-driver")]
+    pub hir: Option<HirPackage>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -4081,24 +4110,37 @@ struct CacheEnvelope {
     #[serde(default)]
     analysis_cache: Vec<CachedAnalysisEntry>,
     mir: MirPackage,
+    #[cfg(feature = "hir-driver")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    hir: Option<HirPackage>,
 }
 
-const CACHE_VERSION: u32 = 1;
+const CACHE_VERSION: u32 = 2;
 
 pub fn extract_with_cache(
     crate_path: &Path,
     cache: &CacheConfig,
 ) -> Result<(MirPackage, CacheStatus)> {
-    extract_with_cache_with(crate_path, cache, || extract(crate_path))
+    let (artifacts, status) =
+        extract_artifacts_with_cache(crate_path, cache, || extract_artifacts(crate_path))?;
+    Ok((artifacts.mir, status))
 }
 
-fn extract_with_cache_with<F>(
+#[cfg(feature = "hir-driver")]
+pub fn extract_with_cache_full(
+    crate_path: &Path,
+    cache: &CacheConfig,
+) -> Result<(ExtractionArtifacts, CacheStatus)> {
+    extract_artifacts_with_cache(crate_path, cache, || extract_artifacts(crate_path))
+}
+
+pub fn extract_artifacts_with_cache<F>(
     crate_path: &Path,
     cache: &CacheConfig,
     extractor: F,
-) -> Result<(MirPackage, CacheStatus)>
+) -> Result<(ExtractionArtifacts, CacheStatus)>
 where
-    F: FnOnce() -> Result<MirPackage>,
+    F: FnOnce() -> Result<ExtractionArtifacts>,
 {
     if !cache.enabled {
         let package = extractor()?;
@@ -4133,7 +4175,12 @@ where
                         created_timestamp: envelope.created_timestamp,
                         function_fingerprints: envelope.function_fingerprints.clone(),
                     };
-                    return Ok((envelope.mir, CacheStatus::Hit(metadata)));
+                    let artifacts = ExtractionArtifacts {
+                        mir: envelope.mir.clone(),
+                        #[cfg(feature = "hir-driver")]
+                        hir: envelope.hir.clone(),
+                    };
+                    return Ok((artifacts, CacheStatus::Hit(metadata)));
                 } else {
                     miss_reason = CacheMissReason::Invalid("fingerprint mismatch".to_string());
                     fs::remove_file(&cache_file).ok();
@@ -4146,8 +4193,8 @@ where
         }
     }
 
-    let package = extractor()?;
-    let function_fingerprints = compute_function_fingerprints(&package);
+    let artifacts = extractor()?;
+    let function_fingerprints = compute_function_fingerprints(&artifacts.mir);
     let metadata = CacheMetadata {
         crate_fingerprint: crate_fingerprint.clone(),
         created_timestamp: current_timestamp(),
@@ -4161,7 +4208,9 @@ where
         created_timestamp: metadata.created_timestamp,
         function_fingerprints,
         analysis_cache: Vec::new(),
-        mir: package.clone(),
+        mir: artifacts.mir.clone(),
+        #[cfg(feature = "hir-driver")]
+        hir: artifacts.hir.clone(),
     };
 
     if let Err(err) = write_cache_envelope(&cache_file, &envelope) {
@@ -4172,7 +4221,7 @@ where
     }
 
     Ok((
-        package,
+        artifacts,
         CacheStatus::Miss {
             metadata,
             reason: miss_reason,
@@ -4423,7 +4472,7 @@ fn current_timestamp() -> u64 {
 }
 
 #[derive(Clone, Debug)]
-enum RustcTarget {
+pub(crate) enum RustcTarget {
     Lib,
     Bin(String),
 }
@@ -4448,7 +4497,7 @@ impl RustcTarget {
     }
 }
 
-fn discover_rustc_targets(crate_path: &Path) -> Result<Vec<RustcTarget>> {
+pub(crate) fn discover_rustc_targets(crate_path: &Path) -> Result<Vec<RustcTarget>> {
     let manifest_path = crate_path.join("Cargo.toml");
     let mut cmd = MetadataCommand::new();
     if manifest_path.exists() {
@@ -4563,12 +4612,45 @@ pub fn extract(crate_path: &Path) -> Result<MirPackage> {
     })
 }
 
+fn extract_artifacts(crate_path: &Path) -> Result<ExtractionArtifacts> {
+    let mir = extract(crate_path)?;
+
+    #[cfg(feature = "hir-driver")]
+    let hir = match hir::capture_hir(crate_path) {
+        Ok(hir) => Some(hir),
+        Err(err) => {
+            eprintln!(
+                "rust-cola: failed to capture HIR for {}: {err:?}",
+                crate_path.display()
+            );
+            None
+        }
+    };
+
+    Ok(ExtractionArtifacts {
+        mir,
+        #[cfg(feature = "hir-driver")]
+        hir,
+    })
+}
+
 pub fn write_mir_json(path: impl AsRef<Path>, package: &MirPackage) -> Result<()> {
     if let Some(parent) = path.as_ref().parent() {
         fs::create_dir_all(parent).context("create parent directories for MIR JSON")?;
     }
     let mut file = File::create(path.as_ref()).context("create MIR JSON file")?;
     serde_json::to_writer_pretty(&mut file, package).context("serialize MIR package to JSON")?;
+    file.write_all(b"\n").ok();
+    Ok(())
+}
+
+#[cfg(feature = "hir-driver")]
+pub fn write_hir_json(path: impl AsRef<Path>, package: &HirPackage) -> Result<()> {
+    if let Some(parent) = path.as_ref().parent() {
+        fs::create_dir_all(parent).context("create parent directories for HIR JSON")?;
+    }
+    let mut file = File::create(path.as_ref()).context("create HIR JSON file")?;
+    serde_json::to_writer_pretty(&mut file, package).context("serialize HIR package to JSON")?;
     file.write_all(b"\n").ok();
     Ok(())
 }
@@ -4902,7 +4984,7 @@ fn trim_trailing_blanks(lines: &mut Vec<String>) {
     }
 }
 
-fn detect_crate_name(crate_path: &Path) -> Option<String> {
+pub(crate) fn detect_crate_name(crate_path: &Path) -> Option<String> {
     let canonical_crate = fs::canonicalize(crate_path)
         .ok()
         .unwrap_or_else(|| crate_path.to_path_buf());
@@ -7712,11 +7794,17 @@ path = "src/lib.rs"
         };
 
         let counter_clone = counter.clone();
-        let (first_package, status1) =
-            super::extract_with_cache_with(crate_root, &cache_config, move || {
+        let (first_artifacts, status1) =
+            super::extract_artifacts_with_cache(crate_root, &cache_config, move || {
                 counter_clone.fetch_add(1, Ordering::SeqCst);
-                Ok(base_package.clone())
+                Ok(ExtractionArtifacts {
+                    mir: base_package.clone(),
+                    #[cfg(feature = "hir-driver")]
+                    hir: None,
+                })
             })?;
+
+        let first_package = first_artifacts.mir.clone();
 
         assert_eq!(counter.load(Ordering::SeqCst), 1);
         match status1 {
@@ -7724,10 +7812,12 @@ path = "src/lib.rs"
             _ => panic!("expected first run to miss cache"),
         }
 
-        let (second_package, status2) =
-            super::extract_with_cache_with(crate_root, &cache_config, || {
+        let (second_artifacts, status2) =
+            super::extract_artifacts_with_cache(crate_root, &cache_config, || {
                 panic!("extractor invoked during cache hit");
             })?;
+
+        let second_package = second_artifacts.mir;
 
         match status2 {
             CacheStatus::Hit(meta) => {

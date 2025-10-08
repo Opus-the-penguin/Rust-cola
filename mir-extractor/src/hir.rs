@@ -14,6 +14,7 @@ use rustc_hir::{
 };
 use rustc_middle::ty::{self, print::with_no_trimmed_paths, ImplPolarity, TyCtxt};
 use rustc_span::{symbol::kw, Span, Symbol};
+use rustc_target::spec::abi::Abi;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -26,6 +27,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HirItem {
     pub def_path: String,
+    #[serde(default)]
+    pub def_path_hash: String,
     pub def_kind: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub span: Option<SourceSpan>,
@@ -168,6 +171,8 @@ pub struct HirFunction {
     pub abi: String,
     pub has_body: bool,
     pub owner: HirFunctionOwner,
+    #[serde(default)]
+    pub signature: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -191,6 +196,10 @@ pub enum HirFunctionOwner {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HirFunctionBody {
     pub def_path: String,
+    #[serde(default)]
+    pub def_path_hash: String,
+    #[serde(default)]
+    pub signature: String,
     pub mir_local_count: usize,
     pub mir_basic_block_count: usize,
 }
@@ -216,12 +225,65 @@ pub struct HirPackage {
 #[derive(Clone, Debug, Default)]
 pub struct HirIndex {
     by_path: HashMap<String, usize>,
+    by_hash: HashMap<String, usize>,
+    function_by_path: HashMap<String, usize>,
+    function_by_hash: HashMap<String, usize>,
 }
 
 const WRAPPER_ENV: &str = "MIR_COLA_HIR_WRAPPER";
 const TARGET_SPEC_ENV: &str = "MIR_COLA_HIR_TARGET_SPEC";
 const CAPTURE_OUT_ENV: &str = "MIR_COLA_HIR_CAPTURE_OUT";
 const CAPTURE_ROOT_ENV: &str = "MIR_COLA_HIR_CAPTURE_ROOT";
+
+fn format_def_path_hash(hash: rustc_span::def_id::DefPathHash) -> String {
+    hash.0.to_hex()
+}
+
+fn format_full_fn_signature(tcx: TyCtxt<'_>, def_id: DefId) -> String {
+    with_no_trimmed_paths(|| {
+        let sig = tcx.fn_sig(def_id).skip_binder();
+        let mut parts = String::new();
+
+        if sig.unsafety == ty::Unsafety::Unsafe {
+            parts.push_str("unsafe ");
+        }
+
+        if sig.abi != Abi::Rust {
+            parts.push_str("extern \"");
+            parts.push_str(sig.abi.name());
+            parts.push_str("\" ");
+        }
+
+        parts.push_str("fn ");
+        parts.push_str(&tcx.def_path_str(def_id));
+        parts.push('(');
+
+        let inputs = sig.inputs();
+        for (idx, ty) in inputs.iter().enumerate() {
+            if idx > 0 {
+                parts.push_str(", ");
+            }
+            parts.push_str(&ty.to_string());
+        }
+
+        if sig.c_variadic {
+            if !inputs.is_empty() {
+                parts.push_str(", ");
+            }
+            parts.push_str("...");
+        }
+
+        parts.push(')');
+
+        let output = sig.output();
+        if !output.is_unit() {
+            parts.push_str(" -> ");
+            parts.push_str(&output.to_string());
+        }
+
+        parts
+    })
+}
 
 pub fn capture_hir(crate_path: &Path) -> Result<HirPackage> {
     let canonical =
@@ -384,10 +446,29 @@ impl HirTargetSpec {
 impl HirIndex {
     pub fn build(package: &HirPackage) -> Self {
         let mut by_path = HashMap::with_capacity(package.items.len());
+        let mut by_hash = HashMap::with_capacity(package.items.len());
         for (idx, item) in package.items.iter().enumerate() {
             by_path.insert(item.def_path.clone(), idx);
+            if !item.def_path_hash.is_empty() {
+                by_hash.insert(item.def_path_hash.clone(), idx);
+            }
         }
-        HirIndex { by_path }
+
+        let mut function_by_path = HashMap::with_capacity(package.functions.len());
+        let mut function_by_hash = HashMap::with_capacity(package.functions.len());
+        for (idx, body) in package.functions.iter().enumerate() {
+            function_by_path.insert(body.def_path.clone(), idx);
+            if !body.def_path_hash.is_empty() {
+                function_by_hash.insert(body.def_path_hash.clone(), idx);
+            }
+        }
+
+        HirIndex {
+            by_path,
+            by_hash,
+            function_by_path,
+            function_by_hash,
+        }
     }
 
     pub fn lookup<'a>(&'a self, package: &'a HirPackage, def_path: &str) -> Option<&'a HirItem> {
@@ -398,6 +479,36 @@ impl HirIndex {
 
     pub fn contains(&self, def_path: &str) -> bool {
         self.by_path.contains_key(def_path)
+    }
+
+    pub fn lookup_hash<'a>(
+        &'a self,
+        package: &'a HirPackage,
+        def_path_hash: &str,
+    ) -> Option<&'a HirItem> {
+        self.by_hash
+            .get(def_path_hash)
+            .and_then(|idx| package.items.get(*idx))
+    }
+
+    pub fn lookup_function<'a>(
+        &'a self,
+        package: &'a HirPackage,
+        def_path: &str,
+    ) -> Option<&'a HirFunctionBody> {
+        self.function_by_path
+            .get(def_path)
+            .and_then(|idx| package.functions.get(*idx))
+    }
+
+    pub fn lookup_function_by_hash<'a>(
+        &'a self,
+        package: &'a HirPackage,
+        def_path_hash: &str,
+    ) -> Option<&'a HirFunctionBody> {
+        self.function_by_hash
+            .get(def_path_hash)
+            .and_then(|idx| package.functions.get(*idx))
     }
 }
 
@@ -418,6 +529,7 @@ pub fn collect_crate_snapshot<'tcx>(
     for local_def_id in hir_items.definitions() {
         let def_id: DefId = local_def_id.to_def_id();
         let def_path = tcx.def_path_str(def_id);
+        let def_path_hash = format_def_path_hash(tcx.def_path_hash(def_id));
         let def_kind = format!("{:?}", tcx.def_kind(def_id));
         let span = span_to_source_span(tcx, tcx.def_span(def_id));
         let attributes = collect_attributes(tcx, def_id);
@@ -432,6 +544,8 @@ pub fn collect_crate_snapshot<'tcx>(
             let mir = tcx.optimized_mir(local_def_id);
             functions.push(HirFunctionBody {
                 def_path: def_path.clone(),
+                def_path_hash: def_path_hash.clone(),
+                signature: format_full_fn_signature(tcx, def_id),
                 mir_local_count: mir.local_decls.len(),
                 mir_basic_block_count: mir.basic_blocks.len(),
             });
@@ -439,6 +553,7 @@ pub fn collect_crate_snapshot<'tcx>(
 
         items.push(HirItem {
             def_path,
+            def_path_hash,
             def_kind,
             span,
             attributes,
@@ -548,9 +663,14 @@ fn classify_crate_item<'tcx>(
             is_unsafe: matches!(safety, hir::Safety::Unsafe),
         }),
         hir::ItemKind::Impl(..) => HirItemKind::Impl(build_impl_info(tcx, def_id)),
-        hir::ItemKind::Fn { sig, has_body, .. } => {
-            HirItemKind::Function(build_function(sig, *has_body, HirFunctionOwner::Free, name))
-        }
+        hir::ItemKind::Fn { sig, has_body, .. } => HirItemKind::Function(build_function(
+            tcx,
+            def_id,
+            sig,
+            *has_body,
+            HirFunctionOwner::Free,
+            name,
+        )),
         hir::ItemKind::Const(..) => HirItemKind::Const(HirConst {
             name,
             ty: format_type_of(tcx, def_id),
@@ -585,7 +705,7 @@ fn classify_impl_item(tcx: TyCtxt<'_>, def_id: DefId, item: &hir::ImplItem<'_>) 
         hir::ImplItemKind::Fn(ref sig, _) => {
             let parent_impl = tcx.parent(def_id).expect("impl item without parent impl");
             let owner = impl_owner_info(tcx, parent_impl);
-            HirItemKind::Function(build_function(sig, true, owner, name))
+            HirItemKind::Function(build_function(tcx, def_id, sig, true, owner, name))
         }
         hir::ImplItemKind::Const(..) => HirItemKind::Const(HirConst {
             name,
@@ -601,7 +721,7 @@ fn classify_trait_item(tcx: TyCtxt<'_>, def_id: DefId, item: &hir::TraitItem<'_>
         hir::TraitItemKind::Fn(ref sig, ref trait_fn) => {
             let provided = matches!(trait_fn, hir::TraitFn::Provided(_));
             let owner = trait_owner_info(tcx, def_id, provided);
-            HirItemKind::Function(build_function(sig, provided, owner, name))
+            HirItemKind::Function(build_function(tcx, def_id, sig, provided, owner, name))
         }
         hir::TraitItemKind::Const(..) => HirItemKind::Const(HirConst {
             name,
@@ -621,6 +741,8 @@ fn classify_foreign_item(
         hir::ForeignItemKind::Fn(ref sig, ..) => {
             let abi = sig.header.abi.name().to_string();
             HirItemKind::Function(build_function(
+                tcx,
+                def_id,
                 sig,
                 false,
                 HirFunctionOwner::Foreign { abi },
@@ -666,6 +788,8 @@ fn map_impl_polarity(polarity: ImplPolarity) -> HirImplPolarity {
 }
 
 fn build_function(
+    tcx: TyCtxt<'_>,
+    def_id: DefId,
     sig: &hir::FnSig<'_>,
     has_body: bool,
     owner: HirFunctionOwner,
@@ -680,6 +804,7 @@ fn build_function(
         abi: header.abi.name().to_string(),
         has_body,
         owner,
+        signature: format_full_fn_signature(tcx, def_id),
     }
 }
 

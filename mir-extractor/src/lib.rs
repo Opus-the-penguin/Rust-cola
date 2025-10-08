@@ -116,11 +116,32 @@ pub struct Finding {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MirFunctionHirMetadata {
+    pub def_path_hash: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MirFunction {
     pub name: String,
     pub signature: String,
     pub body: Vec<String>,
     pub span: Option<SourceSpan>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hir: Option<MirFunctionHirMetadata>,
+}
+
+impl Default for MirFunction {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            signature: String::new(),
+            body: Vec::new(),
+            span: None,
+            hir: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -4069,6 +4090,8 @@ pub struct FunctionFingerprint {
     pub name: String,
     pub signature: String,
     pub hash: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hir_def_path_hash: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -4117,7 +4140,7 @@ struct CacheEnvelope {
     hir: Option<HirPackage>,
 }
 
-const CACHE_VERSION: u32 = 2;
+const CACHE_VERSION: u32 = 3;
 
 pub fn extract_with_cache(
     crate_path: &Path,
@@ -4376,6 +4399,10 @@ fn compute_function_fingerprints(package: &MirPackage) -> Vec<FunctionFingerprin
             hasher.update(&[0u8]);
             hasher.update(function.signature.as_bytes());
             hasher.update(&[0u8]);
+            if let Some(hir) = &function.hir {
+                hasher.update(hir.def_path_hash.as_bytes());
+                hasher.update(&[0u8]);
+            }
             for line in &function.body {
                 hasher.update(line.as_bytes());
                 hasher.update(&[0u8]);
@@ -4384,6 +4411,7 @@ fn compute_function_fingerprints(package: &MirPackage) -> Vec<FunctionFingerprin
                 name: function.name.clone(),
                 signature: function.signature.clone(),
                 hash: hex::encode(hasher.finalize()),
+                hir_def_path_hash: function.hir.as_ref().map(|hir| hir.def_path_hash.clone()),
             }
         })
         .collect()
@@ -4629,7 +4657,8 @@ pub fn extract(crate_path: &Path) -> Result<MirPackage> {
 }
 
 fn extract_artifacts(crate_path: &Path) -> Result<ExtractionArtifacts> {
-    let mir = extract(crate_path)?;
+    #[allow(unused_mut)]
+    let mut mir = extract(crate_path)?;
 
     #[cfg(feature = "hir-driver")]
     let hir = match hir::capture_hir(crate_path) {
@@ -4643,11 +4672,64 @@ fn extract_artifacts(crate_path: &Path) -> Result<ExtractionArtifacts> {
         }
     };
 
+    #[cfg(feature = "hir-driver")]
+    if let Some(hir_package) = &hir {
+        attach_hir_metadata_to_mir(&mut mir, hir_package);
+    }
+
     Ok(ExtractionArtifacts {
         mir,
         #[cfg(feature = "hir-driver")]
         hir,
     })
+}
+
+#[cfg(feature = "hir-driver")]
+fn attach_hir_metadata_to_mir(mir: &mut MirPackage, hir: &HirPackage) {
+    let mut metadata_by_path = HashMap::with_capacity(hir.functions.len());
+    let mut metadata_by_simple_name: HashMap<String, Vec<String>> = HashMap::new();
+
+    for body in &hir.functions {
+        metadata_by_path.insert(
+            body.def_path.clone(),
+            MirFunctionHirMetadata {
+                def_path_hash: body.def_path_hash.clone(),
+                signature: if body.signature.is_empty() {
+                    None
+                } else {
+                    Some(body.signature.clone())
+                },
+            },
+        );
+
+        if let Some(simple) = body.def_path.rsplit("::").next() {
+            metadata_by_simple_name
+                .entry(simple.to_string())
+                .or_default()
+                .push(body.def_path.clone());
+        }
+    }
+
+    for function in &mut mir.functions {
+        if function.hir.is_some() {
+            continue;
+        }
+
+        if let Some(def_path) = extract_def_path_from_signature(&function.signature) {
+            if let Some(meta) = metadata_by_path.remove(&def_path) {
+                function.hir = Some(meta);
+                continue;
+            }
+        }
+
+        if let Some(candidates) = metadata_by_simple_name.get(function.name.as_str()) {
+            if candidates.len() == 1 {
+                if let Some(meta) = metadata_by_path.remove(&candidates[0]) {
+                    function.hir = Some(meta);
+                }
+            }
+        }
+    }
 }
 
 pub fn write_mir_json(path: impl AsRef<Path>, package: &MirPackage) -> Result<()> {
@@ -4954,6 +5036,7 @@ impl MirFunction {
             signature,
             body,
             span,
+            hir: None,
         }
     }
 }
@@ -4964,6 +5047,22 @@ fn extract_name(signature: &str) -> Option<String> {
         .strip_prefix("fn ")
         .and_then(|rest| rest.split('(').next())
         .map(|s| s.trim().to_string())
+}
+
+#[cfg_attr(not(feature = "hir-driver"), allow(dead_code))]
+fn extract_def_path_from_signature(signature: &str) -> Option<String> {
+    let trimmed = signature.trim_start();
+    let idx = trimmed.find("fn ")? + 3;
+    let after_fn = &trimmed[idx..];
+    let before_location = after_fn
+        .split_once(" at ")
+        .map(|(path, _)| path)
+        .unwrap_or(after_fn);
+    let path = before_location.split('(').next()?.trim();
+    if path.is_empty() {
+        return None;
+    }
+    Some(path.to_string())
 }
 
 fn extract_span(signature: &str) -> Option<SourceSpan> {
@@ -5152,6 +5251,27 @@ mod tests {
         line.push_str(DANGER_ACCEPT_INVALID_CERTS_SYMBOL);
         line.push_str("(move _1, const true);");
         line
+    }
+
+    #[test]
+    fn extracts_def_path_from_signature_examples() {
+        assert_eq!(
+            super::extract_def_path_from_signature("fn crate::module::demo(_1: i32)").as_deref(),
+            Some("crate::module::demo")
+        );
+
+        assert_eq!(
+            super::extract_def_path_from_signature(
+                "unsafe extern \"C\" fn foo::bar::baz(_1: i32) -> i32",
+            )
+            .as_deref(),
+            Some("foo::bar::baz")
+        );
+
+        assert_eq!(
+            super::extract_def_path_from_signature("no function signature here"),
+            None
+        );
     }
 
     #[test]
@@ -5374,6 +5494,7 @@ rules:
                 signature: "fn ffi_create()".to_string(),
                 body: vec!["_0 = Box::into_raw(move _1);".to_string()],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -5397,90 +5518,105 @@ rules:
                     signature: "unsafe fn unsafe_helper()".to_string(),
                     body: vec!["unsafe { core::ptr::read(_1); }".to_string()],
                     span: None,
+                ..Default::default()
                 },
                 MirFunction {
                     name: "md5_hash".to_string(),
                     signature: "fn md5_hash()".to_string(),
                     body: vec!["_2 = md5::Md5::new();".to_string()],
                     span: None,
+                ..Default::default()
                 },
                 MirFunction {
                     name: "sha1_hash".to_string(),
                     signature: "fn sha1_hash()".to_string(),
                     body: vec!["_3 = sha1::Sha1::new();".to_string()],
                     span: None,
+                ..Default::default()
                 },
                 MirFunction {
                     name: "env_usage".to_string(),
                     signature: "fn env_usage()".to_string(),
                     body: vec!["_4 = std::env::var(_1);".to_string()],
                     span: None,
+                ..Default::default()
                 },
                 MirFunction {
                     name: "command_spawn".to_string(),
                     signature: "fn command_spawn()".to_string(),
                     body: vec!["_5 = std::process::Command::new(_1);".to_string()],
                     span: None,
+                ..Default::default()
                 },
                 MirFunction {
                     name: "vec_set_len".to_string(),
                     signature: "fn vec_set_len(v: &mut Vec<i32>)".to_string(),
                     body: vec![make_vec_set_len_line("")],
                     span: None,
+                ..Default::default()
                 },
                 MirFunction {
                     name: "maybe_uninit".to_string(),
                     signature: "fn maybe_uninit()".to_string(),
                     body: vec![make_maybe_uninit_assume_init_line("")],
                     span: None,
+                ..Default::default()
                 },
                 MirFunction {
                     name: "deprecated_mem".to_string(),
                     signature: "fn deprecated_mem()".to_string(),
                     body: vec![make_mem_uninitialized_line("")],
                     span: None,
+                ..Default::default()
                 },
                 MirFunction {
                     name: "http_url".to_string(),
                     signature: "fn http_url()".to_string(),
                     body: vec!["_9 = const \"http://example.com\";".to_string()],
                     span: None,
+                ..Default::default()
                 },
                 MirFunction {
                     name: "dangerous_tls".to_string(),
                     signature: "fn dangerous_tls(builder: reqwest::ClientBuilder)".to_string(),
                     body: vec![make_danger_accept_invalid_certs_line("")],
                     span: None,
+                ..Default::default()
                 },
                 MirFunction {
                     name: "openssl_none".to_string(),
                     signature: "fn openssl_none(ctx: &mut SslContextBuilder)".to_string(),
                     body: vec!["openssl::ssl::SslContextBuilder::set_verify((*_1), openssl::ssl::SslVerifyMode::NONE);".to_string()],
                     span: None,
+                ..Default::default()
                 },
                 MirFunction {
                     name: "home_path_literal".to_string(),
                     signature: "fn home_path_literal()".to_string(),
                     body: vec!["_11 = const \"/home/alice/.ssh/id_rsa\";".to_string()],
                     span: None,
+                ..Default::default()
                 },
                 MirFunction {
                     name: "static_mut_global".to_string(),
                     signature: "fn static_mut_global()".to_string(),
                     body: vec!["    static mut GLOBAL: i32 = 0;".to_string()],
                     span: None,
+                ..Default::default()
                 },
                 MirFunction {
                     name: "set_readonly_false".to_string(),
                     signature: "fn set_readonly_false(perm: &mut std::fs::Permissions)".to_string(),
                     body: vec!["    std::fs::Permissions::set_readonly(move _1, const false);".to_string()],
                     span: None,
+                ..Default::default()
                 },
                 MirFunction {
                     name: "world_writable_mode".to_string(),
                     signature: "fn world_writable_mode(opts: &mut std::fs::OpenOptions)".to_string(),
                     body: vec!["    std::os::unix::fs::OpenOptionsExt::mode(move _1, const 0o777);".to_string()],
                     span: None,
+                ..Default::default()
                 },
                 MirFunction {
                     name: "forget_guard".to_string(),
@@ -5491,12 +5627,14 @@ rules:
                         "    std::mem::forget(move _2);".to_string(),
                     ],
                     span: None,
+                ..Default::default()
                 },
                 MirFunction {
                     name: "nonnull_unchecked".to_string(),
                     signature: "fn nonnull_unchecked(ptr: *mut u8)".to_string(),
                     body: vec!["    _0 = core::ptr::NonNull::<u8>::new_unchecked(_1);".to_string()],
                     span: None,
+                ..Default::default()
                 },
                 MirFunction {
                     name: "content_length_allocation".to_string(),
@@ -5507,6 +5645,7 @@ rules:
                         "    _3 = Vec::<u8>::with_capacity(move _2);".to_string(),
                     ],
                     span: None,
+                ..Default::default()
                 },
                 MirFunction {
                     name: "length_truncation_cast".to_string(),
@@ -5519,12 +5658,14 @@ rules:
                         body
                     },
                     span: None,
+                ..Default::default()
                 },
                 MirFunction {
                     name: "unbounded_allocation".to_string(),
                     signature: "fn unbounded_allocation(len: usize)".to_string(),
                     body: make_unbounded_allocation_lines("    ", "len"),
                     span: None,
+                ..Default::default()
                 },
                 MirFunction {
                     name: "broadcast_unsync".to_string(),
@@ -5533,6 +5674,7 @@ rules:
                         "    _5 = tokio::sync::broadcast::channel::<std::rc::Rc<String>>(const 16_usize);".to_string(),
                     ],
                     span: None,
+                ..Default::default()
                 },
             ],
         };
@@ -5714,6 +5856,7 @@ rules:
                 signature: "fn ffi_bridge()".to_string(),
                 body: vec!["    _0 = Box::into_raw(move _1);".to_string()],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -5736,6 +5879,7 @@ rules:
                 signature: "fn ffi_bridge()".to_string(),
                 body: vec!["    _0 = Box::into_raw(move _1);".to_string()],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -5754,6 +5898,7 @@ rules:
                 signature: "fn insecure_url()".to_string(),
                 body: vec!["    _1 = const \"http://example.com\";".to_string()],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -5776,6 +5921,7 @@ rules:
                 signature: "fn document_string()".to_string(),
                 body: vec!["    _1 = const \"http://docs\";".to_string()],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -5794,6 +5940,7 @@ rules:
                 signature: "fn store_profile()".to_string(),
                 body: vec!["    _1 = const \"/home/alice/.config\";".to_string()],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -5816,6 +5963,7 @@ rules:
                 signature: "fn document_paths()".to_string(),
                 body: vec!["    _1 = const \"/home/docs\";".to_string()],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -5834,6 +5982,7 @@ rules:
                 signature: "fn global()".to_string(),
                 body: vec!["    static mut COUNTER: usize = 0;".to_string()],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -5856,6 +6005,7 @@ rules:
                 signature: "fn global()".to_string(),
                 body: vec!["    static mut COUNTER: usize = 0;".to_string()],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -5876,6 +6026,7 @@ rules:
                     "    std::fs::Permissions::set_readonly(move _1, const false);".to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -5900,6 +6051,7 @@ rules:
                     "    std::fs::Permissions::set_readonly(move _1, const false);".to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -5920,6 +6072,7 @@ rules:
                     "    std::fs::Permissions::set_readonly(move _1, const true);".to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -5938,6 +6091,7 @@ rules:
                 signature: "fn make_nonnull(ptr: *mut u8)".to_string(),
                 body: vec!["    _2 = core::ptr::NonNull::<u8>::new_unchecked(_1);".to_string()],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -5960,6 +6114,7 @@ rules:
                 signature: "fn make_nonnull(ptr: *mut u8)".to_string(),
                 body: vec!["    _2 = core::ptr::NonNull::<u8>::new_unchecked(_1);".to_string()],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -5982,6 +6137,7 @@ rules:
                     "    std::mem::forget(move _2);".to_string(),
                 ],
                 span: None,
+            ..Default::default()
             }],
         };
 
@@ -6012,6 +6168,7 @@ rules:
                     "    std::mem::forget(move _2);".to_string(),
                 ],
                 span: None,
+            ..Default::default()
             }],
         };
 
@@ -6030,6 +6187,7 @@ rules:
                 signature: "fn forget_vec(buffer: Vec<u8>)".to_string(),
                 body: vec!["    std::mem::forget(move _1);".to_string()],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -6052,6 +6210,7 @@ rules:
                         .to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -6078,6 +6237,7 @@ rules:
                         .to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -6100,6 +6260,7 @@ rules:
                         .to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -6122,6 +6283,7 @@ rules:
                     "    _3 = std::process::Command::arg(move _2, move _1);".to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -6151,6 +6313,7 @@ rules:
                     "    _3 = tokio::process::Command::arg(move _2, move _1);".to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -6178,6 +6341,7 @@ rules:
                     "    _2 = std::process::Command::arg(move _1, const \"status\");".to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -6202,6 +6366,7 @@ rules:
                 signature: "fn read_env()".to_string(),
                 body: vec!["    _1 = std::env::var(const \"FOO\");".to_string()],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -6223,6 +6388,7 @@ rules:
                 signature: "fn constant()".to_string(),
                 body: vec!["    const _: &str = \"std::env::var\";".to_string()],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -6244,6 +6410,7 @@ rules:
                         .to_string(),
                 ],
                 span: None,
+            ..Default::default()
             }],
         };
 
@@ -6270,6 +6437,7 @@ rules:
                         .to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -6293,6 +6461,7 @@ rules:
                 signature: "fn doc_only()".to_string(),
                 body: vec!["const _: &str = \"Detects use of MD5 hashing\";".to_string()],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -6318,6 +6487,7 @@ rules:
                 signature: "fn doc_only_sha()".to_string(),
                 body: vec!["const _: &str = \"Usage of SHA-1 hashing\";".to_string()],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -6343,6 +6513,7 @@ rules:
                 signature: "fn detect_rustc_version()".to_string(),
                 body: vec!["_0 = std::process::Command::new(const \"rustc\");".to_string()],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -6368,6 +6539,7 @@ rules:
                 signature: "fn discover_rustc_targets()".to_string(),
                 body: vec!["_0 = std::process::Command::new(const \"cargo\");".to_string()],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -6393,6 +6565,7 @@ rules:
                 signature: "fn detect_crate_name()".to_string(),
                 body: vec!["_0 = MetadataCommand::new();".to_string()],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -6800,6 +6973,7 @@ path = "src/lib.rs"
                     "}".to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -6833,6 +7007,7 @@ path = "src/lib.rs"
                     "}".to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -6865,6 +7040,7 @@ path = "src/lib.rs"
                     "}".to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -6898,6 +7074,7 @@ path = "src/lib.rs"
                     "}".to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -6936,6 +7113,7 @@ path = "src/lib.rs"
                     "}".to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -6969,6 +7147,7 @@ path = "src/lib.rs"
                     "}".to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -7002,6 +7181,7 @@ path = "src/lib.rs"
                     "}".to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -7034,6 +7214,7 @@ path = "src/lib.rs"
                     "}".to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -7067,6 +7248,7 @@ path = "src/lib.rs"
                     "}".to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -7099,6 +7281,7 @@ path = "src/lib.rs"
                     "}".to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -7132,6 +7315,7 @@ path = "src/lib.rs"
                     "}".to_string(),
                 ],
                 span: None,
+            ..Default::default()
             }],
         };
 
@@ -7169,6 +7353,7 @@ path = "src/lib.rs"
                     "}".to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -7205,6 +7390,7 @@ path = "src/lib.rs"
                     body
                 },
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -7243,6 +7429,7 @@ path = "src/lib.rs"
                     body
                 },
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -7277,6 +7464,7 @@ path = "src/lib.rs"
                     body
                 },
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -7312,6 +7500,7 @@ path = "src/lib.rs"
                     body
                 },
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -7344,6 +7533,7 @@ path = "src/lib.rs"
                     "}".to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -7377,6 +7567,7 @@ path = "src/lib.rs"
                     "}".to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -7806,6 +7997,7 @@ path = "src/lib.rs"
                 signature: "fn cached() -> i32".to_string(),
                 body: vec!["_0 = const 42_i32;".to_string()],
                 span: None,
+                ..Default::default()
             }],
         };
 
@@ -7868,6 +8060,7 @@ path = "src/lib.rs"
                     "}".to_string(),
                 ],
                 span: None,
+                ..Default::default()
             }],
         };
 

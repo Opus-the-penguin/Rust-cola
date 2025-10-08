@@ -139,6 +139,7 @@ mod tests {
             signature: "fn demo()".to_string(),
             body: lines.iter().map(|line| line.to_string()).collect(),
             span: None,
+            ..Default::default()
         }
     }
 

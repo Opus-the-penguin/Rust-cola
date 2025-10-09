@@ -1,3 +1,5 @@
+#![cfg_attr(feature = "hir-driver", feature(rustc_private))]
+
 use anyhow::{anyhow, Context, Result};
 use cargo_metadata::MetadataCommand;
 use clap::{builder::BoolishValueParser, ArgAction, Parser};

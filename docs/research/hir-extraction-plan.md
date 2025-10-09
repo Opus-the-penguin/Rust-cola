@@ -114,6 +114,18 @@
 - **Spike verification:** Re-ran `cargo run -p mir-extractor --bin hir-spike --features hir-driver -- examples/simple` after pinning to confirm the prototype still emits HIR/MIR counts. Keep sample console transcripts under `examples/simple/target/hir-spike/` when tracking regressions.
 - **Wrapper wiring:** Validated `hir-driver-wrapper` executes via the `MIR_COLA_HIR_WRAPPER` env var and honors passthroughs for `--version`. Future phases can assume the wrapper path is resolved automatically when the feature flag is enabled.
 
+## Phase 0 Limitations (2025-10-09 PM)
+
+- **Binary-only crates:** Attempting `cargo run -p mir-extractor --bin hir-spike --features hir-driver -- cargo-cola` fails because the spike currently assumes a library target at `src/lib.rs`. We need to either detect binary entry points or rely on cargo metadata to determine the primary target before moving to Phase 1.
+- **External dependencies:** Pointing the spike at `mir-extractor` surfaces dozens of missing `--extern` flags; compiling rich crates requires cargo to drive dependency resolution. The next driver iteration must reuse `cargo rustc` metadata (or invoke `cargo check` to prebuild deps) so we can feed the proper search paths into `rustc_interface`.
+
+## Phase 0 Metadata Capture (2025-10-10)
+
+- **Cargo-mediated target discovery:** `hir-spike` now shells out to `cargo metadata` and replays the matching target's `cargo rustc` invocation through a self-wrapper. This lets us capture the exact rustc command line, including every `--extern`, `--crate-type`, and feature flag, without maintaining bespoke target heuristics.
+- **Wrapper flow:** The binary re-executes itself as `RUSTC_WRAPPER`, writing the intercepted rustc arguments into a temp JSON file before handing control back to the real compiler. The primary process then loads that JSON to spin up `rustc_interface` with parity arguments.
+- **Validation run:** Running `cargo run -p mir-extractor --bin hir-spike --features hir-driver -- mir-extractor` now completes the metadata/argument capture and kicks off the in-process compiler session. Compilation proceeds until the compiler hits a known nightly ICE inside `Rule::metadata`; all pre-ICE logging confirms we drive `rustc_interface` with the same crate graph as cargo.
+- **Follow-up:** Track the upstream ICE (rust-lang/rust#125163) and rerun once a patched nightly lands. In parallel, add a guard that captures and reports ICEs without treating them as regressions for the metadata plumbing work.
+
 ## Resilience Update (2025-10-09 PM)
 
 - **ICE detection & logging:** `capture_hir` now collects `cargo rustc` stdout/stderr and classifies internal compiler errors. When an ICE occurs, the CLI keeps running, emits a structured log prefix (`rust-cola: rustc ICE while capturing HIR`), and surfaces the first diagnostic line plus a truncated stderr tail. This allows downstream workflows to continue while we wait for nightly fixes.

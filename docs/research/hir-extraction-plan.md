@@ -108,6 +108,18 @@
 - **What it does:** Launches an in-process `rustc_interface` session against the `examples/simple` crate, prints total HIR items, and enumerates fn-like bodies with their MIR local/block counts. Output lives in `examples/simple/target/hir-spike/` (metadata artifact only).
 - **Next validation:** Point the spike at a second crate with basic dependencies to assess additional rustc arguments we may need before Phase 1.
 
+## Phase 0 Follow-up (2025-10-09)
+
+- **Toolchain pin:** Added `rust-toolchain.toml` pinning to `nightly-2025-09-30` and declaring the `rustc-dev` / `llvm-tools-preview` components. CI and developers now share a consistent compiler surface for `rustc_interface` queries.
+- **Spike verification:** Re-ran `cargo run -p mir-extractor --bin hir-spike --features hir-driver -- examples/simple` after pinning to confirm the prototype still emits HIR/MIR counts. Keep sample console transcripts under `examples/simple/target/hir-spike/` when tracking regressions.
+- **Wrapper wiring:** Validated `hir-driver-wrapper` executes via the `MIR_COLA_HIR_WRAPPER` env var and honors passthroughs for `--version`. Future phases can assume the wrapper path is resolved automatically when the feature flag is enabled.
+
+## Resilience Update (2025-10-09 PM)
+
+- **ICE detection & logging:** `capture_hir` now collects `cargo rustc` stdout/stderr and classifies internal compiler errors. When an ICE occurs, the CLI keeps running, emits a structured log prefix (`rust-cola: rustc ICE while capturing HIR`), and surfaces the first diagnostic line plus a truncated stderr tail. This allows downstream workflows to continue while we wait for nightly fixes.
+- **Smoke test behavior:** The HIR smoke test short-circuits when the extractor reports an ICE, so CI logs capture the failure context without treating missing `hir.json` as a hard assertion error.
+- **Linker work:** Replaced the temporary `.cargo/config.toml` shim with a `build.rs` in `mir-extractor/` that auto-injects `-Cprefer-dynamic` plus macOS linker hints whenever the `hir-driver` feature is enabled. This unblocks the ignored HIR smoke test on Apple silicon without touching other targets. If future toolchains regress, re-introducing a scoped `.cargo/config.toml` with matching flags remains a viable fallback.
+
 ---
 
-_Last updated: 2025-10-07_
+_Last updated: 2025-10-09_

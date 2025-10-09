@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Opus-the-penguin"]
 
+[features]
+default = []
+hir-driver = ["mir-extractor/hir-driver"]
+
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 anyhow = "1.0"

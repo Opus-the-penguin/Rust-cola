@@ -16,7 +16,6 @@ extern crate rustc_session;
 extern crate rustc_span;
 
 use anyhow::{anyhow, Context, Result};
-use cargo_metadata::MetadataCommand;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -38,8 +37,8 @@ mod prototypes;
 pub use dataflow::{Assignment, MirDataflow};
 #[cfg(feature = "hir-driver")]
 pub use hir::{
-    capture_root_from_env, collect_crate_snapshot, target_spec_from_env, HirFunctionBody, HirIndex,
-    HirItem, HirPackage, HirTargetSpec,
+    capture_hir, capture_root_from_env, collect_crate_snapshot, target_spec_from_env,
+    HirFunctionBody, HirIndex, HirItem, HirPackage, HirTargetSpec,
 };
 pub use prototypes::{
     detect_broadcast_unsync_payloads, detect_command_invocations,
@@ -47,6 +46,9 @@ pub use prototypes::{
     detect_unbounded_allocations, BroadcastUnsyncUsage, CommandInvocation, ContentLengthAllocation,
     LengthTruncationCast, OpensslVerifyNoneInvocation,
 };
+
+#[cfg(feature = "hir-driver")]
+pub const HIR_CAPTURE_ICE_LOG_PREFIX: &str = "rust-cola: rustc ICE while capturing HIR";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -4085,6 +4087,23 @@ pub struct CacheConfig {
     pub clear: bool,
 }
 
+#[cfg(feature = "hir-driver")]
+#[derive(Clone, Debug)]
+pub struct HirOptions {
+    pub capture: bool,
+    pub cache: bool,
+}
+
+#[cfg(feature = "hir-driver")]
+impl Default for HirOptions {
+    fn default() -> Self {
+        Self {
+            capture: true,
+            cache: true,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct FunctionFingerprint {
     pub name: String,
@@ -4146,8 +4165,22 @@ pub fn extract_with_cache(
     crate_path: &Path,
     cache: &CacheConfig,
 ) -> Result<(MirPackage, CacheStatus)> {
-    let (artifacts, status) =
-        extract_artifacts_with_cache(crate_path, cache, || extract_artifacts(crate_path))?;
+    #[cfg(feature = "hir-driver")]
+    let hir_options = HirOptions::default();
+
+    let (artifacts, status) = extract_artifacts_with_cache(
+        crate_path,
+        cache,
+        #[cfg(feature = "hir-driver")]
+        &hir_options,
+        || {
+            extract_artifacts(
+                crate_path,
+                #[cfg(feature = "hir-driver")]
+                &hir_options,
+            )
+        },
+    )?;
     Ok((artifacts.mir, status))
 }
 
@@ -4156,12 +4189,25 @@ pub fn extract_with_cache_full(
     crate_path: &Path,
     cache: &CacheConfig,
 ) -> Result<(ExtractionArtifacts, CacheStatus)> {
-    extract_artifacts_with_cache(crate_path, cache, || extract_artifacts(crate_path))
+    let options = HirOptions::default();
+    extract_with_cache_full_opts(crate_path, cache, &options)
+}
+
+#[cfg(feature = "hir-driver")]
+pub fn extract_with_cache_full_opts(
+    crate_path: &Path,
+    cache: &CacheConfig,
+    hir_options: &HirOptions,
+) -> Result<(ExtractionArtifacts, CacheStatus)> {
+    extract_artifacts_with_cache(crate_path, cache, hir_options, || {
+        extract_artifacts(crate_path, hir_options)
+    })
 }
 
 pub fn extract_artifacts_with_cache<F>(
     crate_path: &Path,
     cache: &CacheConfig,
+    #[cfg(feature = "hir-driver")] hir_options: &HirOptions,
     extractor: F,
 ) -> Result<(ExtractionArtifacts, CacheStatus)>
 where
@@ -4200,11 +4246,33 @@ where
                         created_timestamp: envelope.created_timestamp,
                         function_fingerprints: envelope.function_fingerprints.clone(),
                     };
-                    let artifacts = ExtractionArtifacts {
+                    #[allow(unused_mut)]
+                    let mut artifacts = ExtractionArtifacts {
                         mir: envelope.mir.clone(),
                         #[cfg(feature = "hir-driver")]
-                        hir: envelope.hir.clone(),
+                        hir: if hir_options.cache && hir_options.capture {
+                            envelope.hir.clone()
+                        } else {
+                            None
+                        },
                     };
+
+                    #[cfg(feature = "hir-driver")]
+                    if hir_options.capture && (!hir_options.cache || artifacts.hir.is_none()) {
+                        match hir::capture_hir(&canonical_crate) {
+                            Ok(fresh_hir) => {
+                                attach_hir_metadata_to_mir(&mut artifacts.mir, &fresh_hir);
+                                artifacts.hir = Some(fresh_hir);
+                            }
+                            Err(err) => {
+                                eprintln!(
+                                    "rust-cola: failed to refresh HIR for {}: {err:?}",
+                                    canonical_crate.display()
+                                );
+                            }
+                        }
+                    }
+
                     return Ok((artifacts, CacheStatus::Hit(metadata)));
                 } else {
                     miss_reason = CacheMissReason::Invalid("fingerprint mismatch".to_string());
@@ -4235,7 +4303,11 @@ where
         analysis_cache: Vec::new(),
         mir: artifacts.mir.clone(),
         #[cfg(feature = "hir-driver")]
-        hir: artifacts.hir.clone(),
+        hir: if hir_options.cache && hir_options.capture {
+            artifacts.hir.clone()
+        } else {
+            None
+        },
     };
 
     if let Err(err) = write_cache_envelope(&cache_file, &envelope) {
@@ -4494,6 +4566,254 @@ fn detect_rustc_version() -> String {
     }
 }
 
+fn ensure_executable(path: PathBuf) -> Option<PathBuf> {
+    if path.exists() {
+        return Some(path);
+    }
+
+    if cfg!(windows) && path.extension().is_none() {
+        let mut candidate = path.clone();
+        candidate.set_extension("exe");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+
+    None
+}
+
+pub(crate) fn detect_cargo_binary() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("CARGO").map(PathBuf::from) {
+        if let Some(resolved) = ensure_executable(path) {
+            return Some(resolved);
+        }
+    }
+
+    let rustup_home = std::env::var_os("RUSTUP_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".rustup")));
+
+    if let (Some(home), Some(toolchain)) = (rustup_home, std::env::var_os("RUSTUP_TOOLCHAIN")) {
+        let candidate = PathBuf::from(&home)
+            .join("toolchains")
+            .join(toolchain)
+            .join("bin")
+            .join("cargo");
+        if let Some(resolved) = ensure_executable(candidate) {
+            return Some(resolved);
+        }
+    }
+
+    if let Some(home) = std::env::var_os("CARGO_HOME").map(PathBuf::from) {
+        let candidate = home.join("bin").join("cargo");
+        if let Some(resolved) = ensure_executable(candidate) {
+            return Some(resolved);
+        }
+    }
+
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        let candidate = home.join(".cargo").join("bin").join("cargo");
+        if let Some(resolved) = ensure_executable(candidate) {
+            return Some(resolved);
+        }
+    }
+
+    if Command::new("cargo").arg("--version").output().is_ok() {
+        return Some(PathBuf::from("cargo"));
+    }
+
+    None
+}
+
+fn detect_rustup_path() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("RUSTUP").map(PathBuf::from) {
+        if let Some(resolved) = ensure_executable(path) {
+            return Some(resolved);
+        }
+    }
+
+    if let Some(home) = std::env::var_os("CARGO_HOME").map(PathBuf::from) {
+        let candidate = home.join("bin").join("rustup");
+        if let Some(resolved) = ensure_executable(candidate) {
+            return Some(resolved);
+        }
+    }
+
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        let candidate = home.join(".cargo").join("bin").join("rustup");
+        if let Some(resolved) = ensure_executable(candidate) {
+            return Some(resolved);
+        }
+    }
+
+    if Command::new("rustup").arg("--version").output().is_ok() {
+        return Some(PathBuf::from("rustup"));
+    }
+
+    None
+}
+
+fn find_rust_toolchain_file() -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        candidates.push(PathBuf::from(dir));
+    }
+    if let Ok(current) = std::env::current_dir() {
+        candidates.push(current);
+    }
+
+    for mut dir in candidates {
+        loop {
+            let toml_candidate = dir.join("rust-toolchain.toml");
+            if toml_candidate.exists() {
+                return Some(toml_candidate);
+            }
+
+            let plain_candidate = dir.join("rust-toolchain");
+            if plain_candidate.exists() {
+                return Some(plain_candidate);
+            }
+
+            if !dir.pop() {
+                break;
+            }
+        }
+    }
+
+    None
+}
+
+fn detect_toolchain() -> String {
+    if let Ok(toolchain) = std::env::var("RUSTUP_TOOLCHAIN") {
+        if !toolchain.is_empty() {
+            return toolchain;
+        }
+    }
+
+    if let Ok(toolchain) = std::env::var("RUST_TOOLCHAIN") {
+        if !toolchain.is_empty() {
+            return toolchain;
+        }
+    }
+
+    if let Some(path) = find_rust_toolchain_file() {
+        if let Ok(contents) = fs::read_to_string(&path) {
+            if path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("toml"))
+                .unwrap_or(false)
+            {
+                if let Ok(doc) = toml::from_str::<toml::Value>(&contents) {
+                    if let Some(channel) = doc
+                        .get("toolchain")
+                        .and_then(|table| table.get("channel"))
+                        .and_then(|val| val.as_str())
+                    {
+                        return channel.to_string();
+                    }
+                }
+            } else {
+                for line in contents.lines() {
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                        return trimmed.to_string();
+                    }
+                }
+            }
+        }
+    }
+
+    "nightly-2025-09-14".to_string()
+}
+
+fn build_cargo_command() -> Command {
+    if let Some(rustup) = detect_rustup_path() {
+        let mut cmd = Command::new(rustup);
+        cmd.arg("run");
+        cmd.arg(detect_toolchain());
+        cmd.arg("cargo");
+        cmd
+    } else if let Some(cargo_path) = detect_cargo_binary() {
+        Command::new(cargo_path)
+    } else {
+        Command::new("cargo")
+    }
+}
+
+fn load_cargo_metadata(crate_path: &Path, no_deps: bool) -> Result<cargo_metadata::Metadata> {
+    let canonical = fs::canonicalize(crate_path).unwrap_or_else(|_| crate_path.to_path_buf());
+    let mut cmd = build_cargo_command();
+    cmd.arg("metadata");
+    cmd.args(["--format-version", "1"]);
+    if no_deps {
+        cmd.arg("--no-deps");
+    }
+
+    let debug_metadata = std::env::var_os("RUST_COLA_DEBUG_METADATA").is_some();
+
+    if canonical.is_file() {
+        if debug_metadata {
+            eprintln!(
+                "metadata canonical manifest {:?} (file?)",
+                canonical.display()
+            );
+        }
+        cmd.arg("--manifest-path");
+        cmd.arg(&canonical);
+    } else {
+        let manifest_path = canonical.join("Cargo.toml");
+        if debug_metadata {
+            eprintln!(
+                "metadata manifest candidate {:?} exists? {}",
+                manifest_path.display(),
+                manifest_path.exists()
+            );
+        }
+        if manifest_path.exists() {
+            cmd.arg("--manifest-path");
+            cmd.arg(&manifest_path);
+        } else {
+            if debug_metadata {
+                eprintln!(
+                    "metadata falling back to current_dir {:?}",
+                    canonical.display()
+                );
+            }
+            cmd.current_dir(&canonical);
+        }
+    }
+
+    if debug_metadata {
+        let program = cmd.get_program().to_owned();
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        eprintln!("cargo metadata command: {:?} {:?}", program, args);
+    }
+
+    let output = cmd
+        .output()
+        .with_context(|| format!("run cargo metadata for {}", canonical.display()))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!(
+            "cargo metadata failed for {}: {}",
+            canonical.display(),
+            stderr.trim()
+        ));
+    }
+
+    serde_json::from_slice::<cargo_metadata::Metadata>(&output.stdout).with_context(|| {
+        format!(
+            "parse cargo metadata JSON produced for {}",
+            canonical.display()
+        )
+    })
+}
+
 fn current_timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -4528,16 +4848,14 @@ impl RustcTarget {
 }
 
 pub(crate) fn discover_rustc_targets(crate_path: &Path) -> Result<Vec<RustcTarget>> {
-    let manifest_path = crate_path.join("Cargo.toml");
-    let mut cmd = MetadataCommand::new();
-    if manifest_path.exists() {
-        cmd.manifest_path(&manifest_path);
-    } else {
-        cmd.current_dir(crate_path);
+    if std::env::var_os("RUST_COLA_DEBUG_METADATA").is_some() {
+        eprintln!(
+            "discover_rustc_targets crate_path {:?}",
+            crate_path.display()
+        );
     }
-    cmd.no_deps();
-    let metadata = cmd
-        .exec()
+    let manifest_path = crate_path.join("Cargo.toml");
+    let metadata = load_cargo_metadata(crate_path, true)
         .with_context(|| format!("query cargo metadata for {}", crate_path.display()))?;
     let manifest_canonical = fs::canonicalize(&manifest_path).unwrap_or(manifest_path.clone());
     let package = if let Some(pkg) = metadata.root_package() {
@@ -4597,16 +4915,15 @@ pub(crate) fn discover_rustc_targets(crate_path: &Path) -> Result<Vec<RustcTarge
 }
 
 fn run_cargo_rustc(crate_path: &Path, target: &RustcTarget) -> Result<String> {
-    let mut cmd = Command::new("cargo");
+    let mut cmd = build_cargo_command();
     cmd.current_dir(crate_path);
-    cmd.arg("+nightly");
     cmd.arg("rustc");
     target.apply_to(&mut cmd);
     cmd.args(["--", "-Zunpretty=mir"]);
 
     let output = cmd
         .output()
-        .with_context(|| format!("run `cargo +nightly rustc {}`", target.description()))?;
+        .with_context(|| format!("run `cargo rustc {}`", target.description()))?;
 
     if !output.status.success() {
         return Err(anyhow!(
@@ -4622,8 +4939,8 @@ fn run_cargo_rustc(crate_path: &Path, target: &RustcTarget) -> Result<String> {
 }
 
 pub fn extract(crate_path: &Path) -> Result<MirPackage> {
-    let targets = discover_rustc_targets(crate_path)?;
     let canonical_crate_path = fs::canonicalize(crate_path).context("canonicalize crate path")?;
+    let targets = discover_rustc_targets(&canonical_crate_path)?;
     let crate_root = canonical_crate_path
         .to_str()
         .ok_or_else(|| anyhow!("crate path is not valid UTF-8"))?
@@ -4656,20 +4973,24 @@ pub fn extract(crate_path: &Path) -> Result<MirPackage> {
     })
 }
 
-fn extract_artifacts(crate_path: &Path) -> Result<ExtractionArtifacts> {
+fn extract_artifacts(
+    crate_path: &Path,
+    #[cfg(feature = "hir-driver")] hir_options: &HirOptions,
+) -> Result<ExtractionArtifacts> {
     #[allow(unused_mut)]
     let mut mir = extract(crate_path)?;
 
     #[cfg(feature = "hir-driver")]
-    let hir = match hir::capture_hir(crate_path) {
-        Ok(hir) => Some(hir),
-        Err(err) => {
-            eprintln!(
-                "rust-cola: failed to capture HIR for {}: {err:?}",
-                crate_path.display()
-            );
-            None
+    let hir = if hir_options.capture {
+        match hir::capture_hir(crate_path) {
+            Ok(hir) => Some(hir),
+            Err(err) => {
+                log_hir_capture_error(crate_path, &err);
+                None
+            }
         }
+    } else {
+        None
     };
 
     #[cfg(feature = "hir-driver")]
@@ -4729,6 +5050,74 @@ fn attach_hir_metadata_to_mir(mir: &mut MirPackage, hir: &HirPackage) {
                 }
             }
         }
+    }
+}
+
+#[cfg(feature = "hir-driver")]
+fn log_hir_capture_error(crate_path: &Path, err: &anyhow::Error) {
+    use crate::hir::{HirCaptureError, HirCaptureErrorKind};
+
+    if let Some(hir_err) = err.downcast_ref::<HirCaptureError>() {
+        match hir_err.kind() {
+            HirCaptureErrorKind::RustcIce => {
+                eprintln!(
+                    "{} for {} (status {:?})",
+                    HIR_CAPTURE_ICE_LOG_PREFIX,
+                    crate_path.display(),
+                    hir_err.status()
+                );
+                let diagnostic = hir_err.primary_diagnostic();
+                if !diagnostic.is_empty() {
+                    eprintln!(
+                        "rust-cola: rustc ICE diagnostic: {}",
+                        diagnostic
+                    );
+                }
+                emit_truncated_rustc_stderr(hir_err.stderr());
+            }
+            HirCaptureErrorKind::CommandFailed => {
+                eprintln!(
+                    "rust-cola: cargo rustc failed while capturing HIR for {} (status {:?}): {}",
+                    crate_path.display(),
+                    hir_err.status(),
+                    hir_err.primary_diagnostic()
+                );
+                emit_truncated_rustc_stderr(hir_err.stderr());
+            }
+        }
+    } else {
+        eprintln!(
+            "rust-cola: failed to capture HIR for {}: {err:?}",
+            crate_path.display()
+        );
+    }
+}
+
+#[cfg(feature = "hir-driver")]
+fn emit_truncated_rustc_stderr(stderr: &str) {
+    const MAX_LINES: usize = 20;
+    if stderr.trim().is_empty() {
+        return;
+    }
+
+    let lines: Vec<&str> = stderr.lines().collect();
+    let display_count = lines.len().min(MAX_LINES);
+
+    for (idx, line) in lines.iter().take(display_count).enumerate() {
+        if line.trim().is_empty() {
+            eprintln!("rust-cola: rustc stderr[{idx}]:");
+        } else {
+            eprintln!("rust-cola: rustc stderr[{idx}]: {}", line);
+        }
+    }
+
+    if lines.len() > MAX_LINES {
+        eprintln!(
+            "rust-cola: rustc stderr truncated to {MAX_LINES} lines ({} total lines, {} bytes).",
+            lines.len(),
+            stderr.len()
+        );
+        eprintln!("rust-cola: rerun with `RUST_BACKTRACE=1` for more detail.");
     }
 }
 
@@ -5103,6 +5492,13 @@ pub(crate) fn detect_crate_name(crate_path: &Path) -> Option<String> {
     let canonical_crate = fs::canonicalize(crate_path)
         .ok()
         .unwrap_or_else(|| crate_path.to_path_buf());
+    if std::env::var_os("RUST_COLA_DEBUG_METADATA").is_some() {
+        eprintln!(
+            "detect_crate_name crate_path {:?} canonical {:?}",
+            crate_path.display(),
+            canonical_crate.display()
+        );
+    }
     let manifest_path = if canonical_crate.is_file() {
         canonical_crate.clone()
     } else {
@@ -5111,10 +5507,7 @@ pub(crate) fn detect_crate_name(crate_path: &Path) -> Option<String> {
 
     let canonical_manifest = fs::canonicalize(&manifest_path).ok();
 
-    let mut cmd = MetadataCommand::new();
-    cmd.current_dir(&canonical_crate);
-    cmd.no_deps();
-    let metadata = cmd.exec().ok()?;
+    let metadata = load_cargo_metadata(&canonical_crate, true).ok()?;
 
     if let Some(target_manifest) = canonical_manifest {
         if let Some(pkg) = metadata.packages.iter().find(|pkg| {
@@ -8002,15 +8395,23 @@ path = "src/lib.rs"
         };
 
         let counter_clone = counter.clone();
-        let (first_artifacts, status1) =
-            super::extract_artifacts_with_cache(crate_root, &cache_config, move || {
+        #[cfg(feature = "hir-driver")]
+        let hir_options = HirOptions::default();
+
+        let (first_artifacts, status1) = super::extract_artifacts_with_cache(
+            crate_root,
+            &cache_config,
+            #[cfg(feature = "hir-driver")]
+            &hir_options,
+            move || {
                 counter_clone.fetch_add(1, Ordering::SeqCst);
                 Ok(ExtractionArtifacts {
                     mir: base_package.clone(),
                     #[cfg(feature = "hir-driver")]
                     hir: None,
                 })
-            })?;
+            },
+        )?;
 
         let first_package = first_artifacts.mir.clone();
 
@@ -8020,10 +8421,15 @@ path = "src/lib.rs"
             _ => panic!("expected first run to miss cache"),
         }
 
-        let (second_artifacts, status2) =
-            super::extract_artifacts_with_cache(crate_root, &cache_config, || {
+        let (second_artifacts, status2) = super::extract_artifacts_with_cache(
+            crate_root,
+            &cache_config,
+            #[cfg(feature = "hir-driver")]
+            &hir_options,
+            || {
                 panic!("extractor invoked during cache hit");
-            })?;
+            },
+        )?;
 
         let second_package = second_artifacts.mir;
 

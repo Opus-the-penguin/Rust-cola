@@ -2,3 +2,5 @@ target/
 out/
 **/target/
 **/*.rs.bk
+.DS_Store
+**/.DS_Store

@@ -2,6 +2,7 @@
 name = "mir-extractor"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
 
 [features]
 default = []
@@ -35,4 +36,5 @@ toml = "0.8"
 semver = "1.0"
 
 [dev-dependencies]
+assert_cmd = "2"
 tempfile = "3"

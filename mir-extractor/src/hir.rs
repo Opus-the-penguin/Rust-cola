@@ -1,24 +1,21 @@
 #![cfg(feature = "hir-driver")]
 
-use super::{detect_crate_name, discover_rustc_targets, RustcTarget};
+use super::{build_cargo_command, detect_crate_name, discover_rustc_targets, RustcTarget};
 use crate::SourceSpan;
 use anyhow::{anyhow, Context, Result};
-use rustc_ast::{AttrKind, Attribute};
-use rustc_hir::definitions::{DisambiguatedDefPathData, CRATE_DEF_INDEX};
-use rustc_hir::{
-    self,
-    def::{CtorKind, DefKind},
-    def_id::DefId,
-    def_id::LocalDefId,
-    Node,
-};
+use hir::def::{CtorKind, DefKind};
+use hir::def_id::{DefId, LocalDefId};
+use hir::definitions::DisambiguatedDefPathData;
+use hir::Node;
+use rustc_hir as hir;
 use rustc_middle::ty::{self, print::with_no_trimmed_paths, ImplPolarity, TyCtxt};
+use rustc_span::def_id::CRATE_DEF_INDEX;
 use rustc_span::{symbol::kw, Span, Symbol};
-use rustc_target::spec::abi::Abi;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::env;
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -235,54 +232,154 @@ const TARGET_SPEC_ENV: &str = "MIR_COLA_HIR_TARGET_SPEC";
 const CAPTURE_OUT_ENV: &str = "MIR_COLA_HIR_CAPTURE_OUT";
 const CAPTURE_ROOT_ENV: &str = "MIR_COLA_HIR_CAPTURE_ROOT";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HirCaptureErrorKind {
+    RustcIce,
+    CommandFailed,
+}
+
+#[derive(Debug)]
+pub struct HirCaptureError {
+    command: String,
+    status: Option<i32>,
+    stdout: String,
+    stderr: String,
+    kind: HirCaptureErrorKind,
+}
+
+impl HirCaptureError {
+    pub fn rustc_ice(command: String, status: Option<i32>, stdout: String, stderr: String) -> Self {
+        Self {
+            command,
+            status,
+            stdout,
+            stderr,
+            kind: HirCaptureErrorKind::RustcIce,
+        }
+    }
+
+    pub fn command_failed(
+        command: String,
+        status: Option<i32>,
+        stdout: String,
+        stderr: String,
+    ) -> Self {
+        Self {
+            command,
+            status,
+            stdout,
+            stderr,
+            kind: HirCaptureErrorKind::CommandFailed,
+        }
+    }
+
+    pub fn kind(&self) -> HirCaptureErrorKind {
+        self.kind
+    }
+
+    pub fn status(&self) -> Option<i32> {
+        self.status
+    }
+
+    pub fn stderr(&self) -> &str {
+        &self.stderr
+    }
+
+    pub fn primary_diagnostic(&self) -> String {
+        self.stderr
+            .lines()
+            .map(|line| line.trim())
+            .find(|line| !line.is_empty())
+            .map(str::to_string)
+            .or_else(|| {
+                if self.stdout.trim().is_empty() {
+                    None
+                } else {
+                    Some(self.stdout.trim().to_string())
+                }
+            })
+            .unwrap_or_else(|| "no compiler diagnostics captured".to_string())
+    }
+}
+
+impl fmt::Display for HirCaptureError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let status_text = self
+            .status
+            .map(|code| code.to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+
+        match self.kind {
+            HirCaptureErrorKind::RustcIce => write!(
+                f,
+                "{} exited with a rustc ICE (status {}): {}",
+                self.command,
+                status_text,
+                self.primary_diagnostic()
+            ),
+            HirCaptureErrorKind::CommandFailed => write!(
+                f,
+                "{} failed with status {}: {}",
+                self.command,
+                status_text,
+                self.primary_diagnostic()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for HirCaptureError {}
+
 fn format_def_path_hash(hash: rustc_span::def_id::DefPathHash) -> String {
     hash.0.to_hex()
 }
 
 fn format_full_fn_signature(tcx: TyCtxt<'_>, def_id: DefId) -> String {
-    with_no_trimmed_paths(|| {
-        let sig = tcx.fn_sig(def_id).skip_binder();
-        let mut parts = String::new();
+    let _guard = with_no_trimmed_paths();
+    let sig = tcx.fn_sig(def_id).instantiate_identity();
+    let safety = sig.safety();
+    let abi_name = sig.abi().as_str();
+    let inputs = sig.inputs().skip_binder();
+    let c_variadic = sig.c_variadic();
+    let output = sig.output().skip_binder();
+    let mut parts = String::new();
 
-        if sig.unsafety == ty::Unsafety::Unsafe {
-            parts.push_str("unsafe ");
+    if safety.is_unsafe() {
+        parts.push_str("unsafe ");
+    }
+
+    if abi_name != "Rust" {
+        parts.push_str("extern \"");
+        parts.push_str(abi_name);
+        parts.push_str("\" ");
+    }
+
+    parts.push_str("fn ");
+    parts.push_str(&tcx.def_path_str(def_id));
+    parts.push('(');
+
+    for (idx, ty) in inputs.iter().enumerate() {
+        if idx > 0 {
+            parts.push_str(", ");
         }
+        parts.push_str(&ty.to_string());
+    }
 
-        if sig.abi != Abi::Rust {
-            parts.push_str("extern \"");
-            parts.push_str(sig.abi.name());
-            parts.push_str("\" ");
+    if c_variadic {
+        if !inputs.is_empty() {
+            parts.push_str(", ");
         }
+        parts.push_str("...");
+    }
 
-        parts.push_str("fn ");
-        parts.push_str(&tcx.def_path_str(def_id));
-        parts.push('(');
+    parts.push(')');
 
-        let inputs = sig.inputs();
-        for (idx, ty) in inputs.iter().enumerate() {
-            if idx > 0 {
-                parts.push_str(", ");
-            }
-            parts.push_str(&ty.to_string());
-        }
+    if !output.is_unit() {
+        parts.push_str(" -> ");
+        parts.push_str(&output.to_string());
+    }
 
-        if sig.c_variadic {
-            if !inputs.is_empty() {
-                parts.push_str(", ");
-            }
-            parts.push_str("...");
-        }
-
-        parts.push(')');
-
-        let output = sig.output();
-        if !output.is_unit() {
-            parts.push_str(" -> ");
-            parts.push_str(&output.to_string());
-        }
-
-        parts
-    })
+    parts
 }
 
 pub fn capture_hir(crate_path: &Path) -> Result<HirPackage> {
@@ -320,11 +417,10 @@ pub fn capture_hir(crate_path: &Path) -> Result<HirPackage> {
         fs::remove_file(&output_path).ok();
     }
 
-    let mut cmd = Command::new("cargo");
+    let mut cmd = build_cargo_command();
     cmd.current_dir(&canonical);
     cmd.env_remove("RUSTC");
     cmd.env_remove("RUSTFLAGS");
-    cmd.arg("+nightly");
     cmd.arg("rustc");
 
     match &primary {
@@ -355,29 +451,79 @@ pub fn capture_hir(crate_path: &Path) -> Result<HirPackage> {
     cmd.arg("--");
     cmd.args(["--emit", "metadata"]);
 
-    let status = cmd
-        .status()
+    let command_display = describe_command(&cmd);
+    let output = cmd
+        .output()
         .with_context(|| format!("run cargo rustc with wrapper in {}", canonical.display()))?;
 
-    if !status.success() {
-        return Err(anyhow!(
-            "cargo rustc failed while capturing HIR for {}",
-            canonical.display()
-        ));
+    if output.status.success() {
+        let data = fs::read(&output_path)
+            .with_context(|| format!("read HIR capture output from {}", output_path.display()))?;
+        fs::remove_file(&output_path).ok();
+
+        let mut package: HirPackage =
+            serde_json::from_slice(&data).context("parse captured HIR JSON")?;
+        package.target = target_spec;
+        package.crate_root = canonical
+            .to_str()
+            .ok_or_else(|| anyhow!("crate root is not valid UTF-8"))?
+            .to_string();
+        return Ok(package);
     }
 
-    let data = fs::read(&output_path)
-        .with_context(|| format!("read HIR capture output from {}", output_path.display()))?;
-    fs::remove_file(&output_path).ok();
+    if output_path.exists() {
+        fs::remove_file(&output_path).ok();
+    }
 
-    let mut package: HirPackage =
-        serde_json::from_slice(&data).context("parse captured HIR JSON")?;
-    package.target = target_spec;
-    package.crate_root = canonical
-        .to_str()
-        .ok_or_else(|| anyhow!("crate root is not valid UTF-8"))?
-        .to_string();
-    Ok(package)
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let status_code = output.status.code();
+
+    if is_rustc_ice(&stdout, &stderr) {
+        return Err(HirCaptureError::rustc_ice(
+            command_display,
+            status_code,
+            stdout,
+            stderr,
+        )
+        .into());
+    }
+
+    Err(HirCaptureError::command_failed(
+        command_display,
+        status_code,
+        stdout,
+        stderr,
+    )
+    .into())
+}
+
+fn describe_command(cmd: &Command) -> String {
+    let program = cmd.get_program().to_string_lossy().into_owned();
+    let args: Vec<String> = cmd
+        .get_args()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect();
+    if args.is_empty() {
+        program
+    } else {
+        format!("{} {}", program, args.join(" "))
+    }
+}
+
+fn is_rustc_ice(stdout: &str, stderr: &str) -> bool {
+    let mut combined = String::with_capacity(stdout.len() + stderr.len() + 1);
+    combined.push_str(stdout);
+    if !stdout.is_empty() && !stderr.is_empty() {
+        combined.push('\n');
+    }
+    combined.push_str(stderr);
+    let lower = combined.to_lowercase();
+
+    lower.contains("internal compiler error")
+        || lower.contains("thread 'rustc' panicked")
+        || lower.contains("the compiler unexpectedly panicked")
+        || lower.contains("query stack during panic")
 }
 
 pub fn locate_wrapper_executable() -> Result<PathBuf> {
@@ -573,21 +719,22 @@ pub fn collect_crate_snapshot<'tcx>(
 }
 
 fn collect_attributes(tcx: TyCtxt<'_>, def_id: DefId) -> Vec<String> {
-    tcx.get_attrs(def_id).iter().map(attribute_name).collect()
+    tcx.get_all_attrs(def_id)
+        .iter()
+        .map(attribute_name)
+        .collect()
 }
 
-fn attribute_name(attr: &Attribute) -> String {
-    match &attr.kind {
-        AttrKind::Normal(normal) => normal
-            .item
-            .path
-            .segments
-            .iter()
-            .map(|segment| segment.ident.name.to_string())
-            .collect::<Vec<_>>()
-            .join("::"),
-        AttrKind::DocComment(..) => "doc".to_string(),
+fn attribute_name(attr: &hir::Attribute) -> String {
+    if attr.is_doc_comment() {
+        return "doc".to_string();
     }
+
+    attr.path()
+        .iter()
+        .map(|symbol| symbol.to_string())
+        .collect::<Vec<_>>()
+        .join("::")
 }
 
 fn to_hir_visibility(tcx: TyCtxt<'_>, def_id: DefId) -> Option<HirVisibility> {
@@ -626,9 +773,7 @@ fn classify_item<'tcx>(
     def_id: DefId,
     local_def_id: LocalDefId,
 ) -> Option<HirItemKind> {
-    let hir = tcx.hir();
-    let hir_id = hir.local_def_id_to_hir_id(local_def_id);
-    Some(match hir.get(hir_id) {
+    Some(match tcx.hir_node_by_def_id(local_def_id) {
         Node::Item(item) => classify_crate_item(tcx, def_id, item),
         Node::ImplItem(item) => classify_impl_item(tcx, def_id, item),
         Node::TraitItem(item) => classify_trait_item(tcx, def_id, item),
@@ -642,7 +787,7 @@ fn classify_crate_item<'tcx>(
     def_id: DefId,
     item: &'tcx hir::Item<'tcx>,
 ) -> HirItemKind {
-    let name = item.ident.name.to_string();
+    let name = tcx.item_name(def_id).to_string();
     match &item.kind {
         hir::ItemKind::Mod(..) => HirItemKind::Module(HirNamedItem { name }),
         hir::ItemKind::Struct(_, _, data) => HirItemKind::Struct(HirStruct {
@@ -660,7 +805,7 @@ fn classify_crate_item<'tcx>(
         hir::ItemKind::Trait(_, is_auto, safety, ..) => HirItemKind::Trait(HirTrait {
             name,
             is_auto: matches!(is_auto, hir::IsAuto::Yes),
-            is_unsafe: matches!(safety, hir::Safety::Unsafe),
+            is_unsafe: safety.is_unsafe(),
         }),
         hir::ItemKind::Impl(..) => HirItemKind::Impl(build_impl_info(tcx, def_id)),
         hir::ItemKind::Fn { sig, has_body, .. } => HirItemKind::Function(build_function(
@@ -692,7 +837,7 @@ fn classify_crate_item<'tcx>(
             original: original.map(|sym: Symbol| sym.to_string()),
         }),
         hir::ItemKind::ForeignMod { abi, .. } => HirItemKind::ForeignMod(HirForeignMod {
-            abi: abi.name().to_string(),
+            abi: abi.as_str().to_string(),
         }),
         hir::ItemKind::Macro(..) => HirItemKind::Macro(HirNamedItem { name }),
         _ => HirItemKind::Other(HirNamedItem { name }),
@@ -700,10 +845,12 @@ fn classify_crate_item<'tcx>(
 }
 
 fn classify_impl_item(tcx: TyCtxt<'_>, def_id: DefId, item: &hir::ImplItem<'_>) -> HirItemKind {
-    let name = item.ident.name.to_string();
+    let name = tcx.item_name(def_id).to_string();
     match item.kind {
         hir::ImplItemKind::Fn(ref sig, _) => {
-            let parent_impl = tcx.parent(def_id).expect("impl item without parent impl");
+            let parent_impl = tcx
+                .opt_parent(def_id)
+                .expect("impl item without parent impl");
             let owner = impl_owner_info(tcx, parent_impl);
             HirItemKind::Function(build_function(tcx, def_id, sig, true, owner, name))
         }
@@ -716,7 +863,7 @@ fn classify_impl_item(tcx: TyCtxt<'_>, def_id: DefId, item: &hir::ImplItem<'_>) 
 }
 
 fn classify_trait_item(tcx: TyCtxt<'_>, def_id: DefId, item: &hir::TraitItem<'_>) -> HirItemKind {
-    let name = item.ident.name.to_string();
+    let name = tcx.item_name(def_id).to_string();
     match item.kind {
         hir::TraitItemKind::Fn(ref sig, ref trait_fn) => {
             let provided = matches!(trait_fn, hir::TraitFn::Provided(_));
@@ -736,10 +883,10 @@ fn classify_foreign_item(
     def_id: DefId,
     item: &hir::ForeignItem<'_>,
 ) -> HirItemKind {
-    let name = item.ident.name.to_string();
+    let name = tcx.item_name(def_id).to_string();
     match item.kind {
         hir::ForeignItemKind::Fn(ref sig, ..) => {
-            let abi = sig.header.abi.name().to_string();
+            let abi = sig.header.abi.as_str().to_string();
             HirItemKind::Function(build_function(
                 tcx,
                 def_id,
@@ -762,7 +909,7 @@ fn build_impl_info(tcx: TyCtxt<'_>, def_id: DefId) -> HirImpl {
     let self_ty = format_type_of(tcx, def_id);
     let trait_ref = tcx
         .impl_trait_ref(def_id)
-        .map(|trait_ref| format_trait_ref(tcx, trait_ref));
+        .map(|trait_ref| format_trait_ref(trait_ref.instantiate_identity()));
     let polarity = map_impl_polarity(tcx.impl_polarity(def_id));
     HirImpl {
         self_ty,
@@ -775,7 +922,7 @@ fn impl_owner_info(tcx: TyCtxt<'_>, impl_def_id: DefId) -> HirFunctionOwner {
     let self_ty = format_type_of(tcx, impl_def_id);
     let trait_ref = tcx
         .impl_trait_ref(impl_def_id)
-        .map(|trait_ref| format_trait_ref(tcx, trait_ref));
+        .map(|trait_ref| format_trait_ref(trait_ref.instantiate_identity()));
     HirFunctionOwner::Impl { self_ty, trait_ref }
 }
 
@@ -801,7 +948,7 @@ fn build_function(
         asyncness: header.is_async(),
         constness: header.is_const(),
         unsafety: header.is_unsafe(),
-        abi: header.abi.name().to_string(),
+        abi: header.abi.as_str().to_string(),
         has_body,
         owner,
         signature: format_full_fn_signature(tcx, def_id),
@@ -809,7 +956,9 @@ fn build_function(
 }
 
 fn trait_owner_info(tcx: TyCtxt<'_>, def_id: DefId, provided: bool) -> HirFunctionOwner {
-    let trait_def_id = tcx.parent(def_id).expect("trait item without parent trait");
+    let trait_def_id = tcx
+        .opt_parent(def_id)
+        .expect("trait item without parent trait");
     let trait_name = tcx.item_name(trait_def_id).to_string();
     HirFunctionOwner::Trait {
         trait_name,
@@ -818,18 +967,20 @@ fn trait_owner_info(tcx: TyCtxt<'_>, def_id: DefId, provided: bool) -> HirFuncti
 }
 
 fn format_type_of(tcx: TyCtxt<'_>, def_id: DefId) -> String {
-    with_no_trimmed_paths(|| tcx.type_of(def_id).skip_binder().to_string())
+    let _guard = with_no_trimmed_paths();
+    tcx.type_of(def_id).instantiate_identity().to_string()
 }
 
-fn format_trait_ref<'tcx>(tcx: TyCtxt<'tcx>, trait_ref: ty::TraitRef<'tcx>) -> String {
-    with_no_trimmed_paths(|| trait_ref.to_string())
+fn format_trait_ref(trait_ref: ty::TraitRef<'_>) -> String {
+    let _guard = with_no_trimmed_paths();
+    trait_ref.to_string()
 }
 
 fn struct_kind_from_variant(data: &hir::VariantData<'_>) -> HirStructKind {
     match data.ctor_kind() {
         Some(CtorKind::Const) => HirStructKind::Unit,
         Some(CtorKind::Fn) => HirStructKind::Tuple,
-        Some(CtorKind::Fictive) | None => {
+        None => {
             if data.fields().is_empty() {
                 HirStructKind::Unit
             } else {
@@ -840,8 +991,12 @@ fn struct_kind_from_variant(data: &hir::VariantData<'_>) -> HirStructKind {
 }
 
 fn use_path_to_string(path: &hir::UsePath<'_>) -> String {
+    let is_global = path
+        .segments
+        .first()
+        .is_some_and(|segment| segment.ident.name == kw::PathRoot);
     let mut segments = Vec::with_capacity(path.segments.len());
-    for segment in path.segments {
+    for segment in path.segments.iter() {
         let name = segment.ident.name;
         if name == kw::PathRoot {
             continue;
@@ -849,7 +1004,7 @@ fn use_path_to_string(path: &hir::UsePath<'_>) -> String {
         segments.push(name.to_string());
     }
     let joined = segments.join("::");
-    if path.is_global() {
+    if is_global {
         format!("::{joined}")
     } else {
         joined

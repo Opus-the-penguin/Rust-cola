@@ -1,11 +1,15 @@
 use anyhow::{anyhow, Context, Result};
 use cargo_metadata::MetadataCommand;
 use clap::{builder::BoolishValueParser, ArgAction, Parser};
+#[cfg(not(feature = "hir-driver"))]
+use mir_extractor::extract_with_cache;
 use mir_extractor::{
-    analyze_with_engine, extract_with_cache, load_cached_analysis, sarif_report,
-    store_cached_analysis, write_findings_json, write_mir_json, write_sarif_json, AnalysisResult,
-    CacheConfig, CacheMissReason, CacheStatus, Finding, MirPackage, RuleEngine, SourceSpan,
+    analyze_with_engine, load_cached_analysis, sarif_report, store_cached_analysis,
+    write_findings_json, write_mir_json, write_sarif_json, AnalysisResult, CacheConfig,
+    CacheMissReason, CacheStatus, Finding, MirPackage, RuleEngine, SourceSpan,
 };
+#[cfg(feature = "hir-driver")]
+use mir_extractor::{extract_with_cache_full_opts, HirOptions, HirPackage};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::fs::{self, File};
@@ -55,12 +59,24 @@ struct Args {
     /// Clear cached MIR before running
     #[arg(long = "clear-cache", action = ArgAction::SetTrue)]
     clear_cache: bool,
+
+    #[cfg(feature = "hir-driver")]
+    /// Optional path to emit HIR JSON (single crate -> file, workspace -> directory)
+    #[arg(long)]
+    hir_json: Option<PathBuf>,
+
+    #[cfg(feature = "hir-driver")]
+    /// Control whether HIR snapshots are persisted alongside MIR cache entries (default true)
+    #[arg(long, value_parser = BoolishValueParser::new())]
+    hir_cache: Option<bool>,
 }
 
 struct PackageOutput {
     package: MirPackage,
     analysis: AnalysisResult,
     sarif: Value,
+    #[cfg(feature = "hir-driver")]
+    hir: Option<HirPackage>,
 }
 
 fn main() -> Result<()> {
@@ -92,6 +108,13 @@ fn main() -> Result<()> {
         directory: cache_dir,
         clear: args.clear_cache,
     };
+
+    #[cfg(feature = "hir-driver")]
+    let mut hir_options = HirOptions::default();
+    #[cfg(feature = "hir-driver")]
+    if let Some(cache_override) = args.hir_cache {
+        hir_options.cache = cache_override;
+    }
 
     let mut engine = RuleEngine::with_builtin_rules();
 
@@ -136,6 +159,13 @@ fn main() -> Result<()> {
 
         let cache_config = cache_template.clone();
 
+        #[cfg(feature = "hir-driver")]
+        let (artifacts, cache_status) =
+            extract_with_cache_full_opts(&crate_root, &cache_config, &hir_options)?;
+        #[cfg(feature = "hir-driver")]
+        let package = artifacts.mir.clone();
+
+        #[cfg(not(feature = "hir-driver"))]
         let (package, cache_status) = extract_with_cache(&crate_root, &cache_config)?;
 
         match &cache_status {
@@ -163,6 +193,9 @@ fn main() -> Result<()> {
             }
         }
 
+        #[cfg(feature = "hir-driver")]
+        let hir_payload = artifacts.hir.clone();
+
         let cached_analysis = load_cached_analysis(&cache_config, &cache_status, &engine)?;
 
         let analysis = if let Some(analysis) = cached_analysis {
@@ -186,6 +219,8 @@ fn main() -> Result<()> {
             package,
             analysis,
             sarif,
+            #[cfg(feature = "hir-driver")]
+            hir: hir_payload,
         });
     }
 
@@ -208,6 +243,23 @@ fn main() -> Result<()> {
         write_findings_json(&findings_path, &output.analysis.findings)?;
         write_sarif_json(&sarif_path, &output.sarif)?;
 
+        #[cfg(feature = "hir-driver")]
+        let mut hir_summary_path: Option<PathBuf> = None;
+        #[cfg(feature = "hir-driver")]
+        if let Some(hir_path) = args.hir_json.clone() {
+            if let Some(hir_package) = &output.hir {
+                mir_extractor::write_hir_json(&hir_path, hir_package)?;
+                hir_summary_path = Some(hir_path);
+            } else {
+                eprintln!(
+                    "cargo-cola: HIR capture disabled or unavailable; skipping write to {}",
+                    hir_path.display()
+                );
+            }
+        }
+        #[cfg(not(feature = "hir-driver"))]
+        let hir_summary_path: Option<PathBuf> = None;
+
         print_summary_single(
             &mir_json_path,
             &findings_path,
@@ -215,6 +267,7 @@ fn main() -> Result<()> {
             output.package.functions.len(),
             &output.analysis.findings,
             &output.analysis.rules,
+            hir_summary_path.as_deref(),
         );
 
         if output.analysis.findings.is_empty() {
@@ -257,6 +310,33 @@ fn main() -> Result<()> {
     write_findings_json(&findings_path, &aggregated_findings)?;
     write_sarif_json(&sarif_path, &aggregated_sarif)?;
 
+    #[cfg(feature = "hir-driver")]
+    let mut hir_summary_dir: Option<PathBuf> = None;
+    #[cfg(feature = "hir-driver")]
+    if let Some(hir_base) = args.hir_json.clone() {
+        if package_outputs.len() > 1 {
+            if hir_base.extension().is_some() {
+                return Err(anyhow!(
+                    "--hir-json must point to a directory when analyzing multiple crates"
+                ));
+            }
+            fs::create_dir_all(&hir_base).context("create HIR output directory")?;
+            for output in &package_outputs {
+                if let Some(hir_package) = &output.hir {
+                    let file_path =
+                        hir_base.join(format!("{}.hir.json", output.package.crate_name));
+                    mir_extractor::write_hir_json(&file_path, hir_package)?;
+                } else {
+                    eprintln!(
+                        "cargo-cola: no HIR captured for crate {}; skipping serialization",
+                        output.package.crate_name
+                    );
+                }
+            }
+            hir_summary_dir = Some(hir_base);
+        }
+    }
+
     println!(
         "Analysis complete across {} crates: {} functions processed, {} findings.",
         package_outputs.len(),
@@ -266,6 +346,10 @@ fn main() -> Result<()> {
     println!("- MIR JSON: {}", mir_json_path.display());
     println!("- Findings JSON: {}", findings_path.display());
     println!("- SARIF: {}", sarif_path.display());
+    #[cfg(feature = "hir-driver")]
+    if let Some(dir) = hir_summary_dir {
+        println!("- HIR JSON dir: {} (one file per crate)", dir.display());
+    }
 
     if let Some(rendered) = format_findings_output(&aggregated_findings, &aggregated_rules) {
         print!("{}", rendered);
@@ -290,6 +374,7 @@ fn print_summary_single(
     function_count: usize,
     findings: &[Finding],
     rules: &[mir_extractor::RuleMetadata],
+    hir_path: Option<&Path>,
 ) {
     println!(
         "Analysis complete: {} functions processed, {} findings.",
@@ -299,6 +384,9 @@ fn print_summary_single(
     println!("- MIR JSON: {}", mir_path.display());
     println!("- Findings JSON: {}", findings_path.display());
     println!("- SARIF: {}", sarif_path.display());
+    if let Some(path) = hir_path {
+        println!("- HIR JSON: {}", path.display());
+    }
 
     if let Some(rendered) = format_findings_output(findings, rules) {
         print!("{}", rendered);

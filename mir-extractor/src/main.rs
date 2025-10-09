@@ -14,12 +14,12 @@ extern crate rustc_session;
 extern crate rustc_span;
 
 use anyhow::{Context, Result};
-use clap::{ArgAction, Parser};
+use clap::{builder::BoolishValueParser, ArgAction, Parser};
 #[cfg(not(feature = "hir-driver"))]
 use mir_extractor::extract_with_cache;
-#[cfg(feature = "hir-driver")]
-use mir_extractor::extract_with_cache_full;
 use mir_extractor::{analyze_with_engine, CacheConfig, CacheMissReason, CacheStatus, RuleEngine};
+#[cfg(feature = "hir-driver")]
+use mir_extractor::{capture_hir, extract_with_cache_full_opts, HirOptions};
 use std::fs;
 use std::path::PathBuf;
 
@@ -54,12 +54,27 @@ struct Args {
     wasm_rule: Vec<PathBuf>,
 
     /// Enable the MIR cache (default true)
-    #[arg(long, value_parser = clap::builder::BoolishValueParser::new())]
+    #[arg(long, value_parser = BoolishValueParser::new())]
     cache: Option<bool>,
 
     /// Clear cached MIR before running
     #[arg(long = "clear-cache", action = ArgAction::SetTrue)]
     clear_cache: bool,
+
+    #[cfg(feature = "hir-driver")]
+    /// Optional path to write the structured HIR JSON (defaults to disabled)
+    #[arg(long)]
+    hir_json: Option<PathBuf>,
+
+    #[cfg(feature = "hir-driver")]
+    /// Control whether HIR snapshots are persisted to the cache (default true)
+    #[arg(long, value_parser = BoolishValueParser::new())]
+    hir_cache: Option<bool>,
+
+    #[cfg(feature = "hir-driver")]
+    /// Development flag: capture only HIR (skip MIR extraction)
+    #[arg(long = "hir-only", action = ArgAction::SetTrue, hide = true)]
+    hir_only: bool,
 }
 
 fn main() -> Result<()> {
@@ -77,7 +92,33 @@ fn main() -> Result<()> {
     println!("Extracting MIR from {}", args.crate_path.display());
 
     #[cfg(feature = "hir-driver")]
-    let (artifacts, cache_status) = extract_with_cache_full(&args.crate_path, &cache_config)?;
+    {
+        if args.hir_only {
+            let hir_package = capture_hir(&args.crate_path)?;
+            let hir_json_path = args
+                .hir_json
+                .clone()
+                .unwrap_or_else(|| args.out_dir.join("hir.json"));
+            mir_extractor::write_hir_json(&hir_json_path, &hir_package)?;
+            println!(
+                "Captured HIR snapshot for {} -> {}",
+                hir_package.crate_name,
+                hir_json_path.display()
+            );
+            return Ok(());
+        }
+    }
+
+    #[cfg(feature = "hir-driver")]
+    let mut hir_options = HirOptions::default();
+    #[cfg(feature = "hir-driver")]
+    if let Some(cache_override) = args.hir_cache {
+        hir_options.cache = cache_override;
+    }
+
+    #[cfg(feature = "hir-driver")]
+    let (artifacts, cache_status) =
+        extract_with_cache_full_opts(&args.crate_path, &cache_config, &hir_options)?;
     #[cfg(feature = "hir-driver")]
     let package = artifacts.mir.clone();
 
@@ -115,14 +156,20 @@ fn main() -> Result<()> {
     mir_extractor::write_mir_json(&mir_json_path, &package)?;
 
     #[cfg(feature = "hir-driver")]
-    if let Some(hir_package) = &artifacts.hir {
-        let hir_json_path = args.out_dir.join("hir.json");
-        mir_extractor::write_hir_json(&hir_json_path, hir_package)?;
-        println!(
-            "Captured HIR snapshot for {} -> {}",
-            hir_package.crate_name,
-            hir_json_path.display()
-        );
+    if let Some(requested_path) = args.hir_json.clone() {
+        if let Some(hir_package) = &artifacts.hir {
+            mir_extractor::write_hir_json(&requested_path, hir_package)?;
+            println!(
+                "Captured HIR snapshot for {} -> {}",
+                hir_package.crate_name,
+                requested_path.display()
+            );
+        } else {
+            eprintln!(
+                "rust-cola: HIR capture disabled or unavailable; skipping write to {}",
+                requested_path.display()
+            );
+        }
     }
 
     let mut engine = RuleEngine::with_builtin_rules();

@@ -2164,6 +2164,102 @@ impl Rule for MemForgetGuardRule {
     }
 }
 
+struct UnderscoreLockGuardRule {
+    metadata: RuleMetadata,
+}
+
+impl UnderscoreLockGuardRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA030".to_string(),
+                name: "underscore-lock-guard".to_string(),
+                short_description: "Lock guard immediately discarded via underscore binding".to_string(),
+                full_description: "Detects lock guards (Mutex::lock, RwLock::read/write, etc.) assigned to `_`, which immediately drops the guard and releases the lock before the critical section executes, creating race conditions.".to_string(),
+                help_uri: Some("https://rust-lang.github.io/rust-clippy/master/index.html#/let_underscore_lock".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn lock_method_patterns() -> &'static [&'static str] {
+        &[
+            "::lock(",
+            "::read(",
+            "::write(",
+            "::try_lock(",
+            "::try_read(",
+            "::try_write(",
+            "::blocking_lock(",
+            "::blocking_read(",
+            "::blocking_write(",
+        ]
+    }
+}
+
+impl Rule for UnderscoreLockGuardRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            for line in &function.body {
+                let trimmed = line.trim();
+                
+                // Look for patterns like: let _: type = mutex.lock()
+                // or: _ = mutex.lock()
+                // In MIR this appears as: _1 = ... ::lock(...
+                if !trimmed.starts_with('_') {
+                    continue;
+                }
+
+                // Check if this is an underscore assignment
+                let is_underscore_binding = trimmed.starts_with("_ =") 
+                    || (trimmed.starts_with('_') 
+                        && trimmed.chars().nth(1).map_or(false, |c| c.is_ascii_digit())
+                        && trimmed.contains(" = "));
+
+                if !is_underscore_binding {
+                    continue;
+                }
+
+                // Check if the RHS contains a lock acquisition
+                let has_lock_call = Self::lock_method_patterns()
+                    .iter()
+                    .any(|pattern| trimmed.contains(pattern));
+
+                if !has_lock_call {
+                    continue;
+                }
+
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "Lock guard assigned to `_` in `{}`, immediately releasing the lock",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence: vec![trimmed.to_string()],
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        findings
+    }
+}
+
 struct UnsafeSendSyncBoundsRule {
     metadata: RuleMetadata,
 }
@@ -4068,6 +4164,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(WorldWritableModeRule::new()));
     engine.register_rule(Box::new(NonNullNewUncheckedRule::new()));
     engine.register_rule(Box::new(MemForgetGuardRule::new()));
+    engine.register_rule(Box::new(UnderscoreLockGuardRule::new()));
     engine.register_rule(Box::new(UnsafeSendSyncBoundsRule::new()));
     engine.register_rule(Box::new(FfiBufferLeakRule::new()));
     engine.register_rule(Box::new(AllocatorMismatchRule::new()));

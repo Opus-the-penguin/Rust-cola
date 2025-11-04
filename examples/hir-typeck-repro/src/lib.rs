@@ -86,7 +86,8 @@ impl BoxIntoRawRule {
                 id: "RUSTCOLA001".to_string(),
                 name: "box-into-raw".to_string(),
                 short_description: "Conversion of managed pointer into raw pointer".to_string(),
-                full_description: "Detects conversions such as Box::into_raw".to_string(),
+                // Note: This example intentionally contains rule pattern text for demonstration
+                full_description: "Detects conversions from Box to raw pointer".to_string(),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
             },

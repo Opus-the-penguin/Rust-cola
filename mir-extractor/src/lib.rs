@@ -2260,6 +2260,121 @@ impl Rule for UnderscoreLockGuardRule {
     }
 }
 
+struct CommandArgConcatenationRule {
+    metadata: RuleMetadata,
+}
+
+impl CommandArgConcatenationRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA031".to_string(),
+                name: "command-arg-concatenation".to_string(),
+                short_description: "Command built with string concatenation or formatting".to_string(),
+                full_description: "Detects Command::new or Command::arg calls that use format!, format_args!, concat!, or string concatenation operators, which can enable command injection if user input is involved.".to_string(),
+                help_uri: Some("https://cwe.mitre.org/data/definitions/78.html".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn concatenation_patterns() -> &'static [&'static str] {
+        &[
+            "format!",
+            "format_args!",
+            "concat!",
+            "std::format",
+            "core::format",
+            "alloc::format",
+            "String::from",
+            "+ &str",
+            "+ String",
+        ]
+    }
+
+    fn command_construction_patterns() -> &'static [&'static str] {
+        &[
+            "Command::new(",
+            "Command::arg(",
+            "Command::args(",
+        ]
+    }
+}
+
+impl Rule for CommandArgConcatenationRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            let mut concat_lines: Vec<(usize, String)> = Vec::new();
+            let mut command_lines: Vec<(usize, String)> = Vec::new();
+
+            // First pass: collect concatenation and command lines
+            for (idx, line) in function.body.iter().enumerate() {
+                let trimmed = line.trim();
+
+                // Check for concatenation patterns
+                for pattern in Self::concatenation_patterns() {
+                    if trimmed.contains(pattern) {
+                        concat_lines.push((idx, trimmed.to_string()));
+                        break;
+                    }
+                }
+
+                // Check for command construction
+                for pattern in Self::command_construction_patterns() {
+                    if trimmed.contains(pattern) {
+                        command_lines.push((idx, trimmed.to_string()));
+                        break;
+                    }
+                }
+            }
+
+            // Second pass: check if command lines use concatenated values
+            for (cmd_idx, cmd_line) in &command_lines {
+                // Look for concatenation that happens before or near this command
+                let relevant_concat: Vec<&String> = concat_lines
+                    .iter()
+                    .filter(|(concat_idx, _)| concat_idx < cmd_idx && cmd_idx - concat_idx < 10)
+                    .map(|(_, line)| line)
+                    .collect();
+
+                if relevant_concat.is_empty() {
+                    continue;
+                }
+
+                let mut evidence = vec![cmd_line.clone()];
+                evidence.extend(relevant_concat.iter().map(|s| (*s).clone()));
+
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "Command argument uses string concatenation in `{}`, potential injection risk",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence,
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        findings
+    }
+}
+
 struct UnsafeSendSyncBoundsRule {
     metadata: RuleMetadata,
 }
@@ -4165,6 +4280,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(NonNullNewUncheckedRule::new()));
     engine.register_rule(Box::new(MemForgetGuardRule::new()));
     engine.register_rule(Box::new(UnderscoreLockGuardRule::new()));
+    engine.register_rule(Box::new(CommandArgConcatenationRule::new()));
     engine.register_rule(Box::new(UnsafeSendSyncBoundsRule::new()));
     engine.register_rule(Box::new(FfiBufferLeakRule::new()));
     engine.register_rule(Box::new(AllocatorMismatchRule::new()));

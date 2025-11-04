@@ -87,7 +87,7 @@ Each `--rulepack` flag loads another YAML file. Rulepacks support simple string 
 
 ### Security rule backlog
 
-Curious what’s coming next? The living backlog in [`docs/security-rule-backlog.md`](docs/security-rule-backlog.md) tracks 100+ candidate security rules sourced from Semgrep, GitHub CodeQL, SonarSource, Trail of Bits’ Dylint packs, Checkmarx, Snyk, and RustSec advisories, along with feasibility notes and prototype links. Contributions welcome!
+Curious what’s coming next? The living backlog in [`docs/security-rule-backlog.md`](docs/security-rule-backlog.md) tracks 100+ candidate security rules sourced from public advisories, along with feasibility notes and prototype links. Contributions welcome!
 
 ## Example commands
 

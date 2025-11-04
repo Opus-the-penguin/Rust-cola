@@ -2375,6 +2375,339 @@ impl Rule for CommandArgConcatenationRule {
     }
 }
 
+/// RUSTCOLA032: OpenOptions missing truncate
+/// Detects OpenOptions::new().write(true).create(true) without .truncate(true) or .append(true)
+/// which can leave stale data in files, causing potential data disclosure.
+struct OpenOptionsMissingTruncateRule {
+    metadata: RuleMetadata,
+}
+
+impl OpenOptionsMissingTruncateRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA032".to_string(),
+                name: "OpenOptions missing truncate".to_string(),
+                short_description: "File created with write(true) without truncate or append".to_string(),
+                full_description: "Detects OpenOptions::new().write(true).create(true) patterns that don't specify .truncate(true) or .append(true). When creating a writable file without truncation, old file contents may remain, leading to stale data disclosure or corruption.".to_string(),
+                help_uri: Some("https://rust-lang.github.io/rust-clippy/master/index.html#suspicious_open_options".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for OpenOptionsMissingTruncateRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn cache_key(&self) -> String {
+        format!("{}:v1", self.metadata.id)
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Look for OpenOptions builder patterns in MIR
+            // We need to find: write(true) AND create(true) WITHOUT truncate(true) or append(true)
+            
+            let mut has_write_true = false;
+            let mut has_create_true = false;
+            let mut has_truncate_or_append = false;
+            let mut open_options_start_line = None;
+            let mut evidence_lines = Vec::new();
+
+            for (idx, line) in function.body.iter().enumerate() {
+                // Detect OpenOptions::new()
+                if line.contains("OpenOptions::new()") {
+                    open_options_start_line = Some(idx);
+                    has_write_true = false;
+                    has_create_true = false;
+                    has_truncate_or_append = false;
+                    evidence_lines.clear();
+                    evidence_lines.push(line.trim().to_string());
+                }
+
+                // If we're tracking an OpenOptions chain
+                if open_options_start_line.is_some() {
+                    // Check for builder methods within reasonable proximity (20 lines)
+                    if idx <= open_options_start_line.unwrap() + 20 {
+                        // Match both dotted syntax and MIR function calls
+                        if line.contains(".write(true)") || line.contains(".write ( true )")
+                            || (line.contains("OpenOptions::write") && line.contains("const true"))
+                        {
+                            has_write_true = true;
+                            if !evidence_lines.iter().any(|e| e.contains(line.trim())) {
+                                evidence_lines.push(line.trim().to_string());
+                            }
+                        }
+                        
+                        if line.contains(".create(true)") || line.contains(".create ( true )")
+                            || (line.contains("OpenOptions::create") && line.contains("const true"))
+                        {
+                            has_create_true = true;
+                            if !evidence_lines.iter().any(|e| e.contains(line.trim())) {
+                                evidence_lines.push(line.trim().to_string());
+                            }
+                        }
+                        
+                        if line.contains(".truncate(true)") || line.contains(".truncate ( true )")
+                            || (line.contains("OpenOptions::truncate") && line.contains("const true"))
+                            || line.contains(".append(true)") || line.contains(".append ( true )")
+                            || (line.contains("OpenOptions::append") && line.contains("const true"))
+                        {
+                            has_truncate_or_append = true;
+                        }
+
+                        // Check for .open() call - this terminates the builder chain
+                        if line.contains(".open(") || line.contains("OpenOptions::open") {
+                            if !evidence_lines.iter().any(|e| e.contains(line.trim())) {
+                                evidence_lines.push(line.trim().to_string());
+                            }
+
+                            // Evaluate the complete builder chain
+                            if has_write_true && has_create_true && !has_truncate_or_append {
+                                findings.push(Finding {
+                                    rule_id: self.metadata.id.clone(),
+                                    rule_name: self.metadata.name.clone(),
+                                    severity: self.metadata.default_severity,
+                                    message: format!(
+                                        "File opened with write(true) and create(true) but no truncate(true) or append(true) in `{}`",
+                                        function.name
+                                    ),
+                                    function: function.name.clone(),
+                                    function_signature: function.signature.clone(),
+                                    evidence: evidence_lines.clone(),
+                                    span: function.span.clone(),
+                                });
+                            }
+
+                            // Reset for next potential OpenOptions chain
+                            open_options_start_line = None;
+                            has_write_true = false;
+                            has_create_true = false;
+                            has_truncate_or_append = false;
+                            evidence_lines.clear();
+                        }
+                    } else {
+                        // Too far from start, reset
+                        open_options_start_line = None;
+                        has_write_true = false;
+                        has_create_true = false;
+                        has_truncate_or_append = false;
+                        evidence_lines.clear();
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+/// RUSTCOLA033: Allocator mismatch across FFI
+/// Detects Box::into_raw or CString::into_raw followed by libc::free
+/// or malloc/calloc followed by Box::from_raw, which causes UB due to mismatched allocators.
+struct AllocatorMismatchFfiRule {
+    metadata: RuleMetadata,
+}
+
+impl AllocatorMismatchFfiRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA033".to_string(),
+                name: "Allocator mismatch across FFI".to_string(),
+                short_description: "Mixing Rust and C allocators (Box/CString with malloc/free)".to_string(),
+                full_description: "Detects pointers allocated with Rust allocators (Box::into_raw, CString::into_raw) being freed with libc::free, or pointers from malloc/calloc being freed with Box::from_raw. Mixing allocators causes undefined behavior and memory corruption.".to_string(),
+                help_uri: Some("https://doc.rust-lang.org/std/boxed/struct.Box.html#method.from_raw".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for AllocatorMismatchFfiRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn cache_key(&self) -> String {
+        format!("{}:v1", self.metadata.id)
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Track Rust-allocated pointers (Box::into_raw, CString::into_raw)
+            let mut rust_allocated_vars = Vec::new();
+            
+            // Track C-allocated pointers (malloc, calloc, realloc)
+            let mut c_allocated_vars = Vec::new();
+            
+            // Track variable aliases (e.g., _4 = copy _2)
+            let mut var_aliases: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+            for (idx, line) in function.body.iter().enumerate() {
+                // Track variable aliases: "_4 = copy _2" or "_4 = move _2"
+                if (line.contains(" = copy ") || line.contains(" = move "))
+                    && line.trim().starts_with('_')
+                {
+                    let parts: Vec<&str> = line.split('=').collect();
+                    if parts.len() >= 2 {
+                        let lhs = parts[0].trim();
+                        let rhs = parts[1].trim();
+                        // Extract variable name from "copy _2" or "move _2 as ..."
+                        if let Some(src_var) = rhs.split_whitespace().nth(1) {
+                            if src_var.starts_with('_') {
+                                var_aliases.insert(lhs.to_string(), src_var.to_string());
+                            }
+                        }
+                    }
+                }
+                
+                // Detect Rust allocations: Box::into_raw, CString::into_raw
+                // MIR pattern: "_2 = Box::<i32>::into_raw(move _1)"
+                if (line.contains("Box::") && line.contains("::into_raw") 
+                    || line.contains("CString::") && line.contains("::into_raw"))
+                    && line.contains(" = ")
+                {
+                    // Extract variable name (e.g., "_5 = Box::into_raw")
+                    if let Some(var_name) = line.trim().split('=').next() {
+                        let var = var_name.trim().to_string();
+                        rust_allocated_vars.push((var.clone(), idx, line.trim().to_string()));
+                    }
+                }
+
+                // Detect C allocations: malloc, calloc, realloc
+                // MIR pattern: "_1 = malloc(...)"
+                if (line.contains("malloc(") || line.contains("calloc(") || line.contains("realloc("))
+                    && line.contains(" = ")
+                {
+                    if let Some(var_name) = line.trim().split('=').next() {
+                        let var = var_name.trim().to_string();
+                        c_allocated_vars.push((var.clone(), idx, line.trim().to_string()));
+                    }
+                }
+
+                // Check for libc::free on Rust-allocated pointers
+                // MIR pattern: "_3 = free(move _4)"
+                if line.contains("free(") {
+                    for (rust_var, alloc_idx, alloc_line) in &rust_allocated_vars {
+                        // Check if this Rust-allocated variable or its alias is being freed
+                        let mut is_freed = line.contains(rust_var);
+                        
+                        // Also check aliases (e.g., _4 copied from _2)
+                        for (alias, original) in &var_aliases {
+                            if original == rust_var && line.contains(alias) {
+                                is_freed = true;
+                                break;
+                            }
+                        }
+                        
+                        if is_freed && idx > *alloc_idx && idx < alloc_idx + 50 {
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message: format!(
+                                    "Rust-allocated pointer freed with libc::free in `{}`",
+                                    function.name
+                                ),
+                                function: function.name.clone(),
+                                function_signature: function.signature.clone(),
+                                evidence: vec![
+                                    format!("Rust allocation: {}", alloc_line),
+                                    format!("C deallocation: {}", line.trim()),
+                                ],
+                                span: function.span.clone(),
+                            });
+                        }
+                    }
+                }
+
+                // Check for Box::from_raw on C-allocated pointers
+                // MIR pattern: "_3 = Box::<i32>::from_raw(move _2)"
+                if line.contains("Box::") && line.contains("::from_raw(") {
+                    for (c_var, alloc_idx, alloc_line) in &c_allocated_vars {
+                        // Check if this C-allocated variable or its alias is being converted to Box
+                        let mut is_converted = line.contains(c_var);
+                        
+                        // Also check aliases
+                        for (alias, original) in &var_aliases {
+                            if original == c_var && line.contains(alias) {
+                                is_converted = true;
+                                break;
+                            }
+                        }
+                        
+                        if is_converted && idx > *alloc_idx && idx < alloc_idx + 50 {
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message: format!(
+                                    "C-allocated pointer converted to Box::from_raw in `{}`",
+                                    function.name
+                                ),
+                                function: function.name.clone(),
+                                function_signature: function.signature.clone(),
+                                evidence: vec![
+                                    format!("C allocation: {}", alloc_line),
+                                    format!("Rust deallocation: {}", line.trim()),
+                                ],
+                                span: function.span.clone(),
+                            });
+                        }
+                    }
+                }
+
+                // Check for CString::from_raw on C-allocated strings
+                // MIR pattern: "CString::from_raw(...)"
+                if line.contains("CString::") && line.contains("::from_raw(") {
+                    for (c_var, alloc_idx, alloc_line) in &c_allocated_vars {
+                        let mut is_converted = line.contains(c_var);
+                        
+                        // Also check aliases
+                        for (alias, original) in &var_aliases {
+                            if original == c_var && line.contains(alias) {
+                                is_converted = true;
+                                break;
+                            }
+                        }
+                        
+                        if is_converted && idx > *alloc_idx && idx < alloc_idx + 50 {
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message: format!(
+                                    "C-allocated pointer converted to CString::from_raw in `{}`",
+                                    function.name
+                                ),
+                                function: function.name.clone(),
+                                function_signature: function.signature.clone(),
+                                evidence: vec![
+                                    format!("C allocation: {}", alloc_line),
+                                    format!("Rust deallocation: {}", line.trim()),
+                                ],
+                                span: function.span.clone(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 struct UnsafeSendSyncBoundsRule {
     metadata: RuleMetadata,
 }
@@ -4281,6 +4614,8 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(MemForgetGuardRule::new()));
     engine.register_rule(Box::new(UnderscoreLockGuardRule::new()));
     engine.register_rule(Box::new(CommandArgConcatenationRule::new()));
+    engine.register_rule(Box::new(OpenOptionsMissingTruncateRule::new()));
+    engine.register_rule(Box::new(AllocatorMismatchFfiRule::new()));
     engine.register_rule(Box::new(UnsafeSendSyncBoundsRule::new()));
     engine.register_rule(Box::new(FfiBufferLeakRule::new()));
     engine.register_rule(Box::new(AllocatorMismatchRule::new()));

@@ -112,7 +112,7 @@ Feasibility legend:
 
 ## External Tool Findings – Clippy
 
-76. **OpenOptions missing truncate** *(quick win)* – Lift Clippy `suspicious_open_options`; prevent stale file contents when creating writable files without `truncate(true)` or `append(true)`. **Signal:** Builder chains on `std::fs::OpenOptions` that set `write(true)` and `create(true)` but never set truncate/append. **Feasibility:** Heuristic.
+76. **OpenOptions missing truncate** *(RUSTCOLA032 shipped)* – Lift Clippy `suspicious_open_options`; prevent stale file contents when creating writable files without `truncate(true)` or `append(true)`. **Signal:** Builder chains on `std::fs::OpenOptions` that set `write(true)` and `create(true)` but never set truncate/append. **Feasibility:** Heuristic.
 77. **Command argument concatenation** *(shipped — RUSTCOLA031)* – Detects Command::new or Command::arg calls using format!, concat!, or string concatenation which can enable command injection. **Signal:** Command construction with formatting or concatenation operators. **Feasibility:** Heuristic.
 78. **Underscore-assigned lock guard** *(shipped — RUSTCOLA030)* – Detects lock guards (Mutex::lock, RwLock::read/write, etc.) assigned to `_` which immediately drops the guard. **Signal:** Pattern bindings like `let _ = mutex.lock()` for locking APIs. **Feasibility:** Heuristic.
 79. **Absolute component in join** – Clippy `join_absolute_paths`; flag `Path::join`/`PathBuf::push` receiving an absolute path segment that nullifies the sanitized base path. **Signal:** Call where the joined argument is known absolute (literal or `Path::is_absolute`-provable). **Feasibility:** MIR dataflow.
@@ -123,7 +123,7 @@ Feasibility legend:
 
 82. **Unsafe closure panic guard** – Flag unsafe routines that duplicate ownership via `ptr::read`/`copy_nonoverlapping` and then invoke user-supplied closures or trait callbacks without shielding against panics (Rudra’s panic-safety bug class). **Signal:** In an `unsafe` block, raw pointer reads followed by a call to a higher-order argument without surrounding `catch_unwind` or restoring ownership before the call. **Feasibility:** Advanced.
 83. **Borrow contract invariant** – Detect higher-order code that assumes repeated trait method calls (e.g., `Borrow::borrow`, `Deref::deref`) return the same reference and cache raw pointers across calls, risking aliasing bugs (Rudra higher-order invariant). **Signal:** MIR dataflow proving a pointer derived from a trait object is stored and reused after an intervening call that may mutate the source. **Feasibility:** Advanced.
-84. **Generic Send/Sync bounds** *(quick win)* – Highlight `unsafe impl Send/Sync for Foo<T>` that omit trait bounds ensuring `T: Send`/`T: Sync`, echoing Rudra’s Send/Sync variance findings. **Signal:** Pattern match on unsafe impl blocks where generic parameters appear without the matching auto-trait constraint. **Feasibility:** Heuristic.
+84. **Generic Send/Sync bounds** *(RUSTCOLA015 shipped; duplicate of entry #8)* – Highlight `unsafe impl Send/Sync for Foo<T>` that omit trait bounds ensuring `T: Send`/`T: Sync`, echoing Rudra’s Send/Sync variance findings. **Signal:** Pattern match on unsafe impl blocks where generic parameters appear without the matching auto-trait constraint. **Feasibility:** Heuristic.
 
 ## External Tool Findings – MirChecker
 
@@ -134,6 +134,10 @@ Feasibility legend:
 ## External Tool Findings – FFIChecker
 
 88. **FFI buffer leak on early return** – Ensure FFI marshalling code that allocates heap buffers (e.g., `Vec::with_capacity`, `Box::into_raw`) installs defer-style cleanup when `?` propagation can short-circuit before freeing (FFIChecker memory-corruption findings). **Signal:** In `extern`/FFI helpers, detect manual allocation whose pointer escapes while `?`-based error paths exit prior to cleanup. **Feasibility:** MIR dataflow.
+89. **FFI panic-safe drop guard** – Flag unsafe FFI stubs that leave partially initialised buffers or state inconsistent if a Rust panic unwinds across the boundary, echoing FFIChecker's exception-safety bugs. **Signal:** Look for `unsafe` blocks preparing raw structures without `Drop` guards or `catch_unwind` before invoking external code that may unwind. **Feasibility:** Advanced.
+90. **Allocator mismatch across FFI** *(RUSTCOLA033 shipped)* – Prevent mixing Rust allocators with `libc::free`/foreign deallocators on pointers created by `Box`/`CString`, matching FFIChecker's mixed-allocation UB class. **Signal:** Detect raw pointers produced by Rust allocation APIs later freed via non-matching deallocators (or vice versa). **Feasibility:** Heuristic.
+
+## External Tool Findings – Cargo Audit
 89. **FFI panic-safe drop guard** – Flag unsafe FFI stubs that leave partially initialised buffers or state inconsistent if a Rust panic unwinds across the boundary, echoing FFIChecker’s exception-safety bugs. **Signal:** Look for `unsafe` blocks preparing raw structures without `Drop` guards or `catch_unwind` before invoking external code that may unwind. **Feasibility:** Advanced.
 90. **Allocator mismatch across FFI** *(quick win)* – Prevent mixing Rust allocators with `libc::free`/foreign deallocators on pointers created by `Box`/`CString`, matching FFIChecker’s mixed-allocation UB class. **Signal:** Detect raw pointers produced by Rust allocation APIs later freed via non-matching deallocators (or vice versa). **Feasibility:** Heuristic.
 

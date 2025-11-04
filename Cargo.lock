@@ -12,6 +12,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "allocator-mismatch-ffi"
+version = "0.1.0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "anes"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -577,6 +584,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
 
 [[package]]
+name = "openoptions-truncate"
+version = "0.1.0"
+
+[[package]]
 name = "plotters"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -747,6 +758,10 @@ dependencies = [
  "serde",
  "serde_core",
 ]
+
+[[package]]
+name = "send-sync-bounds"
+version = "0.1.0"
 
 [[package]]
 name = "serde"

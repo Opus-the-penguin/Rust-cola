@@ -4,5 +4,8 @@ members = [
     "mir-extractor",
     "examples/simple",
     "examples/hir-typeck-repro",
+    "examples/openoptions-truncate",
+    "examples/allocator-mismatch-ffi",
+    "examples/send-sync-bounds",
 ]
 resolver = "2"

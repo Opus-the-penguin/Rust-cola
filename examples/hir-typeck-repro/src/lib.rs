@@ -16,7 +16,7 @@ pub enum RuleOrigin {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RuleMetadata {
-    pub id: String,/÷÷/
+    pub id: String,
     pub name: String,
     pub short_description: String,
     pub full_description: String,

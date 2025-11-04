@@ -1,6 +1,6 @@
 # Security Rule Backlog
 
-This backlog consolidates security-focused rule ideas for Rust-cola drawn from Semgrep, GitHub CodeQL, SonarSource/SonarQube, and Trail of Bits' Dylint examples. Each entry captures the rationale, the primary analysis signal we expect to leverage, and a rough feasibility tier.
+This backlog consolidates security-focused rule ideas for Rust-cola compiled from public advisories and vulnerability pattern documentation published by various security research teams and tools, including Semgrep, GitHub CodeQL, SonarSource/SonarQube, Trail of Bits' Dylint examples, Checkmarx, Snyk, and RustSec. Each entry captures the rationale, the primary analysis signal we expect to leverage, and a rough feasibility tier.
 
 Feasibility legend:
 

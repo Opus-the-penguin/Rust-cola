@@ -126,6 +126,15 @@
 - **Validation run:** Running `cargo run -p mir-extractor --bin hir-spike --features hir-driver -- mir-extractor` now completes the metadata/argument capture and kicks off the in-process compiler session. Compilation proceeds until the compiler hits a known nightly ICE inside `Rule::metadata`; all pre-ICE logging confirms we drive `rustc_interface` with the same crate graph as cargo.
 - **Follow-up:** Track the upstream ICE (rust-lang/rust#125163) and rerun once a patched nightly lands. In parallel, add a guard that captures and reports ICEs without treating them as regressions for the metadata plumbing work.
 
+## Phase 1 Kick-off Checklist (Planned)
+
+- **Nightly recovery watch:** Monitor rust-lang/rust#125163 and rerun the metadata capture sanity check as soon as the nightly fix posts. Once the ICE clears, capture a golden run on `mir-extractor` and stash the rustc arguments as fixtures for regression tests.
+- **Data model scaffolding:** Land the `hir.rs` module with the minimal `HirCrate`, `HirItem`, and `HirItemKind::Function` structs, plus serde derives. Use the current MIR structures as a style reference and keep the schema versioned even before it’s populated.
+- **Collector prototype:** Add a `hir_driver` module that exercises `rustc_interface::run_compiler` using the captured `rustc` argument JSON. Start by walking `tcx.hir().items()` and collecting fn signatures only; persist them to an in-memory vector to test serialization.
+- **CLI wiring (feature-gated):** Introduce `--hir-json` and `--hir-only` flags to `mir-extractor` behind `cfg(feature = "hir-driver")`. Default behavior should stay MIR-only until HIR extraction is explicitly requested.
+- **Integration test harness:** Create `tests/hir_smoke.rs` (ignored by default) that runs the new driver against `examples/simple`, asserting the JSON contains at least one function entry. Use the captured rustc args to avoid rebuilding deps during the test.
+- **CodeQL alignment:** Once Phase 1 code lands, update the CodeQL workflow to include a feature-disabled build (`--no-default-features`) and a feature-enabled smoke run so the database sees both code paths.
+
 ## Resilience Update (2025-10-09 PM)
 
 - **ICE detection & logging:** `capture_hir` now collects `cargo rustc` stdout/stderr and classifies internal compiler errors. When an ICE occurs, the CLI keeps running, emits a structured log prefix (`rust-cola: rustc ICE while capturing HIR`), and surfaces the first diagnostic line plus a truncated stderr tail. This allows downstream workflows to continue while we wait for nightly fixes.

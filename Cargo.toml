@@ -3,5 +3,6 @@ members = [
     "cargo-cola",
     "mir-extractor",
     "examples/simple",
+    "examples/hir-typeck-repro",
 ]
 resolver = "2"

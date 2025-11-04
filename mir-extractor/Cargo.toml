@@ -38,3 +38,8 @@ semver = "1.0"
 [dev-dependencies]
 assert_cmd = "2"
 tempfile = "3"
+criterion = "0.5"
+
+[[bench]]
+name = "analysis_performance"
+harness = false

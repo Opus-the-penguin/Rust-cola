@@ -3556,6 +3556,465 @@ impl Rule for FfiBufferLeakRule {
     }
 }
 
+/// RUSTCOLA035: repr(packed) field references
+/// Detects taking references to fields of #[repr(packed)] structs,
+/// which creates unaligned references (undefined behavior).
+struct PackedFieldReferenceRule {
+    metadata: RuleMetadata,
+}
+
+impl PackedFieldReferenceRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA035".to_string(),
+                name: "repr-packed-field-reference".to_string(),
+                short_description: "Reference to packed struct field".to_string(),
+                full_description: "Detects taking references to fields of #[repr(packed)] structs. Creating references to packed struct fields creates unaligned references, which is undefined behavior in Rust. Use ptr::addr_of! or ptr::addr_of_mut! instead.".to_string(),
+                help_uri: Some("https://doc.rust-lang.org/nomicon/other-reprs.html#reprpacked".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for PackedFieldReferenceRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        // First pass: identify packed structs
+        let mut packed_structs = HashSet::new();
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+            
+            // Find packed structs
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Look for #[repr(packed)] attributes
+                if trimmed.starts_with("#[repr(packed") {
+                    // Find the next struct definition
+                    for j in (idx + 1).min(lines.len())..lines.len() {
+                        let struct_line = lines[j].trim();
+                        if struct_line.starts_with("struct ") || struct_line.starts_with("pub struct ") {
+                            // Extract struct name
+                            let after_struct = if struct_line.starts_with("pub struct ") {
+                                &struct_line[11..]
+                            } else {
+                                &struct_line[7..]
+                            };
+                            
+                            if let Some(name_end) = after_struct.find(|c: char| !c.is_alphanumeric() && c != '_') {
+                                let struct_name = &after_struct[..name_end];
+                                packed_structs.insert(struct_name.to_string());
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Second pass: look for references to packed struct fields
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Look for field access patterns that might create references
+                // Pattern: &var.field or &mut var.field where var is a packed struct
+                for struct_name in &packed_structs {
+                    // Check for &struct_var.field or &mut struct_var.field patterns
+                    if (trimmed.contains(&format!("&{}", struct_name.to_lowercase()))
+                        || trimmed.contains(&format!("&mut {}", struct_name.to_lowercase()))
+                        || trimmed.contains("&self.")
+                        || trimmed.contains("&mut self."))
+                        && trimmed.contains('.')
+                        && !trimmed.contains("ptr::addr_of")
+                    {
+                        let location = format!("{}:{}", rel_path, idx + 1);
+                        
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: self.metadata.default_severity,
+                            message: format!(
+                                "Potential reference to packed struct field (possibly {})",
+                                struct_name
+                            ),
+                            function: location.clone(),
+                            function_signature: String::new(),
+                            evidence: vec![trimmed.to_string()],
+                            span: None,
+                        });
+                    }
+                }
+                
+                // Also check for generic pattern of field access with reference
+                // This catches cases we might have missed
+                if (trimmed.contains("& ") || trimmed.contains("&mut "))
+                    && trimmed.contains('.')
+                    && !trimmed.contains("ptr::addr_of")
+                    && (trimmed.contains(".field") 
+                        || trimmed.contains(".x")
+                        || trimmed.contains(".y")
+                        || trimmed.contains(".z")
+                        || trimmed.contains(".data"))
+                {
+                    // This is a heuristic - might have false positives
+                    // Only report if we have some context suggesting packed struct usage
+                    if content.contains("#[repr(packed") {
+                        let location = format!("{}:{}", rel_path, idx + 1);
+                        
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: self.metadata.default_severity,
+                            message: "Potential reference to field in packed struct".to_string(),
+                            function: location.clone(),
+                            function_signature: String::new(),
+                            evidence: vec![trimmed.to_string()],
+                            span: None,
+                        });
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+/// RUSTCOLA036: Unsafe CString pointer use
+/// Detects CString::new(...).unwrap().as_ptr() patterns where the CString
+/// temporary is dropped immediately, creating a dangling pointer.
+struct UnsafeCStringPointerRule {
+    metadata: RuleMetadata,
+}
+
+impl UnsafeCStringPointerRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA036".to_string(),
+                name: "unsafe-cstring-pointer".to_string(),
+                short_description: "Unsafe CString pointer from temporary".to_string(),
+                full_description: "Detects patterns like CString::new(...).unwrap().as_ptr() where the CString is a temporary that gets dropped immediately, leaving a dangling pointer. The pointer must outlive the CString it came from. Store the CString in a variable to extend its lifetime.".to_string(),
+                help_uri: Some("https://www.jetbrains.com/help/inspectopedia/RsCStringPointer.html".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn is_cstring_temp_pattern(line: &str) -> bool {
+        // Look for CString::new(...).METHOD().as_ptr() patterns
+        // where METHOD is unwrap, expect, or other methods that don't extend lifetime
+        if !line.contains("CString::new") || !line.contains(".as_ptr()") {
+            return false;
+        }
+
+        // Check if the CString is being used as a temporary (chained methods)
+        // Pattern: CString::new(...).unwrap().as_ptr()
+        // Pattern: CString::new(...).expect("...").as_ptr()
+        // Pattern: CString::new(...)?.as_ptr()
+        
+        let has_intermediate_method = line.contains(".unwrap()") 
+            || line.contains(".expect(") 
+            || line.contains(".unwrap_or")
+            || line.contains("?");
+
+        // If there's chaining and no assignment before as_ptr, it's a temporary
+        let looks_temporary = has_intermediate_method && !line.contains("let ");
+
+        // Also check for direct chaining without intermediate
+        // CString::new(...).as_ptr() is also problematic
+        let direct_chain = line.contains("CString::new(") && line.contains(").as_ptr()");
+
+        looks_temporary || direct_chain
+    }
+}
+
+impl Rule for UnsafeCStringPointerRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+
+                if Self::is_cstring_temp_pattern(trimmed) {
+                    let location = format!("{}:{}", rel_path, idx + 1);
+
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: "CString temporary used with as_ptr() creates dangling pointer"
+                            .to_string(),
+                        function: location,
+                        function_signature: String::new(),
+                        evidence: vec![trimmed.to_string()],
+                        span: None,
+                    });
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+/// RUSTCOLA037: Blocking sleep in async context
+/// Detects std::thread::sleep and similar blocking sleep calls inside async functions
+/// which can stall the async runtime and cause denial-of-service.
+struct BlockingSleepInAsyncRule {
+    metadata: RuleMetadata,
+}
+
+impl BlockingSleepInAsyncRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA037".to_string(),
+                name: "blocking-sleep-in-async".to_string(),
+                short_description: "Blocking sleep in async function".to_string(),
+                full_description: "Detects std::thread::sleep and other blocking sleep calls inside async functions. Blocking sleep in async contexts can stall the executor and prevent other tasks from running, potentially causing denial-of-service. Use async sleep (tokio::time::sleep, async_std::task::sleep, etc.) instead.".to_string(),
+                help_uri: Some("https://www.jetbrains.com/help/inspectopedia/RsSleepInsideAsyncFunction.html".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn blocking_sleep_patterns() -> &'static [&'static str] {
+        &[
+            "std::thread::sleep",
+            "thread::sleep",
+            "::thread::sleep",
+        ]
+    }
+}
+
+impl Rule for BlockingSleepInAsyncRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+
+            // Track async function boundaries
+            let mut in_async_fn = false;
+            let mut async_fn_start = 0;
+            let mut brace_depth = 0;
+            let mut async_fn_name = String::new();
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+
+                // Detect async function start
+                if trimmed.contains("async fn ") {
+                    in_async_fn = true;
+                    async_fn_start = idx;
+                    brace_depth = 0;
+
+                    // Extract function name
+                    if let Some(fn_pos) = trimmed.find("fn ") {
+                        let after_fn = &trimmed[fn_pos + 3..];
+                        if let Some(paren_pos) = after_fn.find('(') {
+                            async_fn_name = after_fn[..paren_pos].trim().to_string();
+                        }
+                    }
+                }
+
+                // Track brace depth to know when async function ends
+                if in_async_fn {
+                    brace_depth += trimmed.chars().filter(|&c| c == '{').count() as i32;
+                    brace_depth -= trimmed.chars().filter(|&c| c == '}').count() as i32;
+
+                    // Check for blocking sleep patterns
+                    for pattern in Self::blocking_sleep_patterns() {
+                        if trimmed.contains(pattern) {
+                            let location = format!("{}:{}", rel_path, idx + 1);
+
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message: format!(
+                                    "Blocking sleep in async function `{}` can stall executor",
+                                    async_fn_name
+                                ),
+                                function: location,
+                                function_signature: async_fn_name.clone(),
+                                evidence: vec![trimmed.to_string()],
+                                span: None,
+                            });
+                        }
+                    }
+
+                    // If brace depth returns to 0, we've exited the async function
+                    if brace_depth <= 0 && idx > async_fn_start {
+                        in_async_fn = false;
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 struct AllocatorMismatchRule {
     metadata: RuleMetadata,
 }
@@ -4631,6 +5090,9 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(AllocatorMismatchFfiRule::new())); // RUSTCOLA017 (upgraded from source-level to MIR-based)
     engine.register_rule(Box::new(UnsafeSendSyncBoundsRule::new()));
     engine.register_rule(Box::new(FfiBufferLeakRule::new()));
+    engine.register_rule(Box::new(PackedFieldReferenceRule::new())); // RUSTCOLA035
+    engine.register_rule(Box::new(UnsafeCStringPointerRule::new())); // RUSTCOLA036
+    engine.register_rule(Box::new(BlockingSleepInAsyncRule::new())); // RUSTCOLA037
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

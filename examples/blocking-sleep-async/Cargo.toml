@@ -1,0 +1,11 @@
+[package]
+name = "blocking-sleep-async"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"], optional = true }
+
+[features]
+default = []
+with-tokio = ["tokio"]

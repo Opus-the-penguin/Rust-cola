@@ -21,7 +21,7 @@ Feasibility legend:
 9. **static mut globals** *(shipped — RUSTCOLA025)* – Warn about mutable statics that break thread safety. **Feasibility:** Heuristic.
 10. **NonNull::new_unchecked misuse** *(shipped — RUSTCOLA026)* – Ensure null checks before `new_unchecked`. **Feasibility:** Heuristic.
 11. **mem::forget on guards** *(shipped — RUSTCOLA027)* – Catch forgetting RAII guards that release locks/resources. **Feasibility:** MIR dataflow.
-12. **repr(packed) field references** – Avoid taking references to packed struct fields. **Feasibility:** Heuristic.
+12. **repr(packed) field references** *(shipped — RUSTCOLA035)* – Avoid taking references to packed struct fields. **Feasibility:** Heuristic.
 13. **slice::from_raw_parts length inflation** – Validate slice length when constructed from raw pointers. **Feasibility:** Advanced.
 14. **ptr::copy overlap** – Ensure non-overlapping regions for `copy_nonoverlapping`. **Feasibility:** Advanced.
 15. **Unsafe FFI pointer returns** – Require invariants when `extern "C"` returns raw pointers. **Feasibility:** Heuristic.
@@ -154,8 +154,8 @@ Feasibility legend:
 
 ## RustRover Inspectopedia Candidates
 
-96. **Unsafe CString pointer use** – JetBrains [Inspectopedia: Unsafe CString pointer](https://www.jetbrains.com/help/inspectopedia/RsCStringPointer.html) flags call chains like `CString::new(...).unwrap().as_ptr()` where the temporary is dropped before the pointer escapes, creating dangling references. **Signal:** Recognize `CString::new` results whose `.as_ptr()` return value is used outside the lifetime of the owning `CString` (stored, returned, or passed onward) without preserving the backing allocation. **Feasibility:** Heuristic.
-97. **Blocking sleep inside async** – JetBrains [Inspectopedia: Blocking `sleep` function cannot be used in `async` context](https://www.jetbrains.com/help/inspectopedia/RsSleepInsideAsyncFunction.html) highlights `std::thread::sleep` and similar blocking calls inside async functions that can stall executors and enable denial-of-service conditions. **Signal:** Flag synchronous sleep APIs invoked within `async fn` bodies, futures, or sections awaiting completion without yielding back to the runtime. **Feasibility:** Heuristic.
+96. **Unsafe CString pointer use** *(shipped — RUSTCOLA036)* – JetBrains [Inspectopedia: Unsafe CString pointer](https://www.jetbrains.com/help/inspectopedia/RsCStringPointer.html) flags call chains like `CString::new(...).unwrap().as_ptr()` where the temporary is dropped before the pointer escapes, creating dangling references. **Signal:** Recognize `CString::new` results whose `.as_ptr()` return value is used outside the lifetime of the owning `CString` (stored, returned, or passed onward) without preserving the backing allocation. **Feasibility:** Heuristic.
+97. **Blocking sleep inside async** *(shipped — RUSTCOLA037)* – JetBrains [Inspectopedia: Blocking `sleep` function cannot be used in `async` context](https://www.jetbrains.com/help/inspectopedia/RsSleepInsideAsyncFunction.html) highlights `std::thread::sleep` and similar blocking calls inside async functions that can stall executors and enable denial-of-service conditions. **Signal:** Flag synchronous sleep APIs invoked within `async fn` bodies, futures, or sections awaiting completion without yielding back to the runtime. **Feasibility:** Heuristic.
 
 ## Additional Dylint Candidates (Oct 2025 sweep)
 

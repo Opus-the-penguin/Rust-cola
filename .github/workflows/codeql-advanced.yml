@@ -26,6 +26,7 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: rust
+          config-file: ./.github/codeql/codeql-config.yml
 
       - name: Install pinned nightly toolchain components
         run: |

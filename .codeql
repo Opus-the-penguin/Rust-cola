@@ -1,0 +1,26 @@
+# CodeQL Query Suppressions for Rust-cola
+#
+# This file suppresses CodeQL findings for intentional test vulnerabilities
+# in the examples/ directory. These are NOT actual security issues - they are
+# test cases designed to validate rust-cola's security rule detection.
+#
+# Format: path:line:column:query-id:suppression-comment
+
+# Allocator Mismatch FFI Examples (RUSTCOLA017 tests)
+examples/allocator-mismatch-ffi/src/lib.rs:*:*:*:Intentional vulnerability for RUSTCOLA017 testing
+
+# OpenOptions Truncate Examples (RUSTCOLA032 tests)
+examples/openoptions-truncate/src/lib.rs:*:*:*:Intentional vulnerability for RUSTCOLA032 testing
+
+# Send/Sync Bounds Examples (RUSTCOLA015 tests)
+examples/send-sync-bounds/src/lib.rs:*:*:*:Intentional vulnerability for RUSTCOLA015 testing
+
+# Packed Field Reference Examples (RUSTCOLA035 tests)
+examples/packed-field-reference/src/lib.rs:*:*:*:Intentional vulnerability for RUSTCOLA035 testing
+
+# Unsafe CString Pointer Examples (RUSTCOLA036 tests)
+examples/unsafe-cstring-pointer/src/lib.rs:*:*:*:Intentional vulnerability for RUSTCOLA036 testing
+examples/cstring-pointer-use/src/lib.rs:*:*:*:Intentional vulnerability for RUSTCOLA036 testing
+
+# Blocking Sleep in Async Examples (RUSTCOLA037 tests)
+examples/blocking-sleep-async/src/lib.rs:*:*:*:Intentional vulnerability for RUSTCOLA037 testing

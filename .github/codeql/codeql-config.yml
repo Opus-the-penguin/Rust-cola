@@ -1,0 +1,28 @@
+# CodeQL Configuration for Rust-cola
+# This configuration excludes intentional test vulnerabilities in the examples/ directory
+
+name: "CodeQL Config for Rust-cola"
+
+# Exclude paths containing intentional vulnerabilities
+paths-ignore:
+  - examples/allocator-mismatch-ffi/src/**
+  - examples/openoptions-truncate/src/**
+  - examples/send-sync-bounds/src/**
+  - examples/packed-field-reference/src/**
+  - examples/unsafe-cstring-pointer/src/**
+  - examples/cstring-pointer-use/src/**
+  - examples/blocking-sleep-async/src/**
+  
+# Alternative: Exclude all examples except the basic 'simple' example
+  # - examples/*/src/**
+  # - '!examples/simple/src/**'
+
+# Query filters - disable specific queries on certain paths
+# (Uncomment and customize as needed)
+# query-filters:
+#   - exclude:
+#       id: cpp/unaligned-pointer
+#   - exclude:
+#       id: rust/dangling-pointer
+#   - exclude:
+#       id: cpp/use-after-free

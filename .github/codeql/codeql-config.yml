@@ -3,26 +3,20 @@
 
 name: "CodeQL Config for Rust-cola"
 
-# Exclude paths containing intentional vulnerabilities
+# Paths to exclude from analysis (intentional test vulnerabilities)
 paths-ignore:
-  - examples/allocator-mismatch-ffi/src/**
-  - examples/openoptions-truncate/src/**
-  - examples/send-sync-bounds/src/**
-  - examples/packed-field-reference/src/**
-  - examples/unsafe-cstring-pointer/src/**
-  - examples/cstring-pointer-use/src/**
-  - examples/blocking-sleep-async/src/**
-  
-# Alternative: Exclude all examples except the basic 'simple' example
-  # - examples/*/src/**
-  # - '!examples/simple/src/**'
+  - examples/allocator-mismatch-ffi
+  - examples/openoptions-truncate
+  - examples/send-sync-bounds
+  - examples/packed-field-reference
+  - examples/unsafe-cstring-pointer
+  - examples/cstring-pointer-use
+  - examples/blocking-sleep-async
 
-# Query filters - disable specific queries on certain paths
-# (Uncomment and customize as needed)
-# query-filters:
-#   - exclude:
-#       id: cpp/unaligned-pointer
-#   - exclude:
-#       id: rust/dangling-pointer
-#   - exclude:
-#       id: cpp/use-after-free
+# Paths to include (production code only)
+paths:
+  - mir-extractor
+  - cargo-cola
+  - docs
+  - examples/simple
+  - examples/hir-typeck-repro

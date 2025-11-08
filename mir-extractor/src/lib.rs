@@ -4227,6 +4227,96 @@ impl HardcodedCryptoKeyRule {
             "salt",
         ]
     }
+
+    /// Check if a line contains a suspicious variable assignment with a literal value.
+    /// This uses more precise matching to reduce false positives.
+    fn is_suspicious_assignment(line: &str, pattern: &str) -> bool {
+        let lower_line = line.to_lowercase();
+        let lower_pattern = pattern.to_lowercase();
+
+        // Quick rejection: must contain the pattern
+        if !lower_line.contains(&lower_pattern) {
+            return false;
+        }
+
+        // Must have an assignment operator
+        if !line.contains('=') {
+            return false;
+        }
+
+        // Split on '=' to get left and right sides
+        let parts: Vec<&str> = line.splitn(2, '=').collect();
+        if parts.len() != 2 {
+            return false;
+        }
+
+        let left_side = parts[0].trim().to_lowercase();
+        let right_side = parts[1].trim();
+
+        // Check if the left side contains the pattern as a word boundary
+        // Look for the pattern as a standalone identifier or part of an identifier
+        // but not just anywhere in a longer word
+        let has_pattern_in_identifier = Self::has_word_boundary_match(&left_side, &lower_pattern);
+
+        if !has_pattern_in_identifier {
+            return false;
+        }
+
+        // Check if right side contains a literal value
+        // Byte string literals
+        if right_side.contains("b\"") || right_side.contains("b'") {
+            return true;
+        }
+
+        // Byte array literals
+        if right_side.contains("&[") || right_side.contains("[0x") || right_side.contains("[0u8") {
+            return true;
+        }
+
+        // Long string literals (likely to be keys/tokens)
+        if right_side.starts_with('"') && right_side.len() > 30 {
+            return true;
+        }
+
+        // Hex string patterns (common for keys)
+        if right_side.starts_with('"') && right_side.chars().filter(|c| c.is_ascii_hexdigit()).count() > 20 {
+            return true;
+        }
+
+        false
+    }
+
+    /// Check if a pattern appears at a word boundary in the text.
+    /// This prevents matching "iv" in "driver", "private", etc.
+    /// But allows matching in compound identifiers like "api_token", "my_secret_key"
+    fn has_word_boundary_match(text: &str, pattern: &str) -> bool {
+        // For short patterns like "iv", we need to be especially careful
+        // Look for the pattern surrounded by non-alphanumeric characters or underscores
+
+        if let Some(pos) = text.find(pattern) {
+            let before_ok = if pos == 0 {
+                true
+            } else {
+                let char_before = text.chars().nth(pos - 1).unwrap_or(' ');
+                // Allow underscore (for compound identifiers) but not other alphanumeric
+                !char_before.is_alphanumeric() || char_before == '_'
+            };
+
+            let after_pos = pos + pattern.len();
+            let after_ok = if after_pos >= text.len() {
+                true
+            } else {
+                let char_after = text.chars().nth(after_pos).unwrap_or(' ');
+                // After the pattern, we need a non-alphanumeric boundary
+                // Underscore here means it's part of a longer word (like "token" in "tokenize")
+                !char_after.is_alphanumeric()
+            };
+
+            before_ok && after_ok
+        } else {
+            false
+        }
+    }
 }
 
 impl Rule for HardcodedCryptoKeyRule {
@@ -4307,13 +4397,11 @@ impl Rule for HardcodedCryptoKeyRule {
                 }
 
                 // Also look for suspicious variable assignments with literals
+                // Use more precise matching to avoid false positives
                 for var_pattern in Self::suspicious_var_names() {
-                    if trimmed.to_lowercase().contains(var_pattern) && 
-                       (trimmed.contains("= b\"") || 
-                        trimmed.contains("= &[") || 
-                        trimmed.contains("= [0x") ||
-                        (trimmed.contains("= \"") && trimmed.len() > 30)) {
-                        // Long string literals assigned to key-like variables
+                    // Check if this line contains a variable name that looks like a secret
+                    // and is being assigned a literal value
+                    if Self::is_suspicious_assignment(trimmed, var_pattern) {
                         let location = format!("{}:{}", rel_path, idx + 1);
 
                         findings.push(Finding {

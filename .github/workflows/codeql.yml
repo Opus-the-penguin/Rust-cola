@@ -34,8 +34,10 @@ jobs:
             --component rustc-dev \
             --component llvm-tools-preview
 
-      - name: Build workspace with all features
-        run: cargo +nightly-2025-09-30 build --workspace --all-features
+      - name: Build production packages only
+        run: |
+          cargo +nightly-2025-09-30 build -p mir-extractor --all-features
+          cargo +nightly-2025-09-30 build -p cargo-cola --all-features
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3

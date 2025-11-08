@@ -13,6 +13,19 @@ paths:
   - examples/simple
   - examples/hir-typeck-repro
 
+# Additional exclusions to ensure test crates are never analyzed
+paths-ignore:
+  - 'examples/allocator-mismatch-ffi/**'
+  - 'examples/blocking-sleep-async/**'
+  - 'examples/cstring-pointer-use/**'
+  - 'examples/hardcoded-crypto-keys/**'
+  - 'examples/openoptions-truncate/**'
+  - 'examples/packed-field-reference/**'
+  - 'examples/panic-in-drop/**'
+  - 'examples/send-sync-bounds/**'
+  - 'examples/unsafe-cstring-pointer/**'
+  - 'examples/vec-set-len-misuse/**'
+
 # Note: The following examples are intentionally excluded (not listed above):
 # - examples/allocator-mismatch-ffi (RUSTCOLA017 test cases)
 # - examples/blocking-sleep-async (RUSTCOLA037 test cases)

@@ -1,6 +1,6 @@
-# Rust-cola — OSS SAST for Rust (prototype)
+# Rust-cola — OSS Security Scanner for Rust (prototype)
 
-Rust-cola is an experimental static analysis engine that focuses on deep Rust semantics and learns from the same mid-level IR the compiler uses. Instead of guessing from surface syntax, it follows lifetimes, async state machines, and cross-crate FFI edges the way rustc actually lowers them—exposing subtle issues that simpler linters never see. The current prototype can:
+Rust-cola is an experimental **static application security testing (SAST)** engine that focuses on deep Rust semantics and learns from the same mid-level IR the compiler uses. Instead of guessing from surface syntax, it follows lifetimes, async state machines, and cross-crate FFI edges the way rustc actually lowers them—exposing subtle security vulnerabilities that simpler linters never see. The current prototype can:
 
 - Extract MIR for a crate/workspace and emit a structured JSON model.
 - Run built-in security rules that catch:

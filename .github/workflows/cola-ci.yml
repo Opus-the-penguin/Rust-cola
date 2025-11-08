@@ -77,4 +77,5 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: target/cola/cola.sarif
-          category: rust-cola-findings
+          # Temporarily removed category to clear old alerts without category
+          # category: rust-cola-findings

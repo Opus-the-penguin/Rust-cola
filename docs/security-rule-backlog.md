@@ -12,7 +12,7 @@ Feasibility legend:
 
 1. **Box::into_raw escape** *(shipped)* – Detect raw pointer escapes via `Box::into_raw`. **Feasibility:** Heuristic.
 2. **std::mem::transmute usage** *(shipped)* – Flag calls to `std::mem::transmute`. **Feasibility:** Heuristic.
-3. **Vec::set_len misuse** – Identify `Vec::set_len` when the vector is not fully initialized. **Feasibility:** MIR dataflow.
+3. **Vec::set_len misuse** *(shipped — RUSTCOLA038)* – Identify `Vec::set_len` when the vector is not fully initialized. **Feasibility:** MIR dataflow.
 4. **MaybeUninit::assume_init before initialization** – Detect `assume_init` without a preceding `write`. **Feasibility:** MIR dataflow.
 5. **mem::uninitialized / mem::zeroed** *(shipped — RUSTCOLA010)* – Flag usage of deprecated zero-init APIs on non-zero types. **Feasibility:** Heuristic.
 6. **Dangling pointer use-after-free** – Ensure no access after `drop` or reallocation. **Feasibility:** Advanced.
@@ -33,7 +33,7 @@ Feasibility legend:
 
 19. **Insecure hashing MD5/SHA-1** *(shipped)* – Detect use of MD5/SHA-1. **Feasibility:** Heuristic.
 20. **Weak ciphers (DES/RC4/etc.)** – Pattern match legacy crypto crate usage. **Feasibility:** Heuristic.
-21. **Hard-coded cryptographic values** – Spot embedded keys or IVs. **Feasibility:** MIR dataflow.
+21. **Hard-coded cryptographic values** *(shipped — RUSTCOLA039)* – Spot embedded keys or IVs. **Feasibility:** MIR dataflow.
 22. **Predictable randomness** – Warn on constant seeds for RNG. **Feasibility:** Heuristic.
 23. **Modulo bias on random outputs** – Identify `% n` on random values in crypto context. **Feasibility:** Advanced.
 24. **Danger accept invalid certs** – Flag `danger_accept_invalid_certs(true)`. **Feasibility:** Heuristic.
@@ -72,7 +72,7 @@ Feasibility legend:
 48. **Unsafe `Send` across async boundaries** – Detect `Send` requirements violated in futures. **Feasibility:** Advanced.
 49. **Await while holding span guard** – Avoid locking instrumentation across `.await`. **Feasibility:** Advanced.
 50. **Mutex guard dropped prematurely** – Sonar RSPEC-7450. **Feasibility:** Advanced.
-51. **panic! inside Drop** – Prevent unwinding in destructors. **Feasibility:** Heuristic.
+51. **panic! inside Drop** *(shipped — RUSTCOLA040)* – Prevent unwinding in destructors. **Feasibility:** Heuristic.
 52. **unwrap in Drop/Poll** – Avoid `unwrap()` in critical lifecycle methods. **Feasibility:** Heuristic.
 53. **Await missing in async return** – Sonar RSPEC-7413 parity. **Feasibility:** Heuristic.
 

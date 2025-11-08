@@ -4015,6 +4015,474 @@ impl Rule for BlockingSleepInAsyncRule {
     }
 }
 
+struct VecSetLenMisuseRule {
+    metadata: RuleMetadata,
+}
+
+impl VecSetLenMisuseRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA038".to_string(),
+                name: "vec-set-len-misuse".to_string(),
+                short_description: "Vec::set_len called on uninitialized vector".to_string(),
+                full_description: "Detects Vec::set_len calls where the vector may not be fully initialized. Calling set_len without ensuring all elements are initialized leads to undefined behavior when accessing uninitialized memory. Use Vec::resize, Vec::resize_with, or manually initialize elements before calling set_len.".to_string(),
+                help_uri: Some("https://doc.rust-lang.org/std/vec/struct.Vec.html#method.set_len".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn initialization_methods() -> &'static [&'static str] {
+        &[
+            ".push(",
+            ".extend(",
+            ".insert(",
+            ".resize(",
+            ".resize_with(",
+            "Vec::from(",
+            "vec![",
+            ".clone()",
+            ".to_vec()",
+        ]
+    }
+}
+
+impl Rule for VecSetLenMisuseRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+
+            // Track vector variable initialization state
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+
+                // Look for set_len calls
+                if trimmed.contains(".set_len(") || trimmed.contains("::set_len(") {
+                    // Look backwards to find the vector variable
+                    let mut var_name = None;
+                    
+                    // Try to extract variable name from current line or context
+                    if let Some(pos) = trimmed.find(".set_len(") {
+                        let before_set_len = &trimmed[..pos];
+                        // Extract the last identifier before .set_len
+                        if let Some(last_word_start) = before_set_len.rfind(|c: char| c.is_whitespace() || c == '(' || c == '{' || c == ';') {
+                            var_name = Some(&before_set_len[last_word_start + 1..]);
+                        } else {
+                            var_name = Some(before_set_len);
+                        }
+                    }
+
+                    if let Some(var) = var_name {
+                        // Look backward in the same function to see if initialization happened
+                        let mut found_initialization = false;
+                        let lookback_limit = idx.saturating_sub(50); // Look back up to 50 lines
+
+                        for prev_idx in (lookback_limit..idx).rev() {
+                            let prev_line = lines[prev_idx];
+                            
+                            // Check if this line initializes the vector
+                            for init_method in Self::initialization_methods() {
+                                if prev_line.contains(var) && prev_line.contains(init_method) {
+                                    found_initialization = true;
+                                    break;
+                                }
+                            }
+
+                            // Check for explicit element writes
+                            if prev_line.contains(var) && 
+                               (prev_line.contains("[") && prev_line.contains("]=") || 
+                                prev_line.contains("ptr::write") ||
+                                prev_line.contains(".as_mut_ptr()")) {
+                                found_initialization = true;
+                                break;
+                            }
+
+                            // Check for with_capacity without subsequent initialization
+                            if prev_line.contains(var) && prev_line.contains("Vec::with_capacity") {
+                                // This is suspicious - with_capacity doesn't initialize
+                                found_initialization = false;
+                                break;
+                            }
+
+                            // Stop at function boundaries
+                            if prev_line.trim().starts_with("fn ") || 
+                               prev_line.trim().starts_with("pub fn ") ||
+                               prev_line.trim().starts_with("async fn ") {
+                                break;
+                            }
+                        }
+
+                        if !found_initialization {
+                            let location = format!("{}:{}", rel_path, idx + 1);
+
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message: format!(
+                                    "Vec::set_len called on potentially uninitialized vector `{}`",
+                                    var
+                                ),
+                                function: location,
+                                function_signature: var.to_string(),
+                                evidence: vec![trimmed.to_string()],
+                                span: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+struct HardcodedCryptoKeyRule {
+    metadata: RuleMetadata,
+}
+
+impl HardcodedCryptoKeyRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA039".to_string(),
+                name: "hardcoded-crypto-key".to_string(),
+                short_description: "Hard-coded cryptographic key or IV".to_string(),
+                full_description: "Detects hard-coded cryptographic keys, initialization vectors, or secrets in source code. Embedded secrets cannot be rotated without code changes, enable credential theft if the binary is reverse-engineered, and violate security best practices. Use environment variables, configuration files, or secret management services instead.".to_string(),
+                help_uri: Some("https://cwe.mitre.org/data/definitions/798.html".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn crypto_key_patterns() -> &'static [&'static str] {
+        &[
+            "Aes128::new",
+            "Aes192::new",
+            "Aes256::new",
+            "ChaCha20::new",
+            "ChaCha20Poly1305::new",
+            "Hmac::new_from_slice",
+            "GenericArray::from_slice",
+            "Key::from_slice",
+            "Cipher::new",
+        ]
+    }
+
+    fn suspicious_var_names() -> &'static [&'static str] {
+        &[
+            "key",
+            "secret",
+            "password",
+            "token",
+            "iv",
+            "nonce",
+            "salt",
+        ]
+    }
+}
+
+impl Rule for HardcodedCryptoKeyRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+
+                // Skip comments and test code
+                if trimmed.starts_with("//") || trimmed.starts_with("/*") {
+                    continue;
+                }
+
+                // Look for crypto API calls with literal byte arrays
+                for pattern in Self::crypto_key_patterns() {
+                    if trimmed.contains(pattern) {
+                        // Check if the line contains a byte array literal
+                        if trimmed.contains("b\"") || trimmed.contains("&[") || trimmed.contains("[0x") {
+                            let location = format!("{}:{}", rel_path, idx + 1);
+
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message: "Hard-coded cryptographic key or IV detected in source code".to_string(),
+                                function: location,
+                                function_signature: pattern.to_string(),
+                                evidence: vec![trimmed.to_string()],
+                                span: None,
+                            });
+                        }
+                    }
+                }
+
+                // Also look for suspicious variable assignments with literals
+                for var_pattern in Self::suspicious_var_names() {
+                    if trimmed.to_lowercase().contains(var_pattern) && 
+                       (trimmed.contains("= b\"") || 
+                        trimmed.contains("= &[") || 
+                        trimmed.contains("= [0x") ||
+                        (trimmed.contains("= \"") && trimmed.len() > 30)) {
+                        // Long string literals assigned to key-like variables
+                        let location = format!("{}:{}", rel_path, idx + 1);
+
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: self.metadata.default_severity,
+                            message: format!(
+                                "Potential hard-coded secret in variable containing '{}'",
+                                var_pattern
+                            ),
+                            function: location,
+                            function_signature: var_pattern.to_string(),
+                            evidence: vec![trimmed.to_string()],
+                            span: None,
+                        });
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+struct PanicInDropRule {
+    metadata: RuleMetadata,
+}
+
+impl PanicInDropRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA040".to_string(),
+                name: "panic-in-drop".to_string(),
+                short_description: "panic! or unwrap in Drop implementation".to_string(),
+                full_description: "Detects panic!, unwrap(), or expect() calls inside Drop trait implementations. Panicking during stack unwinding causes the process to abort, which can mask the original error and make debugging difficult. Drop implementations should handle errors gracefully or use logging instead of panicking.".to_string(),
+                help_uri: Some("https://doc.rust-lang.org/nomicon/exception-safety.html".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn panic_patterns() -> &'static [&'static str] {
+        &[
+            "panic!",
+            ".unwrap()",
+            ".expect(",
+            "unreachable!",
+            "unimplemented!",
+            "todo!",
+        ]
+    }
+}
+
+impl Rule for PanicInDropRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+
+            // Track Drop implementation boundaries
+            let mut in_drop_impl = false;
+            let mut drop_impl_start = 0;
+            let mut brace_depth = 0;
+            let mut drop_type_name = String::new();
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+
+                // Detect Drop impl start
+                if trimmed.contains("impl") && trimmed.contains("Drop") && trimmed.contains("for") {
+                    in_drop_impl = true;
+                    drop_impl_start = idx;
+                    brace_depth = 0;
+
+                    // Extract type name
+                    if let Some(for_pos) = trimmed.find("for ") {
+                        let after_for = &trimmed[for_pos + 4..];
+                        if let Some(space_pos) = after_for.find(|c: char| c.is_whitespace() || c == '{') {
+                            drop_type_name = after_for[..space_pos].trim().to_string();
+                        } else {
+                            drop_type_name = after_for.trim().to_string();
+                        }
+                    }
+                }
+
+                if in_drop_impl {
+                    brace_depth += trimmed.chars().filter(|&c| c == '{').count() as i32;
+                    brace_depth -= trimmed.chars().filter(|&c| c == '}').count() as i32;
+
+                    // Check for panic patterns
+                    for pattern in Self::panic_patterns() {
+                        if trimmed.contains(pattern) {
+                            // Skip commented lines
+                            if !trimmed.starts_with("//") {
+                                let location = format!("{}:{}", rel_path, idx + 1);
+
+                                findings.push(Finding {
+                                    rule_id: self.metadata.id.clone(),
+                                    rule_name: self.metadata.name.clone(),
+                                    severity: self.metadata.default_severity,
+                                    message: format!(
+                                        "Panic in Drop implementation for `{}` can cause abort during unwinding",
+                                        drop_type_name
+                                    ),
+                                    function: location,
+                                    function_signature: drop_type_name.clone(),
+                                    evidence: vec![trimmed.to_string()],
+                                    span: None,
+                                });
+                            }
+                        }
+                    }
+
+                    // If brace depth returns to 0, we've exited the Drop impl
+                    if brace_depth <= 0 && idx > drop_impl_start {
+                        in_drop_impl = false;
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 struct AllocatorMismatchRule {
     metadata: RuleMetadata,
 }
@@ -5093,6 +5561,9 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(PackedFieldReferenceRule::new())); // RUSTCOLA035
     engine.register_rule(Box::new(UnsafeCStringPointerRule::new())); // RUSTCOLA036
     engine.register_rule(Box::new(BlockingSleepInAsyncRule::new())); // RUSTCOLA037
+    engine.register_rule(Box::new(VecSetLenMisuseRule::new())); // RUSTCOLA038
+    engine.register_rule(Box::new(HardcodedCryptoKeyRule::new())); // RUSTCOLA039
+    engine.register_rule(Box::new(PanicInDropRule::new())); // RUSTCOLA040
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

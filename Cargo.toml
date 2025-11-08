@@ -9,6 +9,6 @@ members = [
     "examples/send-sync-bounds",
     "examples/packed-field-reference",
     "examples/cstring-pointer-use",
-    "examples/blocking-sleep-async", "examples/unsafe-cstring-pointer",
+    "examples/blocking-sleep-async", "examples/unsafe-cstring-pointer", "examples/vec-set-len-misuse", "examples/hardcoded-crypto-keys", "examples/panic-in-drop",
 ]
 resolver = "2"

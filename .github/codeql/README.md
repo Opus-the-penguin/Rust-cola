@@ -8,32 +8,36 @@ Rust-cola includes test examples that contain **intentional security vulnerabili
 
 ## Solution
 
-We've implemented multiple layers of suppression to ensure CodeQL understands these are test cases:
+We use an **explicit include list** approach to ensure only production code is scanned:
 
-### 1. Path-Based Exclusion (Primary Method)
+### 1. Explicit Path Inclusion (Primary Method)
 
 **File:** `codeql-config.yml`
 
-Excludes the entire `examples/*/src/**` directory from CodeQL analysis:
+Lists only the paths that should be scanned (production code):
 
 ```yaml
-paths-ignore:
-  - examples/allocator-mismatch-ffi/src/**
-  - examples/openoptions-truncate/src/**
-  - examples/send-sync-bounds/src/**
-  - examples/packed-field-reference/src/**
-  - examples/unsafe-cstring-pointer/src/**
-  - examples/cstring-pointer-use/src/**
-  - examples/blocking-sleep-async/src/**
+paths:
+  - mir-extractor      # Production rule engine
+  - cargo-cola         # Production CLI tool
+  - docs               # Documentation
+  - examples/simple    # Safe example crate
+  - examples/hir-typeck-repro  # Safe example crate
 ```
 
-This is the **most effective** approach as it completely excludes test code from scanning.
+**All other paths are excluded by default**, including all test crates with intentional vulnerabilities.
+
+This approach is superior to `paths-ignore` because:
+- ✅ **No conflicts**: `paths` acts as a whitelist; unlisted paths are automatically excluded
+- ✅ **Simpler logic**: Easy to understand what gets scanned
+- ✅ **Future-proof**: New test crates are automatically excluded
+- ✅ **Self-documenting**: Clear separation of production vs. test code
 
 ### 2. Workflow Integration
 
-**Files:** `.github/workflows/codeql.yml`, `.github/workflows/codeql-advanced.yml`
+**File:** `.github/workflows/codeql.yml`
 
-Both CodeQL workflows reference the configuration:
+The CodeQL workflow references the configuration file:
 
 ```yaml
 - name: Initialize CodeQL
@@ -42,6 +46,8 @@ Both CodeQL workflows reference the configuration:
     languages: rust
     config-file: ./.github/codeql/codeql-config.yml
 ```
+
+**Note:** We previously had two identical CodeQL workflows (`codeql.yml` and `codeql-advanced.yml`). The duplicate has been removed to avoid redundant scans.
 
 ### 3. In-Code Suppression Comments
 
@@ -73,15 +79,20 @@ This directory contains **INTENTIONAL VULNERABILITIES** for testing purposes.
 
 ## Test Examples Overview
 
+The following crates contain **intentional vulnerabilities** and are excluded from CodeQL scanning:
+
 | Example Crate | Rule Tested | Vulnerability Type |
 |--------------|-------------|-------------------|
-| `allocator-mismatch-ffi` | RUSTCOLA017 | Mixed allocator/deallocator |
-| `openoptions-truncate` | RUSTCOLA032 | Missing truncate flag |
-| `send-sync-bounds` | RUSTCOLA015 | Unsafe Send/Sync impls |
-| `packed-field-reference` | RUSTCOLA035 | Unaligned references |
-| `unsafe-cstring-pointer` | RUSTCOLA036 | Dangling CString pointers |
+| `allocator-mismatch-ffi` | RUSTCOLA017 | Mixed allocator/deallocator usage |
+| `blocking-sleep-async` | RUSTCOLA037 | Blocking sleep in async functions |
 | `cstring-pointer-use` | RUSTCOLA036 | Dangling CString pointers |
-| `blocking-sleep-async` | RUSTCOLA037 | Blocking in async context |
+| `hardcoded-crypto-keys` | RUSTCOLA039 | Hard-coded cryptographic secrets |
+| `openoptions-truncate` | RUSTCOLA032 | Missing truncate() flag |
+| `packed-field-reference` | RUSTCOLA035 | Unaligned references to packed fields |
+| `panic-in-drop` | RUSTCOLA040 | Panic in Drop implementations |
+| `send-sync-bounds` | RUSTCOLA015 | Unsafe Send/Sync without bounds |
+| `unsafe-cstring-pointer` | RUSTCOLA036 | Dangling CString pointers |
+| `vec-set-len-misuse` | RUSTCOLA038 | Uninitialized Vec memory access |
 
 ## Verification
 
@@ -132,10 +143,27 @@ To verify the suppression is working:
 
 When adding new test examples:
 
-1. Add the path to `.github/codeql/codeql-config.yml`
-2. Include suppression comments in the source code
-3. Add a README with warning banner
-4. Update this documentation
+1. Create the crate under `examples/`
+2. **Do NOT** add it to the `paths` list in `codeql-config.yml` (it will be excluded by default)
+3. Include suppression comments in the source code (NOSEC tags, file banners)
+4. Add a README with warning banner
+5. Update the test examples table in this documentation
+
+The crate will be automatically excluded since only paths listed in `codeql-config.yml` are scanned.
+
+## Common Issues
+
+### Issue: CodeQL still flagging test examples
+
+**Diagnosis:** The test crate might be accidentally listed in the `paths` section.
+
+**Fix:** Remove the crate from the `paths` list in `codeql-config.yml`. Only production code should be listed.
+
+### Issue: Using `paths-ignore` together with `paths`
+
+**Diagnosis:** Having both creates conflicts. CodeQL processes `paths` (include) first, making `paths-ignore` redundant.
+
+**Fix:** Remove the `paths-ignore` section entirely. The `paths` directive acts as a whitelist.
 
 ## References
 

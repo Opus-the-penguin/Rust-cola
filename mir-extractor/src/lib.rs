@@ -4571,6 +4571,169 @@ impl Rule for PanicInDropRule {
     }
 }
 
+struct UnwrapInPollRule {
+    metadata: RuleMetadata,
+}
+
+impl UnwrapInPollRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA041".to_string(),
+                name: "unwrap-in-poll".to_string(),
+                short_description: "unwrap or panic in Future::poll implementation".to_string(),
+                full_description: "Detects unwrap(), expect(), or panic! calls inside Future::poll implementations. Panicking in poll() can stall async executors, cause runtime hangs, and make debugging async code difficult. Poll implementations should propagate errors using Poll::Ready(Err(...)) or use defensive patterns like match/if-let.".to_string(),
+                help_uri: Some("https://rust-lang.github.io/async-book/02_execution/03_wakeups.html".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn panic_patterns() -> &'static [&'static str] {
+        &[
+            "panic!",
+            ".unwrap()",
+            ".expect(",
+            "unreachable!",
+            "unimplemented!",
+            "todo!",
+        ]
+    }
+}
+
+impl Rule for UnwrapInPollRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+
+            // Track Future impl and poll method boundaries
+            let mut in_future_impl = false;
+            let mut in_poll_method = false;
+            let mut poll_start = 0;
+            let mut brace_depth = 0;
+            let mut impl_brace_depth = 0;
+            let mut future_type_name = String::new();
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+
+                // Detect Future impl start
+                if !in_future_impl && trimmed.contains("impl") && trimmed.contains("Future") && trimmed.contains("for") {
+                    in_future_impl = true;
+                    impl_brace_depth = 0;
+
+                    // Extract type name
+                    if let Some(for_pos) = trimmed.find("for ") {
+                        let after_for = &trimmed[for_pos + 4..];
+                        if let Some(space_pos) = after_for.find(|c: char| c.is_whitespace() || c == '{') {
+                            future_type_name = after_for[..space_pos].trim().to_string();
+                        } else {
+                            future_type_name = after_for.trim().to_string();
+                        }
+                    }
+                }
+
+                if in_future_impl {
+                    impl_brace_depth += trimmed.chars().filter(|&c| c == '{').count() as i32;
+                    impl_brace_depth -= trimmed.chars().filter(|&c| c == '}').count() as i32;
+
+                    // Detect poll method start
+                    if !in_poll_method && (trimmed.contains("fn poll") || trimmed.contains("fn poll(")) {
+                        in_poll_method = true;
+                        poll_start = idx;
+                        brace_depth = 0;
+                    }
+
+                    if in_poll_method {
+                        brace_depth += trimmed.chars().filter(|&c| c == '{').count() as i32;
+                        brace_depth -= trimmed.chars().filter(|&c| c == '}').count() as i32;
+
+                        // Check for panic patterns
+                        for pattern in Self::panic_patterns() {
+                            if trimmed.contains(pattern) {
+                                // Skip commented lines
+                                if !trimmed.starts_with("//") {
+                                    let location = format!("{}:{}", rel_path, idx + 1);
+
+                                    findings.push(Finding {
+                                        rule_id: self.metadata.id.clone(),
+                                        rule_name: self.metadata.name.clone(),
+                                        severity: self.metadata.default_severity,
+                                        message: format!(
+                                            "Panic in Future::poll for `{}` can stall async executor",
+                                            future_type_name
+                                        ),
+                                        function: location,
+                                        function_signature: future_type_name.clone(),
+                                        evidence: vec![trimmed.to_string()],
+                                        span: None,
+                                    });
+                                }
+                            }
+                        }
+
+                        // If brace depth returns to 0, we've exited the poll method
+                        if brace_depth <= 0 && idx > poll_start {
+                            in_poll_method = false;
+                        }
+                    }
+
+                    // If impl brace depth returns to 0, we've exited the Future impl
+                    if impl_brace_depth <= 0 && idx > 0 {
+                        in_future_impl = false;
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 struct AllocatorMismatchRule {
     metadata: RuleMetadata,
 }
@@ -5652,6 +5815,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(VecSetLenMisuseRule::new())); // RUSTCOLA038
     engine.register_rule(Box::new(HardcodedCryptoKeyRule::new())); // RUSTCOLA039
     engine.register_rule(Box::new(PanicInDropRule::new())); // RUSTCOLA040
+    engine.register_rule(Box::new(UnwrapInPollRule::new())); // RUSTCOLA041
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

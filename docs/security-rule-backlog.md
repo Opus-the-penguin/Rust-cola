@@ -73,7 +73,7 @@ Feasibility legend:
 49. **Await while holding span guard** – Avoid locking instrumentation across `.await`. **Feasibility:** Advanced.
 50. **Mutex guard dropped prematurely** – Sonar RSPEC-7450. **Feasibility:** Advanced.
 51. **panic! inside Drop** *(shipped — RUSTCOLA040)* – Prevent unwinding in destructors. **Feasibility:** Heuristic.
-52. **unwrap in Drop/Poll** – Avoid `unwrap()` in critical lifecycle methods. **Feasibility:** Heuristic.
+52. **unwrap in Drop/Poll** *(shipped — RUSTCOLA041)* – Avoid `unwrap()` in critical lifecycle methods, particularly Future::poll implementations that can stall async executors. **Feasibility:** Heuristic.
 53. **Await missing in async return** – Sonar RSPEC-7413 parity. **Feasibility:** Heuristic.
 
 ## Resource Management & DoS

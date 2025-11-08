@@ -1,22 +1,26 @@
 # CodeQL Configuration for Rust-cola
-# This configuration excludes intentional test vulnerabilities in the examples/ directory
+# This configuration uses an explicit include list to scan only production code.
+# Test crates with intentional vulnerabilities are excluded by omission.
 
 name: "CodeQL Config for Rust-cola"
 
-# Paths to exclude from analysis (intentional test vulnerabilities)
-paths-ignore:
-  - examples/allocator-mismatch-ffi
-  - examples/openoptions-truncate
-  - examples/send-sync-bounds
-  - examples/packed-field-reference
-  - examples/unsafe-cstring-pointer
-  - examples/cstring-pointer-use
-  - examples/blocking-sleep-async
-
-# Paths to include (production code only)
+# Paths to include in analysis (production code only)
+# All other paths, especially examples/* with test vulnerabilities, are excluded by default
 paths:
   - mir-extractor
   - cargo-cola
   - docs
   - examples/simple
   - examples/hir-typeck-repro
+
+# Note: The following examples are intentionally excluded (not listed above):
+# - examples/allocator-mismatch-ffi (RUSTCOLA017 test cases)
+# - examples/blocking-sleep-async (RUSTCOLA037 test cases)
+# - examples/cstring-pointer-use (RUSTCOLA036 test cases)
+# - examples/hardcoded-crypto-keys (RUSTCOLA039 test cases)
+# - examples/openoptions-truncate (RUSTCOLA032 test cases)
+# - examples/packed-field-reference (RUSTCOLA035 test cases)
+# - examples/panic-in-drop (RUSTCOLA040 test cases)
+# - examples/send-sync-bounds (RUSTCOLA015 test cases)
+# - examples/unsafe-cstring-pointer (RUSTCOLA036 test cases)
+# - examples/vec-set-len-misuse (RUSTCOLA038 test cases)

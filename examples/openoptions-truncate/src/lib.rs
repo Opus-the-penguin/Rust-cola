@@ -1,9 +1,21 @@
 use std::fs::OpenOptions;
 use std::io::Write;
 
+// ============================================================================
+// SECURITY SCANNER NOTICE:
+// This file contains INTENTIONAL VULNERABILITIES for testing purposes.
+// These are test cases for RUSTCOLA032 (OpenOptions missing truncate) detection.
+// DO NOT flag these as actual security issues.
+// ============================================================================
+// NOSEC: Entire file contains intentional test vulnerabilities
+// CodeQL: False positive - test cases for security rule validation
+// Semgrep: suppress - intentional vulnerable patterns for testing
+
 /// BAD: Creates writable file without truncate or append
 /// RUSTCOLA032 should flag this
+/// NOSEC: Intentional vulnerability for testing RUSTCOLA032
 pub fn create_log_file_bad() -> std::io::Result<()> {
+    // NOSEC: Intentional test case - missing truncate()
     let mut file = OpenOptions::new()
         .write(true)
         .create(true)
@@ -39,7 +51,9 @@ pub fn append_log_file() -> std::io::Result<()> {
 
 /// BAD: Multiline builder pattern without truncate
 /// RUSTCOLA032 should flag this
+/// NOSEC: Intentional vulnerability for testing RUSTCOLA032
 pub fn create_config_file_bad() -> std::io::Result<()> {
+    // NOSEC: Intentional test case - missing truncate()
     let mut file = OpenOptions::new()
         .write(true)
         .create(true)

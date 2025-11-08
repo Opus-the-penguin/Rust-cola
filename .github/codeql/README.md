@@ -165,6 +165,18 @@ The crate will be automatically excluded since only paths listed in `codeql-conf
 
 **Fix:** Remove the `paths-ignore` section entirely. The `paths` directive acts as a whitelist.
 
+### Issue: Rust-cola CI still reporting test example findings
+
+**Diagnosis:** cargo metadata discovers ALL workspace members regardless of path filters. Even with `--crate-path mir-extractor`, cargo-cola will analyze all crates in `Cargo.toml` workspace members.
+
+**Fix:** The `.github/workflows/cola-ci.yml` workflow temporarily modifies `Cargo.toml` to create a production-only workspace before running cargo-cola. This ensures test crates are not discovered by cargo metadata at all.
+
+**Technical Details:**
+- When cargo-cola runs with `--crate-path`, it uses `cargo_metadata` to discover crates
+- `cargo_metadata` always discovers ALL workspace members, even if you point it to a specific crate directory
+- The only way to exclude crates is to remove them from the workspace temporarily during analysis
+- This is different from CodeQL, which can filter by source file paths after compilation
+
 ## References
 
 - [CodeQL Configuration Reference](https://docs.github.com/en/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/customizing-your-advanced-setup-for-code-scanning)

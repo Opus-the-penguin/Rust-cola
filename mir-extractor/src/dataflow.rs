@@ -2,6 +2,8 @@ use std::collections::HashSet;
 
 use crate::MirFunction;
 
+pub mod taint;
+
 #[derive(Debug, Clone)]
 pub struct Assignment {
     pub target: String,

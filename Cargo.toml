@@ -15,5 +15,6 @@ members = [
     "examples/hardcoded-crypto-keys",
     "examples/panic-in-drop",
     "examples/unwrap-in-poll",
+    "examples/taint-tracking",
 ]
 resolver = "2"

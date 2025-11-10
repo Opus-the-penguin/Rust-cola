@@ -61,10 +61,10 @@ impl SourceRegistry {
                 SourcePattern {
                     kind: TaintSourceKind::EnvironmentVariable,
                     function_patterns: vec![
-                        "std::env::var(",
+                        " = var::",           // Most common in MIR (fully qualified import)
+                        " = var(",            // Alternative
+                        "std::env::var(",     // Full path
                         "std::env::var_os(",
-                        "std::env::vars(",
-                        "std::env::vars_os(",
                         "core::env::var(",
                         "core::env::var_os(",
                     ],
@@ -119,20 +119,19 @@ impl SinkRegistry {
                 SinkPattern {
                     kind: TaintSinkKind::CommandExecution,
                     function_patterns: vec![
-                        "std::process::Command::new(",
-                        "std::process::Command::arg(",
-                        "std::process::Command::args(",
+                        "Command::new::",     // With generics in MIR
+                        "Command::arg::",     // With generics in MIR
+                        "Command::args::",    // With generics in MIR
                     ],
                     severity: Severity::High,
                 },
                 SinkPattern {
                     kind: TaintSinkKind::FileSystemOp,
                     function_patterns: vec![
-                        "std::fs::write(",
-                        "std::fs::remove_file(",
-                        "std::fs::remove_dir_all(",
-                        "std::path::Path::join(",
-                        "std::path::PathBuf::push(",
+                        "std::fs::write::",
+                        "std::fs::remove_file::",
+                        "std::fs::remove_dir::",
+                        "std::path::Path::join::",
                     ],
                     severity: Severity::Medium,
                 },

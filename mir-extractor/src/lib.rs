@@ -1055,66 +1055,28 @@ impl Rule for UntrustedEnvInputRule {
     }
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        // Phase 1: Use taint tracking for more precise detection
+        // This replaces the old heuristic approach with dataflow analysis
+        use crate::dataflow::taint::TaintAnalysis;
+        
+        let taint_analysis = TaintAnalysis::new();
         let mut findings = Vec::new();
+
         for function in &package.functions {
-            let mut evidence = Vec::new();
-            let mut seen = HashSet::new();
-
-            for line in &function.body {
-                let lowered = line.to_lowercase();
-
-                let patterns = [
-                    "env::var",
-                    "env::vars",
-                    "env::var_os",
-                    "env::args",
-                    "env::args_os",
-                ];
-
-                let matches_call = patterns.iter().any(|pattern| {
-                    let suffix = format!("{}(", pattern);
-                    let std_suffix = if let Some(rest) = pattern.strip_prefix("env::") {
-                        Some(format!("std::env::{}(", rest))
-                    } else {
-                        None
-                    };
-                    let std_root_suffix = if let Some(rest) = pattern.strip_prefix("env::") {
-                        Some(format!("::std::env::{}(", rest))
-                    } else {
-                        None
-                    };
-
-                    lowered.contains(&suffix)
-                        || std_suffix
-                            .as_ref()
-                            .map_or(false, |candidate| lowered.contains(candidate))
-                        || std_root_suffix
-                            .as_ref()
-                            .map_or(false, |candidate| lowered.contains(candidate))
-                });
-
-                if matches_call {
-                    let trimmed = line.trim().to_string();
-                    if seen.insert(trimmed.clone()) {
-                        evidence.push(trimmed);
-                    }
+            let (_tainted_vars, flows) = taint_analysis.analyze(function);
+            
+            // Convert each taint flow into a finding
+            for flow in flows {
+                if !flow.sanitized {
+                    let finding = flow.to_finding(
+                        &self.metadata,
+                        &function.name,
+                        &function.signature,
+                        function.span.clone(),
+                    );
+                    findings.push(finding);
                 }
             }
-
-            if evidence.is_empty() {
-                continue;
-            }
-
-            findings.push(Finding {
-                rule_id: self.metadata.id.clone(),
-                rule_name: self.metadata.name.clone(),
-                severity: self.metadata.default_severity,
-                message: format!("Untrusted environment input read in `{}`", function.name),
-                function: function.name.clone(),
-                function_signature: function.signature.clone(),
-                evidence,
-                span: function.span.clone(),
-            });
         }
 
         findings

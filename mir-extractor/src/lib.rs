@@ -6445,13 +6445,10 @@ fn detect_toolchain() -> String {
 }
 
 fn build_cargo_command() -> Command {
-    if let Some(rustup) = detect_rustup_path() {
-        let mut cmd = Command::new(rustup);
-        cmd.arg("run");
-        cmd.arg(detect_toolchain());
-        cmd.arg("cargo");
-        cmd
-    } else if let Some(cargo_path) = detect_cargo_binary() {
+    // Just use cargo directly and let rustup's directory override handle toolchain selection
+    // This way, if the target project has rust-toolchain.toml or rustup override set,
+    // cargo will automatically use the correct toolchain
+    if let Some(cargo_path) = detect_cargo_binary() {
         Command::new(cargo_path)
     } else {
         Command::new("cargo")

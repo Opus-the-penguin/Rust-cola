@@ -1,9 +1,158 @@
 // Taint tracking infrastructure for dataflow analysis
 // Tracks untrusted data from sources (env vars, network) to sinks (Command, fs)
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use crate::{MirFunction, Finding, RuleMetadata, Severity, SourceSpan};
 use super::MirDataflow;
+
+/// Basic block in MIR control flow graph
+#[derive(Debug, Clone)]
+struct BasicBlock {
+    id: String,              // e.g., "bb0", "bb1"
+    statements: Vec<String>, // Statements in this block
+    terminator: Option<String>, // goto, switchInt, return, etc.
+    successors: Vec<String>, // Which blocks this can jump to
+}
+
+/// Control flow graph for a MIR function
+struct ControlFlowGraph {
+    blocks: HashMap<String, BasicBlock>,
+    entry_block: String, // Usually "bb0"
+}
+
+impl ControlFlowGraph {
+    /// Parse MIR body into a control flow graph
+    fn from_mir(function: &MirFunction) -> Self {
+        let mut blocks = HashMap::new();
+        let mut current_block: Option<BasicBlock> = None;
+        let entry_block = "bb0".to_string();
+
+        for line in &function.body {
+            let trimmed = line.trim();
+            
+            // Start of a new basic block
+            if trimmed.starts_with("bb") && trimmed.contains(": {") {
+                // Save previous block
+                if let Some(block) = current_block.take() {
+                    blocks.insert(block.id.clone(), block);
+                }
+                
+                // Extract block ID (e.g., "bb0" from "bb0: {")
+                let id = trimmed.split(':').next().unwrap().trim().to_string();
+                current_block = Some(BasicBlock {
+                    id,
+                    statements: Vec::new(),
+                    terminator: None,
+                    successors: Vec::new(),
+                });
+            }
+            // Terminator (goto, switchInt, return, etc.)
+            else if trimmed.contains("goto") || trimmed.contains("switchInt") || 
+                    trimmed.contains("return") || trimmed.contains("-> [return:") {
+                if let Some(ref mut block) = current_block {
+                    block.terminator = Some(trimmed.to_string());
+                    // Extract successor blocks
+                    block.successors = Self::extract_successors(trimmed);
+                }
+            }
+            // Regular statement in the current block
+            else if !trimmed.is_empty() && !trimmed.starts_with("}") && current_block.is_some() {
+                if let Some(ref mut block) = current_block {
+                    block.statements.push(trimmed.to_string());
+                }
+            }
+        }
+        
+        // Save last block
+        if let Some(block) = current_block {
+            blocks.insert(block.id.clone(), block);
+        }
+
+        Self { blocks, entry_block }
+    }
+
+    /// Extract successor block IDs from a terminator
+    fn extract_successors(terminator: &str) -> Vec<String> {
+        let mut successors = Vec::new();
+        
+        // Extract "bbN" patterns
+        let mut i = 0;
+        let chars: Vec<char> = terminator.chars().collect();
+        while i < chars.len() {
+            if i + 1 < chars.len() && chars[i] == 'b' && chars[i + 1] == 'b' {
+                i += 2;
+                let mut num = String::new();
+                while i < chars.len() && chars[i].is_ascii_digit() {
+                    num.push(chars[i]);
+                    i += 1;
+                }
+                if !num.is_empty() {
+                    successors.push(format!("bb{}", num));
+                }
+            } else {
+                i += 1;
+            }
+        }
+        
+        successors
+    }
+
+    /// Check if a basic block containing the sink is guarded by a sanitization check
+    /// Returns true if the block is only reachable when the guard variable is true/non-zero
+    fn is_guarded_by(&self, sink_block_id: &str, guard_var: &str) -> bool {
+        // Find the block that contains the switchInt on the guard variable
+        for (block_id, block) in &self.blocks {
+            if let Some(ref terminator) = block.terminator {
+                // Look for: switchInt(move _3) -> [0: bbX, otherwise: bbY]
+                // where _3 is the guard variable
+                if terminator.contains("switchInt") && terminator.contains(guard_var) {
+                    // Extract the "otherwise" target (where guard is true)
+                    let successors = &block.successors;
+                    
+                    // The pattern is: switchInt(var) -> [0: bb_false, otherwise: bb_true]
+                    // If there are 2 successors, the second one (or "otherwise") is the true branch
+                    if successors.len() >= 2 {
+                        let true_branch = &successors[1]; // "otherwise" branch
+                        
+                        // Check if sink_block is reachable from the true branch
+                        return self.is_reachable_from(true_branch, sink_block_id);
+                    }
+                }
+            }
+        }
+        
+        false
+    }
+
+    /// Check if target_block is reachable from start_block
+    fn is_reachable_from(&self, start_block: &str, target_block: &str) -> bool {
+        if start_block == target_block {
+            return true;
+        }
+
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+        queue.push_back(start_block.to_string());
+        visited.insert(start_block.to_string());
+
+        while let Some(block_id) = queue.pop_front() {
+            if block_id == target_block {
+                return true;
+            }
+
+            if let Some(block) = self.blocks.get(&block_id) {
+                for successor in &block.successors {
+                    if !visited.contains(successor) {
+                        visited.insert(successor.clone());
+                        queue.push_back(successor.clone());
+                    }
+                }
+            }
+        }
+
+        false
+    }
+}
 
 /// Kinds of taint sources (where untrusted data originates)
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -174,12 +323,12 @@ impl SinkRegistry {
 
 /// Registry of patterns that sanitize tainted data
 pub struct SanitizerRegistry {
-    patterns: Vec<SanitizerPattern>,
+    pub(crate) patterns: Vec<SanitizerPattern>,
 }
 
-struct SanitizerPattern {
-    function_patterns: Vec<&'static str>,
-    sanitizes: Vec<TaintSinkKind>,  // Which sinks does this sanitize for?
+pub(crate) struct SanitizerPattern {
+    pub(crate) function_patterns: Vec<&'static str>,
+    pub(crate) sanitizes: Vec<TaintSinkKind>,  // Which sinks does this sanitize for?
 }
 
 impl SanitizerRegistry {
@@ -188,9 +337,9 @@ impl SanitizerRegistry {
             patterns: vec![
                 SanitizerPattern {
                     // .parse::<T>() type conversions sanitize for most uses
+                    // Patterns: core::str::<impl str>::parse::<u16>, etc.
                     function_patterns: vec![
-                        ".parse::<",
-                        "::parse(",
+                        "::parse::<",
                     ],
                     sanitizes: vec![
                         TaintSinkKind::CommandExecution,
@@ -199,9 +348,9 @@ impl SanitizerRegistry {
                 },
                 SanitizerPattern {
                     // .chars().all() validation patterns
+                    // Pattern: <Chars<'_> as Iterator>::all::<{closure@
                     function_patterns: vec![
-                        ".chars().all(",
-                        "::chars().all(",
+                        " as Iterator>::all::<",
                     ],
                     sanitizes: vec![
                         TaintSinkKind::CommandExecution,
@@ -213,11 +362,27 @@ impl SanitizerRegistry {
         }
     }
 
-    /// Check if a variable is sanitized before reaching a sink
-    /// Returns true if we can prove sanitization occurred
-    pub fn is_sanitized(&self, _function: &MirFunction, _var: &str, _sink_kind: &TaintSinkKind) -> bool {
-        // TODO: Implement control flow analysis to check domination
-        // For Phase 1, conservatively return false (report all flows)
+    /// Check if a variable is sanitized between source and sink
+    /// Returns true if we detect sanitization patterns in the function body
+    pub fn is_sanitized(&self, function: &MirFunction, var: &str, sink_kind: &TaintSinkKind) -> bool {
+        // Look for sanitization patterns that operate on this variable
+        for line in &function.body {
+            // Check if this line involves the variable
+            if line.contains(var) {
+                // Check if it matches any sanitization pattern
+                for pattern in &self.patterns {
+                    // Check if this pattern sanitizes for this sink type
+                    if pattern.sanitizes.contains(sink_kind) {
+                        for func_pattern in &pattern.function_patterns {
+                            if line.contains(func_pattern) {
+                                // Found sanitization!
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         false
     }
 }
@@ -241,14 +406,43 @@ impl TaintAnalysis {
     /// Perform taint analysis on a function
     /// Returns (tainted variables, detected flows)
     pub fn analyze(&self, function: &MirFunction) -> (HashSet<String>, Vec<TaintFlow>) {
+        let is_target_function = function.name.contains("sanitized_parse") || function.name.contains("sanitized_allowlist");
+        
+        if is_target_function {
+            eprintln!("\n========== ANALYZING TARGET FUNCTION: {} ==========", function.name);
+        }
+        
         // Step 1: Detect taint sources
         let sources = self.source_registry.detect_sources(function);
+        
+        if is_target_function {
+            eprintln!("Found {} sources", sources.len());
+            
+            // Show basic block structure to understand control flow
+            eprintln!("\n--- MIR Basic Block Structure ---");
+            for line in &function.body {
+                let trimmed = line.trim();
+                if trimmed.starts_with("bb") && trimmed.contains(':') {
+                    eprintln!("{}", trimmed);
+                } else if trimmed.contains("switchInt") || trimmed.contains("goto") || trimmed.contains("return") {
+                    eprintln!("  {}", trimmed);
+                }
+            }
+            eprintln!("--- End Basic Blocks ---\n");
+        }
         
         if sources.is_empty() {
             return (HashSet::new(), Vec::new());
         }
 
-        // Step 2: Propagate taint through dataflow
+        // Step 2: Identify sanitized variables
+        // These are variables that result from sanitizing operations on tainted data
+        let sanitized_vars = self.detect_sanitized_variables(function, &sources);
+        
+        eprintln!("DEBUG SANITIZE: Found {} sanitized variables in {}: {:?}", 
+            sanitized_vars.len(), function.name, sanitized_vars);
+
+        // Step 3: Propagate taint through dataflow
         let dataflow = MirDataflow::new(function);
         
         let mut tainted_vars = HashSet::new();
@@ -262,26 +456,34 @@ impl TaintAnalysis {
         });
         tainted_vars.extend(tainted);
 
-        // Step 3: Detect sinks that use tainted data
+        // Don't remove sanitized vars - we'll check paths instead
+
+        // Step 4: Detect sinks that use tainted data
         let sinks = self.sink_registry.detect_sinks(function, &tainted_vars);
 
-        // Step 4: Create flows for each source→sink pair
+        // Step 5: Create flows and check if each flow goes through sanitization
         let mut flows = Vec::new();
         for sink in sinks {
             // Find which source(s) contributed to this sink
             for source in &sources {
                 if tainted_vars.contains(&sink.variable) {
-                    // Check if sanitized (future: actual control flow analysis)
-                    let sanitized = self.sanitizer_registry.is_sanitized(
+                    // Check if this sink is sanitized by tracing backward
+                    let is_sanitized = self.is_flow_sanitized(
                         function,
                         &sink.variable,
-                        &sink.kind,
+                        &sanitized_vars,
+                        &tainted_vars
                     );
-
+                    
+                    if is_sanitized {
+                        eprintln!("DEBUG FLOW SANITIZED: {} -> {} (goes through sanitization)", 
+                            source.variable, sink.variable);
+                    }
+                    
                     flows.push(TaintFlow {
                         source: source.clone(),
                         sink: sink.clone(),
-                        sanitized,
+                        sanitized: is_sanitized,
                         propagation_path: vec![],  // TODO: Track actual path
                     });
                     break; // One source per sink for now
@@ -290,6 +492,130 @@ impl TaintAnalysis {
         }
 
         (tainted_vars, flows)
+    }
+
+    /// Check if a flow from source to sink goes through a sanitization operation
+    /// This includes both dataflow sanitization (parse) and control-flow guards (if checks)
+    fn is_flow_sanitized(
+        &self,
+        function: &MirFunction,
+        sink_var: &str,
+        sanitized_vars: &HashSet<String>,
+        tainted_vars: &HashSet<String>,
+    ) -> bool {
+        // First, check dataflow-based sanitization (e.g., parse())
+        // Build a reverse dependency map: for each variable, track what it depends on
+        let mut depends_on: HashMap<String, HashSet<String>> = HashMap::new();
+        
+        for line in &function.body {
+            // Look for assignments: _X = ... _Y ...
+            if let Some(target) = extract_assignment_target(line) {
+                // Extract all variables referenced on the right-hand side
+                let deps = extract_referenced_variables(line);
+                depends_on.entry(target).or_insert_with(HashSet::new).extend(deps);
+            }
+        }
+
+        // BFS backward from sink to find if we reach a sanitized variable
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+        queue.push_back(sink_var.to_string());
+        visited.insert(sink_var.to_string());
+
+        while let Some(var) = queue.pop_front() {
+            // If this variable is sanitized via dataflow (e.g., parse result), flow is sanitized
+            if sanitized_vars.contains(&var) {
+                return true;
+            }
+
+            // Otherwise, add its dependencies to the queue
+            if let Some(deps) = depends_on.get(&var) {
+                for dep in deps {
+                    // Only follow dependencies that are tainted (part of the taint flow)
+                    if !visited.contains(dep) && tainted_vars.contains(dep) {
+                        visited.insert(dep.clone());
+                        queue.push_back(dep.clone());
+                    }
+                }
+            }
+        }
+
+        // Second, check control-flow-based sanitization (e.g., if chars().all())
+        // Build the control flow graph
+        let cfg = ControlFlowGraph::from_mir(function);
+        
+        // Find which basic block contains the sink operation
+        let sink_block = self.find_sink_block(function, sink_var);
+        
+        if let Some(sink_bb) = sink_block {
+            // Check if any sanitized variable guards this sink block
+            for sanitized_var in sanitized_vars {
+                if cfg.is_guarded_by(&sink_bb, sanitized_var) {
+                    eprintln!("DEBUG CONTROL-FLOW GUARD: sink in {} is guarded by sanitization check on {}", 
+                        sink_bb, sanitized_var);
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Find which basic block contains the sink operation for the given variable
+    fn find_sink_block(&self, function: &MirFunction, sink_var: &str) -> Option<String> {
+        let mut current_block: Option<String> = None;
+        
+        for line in &function.body {
+            let trimmed = line.trim();
+            
+            // Track which block we're in
+            if trimmed.starts_with("bb") && trimmed.contains(": {") {
+                current_block = Some(trimmed.split(':').next().unwrap().trim().to_string());
+            }
+            // Look for sink operations that use this variable
+            else if trimmed.contains(sink_var) {
+                // Check if this is a sink operation (Command::arg, fs::write, etc.)
+                if trimmed.contains("Command::arg") || 
+                   trimmed.contains("Command::new") ||
+                   trimmed.contains("fs::write") ||
+                   trimmed.contains("fs::remove") ||
+                   trimmed.contains("Path::join") {
+                    return current_block;
+                }
+            }
+        }
+        
+        None
+    }
+
+    /// Detect variables that are results of sanitizing operations
+    /// These variables should not propagate taint even if their inputs were tainted
+    fn detect_sanitized_variables(&self, function: &MirFunction, _sources: &[TaintSource]) -> HashSet<String> {
+        let mut sanitized_vars = HashSet::new();
+
+        // Look for sanitization patterns in the function body
+        for line in &function.body {
+            // Check if this line is a sanitizing operation
+            let is_sanitizing = self.sanitizer_registry.patterns.iter().any(|pattern| {
+                pattern.function_patterns.iter().any(|p| {
+                    let matches = line.contains(p);
+                    if matches {
+                        eprintln!("DEBUG SANITIZE MATCH: pattern '{}' in line: {}", p, line.trim());
+                    }
+                    matches
+                })
+            });
+
+            if is_sanitizing {
+                // Extract the target variable (left side of assignment)
+                if let Some(target) = extract_assignment_target(line) {
+                    eprintln!("DEBUG SANITIZE VAR: Adding {} as sanitized", target);
+                    sanitized_vars.insert(target);
+                }
+            }
+        }
+
+        sanitized_vars
     }
 }
 
@@ -353,6 +679,37 @@ fn extract_assignment_target(line: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Extract all variables referenced on the right-hand side of an assignment
+/// E.g., "_1 = add(_2, _3)" returns ["_2", "_3"]
+fn extract_referenced_variables(line: &str) -> Vec<String> {
+    let mut vars = Vec::new();
+    let trimmed = line.trim();
+    
+    // Find the right-hand side (after '=')
+    if let Some(eq_pos) = trimmed.find('=') {
+        let rhs = &trimmed[eq_pos + 1..];
+        
+        // Look for all occurrences of _N where N is digits
+        let mut i = 0;
+        let chars: Vec<char> = rhs.chars().collect();
+        while i < chars.len() {
+            if chars[i] == '_' && i + 1 < chars.len() && chars[i + 1].is_ascii_digit() {
+                let mut var = String::from("_");
+                i += 1;
+                while i < chars.len() && chars[i].is_ascii_digit() {
+                    var.push(chars[i]);
+                    i += 1;
+                }
+                vars.push(var);
+            } else {
+                i += 1;
+            }
+        }
+    }
+    
+    vars
 }
 
 fn format_source_kind(kind: &TaintSourceKind) -> &'static str {

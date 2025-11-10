@@ -1063,7 +1063,16 @@ impl Rule for UntrustedEnvInputRule {
         let mut findings = Vec::new();
 
         for function in &package.functions {
+            let is_target = function.name.contains("sanitized_parse") || function.name.contains("sanitized_allowlist");
             let (_tainted_vars, flows) = taint_analysis.analyze(function);
+            
+            if is_target {
+                eprintln!("\n===== RUSTCOLA006 EVALUATION FOR: {} =====", function.name);
+                eprintln!("Flows found: {}", flows.len());
+                for (i, flow) in flows.iter().enumerate() {
+                    eprintln!("  Flow {}: sanitized={}", i, flow.sanitized);
+                }
+            }
             
             // Convert each taint flow into a finding
             for flow in flows {

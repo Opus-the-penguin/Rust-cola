@@ -16,5 +16,6 @@ members = [
     "examples/panic-in-drop",
     "examples/unwrap-in-poll",
     "examples/taint-tracking",
+    "examples/parse-pattern-test",
 ]
 resolver = "2"

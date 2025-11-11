@@ -330,6 +330,234 @@ impl FunctionSummary {
             return_taint: ReturnTaint::Clean,
         }
     }
+    
+    /// Generate a summary for a function using intra-procedural analysis
+    pub fn from_mir_function(
+        function: &MirFunction,
+        callee_summaries: &HashMap<String, FunctionSummary>,
+    ) -> Result<Self> {
+        let mut summary = FunctionSummary::new(function.name.clone());
+        
+        // Use Phase 2's taint analysis to understand intra-procedural flows
+        // For now, we'll do a simple analysis based on MIR patterns
+        
+        // Step 1: Identify if this function contains sources
+        let has_source = Self::contains_source(function);
+        if has_source {
+            summary.return_taint = ReturnTaint::FromSource {
+                source_type: "environment".to_string(),
+            };
+        }
+        
+        // Step 2: Identify if this function contains sinks
+        let has_sink = Self::contains_sink(function);
+        
+        // Step 3: Analyze parameter flows
+        // For now, we'll use heuristics based on function names and patterns
+        // Phase 3.3 will add more sophisticated analysis
+        
+        // Step 4: Check for sanitization patterns
+        let has_sanitization = Self::contains_sanitization(function);
+        
+        // Build propagation rules based on patterns
+        if has_sink {
+            // If function has a sink, parameters likely flow to it
+            // We'll refine this in Phase 3.3
+            summary.propagation_rules.push(TaintPropagation::ParamToSink {
+                param: 0,
+                sink_type: "command_execution".to_string(),
+            });
+        }
+        
+        if has_sanitization {
+            // Function performs sanitization
+            summary.propagation_rules.push(TaintPropagation::ParamSanitized(0));
+        }
+        
+        // Analyze calls to other functions
+        for line in &function.body {
+            // Check if this line calls a function we have a summary for
+            if let Some((callee_name, _)) = Self::extract_call_from_line(line) {
+                if let Some(callee_summary) = callee_summaries.get(&callee_name) {
+                    // Propagate taint rules from callee
+                    summary.merge_callee_summary(callee_summary);
+                }
+            }
+        }
+        
+        Ok(summary)
+    }
+    
+    /// Check if function contains a taint source
+    fn contains_source(function: &MirFunction) -> bool {
+        function.body.iter().any(|line| {
+            line.contains("std::env::args")
+                || line.contains("std::env::var")
+                || line.contains("std::fs::read")
+                || line.contains("env::args")
+                || line.contains("env::var")
+        })
+    }
+    
+    /// Check if function contains a taint sink
+    fn contains_sink(function: &MirFunction) -> bool {
+        function.body.iter().any(|line| {
+            line.contains("Command::new")
+                || line.contains("std::process::Command")
+                || line.contains("spawn")
+                || line.contains("exec")
+        })
+    }
+    
+    /// Check if function performs sanitization
+    fn contains_sanitization(function: &MirFunction) -> bool {
+        function.body.iter().any(|line| {
+            line.contains("parse::<")
+                || line.contains("chars().all")
+                || line.contains("is_alphanumeric")
+        })
+    }
+    
+    /// Extract function call from MIR line
+    fn extract_call_from_line(line: &str) -> Option<(String, usize)> {
+        let line = line.trim();
+        
+        if line.contains("(") && line.contains(") -> [return:") {
+            if let Some(eq_pos) = line.find('=') {
+                if let Some(paren_pos) = line[eq_pos..].find('(') {
+                    let func_part = &line[eq_pos+1..eq_pos+paren_pos].trim();
+                    let func_name = CallGraph::extract_function_name(func_part);
+                    
+                    if !func_name.is_empty() && !CallGraph::is_builtin_operation(&func_name) {
+                        // Estimate arg count
+                        let args_section = &line[eq_pos+paren_pos+1..];
+                        let arg_count = CallGraph::estimate_arg_count(args_section);
+                        return Some((func_name, arg_count));
+                    }
+                }
+            }
+        }
+        
+        None
+    }
+    
+    /// Merge rules from a callee's summary
+    fn merge_callee_summary(&mut self, callee: &FunctionSummary) {
+        // If callee has sources, this function might propagate them
+        if !callee.source_parameters.is_empty() {
+            // For now, mark that we call a function with sources
+            // Phase 3.3 will track parameter mappings more precisely
+        }
+        
+        // If callee has sinks, parameters to this function might reach them
+        if !callee.sink_parameters.is_empty() {
+            // Mark that we propagate to a sink
+            for &param in &callee.sink_parameters {
+                if param < 3 {  // Only track first few parameters for now
+                    self.propagation_rules.push(TaintPropagation::ParamToSink {
+                        param,
+                        sink_type: "indirect_command_execution".to_string(),
+                    });
+                }
+            }
+        }
+        
+        // Handle return taint
+        match &callee.return_taint {
+            ReturnTaint::FromSource { .. } => {
+                // If callee returns tainted data, this function might too
+                if matches!(self.return_taint, ReturnTaint::Clean) {
+                    self.return_taint = ReturnTaint::FromSource {
+                        source_type: "propagated".to_string(),
+                    };
+                }
+            }
+            ReturnTaint::FromParameter(param) => {
+                // Callee propagates parameter to return
+                self.propagation_rules.push(TaintPropagation::ParamToReturn(*param));
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Main inter-procedural analysis engine
+pub struct InterProceduralAnalysis {
+    /// Call graph
+    pub call_graph: CallGraph,
+    
+    /// Computed function summaries
+    pub summaries: HashMap<String, FunctionSummary>,
+}
+
+impl InterProceduralAnalysis {
+    /// Create a new inter-procedural analysis
+    pub fn new(package: &MirPackage) -> Result<Self> {
+        let call_graph = CallGraph::from_mir_package(package)?;
+        
+        Ok(InterProceduralAnalysis {
+            call_graph,
+            summaries: HashMap::new(),
+        })
+    }
+    
+    /// Analyze all functions and generate summaries
+    pub fn analyze(&mut self, package: &MirPackage) -> Result<()> {
+        // Get function map for quick lookup
+        let function_map: HashMap<String, &MirFunction> = package
+            .functions
+            .iter()
+            .map(|f| (f.name.clone(), f))
+            .collect();
+        
+        // Analyze functions in bottom-up order (callees before callers)
+        for function_name in self.call_graph.analysis_order.clone() {
+            if let Some(function) = function_map.get(&function_name) {
+                // Generate summary using summaries of callees
+                let summary = FunctionSummary::from_mir_function(
+                    function,
+                    &self.summaries,
+                )?;
+                
+                // Store summary
+                self.summaries.insert(function_name.clone(), summary.clone());
+                
+                // Update call graph node
+                if let Some(node) = self.call_graph.get_node_mut(&function_name) {
+                    node.summary = Some(summary);
+                }
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Get summary for a function
+    pub fn get_summary(&self, function_name: &str) -> Option<&FunctionSummary> {
+        self.summaries.get(function_name)
+    }
+    
+    /// Print summary statistics
+    pub fn print_statistics(&self) {
+        println!("Inter-Procedural Analysis Statistics:");
+        println!("  Total functions: {}", self.summaries.len());
+        
+        let functions_with_sources = self.summaries.values()
+            .filter(|s| !matches!(s.return_taint, ReturnTaint::Clean))
+            .count();
+        println!("  Functions with sources: {}", functions_with_sources);
+        
+        let functions_with_sinks = self.summaries.values()
+            .filter(|s| s.sink_parameters.len() > 0 || 
+                    s.propagation_rules.iter().any(|r| matches!(r, TaintPropagation::ParamToSink { .. })))
+            .count();
+        println!("  Functions with sinks: {}", functions_with_sinks);
+        
+        let functions_with_sanitization = self.summaries.values()
+            .filter(|s| s.propagation_rules.iter().any(|r| matches!(r, TaintPropagation::ParamSanitized(_))))
+            .count();
+        println!("  Functions with sanitization: {}", functions_with_sanitization);
+    }
 }
 
 #[cfg(test)]
@@ -360,5 +588,63 @@ mod tests {
         assert!(CallGraph::is_builtin_operation("println!"));
         assert!(CallGraph::is_builtin_operation("_internal"));
         assert!(!CallGraph::is_builtin_operation("my_function"));
+    }
+    
+    #[test]
+    fn test_function_summary_creation() {
+        let summary = FunctionSummary::new("test_function".to_string());
+        assert_eq!(summary.function_name, "test_function");
+        assert!(summary.source_parameters.is_empty());
+        assert!(summary.sink_parameters.is_empty());
+        assert!(summary.propagation_rules.is_empty());
+        assert!(matches!(summary.return_taint, ReturnTaint::Clean));
+    }
+    
+    #[test]
+    fn test_call_site_creation() {
+        let site = CallSite {
+            callee: "execute_command".to_string(),
+            location: "test.rs:42".to_string(),
+            arg_count: 1,
+        };
+        assert_eq!(site.callee, "execute_command");
+        assert_eq!(site.location, "test.rs:42");
+        assert_eq!(site.arg_count, 1);
+    }
+    
+    #[test]
+    fn test_taint_propagation_patterns() {
+        let param_to_return = TaintPropagation::ParamToReturn(0);
+        let param_to_param = TaintPropagation::ParamToParam { from: 0, to: 1 };
+        let param_to_sink = TaintPropagation::ParamToSink {
+            param: 0,
+            sink_type: "command".to_string(),
+        };
+        let param_sanitized = TaintPropagation::ParamSanitized(0);
+        
+        // Test that patterns are distinct
+        assert!(matches!(param_to_return, TaintPropagation::ParamToReturn(_)));
+        assert!(matches!(param_to_param, TaintPropagation::ParamToParam { .. }));
+        assert!(matches!(param_to_sink, TaintPropagation::ParamToSink { .. }));
+        assert!(matches!(param_sanitized, TaintPropagation::ParamSanitized(_)));
+    }
+    
+    #[test]
+    fn test_return_taint_patterns() {
+        let clean = ReturnTaint::Clean;
+        let from_param = ReturnTaint::FromParameter(0);
+        let from_source = ReturnTaint::FromSource {
+            source_type: "env".to_string(),
+        };
+        let merged = ReturnTaint::Merged(vec![
+            ReturnTaint::FromSource { source_type: "env".to_string() },
+            ReturnTaint::FromSource { source_type: "file".to_string() },
+        ]);
+        
+        // Test that patterns are distinct
+        assert!(matches!(clean, ReturnTaint::Clean));
+        assert!(matches!(from_param, ReturnTaint::FromParameter(_)));
+        assert!(matches!(from_source, ReturnTaint::FromSource { .. }));
+        assert!(matches!(merged, ReturnTaint::Merged(_)));
     }
 }

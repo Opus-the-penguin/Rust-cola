@@ -353,8 +353,14 @@ impl FunctionSummary {
         let has_sink = Self::contains_sink(function);
         
         // Step 3: Analyze parameter flows
-        // For now, we'll use heuristics based on function names and patterns
-        // Phase 3.3 will add more sophisticated analysis
+        // Check if function propagates parameters to return value
+        let propagates_param_to_return = Self::propagates_param_to_return(function);
+        if propagates_param_to_return && !has_source {
+            // Function takes parameter and returns it (or derivative)
+            // This enables N-level taint propagation
+            summary.return_taint = ReturnTaint::FromParameter(0);
+            summary.propagation_rules.push(TaintPropagation::ParamToReturn(0));
+        }
         
         // Step 4: Check for sanitization patterns
         let has_sanitization = Self::contains_sanitization(function);
@@ -362,7 +368,6 @@ impl FunctionSummary {
         // Build propagation rules based on patterns
         if has_sink {
             // If function has a sink, parameters likely flow to it
-            // We'll refine this in Phase 3.3
             summary.propagation_rules.push(TaintPropagation::ParamToSink {
                 param: 0,
                 sink_type: "command_execution".to_string(),
@@ -388,6 +393,48 @@ impl FunctionSummary {
         Ok(summary)
     }
     
+    /// Check if function propagates parameter to return value
+    fn propagates_param_to_return(function: &MirFunction) -> bool {
+        // First, check if function even takes parameters
+        // Check signature for parameter list - look for pattern like "(_1:" or "(mut _1:"
+        let sig_lower = function.signature.to_lowercase();
+        let has_params = sig_lower.contains("(_1:") || sig_lower.contains("(mut _1:") || sig_lower.contains("( _1:");
+        
+        if !has_params {
+            return false;  // No parameters, can't propagate
+        }
+        
+        // Exclude functions that only use constants for _1
+        let assigns_constant_to_param = function.body.iter().any(|line| {
+            line.trim().starts_with("_1 = const")
+        });
+        
+        if assigns_constant_to_param {
+            return false;  // Assigns constant to what would be param slot
+        }
+        
+        // Heuristics for parameter propagation:
+        // Look for operations on _1 (first parameter after self if present)
+        let has_param_usage = function.body.iter().any(|line| {
+            // Direct parameter operations
+            line.contains("(*_1)")        // Deref of first param
+                || line.contains("Deref::deref(_1")  // Explicit deref  
+                || line.contains("Deref::deref(move _1")
+                // Taking references to parameters (assignment target contains &_1)
+                || (line.contains(" = &_1;") || line.contains(" = &mut _1;"))
+                // Format operations with parameter
+                || (line.contains("format!") || line.contains("format_args!"))
+                // String operations on parameters  
+                || line.contains("to_string(move _1")
+                || line.contains("String::from(_1")
+        });
+        
+        // Check if function returns a value (not unit type)
+        let returns_value = function.signature.contains("->") && !function.signature.contains("-> ()");
+        
+        has_param_usage && returns_value
+    }
+    
     /// Check if function contains a taint source
     fn contains_source(function: &MirFunction) -> bool {
         function.body.iter().any(|line| {
@@ -396,8 +443,9 @@ impl FunctionSummary {
                 || line.contains("std::fs::read")
                 || line.contains("env::args")
                 || line.contains("env::var")
-                || line.contains(" = args() -> ")  // MIR format
-                || line.contains(" = var(")        // MIR format
+                || line.contains(" = args() -> ")  // MIR format: args()
+                || line.contains(" = var")          // MIR format: var() or var::<T>()
+                || line.contains(" = read")         // MIR format: read() or fs::read()
         })
     }
     
@@ -565,10 +613,11 @@ impl InterProceduralAnalysis {
     pub fn detect_inter_procedural_flows(&self) -> Vec<TaintPath> {
         let mut flows = Vec::new();
         
-        // For each function with sources, try to find paths to sinks
+        // For each function with REAL sources, try to find paths to sinks
         for (source_func, source_summary) in &self.summaries {
-            if !matches!(source_summary.return_taint, ReturnTaint::Clean) {
-                // This function returns tainted data
+            // Only start from functions that have actual sources (not just propagation)
+            if matches!(source_summary.return_taint, ReturnTaint::FromSource { .. }) {
+                // This function has a real taint source
                 // Find all functions that call it
                 if self.call_graph.nodes.get(source_func).is_some() {
                     // Explore paths from this source
@@ -628,6 +677,35 @@ impl InterProceduralAnalysis {
                     } else if let TaintPropagation::ParamSanitized(_) = rule {
                         // Taint is sanitized - path ends here safely
                         continue;
+                    }
+                }
+                
+                // NEW: Check if current function propagates taint to its callees
+                // This enables N-level detection: source() -> intermediate() -> sink()
+                if matches!(summary.return_taint, ReturnTaint::FromParameter(_)) {
+                    // This function propagates parameters to return
+                    // Check what this function calls
+                    for callee_site in &node.callees {
+                        if let Some(callee_summary) = self.summaries.get(&callee_site.callee) {
+                            // Does the callee have a sink?
+                            let callee_has_sink = callee_summary.propagation_rules.iter()
+                                .any(|r| matches!(r, TaintPropagation::ParamToSink { .. }));
+                            
+                            if callee_has_sink {
+                                // Found a flow: source -> current (propagates) -> callee (sink)
+                                let mut extended_path = path.clone();
+                                extended_path.push(callee_site.callee.clone());
+                                
+                                flows.push(TaintPath {
+                                    source_function: path[0].clone(),
+                                    sink_function: callee_site.callee.clone(),
+                                    call_chain: extended_path,
+                                    source_type: Self::extract_source_type(taint),
+                                    sink_type: "command_execution".to_string(),
+                                    sanitized: false,
+                                });
+                            }
+                        }
                     }
                 }
             }

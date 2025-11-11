@@ -396,6 +396,8 @@ impl FunctionSummary {
                 || line.contains("std::fs::read")
                 || line.contains("env::args")
                 || line.contains("env::var")
+                || line.contains(" = args() -> ")  // MIR format
+                || line.contains(" = var(")        // MIR format
         })
     }
     
@@ -558,7 +560,157 @@ impl InterProceduralAnalysis {
             .count();
         println!("  Functions with sanitization: {}", functions_with_sanitization);
     }
+    
+    /// Detect inter-procedural taint flows
+    pub fn detect_inter_procedural_flows(&self) -> Vec<TaintPath> {
+        let mut flows = Vec::new();
+        
+        // For each function with sources, try to find paths to sinks
+        for (source_func, source_summary) in &self.summaries {
+            if !matches!(source_summary.return_taint, ReturnTaint::Clean) {
+                // This function returns tainted data
+                // Find all functions that call it
+                if self.call_graph.nodes.get(source_func).is_some() {
+                    // Explore paths from this source
+                    let all_flows = self.find_paths_from_source(
+                        source_func,
+                        &source_summary.return_taint,
+                        vec![source_func.clone()],
+                        &mut HashSet::new(),
+                    );
+                    
+                    // Filter out intra-procedural flows (same source and sink)
+                    // Those should be caught by Phase 2's analysis
+                    for flow in all_flows {
+                        if flow.source_function != flow.sink_function || flow.call_chain.len() > 1 {
+                            flows.push(flow);
+                        }
+                    }
+                }
+            }
+        }
+        
+        flows
+    }
+    
+    /// Find taint paths starting from a source function
+    fn find_paths_from_source(
+        &self,
+        current_func: &str,
+        taint: &ReturnTaint,
+        path: Vec<String>,
+        visited: &mut HashSet<String>,
+    ) -> Vec<TaintPath> {
+        let mut flows = Vec::new();
+        
+        // Avoid infinite recursion
+        if visited.contains(current_func) {
+            return flows;
+        }
+        visited.insert(current_func.to_string());
+        
+        // Get the current function's node
+        if let Some(node) = self.call_graph.nodes.get(current_func) {
+            // Check if current function has a sink
+            if let Some(summary) = &node.summary {
+                // Does this function have a sink that the taint can reach?
+                for rule in &summary.propagation_rules {
+                    if let TaintPropagation::ParamToSink { sink_type, .. } = rule {
+                        // Taint reaches a sink!
+                        flows.push(TaintPath {
+                            source_function: path[0].clone(),
+                            sink_function: current_func.to_string(),
+                            call_chain: path.clone(),
+                            source_type: Self::extract_source_type(taint),
+                            sink_type: sink_type.clone(),
+                            sanitized: false,
+                        });
+                    } else if let TaintPropagation::ParamSanitized(_) = rule {
+                        // Taint is sanitized - path ends here safely
+                        continue;
+                    }
+                }
+            }
+            
+            // Explore callers of this function (functions that call current_func)
+            for caller in &node.callers {
+                let mut new_path = path.clone();
+                new_path.push(caller.clone());
+                
+                // Recursively explore from the caller
+                flows.extend(self.find_paths_from_source(
+                    caller,
+                    taint,
+                    new_path,
+                    visited,
+                ));
+            }
+        }
+        
+        visited.remove(current_func);
+        flows
+    }
+    
+    /// Extract source type from ReturnTaint
+    fn extract_source_type(taint: &ReturnTaint) -> String {
+        match taint {
+            ReturnTaint::FromSource { source_type } => source_type.clone(),
+            ReturnTaint::FromParameter(_) => "parameter".to_string(),
+            ReturnTaint::Merged(taints) => {
+                // Take first source type from merged
+                if let Some(first) = taints.first() {
+                    Self::extract_source_type(first)
+                } else {
+                    "unknown".to_string()
+                }
+            }
+            ReturnTaint::Clean => "clean".to_string(),
+        }
+    }
 }
+
+/// Represents a complete taint flow from source to sink
+#[derive(Debug, Clone)]
+pub struct TaintPath {
+    /// Function where taint originates
+    pub source_function: String,
+    
+    /// Function where taint reaches a sink
+    pub sink_function: String,
+    
+    /// Complete call chain: [source, caller1, caller2, ..., sink]
+    pub call_chain: Vec<String>,
+    
+    /// Type of taint source
+    pub source_type: String,
+    
+    /// Type of sink
+    pub sink_type: String,
+    
+    /// Whether the taint was sanitized along the path
+    pub sanitized: bool,
+}
+
+impl TaintPath {
+    /// Create a human-readable description of this taint flow
+    pub fn describe(&self) -> String {
+        let chain = self.call_chain.join(" → ");
+        format!(
+            "Tainted data from {} (source: {}) flows through {} to {} (sink: {})",
+            self.source_function,
+            self.source_type,
+            chain,
+            self.sink_function,
+            self.sink_type
+        )
+    }
+    
+    /// Get the number of levels in the call chain
+    pub fn depth(&self) -> usize {
+        self.call_chain.len()
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

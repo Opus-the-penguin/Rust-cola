@@ -679,32 +679,39 @@ impl InterProceduralAnalysis {
                         continue;
                     }
                 }
-                
-                // NEW: Check if current function propagates taint to its callees
-                // This enables N-level detection: source() -> intermediate() -> sink()
-                if matches!(summary.return_taint, ReturnTaint::FromParameter(_)) {
-                    // This function propagates parameters to return
-                    // Check what this function calls
-                    for callee_site in &node.callees {
-                        if let Some(callee_summary) = self.summaries.get(&callee_site.callee) {
-                            // Does the callee have a sink?
-                            let callee_has_sink = callee_summary.propagation_rules.iter()
-                                .any(|r| matches!(r, TaintPropagation::ParamToSink { .. }));
+            }
+            
+            // NEW: If current function doesn't have a direct sink, check what it calls
+            // This enables N-level detection: source() -> caller() -> sink_function()
+            // Only check direct callees, not recursive (avoid explosion)
+            if !flows.iter().any(|f| f.sink_function == current_func) {
+                // Current function doesn't have a sink, check its callees
+                for callee_site in &node.callees {
+                    if let Some(callee_summary) = self.summaries.get(&callee_site.callee) {
+                        // Does this callee have a sink?
+                        let has_sink = callee_summary.propagation_rules.iter()
+                            .any(|r| matches!(r, TaintPropagation::ParamToSink { .. }));
+                        
+                        if has_sink {
+                            // Found a flow through callee
+                            let mut extended_path = path.clone();
+                            extended_path.push(callee_site.callee.clone());
                             
-                            if callee_has_sink {
-                                // Found a flow: source -> current (propagates) -> callee (sink)
-                                let mut extended_path = path.clone();
-                                extended_path.push(callee_site.callee.clone());
-                                
-                                flows.push(TaintPath {
-                                    source_function: path[0].clone(),
-                                    sink_function: callee_site.callee.clone(),
-                                    call_chain: extended_path,
-                                    source_type: Self::extract_source_type(taint),
-                                    sink_type: "command_execution".to_string(),
-                                    sanitized: false,
-                                });
-                            }
+                            let sink_type = callee_summary.propagation_rules.iter()
+                                .find_map(|r| match r {
+                                    TaintPropagation::ParamToSink { sink_type, .. } => Some(sink_type.clone()),
+                                    _ => None,
+                                })
+                                .unwrap_or_else(|| "unknown_sink".to_string());
+                            
+                            flows.push(TaintPath {
+                                source_function: path[0].clone(),
+                                sink_function: callee_site.callee.clone(),
+                                call_chain: extended_path,
+                                source_type: Self::extract_source_type(taint),
+                                sink_type,
+                                sanitized: false,
+                            });
                         }
                     }
                 }
@@ -726,6 +733,92 @@ impl InterProceduralAnalysis {
         }
         
         visited.remove(current_func);
+        flows
+    }
+    
+    #[allow(dead_code)]
+    /// Explore callees of a function that propagates taint to find eventual sinks.
+    /// This enables N-level detection by following taint through intermediate propagators.
+    ///
+    /// Example: source() -> caller() -> propagator() -> sink()
+    ///          We're at 'caller', which calls 'propagator' (which propagates).
+    ///          We need to check if 'propagator' calls 'sink'.
+    /// 
+    /// CURRENTLY DISABLED: Causes performance issues, needs better algorithm
+    fn explore_callees_for_sinks(
+        &self,
+        current_func: &str,
+        source_taint: &ReturnTaint,
+        path: Vec<String>,
+        visited: &mut HashSet<String>,
+    ) -> Vec<TaintPath> {
+        let mut flows = Vec::new();
+        
+        // Debug: limit recursion depth
+        if path.len() > 10 {
+            eprintln!("WARNING: Path too deep ({}), stopping exploration", path.len());
+            return flows;
+        }
+        
+        // Get the call graph node for the current function
+        let Some(node) = self.call_graph.nodes.get(current_func) else {
+            return flows;
+        };
+        
+        // Explore each function that current_func calls
+        for callee_site in &node.callees {
+            let callee_name = &callee_site.callee;
+            
+            // Avoid infinite loops
+            if visited.contains(callee_name) {
+                continue;
+            }
+            
+            let Some(callee_summary) = self.summaries.get(callee_name) else {
+                continue;
+            };
+            
+            // Check if this callee has a sink
+            let callee_has_sink = callee_summary.propagation_rules.iter()
+                .any(|r| matches!(r, TaintPropagation::ParamToSink { .. }));
+            
+            if callee_has_sink {
+                // Found a direct sink - create flow
+                let mut extended_path = path.clone();
+                extended_path.push(callee_name.clone());
+                
+                // Extract sink type from the sink rule
+                let sink_type = callee_summary.propagation_rules.iter()
+                    .find_map(|r| match r {
+                        TaintPropagation::ParamToSink { sink_type, .. } => Some(sink_type.clone()),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| "unknown_sink".to_string());
+                
+                flows.push(TaintPath {
+                    source_function: path[0].clone(),
+                    sink_function: callee_name.clone(),
+                    call_chain: extended_path,
+                    source_type: Self::extract_source_type(source_taint),
+                    sink_type,
+                    sanitized: false,
+                });
+            } else if matches!(callee_summary.return_taint, ReturnTaint::FromParameter(_)) {
+                // This callee also propagates - explore its callees recursively
+                let mut extended_path = path.clone();
+                extended_path.push(callee_name.clone());
+                
+                visited.insert(callee_name.clone());
+                flows.extend(self.explore_callees_for_sinks(
+                    callee_name,
+                    source_taint,
+                    extended_path,
+                    visited,
+                ));
+                visited.remove(callee_name);
+            }
+        }
+        
         flows
     }
     

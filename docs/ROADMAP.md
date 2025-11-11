@@ -60,7 +60,157 @@
 
 ---
 
-## 🎯 Phase 3: Advanced Features (PROPOSED)
+## 🚀 Phase 3: Inter-Procedural Analysis (IN PROGRESS)
+**Status**: 33.3% Complete (2/6 sub-phases done)  
+**Branch**: `phase3-interprocedural`  
+**Started**: December 2025
+
+### Overview
+Building inter-procedural taint analysis to detect vulnerabilities across function boundaries. Based on comprehensive design document (`docs/phase3-interprocedural-design.md`) with 12-week implementation plan.
+
+### ✅ Phase 3.1: Call Graph Construction (COMPLETED)
+**Duration**: Weeks 1-2  
+**Commit**: c7565f5
+
+#### Achievements
+- Built `CallGraph` data structure with nodes and edges
+- Extracted function calls from MIR using pattern matching
+- Implemented topological ordering (Kahn's algorithm)
+- Bottom-up analysis order (callees before callers)
+
+#### Technical Details
+- `CallGraph` with HashMap of nodes, analysis order Vec
+- `CallGraphNode` tracks callers, callees, and summary
+- `CallSite` records callee name, location, arg count
+- MIR parsing: `_N = function(args) -> [return: bb]` pattern
+- Handles cycles gracefully (degrades to arbitrary order)
+
+#### Metrics
+- **48 functions** extracted from interprocedural examples
+- **45 functions** with callees detected  
+- **3 leaf functions** (no callees)
+- **100% coverage** of test suite
+
+---
+
+### ✅ Phase 3.2: Function Summary Generation (COMPLETED)
+**Duration**: Weeks 3-4  
+**Commit**: e055a99
+
+#### Achievements
+- Implemented `FunctionSummary::from_mir_function()` 
+- Pattern-based detection of sources, sinks, sanitizers
+- Callee summary integration for propagation
+- `InterProceduralAnalysis` engine for coordinated analysis
+
+#### Technical Details
+
+**FunctionSummary Structure**:
+- `source_parameters`: Which params introduce taint
+- `sink_parameters`: Which params flow to sinks
+- `propagation_rules`: How taint propagates (param→return, param→sink, etc.)
+- `return_taint`: Return value taint status
+
+**Detection Patterns**:
+- **Sources**: `env::args`, `env::var`, `fs::read`
+- **Sinks**: `Command::new`, `spawn`, `exec`
+- **Sanitizers**: `parse::<T>`, `chars().all`, `is_alphanumeric`
+
+**Analysis Engine**:
+- Bottom-up processing using call graph order
+- Merges callee summaries when analyzing callers
+- Tracks indirect flows: param → callee → sink
+- Stores summaries in both engine and call graph
+
+#### Testing
+- `test_function_summaries.rs` with integration tests
+- Validates source/sink/sanitizer detection
+- Tests on all 17 interprocedural examples
+- Verifies summary correctness and propagation
+
+---
+
+### 🔄 Phase 3.3: Inter-Procedural Detection (NEXT)
+**Duration**: Weeks 5-6  
+**Status**: Not Started
+
+#### Objectives
+- Use function summaries to detect cross-function vulnerabilities
+- Follow taint paths through multiple call levels
+- Integrate with Phase 2's intra-procedural analysis
+
+#### Planned Implementation
+1. **Taint Path Construction**
+   - Start from sources (identified by summaries)
+   - Follow propagation rules through calls
+   - Detect when taint reaches sinks
+
+2. **Multi-Level Flow Detection**
+   - 2-level: `source() → caller() → sink()`
+   - 3-level: `source() → mid1() → mid2() → sink()`
+   - N-level: Arbitrary depth call chains
+
+3. **Context Tracking**
+   - Record full path: source location → calls → sink location
+   - Report actionable findings with complete call chain
+   - Maintain 0% FP rate from Phase 2
+
+#### Expected Results
+- Detect **11/11** vulnerable patterns in test suite
+- Current Phase 2 baseline: **0/11** (intra-procedural only)
+- Maintain **0% false positive rate**
+
+---
+
+### 📋 Phase 3.4: Context Sensitivity (PENDING)
+**Duration**: Weeks 7-8  
+**Status**: Not Started
+
+#### Objectives
+- Handle different calling contexts separately
+- Reduce false positives from context-insensitive analysis
+- Support multiple sanitization paths
+
+---
+
+### 📋 Phase 3.5: Advanced Features (PENDING)
+**Duration**: Weeks 9-10  
+**Status**: Not Started
+
+#### Objectives
+- Mutable reference tracking (`&mut` parameters)
+- Partial sanitization (field-sensitive analysis)
+- Custom sanitizer recognition
+
+---
+
+### 📋 Phase 3.6: Evaluation & Optimization (PENDING)
+**Duration**: Weeks 11-12  
+**Status**: Not Started
+
+#### Objectives
+- Comprehensive testing on real-world projects
+- Performance optimization
+- Documentation and examples
+
+---
+
+## Phase 3 Progress Summary
+
+| Sub-Phase | Status | Metrics |
+|-----------|--------|---------|
+| 3.1: Call Graph | ✅ Complete | 48 functions, 100% coverage |
+| 3.2: Summaries | ✅ Complete | Sources/sinks/sanitizers detected |
+| 3.3: Detection | 🔄 Next | Target: 11/11 vulnerabilities |
+| 3.4: Context | ⏳ Pending | - |
+| 3.5: Advanced | ⏳ Pending | - |
+| 3.6: Evaluation | ⏳ Pending | - |
+
+**Overall Progress**: 33.3% (2/6 phases complete)
+
+---
+
+## 🎯 Phase 4: Advanced Features (PROPOSED)
 
 ### Option A: Inter-Procedural Taint Analysis
 **Priority**: High  
@@ -98,7 +248,11 @@
 
 ---
 
-### Option B: Additional Sanitization Patterns
+## 🎯 Phase 4: Future Enhancements (PROPOSED)
+
+After completing Phase 3 inter-procedural analysis, these features could further enhance Rust-Cola:
+
+### Option A: Additional Sanitization Patterns
 **Priority**: Medium  
 **Effort**: 4-8 hours  
 **Impact**: Medium (incremental improvement)
@@ -147,7 +301,7 @@
 
 ---
 
-### Option C: Path-Sensitive Analysis
+### Option B: Path-Sensitive Analysis
 **Priority**: Low  
 **Effort**: 24-40 hours  
 **Impact**: High (but complex)
@@ -187,7 +341,7 @@
 
 ---
 
-### Option D: User-Configurable Rules
+### Option C: User-Configurable Rules
 **Priority**: Medium  
 **Effort**: 8-12 hours  
 **Impact**: High (usability)
@@ -325,5 +479,5 @@
 
 ---
 
-**Last Updated**: November 10, 2025  
+**Last Updated**: December 2025  
 **Maintainer**: GitHub Copilot / Development Team

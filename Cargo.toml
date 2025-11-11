@@ -17,5 +17,6 @@ members = [
     "examples/unwrap-in-poll",
     "examples/taint-tracking",
     "examples/parse-pattern-test",
+    "examples/interprocedural",
 ]
 resolver = "2"

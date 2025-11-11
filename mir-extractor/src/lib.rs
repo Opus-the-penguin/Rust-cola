@@ -33,6 +33,7 @@ mod dataflow;
 #[cfg(feature = "hir-driver")]
 mod hir;
 mod prototypes;
+pub mod interprocedural;
 
 pub use dataflow::{Assignment, MirDataflow};
 #[cfg(feature = "hir-driver")]

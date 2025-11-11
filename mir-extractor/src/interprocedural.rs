@@ -452,10 +452,12 @@ impl FunctionSummary {
     /// Check if function contains a taint sink
     fn contains_sink(function: &MirFunction) -> bool {
         function.body.iter().any(|line| {
-            line.contains("Command::new")
+            // Only match DIRECT calls to sinks, not indirect via helper functions
+            // Look for Command::new or Command::spawn, not just "spawn"
+            (line.contains("Command::new") && line.contains("->")) 
                 || line.contains("std::process::Command")
-                || line.contains("spawn")
-                || line.contains("exec")
+                || (line.contains("Command::spawn") && line.contains("->"))
+                || (line.contains("Command::exec") && line.contains("->"))
         })
     }
     
@@ -499,6 +501,10 @@ impl FunctionSummary {
             // Phase 3.3 will track parameter mappings more precisely
         }
         
+        // DISABLED: Don't propagate sinks from callees
+        // Inter-procedural flow detection handles this by exploring call chains
+        // If we mark callers as having sinks, we get false positives
+        /*
         // If callee has sinks, parameters to this function might reach them
         if !callee.sink_parameters.is_empty() {
             // Mark that we propagate to a sink
@@ -511,6 +517,7 @@ impl FunctionSummary {
                 }
             }
         }
+        */
         
         // Handle return taint
         match &callee.return_taint {

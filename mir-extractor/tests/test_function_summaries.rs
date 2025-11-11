@@ -280,6 +280,9 @@ fn test_inter_procedural_detection() {
                 println!("  Return taint: {:?}", summary.return_taint);
                 if !summary.propagation_rules.is_empty() {
                     println!("  Propagation rules: {} rules", summary.propagation_rules.len());
+                    for rule in &summary.propagation_rules {
+                        println!("    - {:?}", rule);
+                    }
                 }
             }
         }

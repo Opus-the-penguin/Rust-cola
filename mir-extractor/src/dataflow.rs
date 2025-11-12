@@ -5,6 +5,7 @@ use crate::MirFunction;
 pub mod taint;
 pub mod cfg;
 pub mod path_sensitive;
+pub mod closure;
 
 #[derive(Debug, Clone)]
 pub struct Assignment {

@@ -294,16 +294,36 @@ fn test_inter_procedural_detection() {
     
     println!("Detected {} taint flows", flows.len());
     
-    for (i, flow) in flows.iter().enumerate() {
+    // Separate vulnerable from sanitized flows
+    let vulnerable_flows: Vec<_> = flows.iter().filter(|f| !f.sanitized).collect();
+    let sanitized_flows: Vec<_> = flows.iter().filter(|f| f.sanitized).collect();
+    
+    println!("\n=== Vulnerable Flows ({}) ===", vulnerable_flows.len());
+    for (i, flow) in vulnerable_flows.iter().enumerate() {
         println!("\nFlow {}:", i + 1);
         println!("  {}", flow.describe());
         println!("  Depth: {} levels", flow.depth());
         println!("  Chain: {}", flow.call_chain.join(" → "));
     }
     
+    if !sanitized_flows.is_empty() {
+        println!("\n=== Sanitized Flows ({}) - NOT VULNERABLE ===", sanitized_flows.len());
+        for (i, flow) in sanitized_flows.iter().enumerate() {
+            println!("\nSanitized Flow {}:", i + 1);
+            println!("  {}", flow.describe());
+            println!("  Chain: {}", flow.call_chain.join(" → "));
+        }
+    }
+    
     // We should detect at least some flows
     // (exact number depends on how well our pattern matching works)
     println!("\n✓ Inter-procedural detection test passed!");
-    println!("  Detected {} flows (Phase 2 baseline: 0)", flows.len());
+    println!("  Vulnerable flows: {} (Phase 2 baseline: 0)", vulnerable_flows.len());
+    println!("  Sanitized flows: {} (correctly identified as safe)", sanitized_flows.len());
+    
+    // Note: Some false positives expected for now:
+    // - test_helper_sanitization: validate_input sanitizes but not in direct call chain
+    // - test_validation_check: is_safe_input guards the sink but requires control-flow analysis
+    // These require intra-procedural data flow tracking (future work)
 }
 

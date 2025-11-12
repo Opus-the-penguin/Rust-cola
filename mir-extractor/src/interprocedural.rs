@@ -665,6 +665,9 @@ impl InterProceduralAnalysis {
         }
         visited.insert(current_func.to_string());
         
+        // Check if path is sanitized (any function in path has ParamSanitized rule)
+        let is_sanitized = self.path_is_sanitized(&path);
+        
         // Get the current function's node
         if let Some(node) = self.call_graph.nodes.get(current_func) {
             // Check if current function has a sink
@@ -679,10 +682,10 @@ impl InterProceduralAnalysis {
                             call_chain: path.clone(),
                             source_type: Self::extract_source_type(taint),
                             sink_type: sink_type.clone(),
-                            sanitized: false,
+                            sanitized: is_sanitized,
                         });
                     } else if let TaintPropagation::ParamSanitized(_) = rule {
-                        // Taint is sanitized - path ends here safely
+                        // Taint is sanitized - we already track this above
                         continue;
                     }
                 }
@@ -695,6 +698,10 @@ impl InterProceduralAnalysis {
                 // Current function doesn't have a sink, check its callees
                 for callee_site in &node.callees {
                     if let Some(callee_summary) = self.summaries.get(&callee_site.callee) {
+                        // Check if this callee sanitizes
+                        let callee_sanitizes = callee_summary.propagation_rules.iter()
+                            .any(|r| matches!(r, TaintPropagation::ParamSanitized(_)));
+                        
                         // Does this callee have a sink?
                         let has_sink = callee_summary.propagation_rules.iter()
                             .any(|r| matches!(r, TaintPropagation::ParamToSink { .. }));
@@ -714,10 +721,11 @@ impl InterProceduralAnalysis {
                             flows.push(TaintPath {
                                 source_function: path[0].clone(),
                                 sink_function: callee_site.callee.clone(),
-                                call_chain: extended_path,
+                                call_chain: extended_path.clone(),
                                 source_type: Self::extract_source_type(taint),
                                 sink_type,
-                                sanitized: false,
+                                // Sanitized if either path so far is sanitized OR this callee sanitizes
+                                sanitized: is_sanitized || callee_sanitizes || self.path_is_sanitized(&extended_path),
                             });
                         }
                     }
@@ -829,6 +837,18 @@ impl InterProceduralAnalysis {
         flows
     }
     
+    /// Check if any function in the path sanitizes its input
+    fn path_is_sanitized(&self, path: &[String]) -> bool {
+        path.iter().any(|func_name| {
+            if let Some(summary) = self.summaries.get(func_name) {
+                summary.propagation_rules.iter()
+                    .any(|r| matches!(r, TaintPropagation::ParamSanitized(_)))
+            } else {
+                false
+            }
+        })
+    }
+    
     /// Extract source type from ReturnTaint
     fn extract_source_type(taint: &ReturnTaint) -> String {
         match taint {
@@ -873,13 +893,15 @@ impl TaintPath {
     /// Create a human-readable description of this taint flow
     pub fn describe(&self) -> String {
         let chain = self.call_chain.join(" → ");
+        let sanitized_note = if self.sanitized { " [SANITIZED - SAFE]" } else { "" };
         format!(
-            "Tainted data from {} (source: {}) flows through {} to {} (sink: {})",
+            "Tainted data from {} (source: {}) flows through {} to {} (sink: {}){}",
             self.source_function,
             self.source_type,
             chain,
             self.sink_function,
-            self.sink_type
+            self.sink_type,
+            sanitized_note
         )
     }
     

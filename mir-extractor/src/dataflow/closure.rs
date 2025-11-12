@@ -151,9 +151,315 @@ impl ClosureRegistry {
     pub fn get_closure_binding(&self, parent: &str, var: &str) -> Option<&String> {
         self.closure_bindings.get(&(parent.to_string(), var.to_string()))
     }
+    
+    /// Get all parent function names that have closures
+    pub fn get_all_parents(&self) -> Vec<String> {
+        self.parent_to_closures.keys().cloned().collect()
+    }
 }
 
 impl Default for ClosureRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Builder for constructing a closure registry from a MIR package
+pub struct ClosureRegistryBuilder {
+    registry: ClosureRegistry,
+}
+
+impl ClosureRegistryBuilder {
+    /// Create a new builder
+    pub fn new() -> Self {
+        ClosureRegistryBuilder {
+            registry: ClosureRegistry::new(),
+        }
+    }
+    
+    /// Build closure registry from a MIR package
+    pub fn build_from_package(package: &crate::MirPackage) -> ClosureRegistry {
+        let mut builder = Self::new();
+        
+        // First pass: identify all closures and their parents
+        for function in &package.functions {
+            if let Some((parent, index)) = parse_closure_name(&function.name) {
+                let info = ClosureInfo::new(
+                    function.name.clone(),
+                    parent.clone(),
+                    index,
+                );
+                builder.registry.register_closure(info);
+            }
+        }
+        
+        // Second pass: extract captures from parent functions
+        for function in &package.functions {
+            builder.process_function(function);
+        }
+        
+        // Third pass: analyze taint in parent functions and propagate to closures
+        for function in &package.functions {
+            builder.analyze_taint_for_function(function);
+        }
+        
+        builder.registry
+    }
+    
+    /// Analyze taint in a function and propagate to its closures
+    fn analyze_taint_for_function(&mut self, function: &MirFunction) {
+        // Build a simple taint map for this function
+        let mut taint_map: std::collections::HashMap<String, TaintState> = std::collections::HashMap::new();
+        let mut var_aliases: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        
+        for line in &function.body {
+            let trimmed = line.trim();
+            
+            // Parse assignments
+            if let Some(eq_pos) = trimmed.find(" = ") {
+                let lhs = trimmed[..eq_pos].trim();
+                let rhs = trimmed[eq_pos + 3..].trim().trim_end_matches(';');
+                
+                // Check if RHS is a source (env::args, args(), etc.)
+                if rhs.contains("args()") || rhs.contains("env::args") || rhs.contains("env::var") {
+                    taint_map.insert(lhs.to_string(), TaintState::Tainted {
+                        source_type: "environment".to_string(),
+                        source_location: rhs.to_string(),
+                    });
+                }
+                // Check if RHS is a function call - propagate taint from arguments
+                else if rhs.contains("(") && rhs.contains("move ") {
+                    // Extract variables from "move _X" patterns in the RHS
+                    let mut tainted_in_args = false;
+                    for word in rhs.split_whitespace() {
+                        if word.starts_with('_') {
+                            let var = word.trim_end_matches(|c: char| !c.is_numeric() && c != '_');
+                            if taint_map.contains_key(var) {
+                                tainted_in_args = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if tainted_in_args {
+                        // Propagate taint to LHS
+                        taint_map.insert(lhs.to_string(), TaintState::Tainted {
+                            source_type: "propagated".to_string(),
+                            source_location: "function_call".to_string(),
+                        });
+                    }
+                }
+                // Check if RHS is a reference or copy
+                else if rhs.starts_with("&") || rhs.starts_with("copy ") || rhs.starts_with("move ") {
+                    // Extract the source variable
+                    let source_var = if rhs.starts_with("&mut ") {
+                        rhs[5..].trim()
+                    } else if rhs.starts_with("&") {
+                        rhs[1..].trim()
+                    } else if rhs.starts_with("copy ") {
+                        rhs[5..].trim()
+                    } else if rhs.starts_with("move ") {
+                        rhs[5..].trim()
+                    } else {
+                        rhs
+                    };
+                    
+                    // Extract just the variable name (e.g., "_1" from "_1;")
+                    let source_var = source_var.split(|c: char| !c.is_numeric() && c != '_')
+                        .next()
+                        .unwrap_or(source_var);
+                    
+                    // Create alias mapping
+                    var_aliases.insert(lhs.to_string(), source_var.to_string());
+                    
+                    // Propagate taint
+                    if let Some(taint) = taint_map.get(source_var) {
+                        taint_map.insert(lhs.to_string(), taint.clone());
+                    }
+                }
+            }
+        }
+        
+        // Propagate taint through aliases transitively
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for (var, alias) in &var_aliases {
+                if taint_map.contains_key(var) {
+                    continue;
+                }
+                if let Some(taint) = taint_map.get(alias) {
+                    taint_map.insert(var.clone(), taint.clone());
+                    changed = true;
+                }
+            }
+        }
+        
+        // Update closures with taint information
+        let closures_for_this_function = self.registry.get_closures_for_parent(&function.name);
+        let closure_names: Vec<String> = closures_for_this_function.iter()
+            .map(|c| c.name.clone())
+            .collect();
+        
+        for closure_name in closure_names {
+            if let Some(info) = self.registry.closures.get_mut(&closure_name) {
+                for capture in &mut info.captured_vars {
+                    // Resolve the parent var through aliases if needed
+                    let mut resolved_var = capture.parent_var.clone();
+                    
+                    // Follow alias chain
+                    for _ in 0..10 { // Limit iterations to prevent infinite loop
+                        if let Some(alias) = var_aliases.get(&resolved_var) {
+                            resolved_var = alias.clone();
+                        } else {
+                            break;
+                        }
+                    }
+                    
+                    // Check if the resolved variable is tainted
+                    if let Some(taint) = taint_map.get(&resolved_var) {
+                        capture.taint_state = taint.clone();
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Process a single function to find closure creations
+    fn process_function(&mut self, function: &MirFunction) {
+        for line in &function.body {
+            // Look for closure creation
+            if let Some((closure_var, location, captures)) = parse_closure_creation(line) {
+                // Try to find which closure this refers to based on parent function
+                // The location string contains file:line:col, which we can use to match
+                // For now, we'll use a simpler approach: look for closures with this parent
+                let closure_name = self.find_closure_for_parent(&function.name, &location);
+                
+                if let Some(closure_name) = closure_name {
+                    // Bind this variable to the closure
+                    self.registry.bind_closure(
+                        function.name.clone(),
+                        closure_var.clone(),
+                        closure_name.clone(),
+                    );
+                    
+                    // Process captures
+                    if let Some(info) = self.registry.closures.get_mut(&closure_name) {
+                        // Add source location
+                        info.source_location = Some(location.clone());
+                        
+                        // Process each captured variable
+                        for (field_index, (_capture_name, capture_value)) in captures.iter().enumerate() {
+                            // Determine capture mode
+                            let capture_mode = if capture_value.starts_with("move ") {
+                                CaptureMode::ByValue
+                            } else if capture_value.starts_with("&mut ") {
+                                CaptureMode::ByMutRef
+                            } else if capture_value.starts_with('&') {
+                                CaptureMode::ByRef
+                            } else {
+                                CaptureMode::ByValue // Default
+                            };
+                            
+                            // Extract the actual variable from capture_value
+                            let parent_var = Self::extract_var_from_capture(capture_value);
+                            
+                            // Create captured variable (taint state will be filled in later)
+                            let captured = CapturedVariable {
+                                field_index,
+                                parent_var: parent_var.clone(),
+                                capture_mode,
+                                taint_state: TaintState::Clean, // Default, will be updated
+                            };
+                            
+                            info.captured_vars.push(captured);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Find the closure name for a given parent function and location
+    /// When a parent function has multiple closures, we match by location or order
+    fn find_closure_for_parent(&self, parent: &str, _location: &str) -> Option<String> {
+        // Get all closures for this parent
+        let closures_for_parent: Vec<_> = self.registry.closures.values()
+            .filter(|info| info.parent_function == parent)
+            .collect();
+        
+        if closures_for_parent.is_empty() {
+            return None;
+        }
+        
+        // If there's only one closure for this parent, return it
+        if closures_for_parent.len() == 1 {
+            return Some(closures_for_parent[0].name.clone());
+        }
+        
+        // For multiple closures, we'd need to match by location
+        // For now, find the first one that doesn't have a source_location set yet
+        for info in &closures_for_parent {
+            if info.source_location.is_none() {
+                return Some(info.name.clone());
+            }
+        }
+        
+        // If all have locations, we need to parse and match - for now return first
+        Some(closures_for_parent[0].name.clone())
+    }
+    
+    /// Find closure by its source location (old implementation, keeping for reference)
+    #[allow(dead_code)]
+    fn find_closure_by_location(&self, location: &str) -> Option<String> {
+        // Location format: {closure@examples/interprocedural/src/lib.rs:278:19: 278:21}
+        // We need to match this against registered closures
+        // For now, we'll use a simple heuristic: extract parent from current analysis context
+        // and match by index if the location matches
+        
+        // This is a simplified approach - in production, we'd parse the location more carefully
+        for (name, info) in &self.registry.closures {
+            if let Some(ref loc) = info.source_location {
+                if loc == location {
+                    return Some(name.clone());
+                }
+            }
+            // Also try to match if we haven't set source_location yet
+            // Extract numbers from location
+            if let Some(_start) = location.rfind(':') {
+                if let Some(_line_start) = location[.._start].rfind(':') {
+                    // This is a new closure, try to match by parent function name
+                    // which should be in the current context
+                }
+            }
+        }
+        
+        // If no exact match, try to infer from the closures we know about
+        // For a more robust implementation, we could extract line numbers and match
+        None
+    }
+    
+    /// Extract variable name from capture value
+    /// "move _6" -> "_6"
+    /// "&_3" -> "_3"
+    /// "&mut _4" -> "_4"
+    fn extract_var_from_capture(capture_value: &str) -> String {
+        let trimmed = capture_value.trim();
+        
+        if trimmed.starts_with("move ") {
+            trimmed[5..].trim().to_string()
+        } else if trimmed.starts_with("&mut ") {
+            trimmed[5..].trim().to_string()
+        } else if trimmed.starts_with('&') {
+            trimmed[1..].trim().to_string()
+        } else {
+            // Handle "copy _X" or just "_X"
+            trimmed.split_whitespace().last().unwrap_or(trimmed).to_string()
+        }
+    }
+}
+
+impl Default for ClosureRegistryBuilder {
     fn default() -> Self {
         Self::new()
     }

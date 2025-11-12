@@ -146,6 +146,10 @@ impl ControlFlowGraph {
                 || trimmed.starts_with("drop(")
                 || trimmed.starts_with("unreachable")
             {
+                // If this is a call (has " = " and " -> [return:"), also add it as a statement
+                if trimmed.contains(" = ") && trimmed.contains(" -> [return:") {
+                    current_statements.push(trimmed.to_string());
+                }
                 current_terminator = Some(Self::parse_terminator(trimmed));
             }
             // Regular statement

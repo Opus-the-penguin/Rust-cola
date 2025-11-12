@@ -163,6 +163,7 @@ impl PathSensitiveTaintAnalysis {
                 &block.id,
                 statement,
                 current_taint,
+                sink_calls,
                 source_calls,
                 sanitizer_calls,
             );
@@ -185,9 +186,38 @@ impl PathSensitiveTaintAnalysis {
         block_id: &str,
         statement: &str,
         current_taint: &mut HashMap<String, TaintState>,
+        sink_calls: &mut Vec<SinkCall>,
         source_calls: &mut Vec<SourceCall>,
         sanitizer_calls: &mut Vec<SanitizerCall>,
     ) {
+        // Check for sink calls (e.g., "_11 = execute_command(copy _12) -> [...]")
+        if statement.contains("execute_command")
+            || statement.contains("Command::new")
+            || statement.contains("exec")
+        {
+            // This is a sink call - extract the argument
+            if let Some(paren_start) = statement.find('(') {
+                if let Some(paren_end) = statement.find(')') {
+                    let arg = &statement[paren_start + 1..paren_end];
+                    if let Some(arg_var) = Self::extract_variable(arg) {
+                        // Check if the argument is tainted
+                        if matches!(
+                            current_taint.get(&arg_var),
+                            Some(TaintState::Tainted { .. })
+                        ) {
+                            // Found a tainted sink!
+                            sink_calls.push(SinkCall {
+                                block_id: block_id.to_string(),
+                                statement: statement.to_string(),
+                                sink_function: "execute_command".to_string(),
+                                tainted_args: vec![arg_var.clone()],
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        
         // Parse assignments: _1 = move _2; or _3 = &_1;
         if let Some((lhs, rhs)) = Self::parse_assignment(statement) {
             // Propagate taint from RHS to LHS
@@ -266,18 +296,36 @@ impl PathSensitiveTaintAnalysis {
     fn extract_variable(expr: &str) -> Option<String> {
         let expr = expr.trim();
         
-        // Handle: move _1, _2, &_3, &mut _4
+        // Handle: move _1, copy _2
         if expr.starts_with("move ") {
-            return Some(expr[5..].to_string());
+            return Some(expr[5..].trim().split(|c: char| !c.is_numeric() && c != '_').next()?.to_string());
         }
+        if expr.starts_with("copy ") {
+            return Some(expr[5..].trim().split(|c: char| !c.is_numeric() && c != '_').next()?.to_string());
+        }
+        
+        // Handle: &_3, &mut _4
         if expr.starts_with("&mut ") {
-            return Some(expr[5..].to_string());
+            return Some(expr[5..].trim().split(|c: char| !c.is_numeric() && c != '_').next()?.to_string());
         }
         if expr.starts_with('&') {
-            return Some(expr[1..].to_string());
+            return Some(expr[1..].trim().split(|c: char| !c.is_numeric() && c != '_').next()?.to_string());
         }
+        
+        // Handle function calls: extract first argument
+        // E.g., "deref(copy _16)" -> "_16"
+        // E.g., "<String as Deref>::deref(copy _16)" -> "_16"
+        if expr.contains('(') {
+            if let Some(start) = expr.find('(') {
+                if let Some(end) = expr.find(')') {
+                    let arg = &expr[start + 1..end];
+                    return Self::extract_variable(arg); // Recursive call
+                }
+            }
+        }
+        
+        // Simple variable: _1, _2, etc.
         if expr.starts_with('_') {
-            // Simple variable: _1, _2, etc.
             if let Some(end) = expr.find(|c: char| !c.is_numeric() && c != '_') {
                 return Some(expr[..end].to_string());
             }
@@ -293,6 +341,8 @@ impl PathSensitiveTaintAnalysis {
             || expr.contains("env::var")
             || expr.contains("std::env::args")
             || expr.contains("std::env::var")
+            || expr.contains("args()") // Simplified MIR format
+            || expr.contains("var(")   // Simplified MIR format
     }
     
     /// Check if an expression is a sanitizer call

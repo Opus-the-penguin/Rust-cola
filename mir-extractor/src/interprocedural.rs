@@ -22,6 +22,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use anyhow::Result;
 
 use crate::{MirPackage, MirFunction};
+use crate::dataflow::cfg::ControlFlowGraph;
 
 /// Call graph representing function call relationships
 #[derive(Debug, Clone)]
@@ -337,6 +338,35 @@ impl FunctionSummary {
         callee_summaries: &HashMap<String, FunctionSummary>,
     ) -> Result<Self> {
         let mut summary = FunctionSummary::new(function.name.clone());
+        
+        // Phase 3.5.1: Use CFG-based path-sensitive analysis for branching functions
+        let cfg = ControlFlowGraph::from_mir_function(function);
+        if cfg.has_branching() {
+            use crate::dataflow::path_sensitive::PathSensitiveTaintAnalysis;
+            
+            let mut path_analysis = PathSensitiveTaintAnalysis::new(cfg);
+            let result = path_analysis.analyze(function);
+            
+            // If ANY path has a vulnerable flow (source -> sink without sanitization),
+            // mark the function as having a param-to-sink propagation
+            if result.has_any_vulnerable_path {
+                summary.propagation_rules.push(TaintPropagation::ParamToSink {
+                    param: 0,
+                    sink_type: "command_execution".to_string(),
+                });
+                
+                // DO NOT add ParamSanitized - the function is vulnerable!
+                // Even if some paths are safe, one vulnerable path is enough.
+                
+                return Ok(summary);
+            }
+            
+            // If ALL paths are safe and some have sanitization, mark as sanitized
+            if result.path_results.iter().any(|p| !p.sanitizer_calls.is_empty()) {
+                summary.propagation_rules.push(TaintPropagation::ParamSanitized(0));
+                return Ok(summary);
+            }
+        }
         
         // Use Phase 2's taint analysis to understand intra-procedural flows
         // For now, we'll do a simple analysis based on MIR patterns

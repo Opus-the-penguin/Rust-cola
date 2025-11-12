@@ -1,5 +1,6 @@
-/// Quick test to verify CFG extraction works on test_partial_sanitization
+/// Quick test to verify CFG extraction and path-sensitive analysis works
 use mir_extractor::dataflow::cfg::ControlFlowGraph;
+use mir_extractor::dataflow::path_sensitive::PathSensitiveTaintAnalysis;
 use mir_extractor::MirPackage;
 
 fn main() {
@@ -53,5 +54,22 @@ fn main() {
         println!("\nPath {}:", i + 1);
         println!("  {}", path.join(" -> "));
         println!("  Length: {} blocks", path.len());
+    }
+    
+    println!("\n=== Path-Sensitive Taint Analysis ===");
+    let mut analysis = PathSensitiveTaintAnalysis::new(cfg);
+    let result = analysis.analyze(function);
+    
+    println!("Total paths analyzed: {}", result.total_paths);
+    println!("Vulnerable paths: {}", result.vulnerable_paths().len());
+    println!("Safe paths: {}", result.safe_paths().len());
+    println!("Has any vulnerable path: {}", result.has_any_vulnerable_path);
+    
+    for (i, path_result) in result.path_results.iter().enumerate() {
+        println!("\nPath {} Analysis:", i + 1);
+        println!("  Vulnerable: {}", path_result.has_vulnerable_sink);
+        println!("  Source calls: {}", path_result.source_calls.len());
+        println!("  Sink calls: {}", path_result.sink_calls.len());
+        println!("  Sanitizer calls: {}", path_result.sanitizer_calls.len());
     }
 }

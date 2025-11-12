@@ -1,0 +1,14 @@
+[package]
+name = "security-rules-demo"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+# This is a standalone example, not part of the main workspace
+
+[dependencies]
+cookie = { version = "0.18", optional = true }
+subtle = { version = "2.5", optional = true }
+
+[features]
+default = []

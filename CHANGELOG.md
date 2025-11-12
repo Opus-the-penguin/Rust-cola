@@ -1,0 +1,179 @@
+# Changelog
+
+All notable changes to Rust-COLA will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added - November 12, 2025
+
+#### New Security Rules (3)
+- **RUSTCOLA042**: Cookie without Secure attribute - Detects cookies created without the Secure flag, allowing transmission over unencrypted HTTP (High severity)
+- **RUSTCOLA043**: Overly permissive CORS wildcard - Detects CORS configurations allowing any origin (*), enabling CSRF attacks (High severity)
+- **RUSTCOLA044**: Observable timing discrepancy in secret comparison - Detects non-constant-time comparisons of passwords, tokens, and HMACs vulnerable to timing attacks (High severity)
+
+**Total Rules: 48** (up from 45)
+
+#### Documentation
+- Added `docs/research/rule-detection-levels.md` - Comprehensive taxonomy of detection sophistication levels (Heuristic → Path-Sensitive)
+- Updated `docs/real-world-testing-influxdb.md` with Phase 3.3 validation results:
+  - Analyzed `influxdb3_processing_engine` (Python processing engine)
+  - Found 69 total findings including 43 critical lock guard bugs (RUSTCOLA030)
+  - Documented systematic concurrency bug in production InfluxDB code
+
+#### Testing & Validation
+- Added `examples/security-rules-demo/` with test cases for new rules
+- Validated new rules: 4/4 detections (1 CORS wildcard, 3 timing attacks)
+- Zero false positives on safe code patterns
+- Real-world validation on InfluxDB production codebase
+
+### Changed - November 12, 2025
+- Enhanced real-world testing documentation with detailed lock guard bug analysis
+- Expanded Phase 3 validation to include Python processing engine crate
+
+---
+
+## Phase 3.3 - November 11, 2025
+
+### Added - Inter-Procedural Taint Tracking
+
+#### Core Features
+- **Inter-procedural dataflow analysis** - Tracks taint across function boundaries
+- **Bidirectional exploration** - Backward from sinks, forward verification
+- **Multi-hop flow detection** - Detects vulnerabilities spanning 3+ function calls
+- **Function summaries** - Caches source/sink/propagation information
+
+#### Performance Improvements
+- RUSTCOLA006 (Command Injection) upgraded to inter-procedural analysis
+- **Detection Rate**: 100% recall (11/11 vulnerable flows detected)
+- **False Positive Rate**: 15.4% (2/13 safe flows flagged)
+- **Flow Depth**: Successfully detects 3-level call chains
+
+### Documentation
+- Added `docs/phase3-interprocedural-results.md` - Complete Phase 3.3 validation
+- Created `docs/research/hir-extraction-plan.md` - HIR integration roadmap
+- Updated all Phase 3 progress tracking documents
+
+### Commits
+- `895781c` - Phase 3.3: Inter-procedural taint tracking foundation
+- `23c0e8e` - Add test cases for multi-hop vulnerabilities
+- `7a891bf` - Implement backward exploration from sinks
+- `c5d42a9` - Add forward verification pass
+- `fca4b14` - Phase 3.3 complete: 100% recall, 15.4% FP rate
+
+---
+
+## Phase 3.2 - November 10, 2025
+
+### Added - Real-World Validation
+
+#### InfluxDB Analysis (influxdb3_authz)
+- First production codebase analysis: InfluxDB v3.7.0-nightly
+- **Results**: Zero RUSTCOLA006 findings (no command injection vulnerabilities)
+- **False Positive Rate**: 0% (no spurious warnings on production code)
+- **Analysis Time**: 13 minutes for 427 LOC + dependencies
+- **Validation**: Confirms Phase 2 sanitization detection works on real code
+
+#### Toolchain Improvements
+- Fixed forced nightly version compatibility issues
+- Now respects target project's `rust-toolchain.toml` and `rustup override`
+- Works seamlessly with any Rust project regardless of toolchain version
+
+### Documentation
+- Created `docs/real-world-testing-influxdb.md` - Complete analysis report
+- Documented toolchain compatibility fixes
+- Added lessons learned from production analysis
+
+---
+
+## Phase 2 - November 8-9, 2025
+
+### Added - Advanced Sanitization Detection
+
+#### Dataflow Analysis
+- Control-flow-aware sanitization tracking
+- Loop-based sanitization detection
+- Early return pattern recognition
+- Escape function detection (Path::canonicalize, shellwords::split, etc.)
+
+#### Performance Improvements
+- RUSTCOLA006 (Command Injection):
+  - **Before**: 95% false positive rate (19/20 findings were false alarms)
+  - **After**: 43% false positive rate (9/21 findings)
+  - **Improvement**: 52 percentage point FP reduction
+
+#### Test Coverage
+- Added `cargo-cola/tests/cli.rs` - End-to-end CLI testing
+- 4 test cases covering vulnerable and safe patterns
+- Validation of sanitization detection accuracy
+
+### Documentation
+- Created `docs/phase2-cfg-sanitization-results.md` - Complete Phase 2 summary
+- Added architecture diagrams for dataflow analysis
+- Documented all sanitization patterns detected
+
+### Commits
+- `e40c22d` - Phase 2 complete: CFG-based sanitization detection
+- Multiple commits implementing loop detection, early returns, escape functions
+
+---
+
+## Phase 1 - November 2025 (Initial Implementation)
+
+### Added - Foundation
+
+#### Core Infrastructure
+- MIR (Mid-level Intermediate Representation) extraction via rustc
+- Basic taint tracking for command injection (RUSTCOLA006)
+- 45 security rules (RUSTCOLA001-045):
+  - Memory safety (Box::into_raw, transmute, Vec::set_len, etc.)
+  - Unsafe operations (mem::uninitialized, NonNull::new_unchecked)
+  - Cryptographic issues (MD5, SHA1, hardcoded keys)
+  - TLS/Certificate validation bypasses
+  - File system security (world-writable permissions, hardcoded paths)
+  - Concurrency bugs (static mut, underscore lock guards, mem::forget guards)
+  - Async runtime issues (blocking sleep in async)
+  - RustSec-inspired rules (Content-Length DoS, Broadcast !Sync, etc.)
+
+#### CLI Tool
+- `cargo-cola` - Cargo subcommand for security analysis
+- MIR extraction with caching
+- JSON and SARIF output formats
+- Rulepack support (YAML-based custom rules)
+
+#### Analysis Engine
+- Rule engine with 48 built-in security rules
+- Declarative rule support via YAML rulepacks
+- Finding deduplication and severity classification
+- Source span tracking for precise error locations
+
+### Documentation
+- README.md with quickstart guide
+- Rule documentation for all 48 rules
+- Architecture overview
+
+---
+
+## [0.1.0] - Initial Release (Conceptual)
+
+### Added
+- Project structure
+- Basic Rust security analysis framework
+- MIR-based analysis foundation
+
+---
+
+## Legend
+
+- **Added**: New features, rules, or capabilities
+- **Changed**: Modifications to existing functionality
+- **Deprecated**: Features marked for removal
+- **Removed**: Deleted features
+- **Fixed**: Bug fixes
+- **Security**: Security-related changes
+
+---
+
+**Note**: This changelog was created retrospectively on November 12, 2025 to track the evolution of Rust-COLA through its development phases. Earlier commits may not have been documented in real-time.

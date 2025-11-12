@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use crate::MirFunction;
 
 pub mod taint;
+pub mod cfg;
 
 #[derive(Debug, Clone)]
 pub struct Assignment {

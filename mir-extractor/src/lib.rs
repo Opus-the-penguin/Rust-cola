@@ -29,7 +29,7 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 use walkdir::{DirEntry, WalkDir};
 
-mod dataflow;
+pub mod dataflow;
 #[cfg(feature = "hir-driver")]
 mod hir;
 mod prototypes;

@@ -1,0 +1,11 @@
+[package]
+name = "weak-ciphers"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Note: These are intentionally old/weak cipher crates for demonstration
+# DO NOT use these in production!
+des = "0.8"
+# rc4 crate doesn't exist on crates.io, using comment for demonstration
+# blowfish exists but we'll simulate usage

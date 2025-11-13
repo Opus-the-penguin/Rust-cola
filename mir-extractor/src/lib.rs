@@ -6143,6 +6143,132 @@ impl Rule for TimingAttackRule {
     }
 }
 
+/// RUSTCOLA045: Weak or deprecated cipher algorithm
+/// Detects use of cryptographically broken ciphers like DES, 3DES, RC4, Blowfish
+struct WeakCipherRule {
+    metadata: RuleMetadata,
+}
+
+impl WeakCipherRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA045".to_string(),
+                name: "weak-cipher-usage".to_string(),
+                short_description: "Weak or deprecated cipher algorithm".to_string(),
+                full_description: "Detects use of cryptographically broken or deprecated ciphers including DES, 3DES, RC4, RC2, and Blowfish. These algorithms have known vulnerabilities and should not be used for security-sensitive operations. Use modern algorithms like AES-256-GCM or ChaCha20-Poly1305 instead.".to_string(),
+                help_uri: Some("https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/09-Testing_for_Weak_Cryptography/04-Testing_for_Weak_Encryption".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn contains_weak_cipher(line: &str) -> bool {
+        let lowered = line.to_lowercase();
+        
+        // Skip comments
+        if lowered.trim_start().starts_with("//") {
+            return false;
+        }
+
+        // Skip string literals - they shouldn't trigger cipher detection
+        // Look for actual function calls and type usage
+        
+        // Weak cipher patterns in common Rust crypto crates
+        // These patterns are designed to match actual cipher usage in MIR, not arbitrary strings
+        let weak_patterns = [
+            // DES variants - looking for module paths and types
+            "::des::",
+            "::des<",
+            " des::",
+            "<des>",
+            "cipher::des",
+            "block_modes::des",
+            "des_ede3",      // 3DES
+            "tripledes",
+            "::tdes::",
+            "::tdes<",
+            "tdesede",
+            
+            // RC4 - stream cipher
+            "::rc4::",
+            "::rc4<",
+            " rc4::",
+            "<rc4>",
+            "cipher::rc4",
+            "stream_cipher::rc4",
+            
+            // RC2
+            "::rc2::",
+            "::rc2<",
+            " rc2::",
+            "<rc2>",
+            "cipher::rc2",
+            
+            // Blowfish (legacy, not for new systems)
+            "::blowfish::",
+            "::blowfish<",
+            " blowfish::",
+            "<blowfish>",
+            "cipher::blowfish",
+            "block_modes::blowfish",
+            
+            // Other weak ciphers
+            "::arcfour::",   // RC4 variant
+            " arcfour::",
+            "::cast5::",     // Outdated
+            " cast5::",
+        ];
+
+        // Check if line contains cipher patterns but is not just a string literal
+        for pattern in weak_patterns {
+            if lowered.contains(pattern) {
+                // Additional heuristic: skip if it's in alloc section (string literal data)
+                if lowered.contains("alloc") && (lowered.contains("0x") || lowered.contains("│")) {
+                    continue;
+                }
+                return true;
+            }
+        }
+        
+        false
+    }
+}
+
+impl Rule for WeakCipherRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        // Check MIR bodies for weak cipher usage
+        for function in &package.functions {
+            for line in &function.body {
+                if Self::contains_weak_cipher(line) {
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: format!(
+                            "Weak or deprecated cipher algorithm detected in `{}`",
+                            function.name
+                        ),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence: vec![line.trim().to_string()],
+                        span: function.span.clone(),
+                    });
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
     engine.register_rule(Box::new(TransmuteRule::new()));
@@ -6179,6 +6305,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(CookieSecureAttributeRule::new())); // RUSTCOLA042
     engine.register_rule(Box::new(CorsWildcardRule::new())); // RUSTCOLA043
     engine.register_rule(Box::new(TimingAttackRule::new())); // RUSTCOLA044
+    engine.register_rule(Box::new(WeakCipherRule::new())); // RUSTCOLA045
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

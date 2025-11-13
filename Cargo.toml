@@ -22,5 +22,6 @@ members = [
     "examples/untrusted-content-length",
     "examples/length-truncation-cast",
     "examples/tokio-broadcast-unsync",
+    "examples/weak-ciphers",
 ]
 resolver = "2"

@@ -5,6 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 use super::cfg::{ControlFlowGraph, BasicBlock, Terminator};
+use super::closure::ClosureInfo;
 use crate::MirFunction;
 
 /// Taint state for a variable
@@ -86,13 +87,62 @@ impl PathSensitiveTaintAnalysis {
     
     /// Analyze all paths through the function
     pub fn analyze(&mut self, function: &MirFunction) -> PathSensitiveResult {
+        self.analyze_with_initial_taint(function, HashMap::new())
+    }
+    
+    /// Analyze all paths through a closure function with captured variable taint
+    pub fn analyze_closure(
+        &mut self,
+        function: &MirFunction,
+        closure_info: &ClosureInfo,
+    ) -> PathSensitiveResult {
+        let initial_taint = self.build_initial_taint_from_captures(closure_info);
+        self.analyze_with_initial_taint(function, initial_taint)
+    }
+    
+    /// Build initial taint state from captured variables
+    fn build_initial_taint_from_captures(
+        &self,
+        closure_info: &ClosureInfo,
+    ) -> HashMap<String, TaintState> {
+        let mut taint = HashMap::new();
+        
+        // For each captured variable, if it's tainted, add it to initial taint
+        // The captured variable is accessed via ((*_1).N) where N is the field index
+        for capture in &closure_info.captured_vars {
+            if let super::closure::TaintState::Tainted { source_type, .. } = &capture.taint_state {
+                // Closure environment is always _1 in the closure body
+                // Field access is ((*_1).N) where N is the field index
+                let env_var = format!("((*_1).{})", capture.field_index);
+                taint.insert(
+                    env_var,
+                    TaintState::Tainted {
+                        source_type: source_type.clone(),
+                        source_location: format!(
+                            "captured from {}",
+                            closure_info.parent_function
+                        ),
+                    },
+                );
+            }
+        }
+        
+        taint
+    }
+    
+    /// Analyze all paths with given initial taint state
+    fn analyze_with_initial_taint(
+        &mut self,
+        function: &MirFunction,
+        initial_taint: HashMap<String, TaintState>,
+    ) -> PathSensitiveResult {
         let paths = self.cfg.get_all_paths();
         
         let mut path_results = Vec::new();
         let mut has_any_vulnerable_path = false;
         
         for path in paths {
-            let result = self.analyze_path(&path, function);
+            let result = self.analyze_path(&path, function, &initial_taint);
             
             if result.has_vulnerable_sink {
                 has_any_vulnerable_path = true;
@@ -111,9 +161,14 @@ impl PathSensitiveTaintAnalysis {
     }
     
     /// Analyze a single execution path
-    fn analyze_path(&mut self, path: &[String], _function: &MirFunction) -> PathAnalysisResult {
-        // Initialize taint state for this path
-        let mut current_taint: HashMap<String, TaintState> = HashMap::new();
+    fn analyze_path(
+        &mut self,
+        path: &[String],
+        _function: &MirFunction,
+        initial_taint: &HashMap<String, TaintState>,
+    ) -> PathAnalysisResult {
+        // Initialize taint state for this path with captured variables (if closure)
+        let mut current_taint: HashMap<String, TaintState> = initial_taint.clone();
         
         // Track taint sources from function parameters
         // For now, assume param _1 is potentially tainted from env::args
@@ -193,26 +248,47 @@ impl PathSensitiveTaintAnalysis {
         // Check for sink calls (e.g., "_11 = execute_command(copy _12) -> [...]")
         if statement.contains("execute_command")
             || statement.contains("Command::new")
+            || statement.contains("Command::spawn")
+            || statement.contains("Command::arg")
             || statement.contains("exec")
         {
             // This is a sink call - extract the argument
             if let Some(paren_start) = statement.find('(') {
                 if let Some(paren_end) = statement.find(')') {
-                    let arg = &statement[paren_start + 1..paren_end];
-                    if let Some(arg_var) = Self::extract_variable(arg) {
-                        // Check if the argument is tainted
-                        if matches!(
-                            current_taint.get(&arg_var),
-                            Some(TaintState::Tainted { .. })
-                        ) {
-                            // Found a tainted sink!
-                            sink_calls.push(SinkCall {
-                                block_id: block_id.to_string(),
-                                statement: statement.to_string(),
-                                sink_function: "execute_command".to_string(),
-                                tainted_args: vec![arg_var.clone()],
-                            });
+                    let args_str = &statement[paren_start + 1..paren_end];
+                    
+                    // Extract all arguments (can be multiple, comma-separated)
+                    let mut tainted_args = Vec::new();
+                    for arg in args_str.split(',') {
+                        if let Some(arg_var) = Self::extract_variable(arg.trim()) {
+                            // Check if the argument is tainted
+                            if matches!(
+                                current_taint.get(&arg_var),
+                                Some(TaintState::Tainted { .. })
+                            ) {
+                                tainted_args.push(arg_var);
+                            }
                         }
+                    }
+                    
+                    // If any argument is tainted, this is a vulnerable sink
+                    if !tainted_args.is_empty() {
+                        let sink_name = if statement.contains("Command::spawn") {
+                            "Command::spawn"
+                        } else if statement.contains("Command::arg") {
+                            "Command::arg"
+                        } else if statement.contains("Command::new") {
+                            "Command::new"
+                        } else {
+                            "execute_command"
+                        };
+                        
+                        sink_calls.push(SinkCall {
+                            block_id: block_id.to_string(),
+                            statement: statement.to_string(),
+                            sink_function: sink_name.to_string(),
+                            tainted_args,
+                        });
                     }
                 }
             }
@@ -220,8 +296,18 @@ impl PathSensitiveTaintAnalysis {
         
         // Parse assignments: _1 = move _2; or _3 = &_1;
         if let Some((lhs, rhs)) = Self::parse_assignment(statement) {
+            // Check for environment field access (closure captured variables)
+            // Pattern: _7 = deref_copy ((*_1).0: &std::string::String)
+            if let Some(env_field) = Self::extract_env_field_access(&rhs) {
+                // This is accessing a captured variable in a closure
+                // The env_field will be something like "((*_1).0)"
+                if let Some(taint) = current_taint.get(&env_field) {
+                    // Propagate taint from captured variable to the local variable
+                    current_taint.insert(lhs.clone(), taint.clone());
+                }
+            }
             // Propagate taint from RHS to LHS
-            if let Some(rhs_var) = Self::extract_variable(&rhs) {
+            else if let Some(rhs_var) = Self::extract_variable(&rhs) {
                 if let Some(taint) = current_taint.get(&rhs_var) {
                     current_taint.insert(lhs.clone(), taint.clone());
                 }
@@ -335,6 +421,32 @@ impl PathSensitiveTaintAnalysis {
         None
     }
     
+    /// Extract environment field access pattern
+    /// Pattern: deref_copy ((*_1).0: &std::string::String)
+    /// Returns: Some("((*_1).0)") if pattern matches
+    fn extract_env_field_access(expr: &str) -> Option<String> {
+        let expr = expr.trim();
+        
+        // Look for deref_copy followed by environment field access
+        if expr.starts_with("deref_copy ") {
+            // Extract the part inside parentheses after deref_copy
+            if let Some(start) = expr.find('(') {
+                if let Some(end) = expr[start..].find(':') {
+                    let field_expr = &expr[start..start + end].trim();
+                    // Should be something like "((*_1).0"
+                    if field_expr.contains("(*_1).") {
+                        // Extract the full field access including closing paren
+                        // e.g., "((*_1).0)"
+                        let field_access = field_expr.to_string() + ")";
+                        return Some(field_access);
+                    }
+                }
+            }
+        }
+        
+        None
+    }
+    
     /// Check if an expression is a source call
     fn is_source_call(expr: &str) -> bool {
         expr.contains("env::args")
@@ -432,5 +544,34 @@ mod tests {
         assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("validate_input(_1)"));
         assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("parse::<i32>()"));
         assert!(!PathSensitiveTaintAnalysis::is_sanitizer_call("some_function()"));
+    }
+    
+    #[test]
+    fn test_extract_env_field_access() {
+        // Test closure environment field access
+        assert_eq!(
+            PathSensitiveTaintAnalysis::extract_env_field_access(
+                "deref_copy ((*_1).0: &std::string::String)"
+            ),
+            Some("((*_1).0)".to_string())
+        );
+        
+        assert_eq!(
+            PathSensitiveTaintAnalysis::extract_env_field_access(
+                "deref_copy ((*_1).1: &i32)"
+            ),
+            Some("((*_1).1)".to_string())
+        );
+        
+        // Should not match non-environment patterns
+        assert_eq!(
+            PathSensitiveTaintAnalysis::extract_env_field_access("move _1"),
+            None
+        );
+        
+        assert_eq!(
+            PathSensitiveTaintAnalysis::extract_env_field_access("deref_copy _2"),
+            None
+        );
     }
 }

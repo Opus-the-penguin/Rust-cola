@@ -156,6 +156,11 @@ impl ClosureRegistry {
     pub fn get_all_parents(&self) -> Vec<String> {
         self.parent_to_closures.keys().cloned().collect()
     }
+    
+    /// Get all closures in the registry
+    pub fn get_all_closures(&self) -> Vec<&ClosureInfo> {
+        self.closures.values().collect()
+    }
 }
 
 impl Default for ClosureRegistry {
@@ -177,12 +182,12 @@ impl ClosureRegistryBuilder {
         }
     }
     
-    /// Build closure registry from a MIR package
-    pub fn build_from_package(package: &crate::MirPackage) -> ClosureRegistry {
+    /// Build closure registry from a slice of MIR functions
+    pub fn build(functions: &[MirFunction]) -> ClosureRegistry {
         let mut builder = Self::new();
         
         // First pass: identify all closures and their parents
-        for function in &package.functions {
+        for function in functions {
             if let Some((parent, index)) = parse_closure_name(&function.name) {
                 let info = ClosureInfo::new(
                     function.name.clone(),
@@ -194,16 +199,21 @@ impl ClosureRegistryBuilder {
         }
         
         // Second pass: extract captures from parent functions
-        for function in &package.functions {
+        for function in functions {
             builder.process_function(function);
         }
         
         // Third pass: analyze taint in parent functions and propagate to closures
-        for function in &package.functions {
+        for function in functions {
             builder.analyze_taint_for_function(function);
         }
         
         builder.registry
+    }
+    
+    /// Build closure registry from a MIR package
+    pub fn build_from_package(package: &crate::MirPackage) -> ClosureRegistry {
+        Self::build(&package.functions)
     }
     
     /// Analyze taint in a function and propagate to its closures

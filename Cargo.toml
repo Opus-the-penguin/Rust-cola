@@ -35,5 +35,6 @@ members = [
     "examples/unix-permissions",
     "examples/openoptions-flags",
     "examples/unnecessary-borrow-mut",
+    "examples/absolute-path-join",
 ]
 resolver = "2"

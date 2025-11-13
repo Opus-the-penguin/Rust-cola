@@ -7446,6 +7446,119 @@ impl Rule for UnnecessaryBorrowMutRule {
     }
 }
 
+// RUSTCOLA058: Detect absolute paths in Path::join() or PathBuf::push()
+struct AbsolutePathInJoinRule {
+    metadata: RuleMetadata,
+}
+
+impl AbsolutePathInJoinRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA058".to_string(),
+                name: "absolute-path-in-join".to_string(),
+                short_description: "Absolute path passed to Path::join() or PathBuf::push()".to_string(),
+                full_description: "Detects when Path::join() or PathBuf::push() receives an absolute path argument. Absolute paths nullify the base path, defeating sanitization and potentially enabling path traversal attacks. The joined path becomes just the absolute argument, ignoring the supposedly safe base directory.".to_string(),
+                help_uri: None,
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn looks_like_absolute_path_join(&self, function: &MirFunction) -> bool {
+        let body_str = format!("{:?}", function.body);
+        
+        // Look for Path/PathBuf operations
+        let has_path_ops = body_str.contains("Path::join") || 
+                          body_str.contains("PathBuf::join") ||
+                          body_str.contains("PathBuf::push");
+        
+        if !has_path_ops {
+            return false;
+        }
+        
+        // Look for absolute path patterns in string literals
+        // Unix absolute paths start with /
+        // Windows absolute paths start with drive letter (C:\, D:\, etc.)
+        let absolute_patterns = [
+            "\"/", "\"C:", "\"D:", "\"E:", "\"F:",
+            "\"/etc", "\"/usr", "\"/var", "\"/tmp", "\"/home",
+            "\"/root", "\"/sys", "\"/proc", "\"/dev",
+            "\"C:\\\\", "\"D:\\\\", "\"E:\\\\", "\"F:\\\\",
+            "\"/Users", "\"/Applications", "\"/Library",
+        ];
+        
+        for pattern in &absolute_patterns {
+            if body_str.contains(pattern) {
+                return true;
+            }
+        }
+        
+        false
+    }
+}
+
+impl Rule for AbsolutePathInJoinRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            if self.looks_like_absolute_path_join(function) {
+                let mut evidence = Vec::new();
+
+                // Collect evidence of path operations with absolute paths
+                // We need to find lines that contain BOTH a join/push operation AND an absolute path
+                for line in &function.body {
+                    // Check if this line has a join/push operation
+                    let has_join_or_push = (line.contains("Path::join") || 
+                                           line.contains("PathBuf::join") || 
+                                           line.contains("PathBuf::push")) &&
+                                          line.contains("const");
+                    
+                    if !has_join_or_push {
+                        continue;
+                    }
+                    
+                    // Check if the join/push argument is an absolute path
+                    let has_absolute = line.contains("const \"/") || 
+                                      line.contains("const \"C:") || 
+                                      line.contains("const \"D:") || 
+                                      line.contains("const \"E:") || 
+                                      line.contains("const \"F:");
+                    
+                    if has_absolute {
+                        evidence.push(line.trim().to_string());
+                        if evidence.len() >= 5 {
+                            break;
+                        }
+                    }
+                }
+                
+                // Only create a finding if we found actual evidence
+                if !evidence.is_empty() {
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: "Absolute path passed to Path::join() or PathBuf::push(). When an absolute path is joined, it completely replaces the base path, nullifying any sanitization or security checks on the base directory. This can enable path traversal attacks. Use only relative paths with join/push, or validate that arguments are relative using is_relative().".to_string(),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence,
+                        span: None,
+                    });
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
@@ -7496,6 +7609,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(UnixPermissionsNotOctalRule::new())); // RUSTCOLA055
     engine.register_rule(Box::new(OpenOptionsInconsistentFlagsRule::new())); // RUSTCOLA056
     engine.register_rule(Box::new(UnnecessaryBorrowMutRule::new())); // RUSTCOLA057
+    engine.register_rule(Box::new(AbsolutePathInJoinRule::new())); // RUSTCOLA058
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

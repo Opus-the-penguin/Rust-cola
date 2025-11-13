@@ -1971,6 +1971,10 @@ name = "unix-permissions"
 version = "0.1.0"
 
 [[package]]
+name = "unnecessary-borrow-mut"
+version = "0.1.0"
+
+[[package]]
 name = "unsafe-cstring-pointer"
 version = "0.1.0"
 

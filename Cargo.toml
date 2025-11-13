@@ -34,5 +34,6 @@ members = [
     "examples/infinite-iterator",
     "examples/unix-permissions",
     "examples/openoptions-flags",
+    "examples/unnecessary-borrow-mut",
 ]
 resolver = "2"

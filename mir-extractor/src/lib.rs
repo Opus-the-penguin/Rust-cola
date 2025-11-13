@@ -7347,6 +7347,105 @@ impl Rule for OpenOptionsInconsistentFlagsRule {
     }
 }
 
+// RUSTCOLA057: Detect unnecessary borrow_mut() on RefCell
+struct UnnecessaryBorrowMutRule {
+    metadata: RuleMetadata,
+}
+
+impl UnnecessaryBorrowMutRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA057".to_string(),
+                name: "unnecessary-borrow-mut".to_string(),
+                short_description: "Unnecessary borrow_mut() on RefCell".to_string(),
+                full_description: "Detects RefCell::borrow_mut() calls where the mutable borrow is never actually used for mutation. Using borrow_mut() when borrow() suffices creates unnecessary runtime overhead, increases risk of panics from conflicting borrows, and obscures the code's intent. Use borrow() for read-only access.".to_string(),
+                help_uri: None,
+                default_severity: Severity::Low,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn looks_like_unnecessary_borrow_mut(&self, function: &MirFunction) -> bool {
+        let body_str = format!("{:?}", function.body);
+        
+        // Look for borrow_mut calls
+        if !body_str.contains("borrow_mut") {
+            return false;
+        }
+        
+        // Simple heuristic: if we see borrow_mut but don't see common mutation patterns,
+        // it might be unnecessary. This is a simple approximation.
+        let has_borrow_mut = body_str.contains("RefCell") && body_str.contains("borrow_mut");
+        
+        if !has_borrow_mut {
+            return false;
+        }
+        
+        // Check for signs of actual mutation after borrow_mut
+        // Look for common mutating method names that appear in MIR
+        let mutation_methods = [
+            "::push", "::insert", "::remove", "::clear", "::extend",
+            "::swap", "::sort", "::reverse", "::drain", "::append",
+            "::truncate", "::resize", "::retain", "::dedup",
+            "::split_off", "::pop", "::swap_remove"
+        ];
+        
+        let has_mutation_method = mutation_methods.iter().any(|m| body_str.contains(m));
+        
+        // Also check for assignment patterns in MIR
+        // Direct field/index assignments often appear as specific patterns
+        let has_assignment = 
+            // Check for mutable deref and field access patterns
+            (body_str.contains("(*_") || body_str.contains("* _")) && 
+            (body_str.contains("][") || body_str.contains(").") || body_str.contains("] ="));
+        
+        // Flag if we have borrow_mut but no clear mutation patterns
+        // This is conservative - we may miss some cases but avoid false positives
+        has_borrow_mut && !has_mutation_method && !has_assignment
+    }
+}
+
+impl Rule for UnnecessaryBorrowMutRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            if self.looks_like_unnecessary_borrow_mut(function) {
+                let mut evidence = Vec::new();
+
+                // Collect evidence of borrow_mut usage
+                for line in &function.body {
+                    if line.contains("borrow_mut") || line.contains("RefCell") {
+                        evidence.push(line.trim().to_string());
+                        if evidence.len() >= 5 {
+                            break;
+                        }
+                    }
+                }
+                
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: "RefCell::borrow_mut() called but mutable borrow may not be necessary. If the borrowed value is only read (not modified), use borrow() instead of borrow_mut(). This reduces runtime overhead, lowers panic risk from conflicting borrows, and makes the code's intent clearer.".to_string(),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence,
+                    span: None,
+                });
+            }
+        }
+
+        findings
+    }
+}
+
 
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
@@ -7396,6 +7495,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(InfiniteIteratorRule::new())); // RUSTCOLA054
     engine.register_rule(Box::new(UnixPermissionsNotOctalRule::new())); // RUSTCOLA055
     engine.register_rule(Box::new(OpenOptionsInconsistentFlagsRule::new())); // RUSTCOLA056
+    engine.register_rule(Box::new(UnnecessaryBorrowMutRule::new())); // RUSTCOLA057
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

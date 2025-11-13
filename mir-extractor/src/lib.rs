@@ -6611,6 +6611,99 @@ impl Rule for InvisibleUnicodeRule {
     }
 }
 
+// RUSTCOLA049: Crate-wide allow attributes detection
+struct CrateWideAllowRule {
+    metadata: RuleMetadata,
+}
+
+impl CrateWideAllowRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA049".to_string(),
+                name: "crate-wide-allow".to_string(),
+                short_description: "Crate-wide allow attribute disables lints".to_string(),
+                full_description: "Detects crate-level #![allow(...)] attributes that disable lints for the entire crate. This reduces security coverage and should be avoided. Use more targeted #[allow(...)] on specific items instead.".to_string(),
+                help_uri: None,
+                default_severity: Severity::Low,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn has_crate_wide_allow(line: &str) -> bool {
+        let trimmed = line.trim();
+        
+        // Look for crate-level attribute: #![allow(...)]
+        // The '!' makes it crate-level vs #[allow(...)] which is item-level
+        if trimmed.starts_with("#![allow") {
+            return true;
+        }
+        
+        false
+    }
+
+    fn extract_allowed_lints(line: &str) -> Vec<String> {
+        // Extract lint names from #![allow(lint1, lint2, ...)]
+        if let Some(start) = line.find("#![allow(") {
+            if let Some(end) = line[start..].find(')') {
+                let content = &line[start + 9..start + end]; // Skip "#![allow("
+                return content
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+            }
+        }
+        Vec::new()
+    }
+}
+
+impl Rule for CrateWideAllowRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+        let mut reported = false; // Only report once per package
+
+        for function in &package.functions {
+            for line in &function.body {
+                if Self::has_crate_wide_allow(line) && !reported {
+                    let lints = Self::extract_allowed_lints(line);
+                    let lint_list = if lints.is_empty() {
+                        "unknown lints".to_string()
+                    } else {
+                        lints.join(", ")
+                    };
+
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: format!(
+                            "Crate-wide #![allow(...)] attribute disables lints for entire crate: {}. Consider using item-level #[allow(...)] for more targeted suppression.",
+                            lint_list
+                        ),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence: vec![line.clone()],
+                        span: None,
+                    });
+                    reported = true;
+                    break;
+                }
+            }
+            if reported {
+                break;
+            }
+        }
+
+        findings
+    }
+}
+
 
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
@@ -6652,6 +6745,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(PredictableRandomnessRule::new())); // RUSTCOLA046
     engine.register_rule(Box::new(EnvVarLiteralRule::new())); // RUSTCOLA047
     engine.register_rule(Box::new(InvisibleUnicodeRule::new())); // RUSTCOLA048
+    engine.register_rule(Box::new(CrateWideAllowRule::new())); // RUSTCOLA049
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

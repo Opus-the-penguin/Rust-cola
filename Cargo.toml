@@ -26,5 +26,6 @@ members = [
     "examples/predictable-randomness",
     "examples/env-var-literal",
     "examples/invisible-unicode",
+    "examples/crate-wide-allow",
 ]
 resolver = "2"

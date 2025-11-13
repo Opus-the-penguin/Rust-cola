@@ -29,5 +29,6 @@ members = [
     "examples/crate-wide-allow",
     "examples/misordered-assert",
     "examples/try-io-result",
+    "examples/local-refcell",
 ]
 resolver = "2"

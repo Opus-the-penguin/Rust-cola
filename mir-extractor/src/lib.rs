@@ -6880,6 +6880,95 @@ impl Rule for TryIoResultRule {
 }
 
 
+// ============================================================================
+// RUSTCOLA052: Local RefCell usage
+// ============================================================================
+
+struct LocalRefCellRule {
+    metadata: RuleMetadata,
+}
+
+impl LocalRefCellRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA052".to_string(),
+                name: "local-ref-cell".to_string(),
+                short_description: "RefCell used for local mutable state".to_string(),
+                full_description: "Detects RefCell<T> used for purely local mutable state where a regular mutable variable would suffice. RefCell adds runtime borrow checking overhead and panic risk. Use RefCell only when interior mutability is truly needed (shared ownership, trait objects, etc.).".to_string(),
+                help_uri: None,
+                default_severity: Severity::Low,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn looks_like_local_refcell(&self, function: &MirFunction) -> bool {
+        // Look for RefCell::new followed by borrow_mut/borrow in the same function
+        // This suggests local usage where a plain mut variable would work
+        
+        let mut has_refcell_new = false;
+        let mut has_borrow_mut = false;
+        
+        for line in &function.body {
+            let lower = line.to_lowercase();
+            
+            // Check for RefCell::new
+            if lower.contains("refcell") && lower.contains("::new") {
+                has_refcell_new = true;
+            }
+            
+            // Check for borrow_mut or borrow calls
+            if lower.contains("borrow_mut") || (lower.contains("borrow(") && !lower.contains("borrow_mut")) {
+                has_borrow_mut = true;
+            }
+        }
+        
+        // If we see RefCell::new and borrow operations in the same function,
+        // it's likely local usage
+        has_refcell_new && has_borrow_mut
+    }
+}
+
+impl Rule for LocalRefCellRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            if self.looks_like_local_refcell(function) {
+                let mut evidence = vec![];
+                for line in &function.body {
+                    if line.to_lowercase().contains("refcell") 
+                        || line.to_lowercase().contains("borrow") {
+                        evidence.push(line.clone());
+                        if evidence.len() >= 3 {
+                            break;
+                        }
+                    }
+                }
+                
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: "RefCell used for local mutable state. Consider using a regular mutable variable instead. RefCell adds runtime overhead and panic risk - use it only when interior mutability is truly needed (shared ownership, trait objects, callbacks, etc.).".to_string(),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence,
+                    span: None,
+                });
+            }
+        }
+
+        findings
+    }
+}
+
+
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
     engine.register_rule(Box::new(TransmuteRule::new()));
@@ -6923,6 +7012,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(CrateWideAllowRule::new())); // RUSTCOLA049
     engine.register_rule(Box::new(MisorderedAssertEqRule::new())); // RUSTCOLA050
     engine.register_rule(Box::new(TryIoResultRule::new())); // RUSTCOLA051
+    engine.register_rule(Box::new(LocalRefCellRule::new())); // RUSTCOLA052
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

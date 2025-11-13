@@ -29,10 +29,11 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 use walkdir::{DirEntry, WalkDir};
 
-mod dataflow;
+pub mod dataflow;
 #[cfg(feature = "hir-driver")]
 mod hir;
 mod prototypes;
+pub mod interprocedural;
 
 pub use dataflow::{Assignment, MirDataflow};
 #[cfg(feature = "hir-driver")]
@@ -5754,6 +5755,394 @@ impl Rule for CargoAuditableMetadataRule {
     }
 }
 
+/// RUSTCOLA042: Cookie without Secure attribute
+/// Detects cookie builders that don't set the Secure flag, allowing transmission over HTTP
+struct CookieSecureAttributeRule {
+    metadata: RuleMetadata,
+}
+
+impl CookieSecureAttributeRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA042".to_string(),
+                name: "cookie-without-secure".to_string(),
+                short_description: "Cookie without Secure attribute".to_string(),
+                full_description: "Detects cookies created without the Secure flag, which allows them to be transmitted over unencrypted HTTP connections. This can lead to session hijacking and credential theft. Always use .secure(true) for cookies containing sensitive data.".to_string(),
+                help_uri: Some("https://owasp.org/www-community/controls/SecureCookieAttribute".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn is_cookie_builder(line: &str) -> bool {
+        let lowered = line.to_lowercase();
+        lowered.contains("cookie::") && (lowered.contains("::build(") || lowered.contains("::new("))
+    }
+
+    fn has_secure_call(lines: &[String], start_idx: usize) -> bool {
+        // Look forward from cookie builder for .secure(true) call
+        for (idx, line) in lines.iter().enumerate().skip(start_idx) {
+            let lowered = line.to_lowercase();
+            
+            // Stop searching if we hit a statement terminator without chaining
+            if line.trim().ends_with(';') && !line.contains(".secure(") {
+                // Check if this line or previous lines had .secure(true)
+                for check_idx in start_idx..=idx {
+                    if lines[check_idx].to_lowercase().contains(".secure(true") {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            
+            // Found secure call
+            if lowered.contains(".secure(true") {
+                return true;
+            }
+            
+            // Limit search to reasonable builder chain length
+            if idx - start_idx > 20 {
+                break;
+            }
+        }
+        false
+    }
+}
+
+impl Rule for CookieSecureAttributeRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<String> = content.lines().map(|l| l.to_string()).collect();
+
+            for (idx, line) in lines.iter().enumerate() {
+                if line.trim().starts_with("//") {
+                    continue;
+                }
+
+                if Self::is_cookie_builder(line) && !Self::has_secure_call(&lines, idx) {
+                    let location = format!("{}:{}", rel_path, idx + 1);
+
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: "Cookie created without Secure attribute; vulnerable to interception over HTTP".to_string(),
+                        function: location,
+                        function_signature: String::new(),
+                        evidence: vec![line.trim().to_string()],
+                        span: None,
+                    });
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+/// RUSTCOLA043: Overly permissive CORS configuration
+/// Detects CORS configurations that allow any origin, enabling CSRF and data theft
+struct CorsWildcardRule {
+    metadata: RuleMetadata,
+}
+
+impl CorsWildcardRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA043".to_string(),
+                name: "cors-wildcard-origin".to_string(),
+                short_description: "Overly permissive CORS wildcard origin".to_string(),
+                full_description: "Detects CORS configurations that allow requests from any origin (*), which can enable cross-site request forgery and credential theft. Use specific origin allowlists instead of wildcards for production APIs.".to_string(),
+                help_uri: Some("https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS#access-control-allow-origin".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn is_wildcard_cors(line: &str) -> bool {
+        let lowered = line.to_lowercase();
+        
+        // Common patterns for wildcard CORS
+        let patterns = [
+            ".allow_origin(\"*\")",
+            ".allow_origin(\"*\".to_string())",
+            "::allow_origin(\"*\")",
+            ".alloworigin(\"*\")",
+            "alloworigin::any()",
+            ".allow_any_origin()",
+            ".with_allow_origin(\"*\")",
+            "access-control-allow-origin: *",
+            "\"access-control-allow-origin\", \"*\"",
+        ];
+
+        patterns.iter().any(|p| lowered.contains(p))
+    }
+}
+
+impl Rule for CorsWildcardRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            for (idx, line) in content.lines().enumerate() {
+                if line.trim().starts_with("//") {
+                    continue;
+                }
+
+                if Self::is_wildcard_cors(line) {
+                    let location = format!("{}:{}", rel_path, idx + 1);
+
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: "CORS configured with wildcard origin (*); allows any site to make credentialed requests".to_string(),
+                        function: location,
+                        function_signature: String::new(),
+                        evidence: vec![line.trim().to_string()],
+                        span: None,
+                    });
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+/// RUSTCOLA044: Observable timing discrepancy in secret comparison
+/// Detects non-constant-time comparisons of secrets that could leak information via timing
+struct TimingAttackRule {
+    metadata: RuleMetadata,
+}
+
+impl TimingAttackRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA044".to_string(),
+                name: "timing-attack-secret-comparison".to_string(),
+                short_description: "Non-constant-time secret comparison".to_string(),
+                full_description: "Detects comparisons of secrets (passwords, tokens, HMACs) using non-constant-time operations like == or .starts_with(). These can leak information through timing side-channels. Use constant_time_eq or subtle::ConstantTimeEq instead.".to_string(),
+                help_uri: Some("https://codahale.com/a-lesson-in-timing-attacks/".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn looks_like_secret(var_name: &str) -> bool {
+        let lowered = var_name.to_lowercase();
+        let secret_markers = [
+            "password",
+            "passwd",
+            "pwd",
+            "token",
+            "secret",
+            "key",
+            "hmac",
+            "signature",
+            "auth",
+            "credential",
+            "api_key",
+            "apikey",
+        ];
+
+        secret_markers.iter().any(|marker| lowered.contains(marker))
+    }
+
+    fn is_non_constant_time_comparison(line: &str) -> bool {
+        let lowered = line.to_lowercase();
+        
+        // Skip if already using constant-time comparison
+        if lowered.contains("constant_time_eq")
+            || lowered.contains("constanttimeeq")
+            || lowered.contains("subtle::") 
+        {
+            return false;
+        }
+
+        // Look for comparisons
+        if lowered.contains(" == ") 
+            || lowered.contains(" != ")
+            || lowered.contains(".eq(")
+            || lowered.contains(".ne(")
+            || lowered.contains(".starts_with(")
+            || lowered.contains(".ends_with(")
+        {
+            // Extract variable names
+            let words: Vec<&str> = line.split(&[' ', '(', ')', ',', ';', '=', '!'][..])
+                .filter(|w| !w.is_empty())
+                .collect();
+
+            // Check if any variable looks like a secret
+            return words.iter().any(|w| Self::looks_like_secret(w));
+        }
+
+        false
+    }
+}
+
+impl Rule for TimingAttackRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            for (idx, line) in content.lines().enumerate() {
+                if line.trim().starts_with("//") {
+                    continue;
+                }
+
+                if Self::is_non_constant_time_comparison(line) {
+                    let location = format!("{}:{}", rel_path, idx + 1);
+
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: "Secret comparison using non-constant-time operation; vulnerable to timing attacks".to_string(),
+                        function: location,
+                        function_signature: String::new(),
+                        evidence: vec![line.trim().to_string()],
+                        span: None,
+                    });
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
     engine.register_rule(Box::new(TransmuteRule::new()));
@@ -5787,6 +6176,9 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(HardcodedCryptoKeyRule::new())); // RUSTCOLA039
     engine.register_rule(Box::new(PanicInDropRule::new())); // RUSTCOLA040
     engine.register_rule(Box::new(UnwrapInPollRule::new())); // RUSTCOLA041
+    engine.register_rule(Box::new(CookieSecureAttributeRule::new())); // RUSTCOLA042
+    engine.register_rule(Box::new(CorsWildcardRule::new())); // RUSTCOLA043
+    engine.register_rule(Box::new(TimingAttackRule::new())); // RUSTCOLA044
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

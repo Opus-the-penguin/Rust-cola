@@ -18,5 +18,6 @@ members = [
     "examples/taint-tracking",
     "examples/parse-pattern-test",
     "examples/interprocedural",
+    "examples/field-sensitive",
 ]
 resolver = "2"

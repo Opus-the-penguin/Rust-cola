@@ -107,7 +107,7 @@ Feasibility legend:
 71. **Try operator on io::Result** *(RUSTCOLA051 shipped)* – Dylint `try_io_result`; detects use of ? operator on std::io::Result without error context. **Signal:** Functions returning Result<T, io::Error> with discriminant checks (? desugaring). Recommends .map_err() or custom error types. **Feasibility:** Heuristic.
 72. **Overscoped allow attributes** – Dylint `overscoped_allow`; keep lints active. **Feasibility:** Heuristic (requires source-level analysis).
 73. **Local RefCell usage** *(RUSTCOLA052 shipped)* – Dylint `local_ref_cell`; detects RefCell used for purely local mutable state. **Signal:** RefCell::new() + borrow/borrow_mut in same function without shared ownership patterns. Recommends plain mut variables. **Feasibility:** Heuristic.
-74. **Unnecessary borrow_mut** – Dylint `unnecessary_borrow_mut`; reduce RefCell churn. **Feasibility:** Heuristic.
+74. **Unnecessary borrow_mut** *(shipped — RUSTCOLA057)* – Detects RefCell::borrow_mut() calls where borrow() would suffice (no actual mutation). Using borrow_mut() for read-only access adds overhead, increases panic risk, and obscures intent. Heuristic checks for absence of mutation patterns (push, clear, sort, etc.). Test results: 25% recall (1/4 problematic detected), 100% precision (0/6 false positives). Known limitation: conservative heuristic catches simple cases only, complex MIR patterns not fully tracked. Dylint `unnecessary_borrow_mut` parity. **Feasibility:** Heuristic.
 75. **Non-thread-safe call in async context** – Extend Dylint test lint to async tasks. **Feasibility:** Advanced.
 
 ## External Tool Findings – Clippy

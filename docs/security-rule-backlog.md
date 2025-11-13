@@ -86,7 +86,7 @@ Feasibility legend:
 
 ## Configuration & Platform Issues
 
-59. **Unix permissions not octal** – Sonar RSPEC-7448. **Feasibility:** Heuristic.
+59. **Unix permissions not octal** *(shipped — RUSTCOLA055)* – Detects Unix file permissions specified using decimal literals instead of octal notation (e.g., 644 instead of 0o644). Decimal values like 755 look like octal but are interpreted as decimal (755 decimal = 0o1363 octal), resulting in incorrect permissions. Checks permission APIs (from_mode, chmod, DirBuilder) for common decimal values. Test results: 100% precision and recall (4/4 problematic detected, 0/6 false positives). Sonar RSPEC-7448 parity. **Feasibility:** Heuristic.
 60. **OpenOptions inconsistent flags** – Sonar RSPEC-7447. **Feasibility:** Heuristic.
 61. **File operations on tainted paths** – Strengthen path traversal detection (#37). **Feasibility:** Advanced.
 62. **env::var literals in code** *(shipped — RUSTCOLA047)* – Detects string literals passed to env::var() and env::var_os(), encouraging use of constants for maintainability and typo prevention (Dylint `env_literal` parity). **Feasibility:** Heuristic.

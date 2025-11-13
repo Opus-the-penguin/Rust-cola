@@ -25,6 +25,21 @@ paths-ignore:
   - 'examples/send-sync-bounds/**'
   - 'examples/unsafe-cstring-pointer/**'
   - 'examples/vec-set-len-misuse/**'
+  - 'examples/predictable-randomness/**'
+  - 'examples/env-var-literals/**'
+  - 'examples/invisible-unicode/**'
+  - 'examples/crate-wide-allow/**'
+  - 'examples/misordered-assert-eq/**'
+  - 'examples/io-result-try/**'
+  - 'examples/local-refcell/**'
+  - 'examples/untrimmed-stdin/**'
+  - 'examples/infinite-iterators/**'
+  - 'examples/unix-permissions-octal/**'
+  - 'examples/openoptions-inconsistent/**'
+  - 'examples/unnecessary-borrow-mut/**'
+  - 'examples/absolute-path-join/**'
+  - 'examples/ctor-dtor-std/**'
+  - 'examples/connection-string-password/**'
 
 # Note: The following examples are intentionally excluded (not listed above):
 # - examples/allocator-mismatch-ffi (RUSTCOLA017 test cases)
@@ -37,3 +52,18 @@ paths-ignore:
 # - examples/send-sync-bounds (RUSTCOLA015 test cases)
 # - examples/unsafe-cstring-pointer (RUSTCOLA036 test cases)
 # - examples/vec-set-len-misuse (RUSTCOLA038 test cases)
+# - examples/predictable-randomness (RUSTCOLA046 test cases)
+# - examples/env-var-literals (RUSTCOLA047 test cases)
+# - examples/invisible-unicode (RUSTCOLA048 test cases)
+# - examples/crate-wide-allow (RUSTCOLA049 test cases)
+# - examples/misordered-assert-eq (RUSTCOLA050 test cases)
+# - examples/io-result-try (RUSTCOLA051 test cases)
+# - examples/local-refcell (RUSTCOLA052 test cases)
+# - examples/untrimmed-stdin (RUSTCOLA053 test cases)
+# - examples/infinite-iterators (RUSTCOLA054 test cases)
+# - examples/unix-permissions-octal (RUSTCOLA055 test cases)
+# - examples/openoptions-inconsistent (RUSTCOLA056 test cases)
+# - examples/unnecessary-borrow-mut (RUSTCOLA057 test cases)
+# - examples/absolute-path-join (RUSTCOLA058 test cases)
+# - examples/ctor-dtor-std (RUSTCOLA059 test cases)
+# - examples/connection-string-password (RUSTCOLA060 test cases)

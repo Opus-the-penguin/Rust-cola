@@ -34,7 +34,7 @@ Feasibility legend:
 19. **Insecure hashing MD5/SHA-1** *(shipped)* – Detect use of MD5/SHA-1. **Feasibility:** Heuristic.
 20. **Weak ciphers (DES/RC4/etc.)** *(shipped — RUSTCOLA045)* – Pattern match legacy crypto crate usage including DES, 3DES, RC4, RC2, Blowfish, CAST5, and ARCFOUR. **Feasibility:** Heuristic.
 21. **Hard-coded cryptographic values** *(shipped — RUSTCOLA039)* – Spot embedded keys or IVs. **Feasibility:** MIR dataflow.
-22. **Predictable randomness** – Warn on constant seeds for RNG. **Feasibility:** Heuristic.
+22. **Predictable randomness** *(shipped — RUSTCOLA046)* – Detects constant seeds in RNG initialization (seed_from_u64, from_seed) with context-aware severity for cryptographic functions. **Feasibility:** Heuristic.
 23. **Modulo bias on random outputs** – Identify `% n` on random values in crypto context. **Feasibility:** Advanced.
 24. **Danger accept invalid certs** – Flag `danger_accept_invalid_certs(true)`. **Feasibility:** Heuristic.
 25. **OpenSSL VerifyNone** *(shipped)* – Detect `set_verify(VerifyNone)`. **Feasibility:** Heuristic.

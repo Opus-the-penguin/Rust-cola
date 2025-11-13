@@ -6269,6 +6269,141 @@ impl Rule for WeakCipherRule {
     }
 }
 
+/// RUSTCOLA046: Predictable randomness from constant seeds
+/// Detects RNG initialization with hardcoded constant seeds, which makes the output predictable
+struct PredictableRandomnessRule {
+    metadata: RuleMetadata,
+}
+
+impl PredictableRandomnessRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA046".to_string(),
+                name: "predictable-randomness".to_string(),
+                short_description: "Predictable random number generation".to_string(),
+                full_description: "Detects RNG initialization using constant or hardcoded seeds. Predictable randomness is a critical security flaw in cryptographic operations, session token generation, and nonce creation. Use cryptographically secure random sources like OsRng, ThreadRng, or properly seeded RNGs from entropy sources.".to_string(),
+                help_uri: Some("https://owasp.org/www-community/vulnerabilities/Insecure_Randomness".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn is_predictable_seed(line: &str) -> bool {
+        let lowered = line.to_lowercase();
+        
+        // Skip comments
+        if lowered.trim_start().starts_with("//") {
+            return false;
+        }
+
+        // Skip alloc sections (string literal data)
+        if lowered.contains("alloc") && (lowered.contains("0x") || lowered.contains("│")) {
+            return false;
+        }
+
+        // Look for seeding functions with constant values
+        // Common patterns in Rust RNG crates
+        
+        // Pattern 1: seed_from_u64(constant) - most common pattern
+        if lowered.contains("seed_from_u64") {
+            // Check if followed by a constant literal
+            // MIR shows: seed_from_u64(const 12345_u64) or similar
+            if lowered.contains("const") && (lowered.contains("_u64") || lowered.contains("_i64")) {
+                return true;
+            }
+        }
+
+        // Pattern 2: from_seed with array literals
+        if lowered.contains("from_seed") {
+            // Check for const array: from_seed(const [u8; 32])
+            if lowered.contains("const") && lowered.contains("[") {
+                return true;
+            }
+        }
+
+        // Pattern 3: StdRng::seed_from_u64, ChaChaRng::seed_from_u64, etc.
+        let seedable_rngs = [
+            "stdrng::seed_from_u64",
+            "chacharng::seed_from_u64",
+            "chacha8rng::seed_from_u64",
+            "chacha12rng::seed_from_u64",
+            "chacha20rng::seed_from_u64",
+            "isaacrng::seed_from_u64",
+            "isaac64rng::seed_from_u64",
+            "smallrng::seed_from_u64",
+        ];
+
+        for rng in seedable_rngs {
+            if lowered.contains(rng) && lowered.contains("const") {
+                return true;
+            }
+        }
+
+        // Pattern 4: Rand::new with constant seed (older API)
+        if (lowered.contains("::new(") || lowered.contains("::new_seeded(")) 
+            && lowered.contains("const") 
+            && (lowered.contains("rng") || lowered.contains("rand")) {
+            return true;
+        }
+
+        false
+    }
+
+    fn looks_like_crypto_context(function_name: &str) -> bool {
+        let lowered = function_name.to_lowercase();
+        let crypto_markers = [
+            "crypto", "encrypt", "decrypt", "key", "token", "session",
+            "nonce", "salt", "random", "secure", "secret", "auth",
+            "sign", "verify", "hmac", "hash", "password",
+        ];
+        
+        crypto_markers.iter().any(|marker| lowered.contains(marker))
+    }
+}
+
+impl Rule for PredictableRandomnessRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            for line in &function.body {
+                if Self::is_predictable_seed(line) {
+                    let in_crypto_context = Self::looks_like_crypto_context(&function.name);
+
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: Severity::High,
+                        message: if in_crypto_context {
+                            format!(
+                                "CRITICAL: Predictable RNG seed in cryptographic context `{}`",
+                                function.name
+                            )
+                        } else {
+                            format!(
+                                "Predictable RNG seed detected in `{}`",
+                                function.name
+                            )
+                        },
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence: vec![line.trim().to_string()],
+                        span: function.span.clone(),
+                    });
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
     engine.register_rule(Box::new(TransmuteRule::new()));
@@ -6306,6 +6441,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(CorsWildcardRule::new())); // RUSTCOLA043
     engine.register_rule(Box::new(TimingAttackRule::new())); // RUSTCOLA044
     engine.register_rule(Box::new(WeakCipherRule::new())); // RUSTCOLA045
+    engine.register_rule(Box::new(PredictableRandomnessRule::new())); // RUSTCOLA046
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

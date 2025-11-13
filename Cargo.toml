@@ -23,5 +23,6 @@ members = [
     "examples/length-truncation-cast",
     "examples/tokio-broadcast-unsync",
     "examples/weak-ciphers",
+    "examples/predictable-randomness",
 ]
 resolver = "2"

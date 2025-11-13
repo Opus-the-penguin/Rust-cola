@@ -20,5 +20,7 @@ members = [
     "examples/interprocedural",
     "examples/field-sensitive",
     "examples/untrusted-content-length",
+    "examples/length-truncation-cast",
+    "examples/tokio-broadcast-unsync",
 ]
 resolver = "2"

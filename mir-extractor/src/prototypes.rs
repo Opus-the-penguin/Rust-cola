@@ -29,6 +29,8 @@ impl Default for PrototypeOptions {
             unsync_markers: vec![
                 "::rc<".to_string(),
                 "::refcell<".to_string(),
+                "::<rc<".to_string(),  // Turbofish syntax in generics
+                "::<refcell<".to_string(),
                 "std::rc::rc<".to_string(),
                 "alloc::rc::rc<".to_string(),
                 "std::cell::refcell<".to_string(),

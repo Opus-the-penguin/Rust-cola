@@ -929,6 +929,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "length-truncation-cast"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.176"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1714,6 +1721,13 @@ dependencies = [
  "socket2 0.6.1",
  "tokio-macros",
  "windows-sys 0.61.1",
+]
+
+[[package]]
+name = "tokio-broadcast-unsync"
+version = "0.1.0"
+dependencies = [
+ "tokio",
 ]
 
 [[package]]

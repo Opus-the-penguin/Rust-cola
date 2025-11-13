@@ -31,5 +31,6 @@ members = [
     "examples/try-io-result",
     "examples/local-refcell",
     "examples/untrimmed-stdin",
+    "examples/infinite-iterator",
 ]
 resolver = "2"

@@ -7060,6 +7060,95 @@ impl Rule for UntrimmedStdinRule {
     }
 }
 
+// RUSTCOLA054: Detect infinite iterators without termination
+struct InfiniteIteratorRule {
+    metadata: RuleMetadata,
+}
+
+impl InfiniteIteratorRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA054".to_string(),
+                name: "infinite-iterator-without-termination".to_string(),
+                short_description: "Infinite iterator without termination".to_string(),
+                full_description: "Detects infinite iterators (std::iter::repeat, cycle, repeat_with) without termination methods (take, take_while, any, find, position). Such iterators can cause unbounded loops leading to Denial of Service (DoS) if not properly constrained.".to_string(),
+                help_uri: None,
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn looks_like_infinite_iterator(&self, function: &MirFunction) -> bool {
+        let body_str = format!("{:?}", function.body);
+        
+        // Check for infinite iterator constructors
+        let has_repeat = body_str.contains("std::iter::repeat")
+            || body_str.contains("core::iter::repeat");
+        let has_cycle = body_str.contains("::cycle");
+        let has_repeat_with = body_str.contains("std::iter::repeat_with")
+            || body_str.contains("core::iter::repeat_with");
+        
+        if !has_repeat && !has_cycle && !has_repeat_with {
+            return false;
+        }
+        
+        // Check if there are termination methods
+        let has_take = body_str.contains("::take(") || body_str.contains("::take>");
+        let has_take_while = body_str.contains("::take_while");
+        let has_any = body_str.contains("::any(") || body_str.contains("::any>");
+        let has_find = body_str.contains("::find(") || body_str.contains("::find>");
+        let has_position = body_str.contains("::position");
+        
+        // Flag if we have infinite iterator but no termination
+        !has_take && !has_take_while && !has_any && !has_find && !has_position
+    }
+}
+
+impl Rule for InfiniteIteratorRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            if self.looks_like_infinite_iterator(function) {
+                let body_str = format!("{:?}", function.body);
+                let mut evidence = Vec::new();
+
+                // Collect evidence of infinite iterator usage
+                for line in body_str.lines().take(200) {
+                    if line.contains("std::iter::repeat") 
+                        || line.contains("core::iter::repeat")
+                        || line.contains("::cycle")
+                        || line.contains("repeat_with") {
+                        evidence.push(line.trim().to_string());
+                        if evidence.len() >= 3 {
+                            break;
+                        }
+                    }
+                }
+                
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: "Infinite iterator (repeat, cycle, or repeat_with) detected without termination method (take, take_while, any, find, position). This can cause unbounded loops leading to DoS. Add a termination condition or ensure the loop has a break statement.".to_string(),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence,
+                    span: None,
+                });
+            }
+        }
+
+        findings
+    }
+}
+
 
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
@@ -7106,6 +7195,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(TryIoResultRule::new())); // RUSTCOLA051
     engine.register_rule(Box::new(LocalRefCellRule::new())); // RUSTCOLA052
     engine.register_rule(Box::new(UntrimmedStdinRule::new())); // RUSTCOLA053
+    engine.register_rule(Box::new(InfiniteIteratorRule::new())); // RUSTCOLA054
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

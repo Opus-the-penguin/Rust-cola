@@ -269,6 +269,215 @@ impl Default for FieldTaintMap {
     }
 }
 
+/// Parse field access patterns from MIR expressions
+pub mod parser {
+    use super::*;
+    
+    /// Parse a field access from a MIR expression
+    ///
+    /// Handles patterns:
+    /// - `(_1.0: Type)` → FieldPath { base_var: "_1", indices: [0] }
+    /// - `(_1.1: Type)` → FieldPath { base_var: "_1", indices: [1] }
+    /// - `((_1.1: Type).2: Type2)` → FieldPath { base_var: "_1", indices: [1, 2] }
+    ///
+    /// Returns None if the expression is not a field access.
+    pub fn parse_field_access(expr: &str) -> Option<FieldPath> {
+        let expr = expr.trim();
+        
+        // Check if this looks like a field access
+        if !expr.contains('(') || !expr.contains('.') {
+            return None;
+        }
+        
+        // Try parsing as nested field first
+        if let Some(path) = parse_nested_field_access(expr) {
+            return Some(path);
+        }
+        
+        // Try parsing as simple field access
+        parse_simple_field_access(expr)
+    }
+    
+    /// Parse a simple field access: (_VAR.INDEX: TYPE)
+    fn parse_simple_field_access(expr: &str) -> Option<FieldPath> {
+        let expr = expr.trim();
+        
+        // Pattern: (_VAR.INDEX: TYPE)
+        // Example: (_1.0: std::string::String)
+        
+        if !expr.starts_with('(') {
+            return None;
+        }
+        
+        // Find the colon that separates field from type
+        let colon_pos = expr.find(':')?;
+        
+        // Extract the field part: "_VAR.INDEX"
+        let field_part = &expr[1..colon_pos].trim();
+        
+        // Split by dot to get base and indices
+        let parts: Vec<&str> = field_part.split('.').collect();
+        
+        if parts.len() < 2 {
+            return None;
+        }
+        
+        let base_var = parts[0].trim().to_string();
+        
+        // Parse indices
+        let mut indices = Vec::new();
+        for part in &parts[1..] {
+            if let Ok(index) = part.trim().parse::<usize>() {
+                indices.push(index);
+            } else {
+                // Not a valid index
+                return None;
+            }
+        }
+        
+        if indices.is_empty() {
+            None
+        } else {
+            Some(FieldPath::new(base_var, indices))
+        }
+    }
+    
+    /// Parse nested field access: ((_VAR.OUTER: TYPE).INNER: TYPE2)
+    fn parse_nested_field_access(expr: &str) -> Option<FieldPath> {
+        let expr = expr.trim();
+        
+        // Pattern: ((_VAR.INDEX: TYPE).INDEX2: TYPE2)
+        // Example: ((_1.1: Credentials).2: std::string::String)
+        
+        if !expr.starts_with("((") {
+            return None;
+        }
+        
+        // Find the matching closing paren for the inner expression
+        let mut depth = 0;
+        let mut inner_end = 0;
+        
+        for (i, ch) in expr.char_indices() {
+            match ch {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 1 {
+                        // Found the end of inner expression
+                        inner_end = i;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        
+        if inner_end == 0 {
+            return None;
+        }
+        
+        // Parse the inner expression first
+        let inner_expr = &expr[1..inner_end + 1]; // (_1.1: Type)
+        let mut base_path = parse_simple_field_access(inner_expr)?;
+        
+        // Now parse the outer index
+        let remaining = &expr[inner_end + 1..];
+        
+        // Pattern should be: .INDEX: TYPE)
+        if !remaining.starts_with('.') {
+            return None;
+        }
+        
+        // Find the colon
+        let colon_pos = remaining.find(':')?;
+        let index_str = &remaining[1..colon_pos].trim();
+        
+        if let Ok(index) = index_str.parse::<usize>() {
+            base_path.indices.push(index);
+            Some(base_path)
+        } else {
+            None
+        }
+    }
+    
+    /// Check if an expression contains a field access
+    pub fn contains_field_access(expr: &str) -> bool {
+        expr.contains("(_") && expr.contains(".") && expr.contains(":")
+    }
+    
+    /// Extract the base variable from an expression
+    ///
+    /// Examples:
+    /// - `(_1.0: Type)` → Some("_1")
+    /// - `_2` → Some("_2")
+    /// - `move _3` → Some("_3")
+    pub fn extract_base_var(expr: &str) -> Option<String> {
+        let expr = expr.trim();
+        
+        // Handle field access
+        if let Some(path) = parse_field_access(expr) {
+            return Some(path.base_var);
+        }
+        
+        // Handle simple variable
+        if expr.starts_with('_') {
+            // Extract until non-digit
+            let var: String = expr
+                .chars()
+                .take_while(|c| *c == '_' || c.is_ascii_digit())
+                .collect();
+            if !var.is_empty() {
+                return Some(var);
+            }
+        }
+        
+        // Handle prefixed variables (move _1, copy _2, &_3)
+        // Check longer prefixes first to avoid incorrect matches
+        for prefix in &["&mut ", "move ", "copy ", "&"] {
+            if expr.starts_with(prefix) {
+                let rest = &expr[prefix.len()..];
+                return extract_base_var(rest);
+            }
+        }
+        
+        None
+    }
+    
+    /// Extract all field paths from an expression
+    ///
+    /// This handles complex expressions that may reference multiple fields.
+    pub fn extract_all_field_paths(expr: &str) -> Vec<FieldPath> {
+        let mut paths = Vec::new();
+        let expr = expr.trim();
+        
+        // Look for field access patterns
+        let mut search_pos = 0;
+        
+        while let Some(paren_start) = expr[search_pos..].find("(_") {
+            let actual_pos = search_pos + paren_start;
+            
+            // Try to extract field access from this position
+            let remaining = &expr[actual_pos..];
+            
+            // Find the extent of this field access
+            if let Some(colon_pos) = remaining.find(':') {
+                // Try to find the closing paren
+                if let Some(close_paren) = remaining[colon_pos..].find(')') {
+                    let field_expr = &remaining[..colon_pos + close_paren + 1];
+                    
+                    if let Some(path) = parse_field_access(field_expr) {
+                        paths.push(path);
+                    }
+                }
+            }
+            
+            search_pos = actual_pos + 1;
+        }
+        
+        paths
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -398,5 +607,86 @@ mod tests {
         
         assert!(map1.get_field_taint(&FieldPath::single_field("_1".to_string(), 0)).is_tainted());
         assert!(map1.get_field_taint(&FieldPath::single_field("_1".to_string(), 1)).is_tainted());
+    }
+    
+    // Parser tests
+    
+    #[test]
+    fn test_parse_simple_field_access() {
+        use parser::parse_field_access;
+        
+        let path = parse_field_access("(_1.0: std::string::String)").unwrap();
+        assert_eq!(path.base_var, "_1");
+        assert_eq!(path.indices, vec![0]);
+        
+        let path = parse_field_access("(_1.1: std::string::String)").unwrap();
+        assert_eq!(path.base_var, "_1");
+        assert_eq!(path.indices, vec![1]);
+        
+        let path = parse_field_access("(_3.2: u32)").unwrap();
+        assert_eq!(path.base_var, "_3");
+        assert_eq!(path.indices, vec![2]);
+    }
+    
+    #[test]
+    fn test_parse_nested_field_access() {
+        use parser::parse_field_access;
+        
+        let path = parse_field_access("((_1.1: Credentials).0: std::string::String)").unwrap();
+        assert_eq!(path.base_var, "_1");
+        assert_eq!(path.indices, vec![1, 0]);
+        
+        let path = parse_field_access("((_1.1: Credentials).2: std::string::String)").unwrap();
+        assert_eq!(path.base_var, "_1");
+        assert_eq!(path.indices, vec![1, 2]);
+    }
+    
+    #[test]
+    fn test_parse_field_access_invalid() {
+        use parser::parse_field_access;
+        
+        // Not a field access
+        assert!(parse_field_access("_1").is_none());
+        assert!(parse_field_access("move _2").is_none());
+        assert!(parse_field_access("copy _3").is_none());
+        
+        // No indices
+        assert!(parse_field_access("(_1: Type)").is_none());
+    }
+    
+    #[test]
+    fn test_contains_field_access() {
+        use parser::contains_field_access;
+        
+        assert!(contains_field_access("(_1.0: String)"));
+        assert!(contains_field_access("((_1.1: Type).2: Type2)"));
+        assert!(!contains_field_access("_1"));
+        assert!(!contains_field_access("move _2"));
+    }
+    
+    #[test]
+    fn test_extract_base_var() {
+        use parser::extract_base_var;
+        
+        assert_eq!(extract_base_var("(_1.0: Type)").unwrap(), "_1");
+        assert_eq!(extract_base_var("_2").unwrap(), "_2");
+        assert_eq!(extract_base_var("move _3").unwrap(), "_3");
+        assert_eq!(extract_base_var("copy _4").unwrap(), "_4");
+        assert_eq!(extract_base_var("&_5").unwrap(), "_5");
+        assert_eq!(extract_base_var("&mut _6").unwrap(), "_6");
+    }
+    
+    #[test]
+    fn test_extract_all_field_paths() {
+        use parser::extract_all_field_paths;
+        
+        let paths = extract_all_field_paths("(_1.0: String) = move (_2.1: String)");
+        assert_eq!(paths.len(), 2);
+        assert_eq!(paths[0].to_string(), "_1.0");
+        assert_eq!(paths[1].to_string(), "_2.1");
+        
+        let paths = extract_all_field_paths("_3 = Command::arg(copy _4, copy (_5.2: String))");
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].to_string(), "_5.2");
     }
 }

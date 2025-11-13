@@ -186,6 +186,7 @@ pub fn detect_unbounded_allocations_with_options(
 
 fn extract_capacity_variable(line: &str) -> Option<String> {
     let lowered = line.to_lowercase();
+    let is_reserve_method = lowered.contains("reserve_exact") || lowered.contains("reserve");
     let keyword = if lowered.contains("with_capacity") {
         "with_capacity"
     } else if lowered.contains("reserve_exact") {
@@ -205,7 +206,14 @@ fn extract_capacity_variable(line: &str) -> Option<String> {
     let closing = remainder.find(')')?;
     let inside = &remainder[1..closing];
     let vars = extract_variables(inside);
-    vars.into_iter().next()
+    
+    // For Vec::reserve and Vec::reserve_exact, the capacity is the second argument
+    // (first is self). For with_capacity, it's the first (and only) argument.
+    if is_reserve_method {
+        vars.into_iter().nth(1)
+    } else {
+        vars.into_iter().next()
+    }
 }
 
 fn rhs_mentions_content_length(rhs: &str) -> bool {
@@ -237,10 +245,22 @@ fn is_guarded_capacity(
             continue;
         }
 
+        // Check for assert! with comparison operators
         if assert_mentions_var(function, &var) {
             return true;
         }
 
+        // Check for comparison operations (Le, Lt, Ge, Gt) in MIR
+        if has_comparison_guard(function, &var) {
+            return true;
+        }
+
+        // Check if variable is used as argument to guarding functions
+        if used_in_guard_check(function, &var, options) {
+            return true;
+        }
+
+        // Walk backward through assignments
         for assignment in dataflow.assignments() {
             if assignment.target != var {
                 continue;
@@ -256,6 +276,56 @@ fn is_guarded_capacity(
         }
     }
 
+    false
+}
+
+/// Check if variable is used in a comparison operation (Le, Lt, Ge, Gt)
+/// followed by conditional branching (indicating an assertion or validation)
+fn has_comparison_guard(function: &MirFunction, var: &str) -> bool {
+    for (i, line) in function.body.iter().enumerate() {
+        // Look for comparison operations
+        if (line.contains("= Le(") || line.contains("= Lt(") || 
+            line.contains("= Ge(") || line.contains("= Gt(")) && 
+           line.contains(var) {
+            // Check if next line is a switchInt (conditional branch)
+            if i + 1 < function.body.len() {
+                let next_line = &function.body[i + 1];
+                if next_line.contains("switchInt") {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Check if variable is used as argument to a guard function like checked_sub
+/// where the result is checked before use
+fn used_in_guard_check(function: &MirFunction, var: &str, options: &PrototypeOptions) -> bool {
+    for (i, line) in function.body.iter().enumerate() {
+        // Check if line contains guard function and our variable as argument
+        let lowered = line.to_lowercase();
+        let has_guard = options.guard_markers.iter().any(|marker| lowered.contains(marker));
+        
+        if has_guard && line.contains(var) {
+            // Extract the result variable (target of assignment)
+            if let Some(eq_pos) = line.find('=') {
+                if let Some(result_var) = line[..eq_pos].trim().split_whitespace().last() {
+                    // Look ahead for discriminant check on result
+                    for j in (i + 1)..function.body.len().min(i + 10) {
+                        let future_line = &function.body[j];
+                        if future_line.contains("discriminant") && future_line.contains(result_var) {
+                            return true;
+                        }
+                        // Also check for direct switchInt on the result
+                        if future_line.contains("switchInt") && future_line.contains(result_var) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
     false
 }
 

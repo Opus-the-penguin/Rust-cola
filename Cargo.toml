@@ -19,5 +19,6 @@ members = [
     "examples/parse-pattern-test",
     "examples/interprocedural",
     "examples/field-sensitive",
+    "examples/untrusted-content-length",
 ]
 resolver = "2"

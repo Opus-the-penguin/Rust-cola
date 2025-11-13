@@ -1,0 +1,10 @@
+[package]
+name = "untrusted-content-length"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# HTTP client dependencies to demonstrate realistic scenarios
+reqwest = { version = "0.11", features = ["blocking"] }
+hyper = { version = "0.14", features = ["client", "http1"] }
+bytes = "1.5"

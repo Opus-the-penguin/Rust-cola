@@ -81,7 +81,7 @@ Feasibility legend:
 54. **Uncontrolled allocation size** – Taint to `Vec::with_capacity` etc. **Feasibility:** Advanced.
 55. **Unbounded read_to_end** – Detect reading arbitrary streams into memory. **Feasibility:** Advanced.
 56. **I/O buffers not fully processed** – Sonar RSPEC-7419 parity. **Feasibility:** Advanced.
-57. **Lines from stdin not trimmed** – Sonar RSPEC-7441, to avoid injection. **Feasibility:** Heuristic.
+57. **Lines from stdin not trimmed** *(shipped — RUSTCOLA053)* – Detects stdin().lines() without .trim(), which can enable injection attacks via trailing newlines/whitespace. Heuristic-based detection (checks for stdin + lines without trim in function body). Known limitation: 50% false positive rate on test suite due to simple pattern matching rather than dataflow analysis. Sonar RSPEC-7441 parity. **Feasibility:** Heuristic.
 58. **Infinite iterators without termination** – Sonar RSPEC-7464; potential DoS. **Feasibility:** Heuristic.
 
 ## Configuration & Platform Issues

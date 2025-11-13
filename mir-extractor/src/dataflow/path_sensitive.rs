@@ -143,7 +143,8 @@ impl PathSensitiveTaintAnalysis {
         let mut has_any_vulnerable_path = false;
         
         for path in paths {
-            let result = self.analyze_path(&path, function, &initial_taint);
+            // Use field-sensitive analysis by default
+            let result = self.analyze_path_field_sensitive(&path, function, &initial_taint);
             
             if result.has_vulnerable_sink {
                 has_any_vulnerable_path = true;
@@ -158,6 +159,50 @@ impl PathSensitiveTaintAnalysis {
             path_results,
             has_any_vulnerable_path,
             total_paths,
+        }
+    }
+    
+    /// Analyze a single execution path (field-sensitive version)
+    fn analyze_path_field_sensitive(
+        &mut self,
+        path: &[String],
+        _function: &MirFunction,
+        initial_taint: &HashMap<String, TaintState>,
+    ) -> PathAnalysisResult {
+        // Initialize field-sensitive taint state
+        let mut field_map = FieldTaintMap::new();
+        
+        // Convert initial taint to field map
+        for (var, taint_state) in initial_taint {
+            Self::set_field_taint_state(&mut field_map, var, taint_state);
+        }
+        
+        let mut sink_calls = Vec::new();
+        let mut source_calls = Vec::new();
+        let mut sanitizer_calls = Vec::new();
+        
+        // Process each block in the path
+        for block_id in path {
+            if let Some(block) = self.cfg.get_block(block_id) {
+                self.process_block_field_sensitive(
+                    block,
+                    &mut field_map,
+                    &mut sink_calls,
+                    &mut source_calls,
+                    &mut sanitizer_calls,
+                );
+            }
+        }
+        
+        // Determine if this path is vulnerable
+        let has_vulnerable_sink = !sink_calls.is_empty();
+        
+        PathAnalysisResult {
+            path: path.to_vec(),
+            has_vulnerable_sink,
+            sink_calls,
+            source_calls,
+            sanitizer_calls,
         }
     }
     
@@ -202,6 +247,38 @@ impl PathSensitiveTaintAnalysis {
             source_calls,
             sanitizer_calls,
         }
+    }
+    
+    /// Process a single basic block (field-sensitive version)
+    fn process_block_field_sensitive(
+        &self,
+        block: &BasicBlock,
+        field_map: &mut FieldTaintMap,
+        sink_calls: &mut Vec<SinkCall>,
+        source_calls: &mut Vec<SourceCall>,
+        sanitizer_calls: &mut Vec<SanitizerCall>,
+    ) {
+        // Process statements in the block
+        for statement in &block.statements {
+            self.process_statement_field_sensitive(
+                &block.id,
+                statement,
+                field_map,
+                sink_calls,
+                source_calls,
+                sanitizer_calls,
+            );
+        }
+        
+        // Process terminator (for function calls)
+        self.process_terminator_field_sensitive(
+            &block.id,
+            &block.terminator,
+            field_map,
+            sink_calls,
+            source_calls,
+            sanitizer_calls,
+        );
     }
     
     /// Process a single basic block
@@ -465,6 +542,27 @@ impl PathSensitiveTaintAnalysis {
                     });
                 }
             }
+        }
+    }
+    
+    /// Process a terminator (field-sensitive version)
+    fn process_terminator_field_sensitive(
+        &self,
+        _block_id: &str,
+        terminator: &Terminator,
+        _field_map: &mut FieldTaintMap,
+        _sink_calls: &mut Vec<SinkCall>,
+        _source_calls: &mut Vec<SourceCall>,
+        _sanitizer_calls: &mut Vec<SanitizerCall>,
+    ) {
+        // For Call terminators, we need to look at the preceding statement
+        // to determine what function is being called and with what arguments
+        // This is simplified for now - real implementation would parse call syntax
+        
+        if let Terminator::Call { .. } = terminator {
+            // Look for sink patterns in the block's statements
+            // (In real MIR, function calls appear before the Call terminator)
+            // For now, we'll use a simplified heuristic
         }
     }
     

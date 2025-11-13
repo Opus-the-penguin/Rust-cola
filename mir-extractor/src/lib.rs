@@ -6404,6 +6404,87 @@ impl Rule for PredictableRandomnessRule {
     }
 }
 
+// RUSTCOLA047: Environment variable literal detection
+struct EnvVarLiteralRule {
+    metadata: RuleMetadata,
+}
+
+impl EnvVarLiteralRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA047".to_string(),
+                name: "env-var-literal".to_string(),
+                short_description: "Environment variable name should be a constant".to_string(),
+                full_description: "Detects string literals passed to env::var() or env::var_os(). Using constants for environment variable names improves maintainability and prevents typos.".to_string(),
+                help_uri: None,
+                default_severity: Severity::Low,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn is_env_var_with_literal(line: &str) -> bool {
+        let lower = line.to_lowercase();
+        
+        // Skip comments and allocations
+        if lower.trim_start().starts_with("//") || lower.contains(" │ ") {
+            return false;
+        }
+        
+        // Look for env::var or env::var_os patterns with string literals
+        // MIR patterns show calls like:
+        // _1 = var::<&str>(const "HOME")
+        // _1 = var_os::<&str>(const "PATH")
+        // _2 = std::env::var::<&str>(const "USER")
+        
+        // Pattern 1: var::<type>(const "...") - direct call
+        if (lower.contains("var::<") || lower.contains("var_os::<")) 
+            && lower.contains("const \"") {
+            return true;
+        }
+        
+        // Pattern 2: std::env::var with const string
+        if (lower.contains("std::env::var") || lower.contains("core::env::var"))
+            && lower.contains("const \"") {
+            return true;
+        }
+        
+        false
+    }
+}
+
+impl Rule for EnvVarLiteralRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            for line in &function.body {
+                if Self::is_env_var_with_literal(line) {
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: "Environment variable name should be a constant. Consider defining `const VAR_NAME: &str = \"...\";` and using `env::var(VAR_NAME)` instead of a string literal.".to_string(),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence: vec![line.clone()],
+                        span: None,
+                    });
+                    break; // One finding per function is enough
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
     engine.register_rule(Box::new(TransmuteRule::new()));
@@ -6442,6 +6523,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(TimingAttackRule::new())); // RUSTCOLA044
     engine.register_rule(Box::new(WeakCipherRule::new())); // RUSTCOLA045
     engine.register_rule(Box::new(PredictableRandomnessRule::new())); // RUSTCOLA046
+    engine.register_rule(Box::new(EnvVarLiteralRule::new())); // RUSTCOLA047
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

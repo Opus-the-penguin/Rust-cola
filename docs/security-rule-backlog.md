@@ -89,7 +89,7 @@ Feasibility legend:
 59. **Unix permissions not octal** – Sonar RSPEC-7448. **Feasibility:** Heuristic.
 60. **OpenOptions inconsistent flags** – Sonar RSPEC-7447. **Feasibility:** Heuristic.
 61. **File operations on tainted paths** – Strengthen path traversal detection (#37). **Feasibility:** Advanced.
-62. **env::var literals in code** – Dylint `env_literal`; ensures configuration via constants. **Feasibility:** Heuristic.
+62. **env::var literals in code** *(shipped — RUSTCOLA047)* – Detects string literals passed to env::var() and env::var_os(), encouraging use of constants for maintainability and typo prevention (Dylint `env_literal` parity). **Feasibility:** Heuristic.
 63. **crate-wide allow attributes** – Dylint `crate_wide_allow`; highlight disabled lint coverage. **Feasibility:** Heuristic.
 
 ## Web & Framework Specific

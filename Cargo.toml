@@ -24,5 +24,6 @@ members = [
     "examples/tokio-broadcast-unsync",
     "examples/weak-ciphers",
     "examples/predictable-randomness",
+    "examples/env-var-literal",
 ]
 resolver = "2"

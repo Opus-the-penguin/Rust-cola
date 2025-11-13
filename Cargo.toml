@@ -25,5 +25,6 @@ members = [
     "examples/weak-ciphers",
     "examples/predictable-randomness",
     "examples/env-var-literal",
+    "examples/invisible-unicode",
 ]
 resolver = "2"

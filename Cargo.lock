@@ -924,6 +924,10 @@ name = "interprocedural"
 version = "0.1.0"
 
 [[package]]
+name = "invisible-unicode"
+version = "0.1.0"
+
+[[package]]
 name = "ipnet"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -50,7 +50,7 @@ Feasibility legend:
 32. **Cleartext transmission** – Identify writes of sensitive data to non-TLS channels. **Feasibility:** Advanced.
 33. **Log injection** – Taint newline-containing input to logging calls. **Feasibility:** MIR dataflow.
 34. **Hard-coded home directory paths** – Prevent absolute home paths (Dylint `abs_home_path`). **Feasibility:** Heuristic.
-35. **Invisible Unicode characters** – Borrow Sonar RSPEC-2479 to avoid spoofing. **Feasibility:** Heuristic.
+35. **Invisible Unicode characters** *(shipped — RUSTCOLA048)* – Detects invisible or control Unicode characters (zero-width, bidirectional overrides, private use areas) that could enable Trojan Source attacks (CVE-2021-42574, CVE-2021-42694) or identifier spoofing. Note: Rust's compiler provides first-line defense by rejecting most invisible Unicode in identifiers (Sonar RSPEC-2479 parity). **Feasibility:** Heuristic.
 
 ## Input Validation & Injection
 

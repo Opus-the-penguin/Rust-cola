@@ -6484,6 +6484,133 @@ impl Rule for EnvVarLiteralRule {
     }
 }
 
+// RUSTCOLA048: Invisible Unicode character detection
+struct InvisibleUnicodeRule {
+    metadata: RuleMetadata,
+}
+
+impl InvisibleUnicodeRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA048".to_string(),
+                name: "invisible-unicode".to_string(),
+                short_description: "Invisible Unicode characters detected".to_string(),
+                full_description: "Detects invisible or control Unicode characters in source code that could be used for spoofing, hidden backdoors, or trojan source attacks. These include zero-width characters, bidirectional overrides, and other non-printable Unicode characters.".to_string(),
+                help_uri: Some("https://trojansource.codes/".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn has_invisible_unicode(text: &str) -> bool {
+        text.chars().any(|c| Self::is_invisible_or_dangerous(c))
+    }
+
+    fn is_invisible_or_dangerous(c: char) -> bool {
+        match c {
+            // Zero-width characters
+            '\u{200B}' => true, // ZERO WIDTH SPACE
+            '\u{200C}' => true, // ZERO WIDTH NON-JOINER
+            '\u{200D}' => true, // ZERO WIDTH JOINER
+            '\u{FEFF}' => true, // ZERO WIDTH NO-BREAK SPACE (BOM)
+            '\u{2060}' => true, // WORD JOINER
+            '\u{2061}' => true, // FUNCTION APPLICATION
+            '\u{2062}' => true, // INVISIBLE TIMES
+            '\u{2063}' => true, // INVISIBLE SEPARATOR
+            '\u{2064}' => true, // INVISIBLE PLUS
+            
+            // Bidirectional text control characters (Trojan Source)
+            '\u{202A}' => true, // LEFT-TO-RIGHT EMBEDDING
+            '\u{202B}' => true, // RIGHT-TO-LEFT EMBEDDING
+            '\u{202C}' => true, // POP DIRECTIONAL FORMATTING
+            '\u{202D}' => true, // LEFT-TO-RIGHT OVERRIDE
+            '\u{202E}' => true, // RIGHT-TO-LEFT OVERRIDE
+            '\u{2066}' => true, // LEFT-TO-RIGHT ISOLATE
+            '\u{2067}' => true, // RIGHT-TO-LEFT ISOLATE
+            '\u{2068}' => true, // FIRST STRONG ISOLATE
+            '\u{2069}' => true, // POP DIRECTIONAL ISOLATE
+            
+            // Other invisible/control characters
+            '\u{00AD}' => true, // SOFT HYPHEN
+            '\u{180E}' => true, // MONGOLIAN VOWEL SEPARATOR
+            '\u{061C}' => true, // ARABIC LETTER MARK
+            
+            // Private use areas (could hide malicious intent)
+            '\u{E000}'..='\u{F8FF}' => true, // Private Use Area
+            '\u{F0000}'..='\u{FFFFD}' => true, // Supplementary Private Use Area-A
+            '\u{100000}'..='\u{10FFFD}' => true, // Supplementary Private Use Area-B
+            
+            _ => false,
+        }
+    }
+
+    fn describe_character(c: char) -> &'static str {
+        match c {
+            '\u{200B}' => "ZERO WIDTH SPACE",
+            '\u{200C}' => "ZERO WIDTH NON-JOINER",
+            '\u{200D}' => "ZERO WIDTH JOINER",
+            '\u{FEFF}' => "ZERO WIDTH NO-BREAK SPACE (BOM)",
+            '\u{2060}' => "WORD JOINER",
+            '\u{202A}' => "LEFT-TO-RIGHT EMBEDDING",
+            '\u{202B}' => "RIGHT-TO-LEFT EMBEDDING",
+            '\u{202C}' => "POP DIRECTIONAL FORMATTING",
+            '\u{202D}' => "LEFT-TO-RIGHT OVERRIDE",
+            '\u{202E}' => "RIGHT-TO-LEFT OVERRIDE (Trojan Source)",
+            '\u{2066}' => "LEFT-TO-RIGHT ISOLATE",
+            '\u{2067}' => "RIGHT-TO-LEFT ISOLATE",
+            '\u{2068}' => "FIRST STRONG ISOLATE",
+            '\u{2069}' => "POP DIRECTIONAL ISOLATE",
+            '\u{00AD}' => "SOFT HYPHEN",
+            '\u{E000}'..='\u{F8FF}' => "PRIVATE USE AREA CHARACTER",
+            _ => "INVISIBLE/CONTROL CHARACTER",
+        }
+    }
+}
+
+impl Rule for InvisibleUnicodeRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            for line in &function.body {
+                if Self::has_invisible_unicode(line) {
+                    // Find the specific characters for better reporting
+                    let dangerous_chars: Vec<char> = line.chars()
+                        .filter(|c| Self::is_invisible_or_dangerous(*c))
+                        .collect();
+                    
+                    let char_descriptions: Vec<String> = dangerous_chars.iter()
+                        .map(|c| format!("U+{:04X} ({})", *c as u32, Self::describe_character(*c)))
+                        .collect();
+                    
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: format!(
+                            "Invisible Unicode character(s) detected: {}. This could indicate a Trojan Source attack or unintentional spoofing.",
+                            char_descriptions.join(", ")
+                        ),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence: vec![line.clone()],
+                        span: None,
+                    });
+                    break; // One finding per function
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
@@ -6524,6 +6651,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(WeakCipherRule::new())); // RUSTCOLA045
     engine.register_rule(Box::new(PredictableRandomnessRule::new())); // RUSTCOLA046
     engine.register_rule(Box::new(EnvVarLiteralRule::new())); // RUSTCOLA047
+    engine.register_rule(Box::new(InvisibleUnicodeRule::new())); // RUSTCOLA048
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

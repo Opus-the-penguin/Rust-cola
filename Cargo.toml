@@ -33,5 +33,6 @@ members = [
     "examples/untrimmed-stdin",
     "examples/infinite-iterator",
     "examples/unix-permissions",
+    "examples/openoptions-flags",
 ]
 resolver = "2"

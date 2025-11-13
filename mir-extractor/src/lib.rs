@@ -7252,6 +7252,101 @@ impl Rule for UnixPermissionsNotOctalRule {
     }
 }
 
+// RUSTCOLA056: Detect OpenOptions with inconsistent or dangerous flag combinations
+struct OpenOptionsInconsistentFlagsRule {
+    metadata: RuleMetadata,
+}
+
+impl OpenOptionsInconsistentFlagsRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA056".to_string(),
+                name: "openoptions-inconsistent-flags".to_string(),
+                short_description: "OpenOptions with inconsistent flag combinations".to_string(),
+                full_description: "Detects OpenOptions with dangerous or inconsistent flag combinations: (1) write(true) without create/truncate/append may fail or leave stale data, (2) create(true) without write(true) is useless, (3) truncate(true) without write(true) is dangerous. These patterns suggest programmer confusion about file operations.".to_string(),
+                help_uri: None,
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn check_openoptions_flags(&self, function: &MirFunction) -> Option<String> {
+        let body_str = function.body.join("\n");
+        
+        // Check if this function uses OpenOptions
+        if !body_str.contains("OpenOptions") {
+            return None;
+        }
+        
+        let has_write = body_str.contains(".write(true)") || body_str.contains("OpenOptions::write") && body_str.contains("const true");
+        let has_read = body_str.contains(".read(true)") || body_str.contains("OpenOptions::read") && body_str.contains("const true");
+        let has_create = body_str.contains(".create(true)") || body_str.contains("OpenOptions::create") && body_str.contains("const true");
+        let has_create_new = body_str.contains(".create_new(true)") || body_str.contains("OpenOptions::create_new") && body_str.contains("const true");
+        let has_truncate = body_str.contains(".truncate(true)") || body_str.contains("OpenOptions::truncate") && body_str.contains("const true");
+        let has_append = body_str.contains(".append(true)") || body_str.contains("OpenOptions::append") && body_str.contains("const true");
+        
+        // Pattern 1: create(true) without write(true) - useless, file created but not writable
+        if (has_create || has_create_new) && !has_write && !has_append {
+            return Some("create(true) or create_new(true) without write(true) or append(true). The file will be created but not writable, making the create flag useless.".to_string());
+        }
+        
+        // Pattern 2: truncate(true) without write(true) - dangerous, truncates existing file but can't write
+        if has_truncate && !has_write && !has_append {
+            return Some("truncate(true) without write(true) or append(true). This would truncate the file but not allow writing, resulting in data loss.".to_string());
+        }
+        
+        // Pattern 3: append(true) with truncate(true) - contradictory
+        if has_append && has_truncate {
+            return Some("append(true) with truncate(true). These flags are contradictory: append preserves existing content while truncate deletes it.".to_string());
+        }
+        
+        None
+    }
+}
+
+impl Rule for OpenOptionsInconsistentFlagsRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            if let Some(issue_description) = self.check_openoptions_flags(function) {
+                let mut evidence = Vec::new();
+
+                // Collect evidence of OpenOptions usage
+                for line in &function.body {
+                    if line.contains("OpenOptions") || line.contains(".write") 
+                        || line.contains(".create") || line.contains(".truncate")
+                        || line.contains(".append") || line.contains(".read") {
+                        evidence.push(line.trim().to_string());
+                        if evidence.len() >= 5 {
+                            break;
+                        }
+                    }
+                }
+                
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!("OpenOptions has inconsistent flag combination: {}", issue_description),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence,
+                    span: None,
+                });
+            }
+        }
+
+        findings
+    }
+}
+
 
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
@@ -7300,6 +7395,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(UntrimmedStdinRule::new())); // RUSTCOLA053
     engine.register_rule(Box::new(InfiniteIteratorRule::new())); // RUSTCOLA054
     engine.register_rule(Box::new(UnixPermissionsNotOctalRule::new())); // RUSTCOLA055
+    engine.register_rule(Box::new(OpenOptionsInconsistentFlagsRule::new())); // RUSTCOLA056
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

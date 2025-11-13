@@ -30,5 +30,6 @@ members = [
     "examples/misordered-assert",
     "examples/try-io-result",
     "examples/local-refcell",
+    "examples/untrimmed-stdin",
 ]
 resolver = "2"

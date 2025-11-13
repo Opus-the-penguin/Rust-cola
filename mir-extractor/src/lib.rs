@@ -6969,6 +6969,98 @@ impl Rule for LocalRefCellRule {
 }
 
 
+// ============================================================================
+// RUSTCOLA053: Lines from stdin not trimmed
+// ============================================================================
+
+struct UntrimmedStdinRule {
+    metadata: RuleMetadata,
+}
+
+impl UntrimmedStdinRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA053".to_string(),
+                name: "untrimmed-stdin".to_string(),
+                short_description: "Lines read from stdin not trimmed".to_string(),
+                full_description: "Detects reading lines from stdin without trimming whitespace/newlines. Untrimmed input can enable injection attacks when passed to shell commands, file paths, or other contexts where trailing newlines or whitespace have semantic meaning.".to_string(),
+                help_uri: None,
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn looks_like_untrimmed_stdin(&self, function: &MirFunction) -> bool {
+        // Look for patterns like:
+        // 1. stdin().lock().lines() or BufReader::new(stdin()).lines()
+        // 2. read_line() on stdin
+        // Without subsequent .trim() or .trim_end() calls
+        
+        let mut has_stdin_read = false;
+        let mut has_trim = false;
+        
+        for line in &function.body {
+            let lower = line.to_lowercase();
+            
+            // Check for stdin reads
+            if (lower.contains("stdin") && (lower.contains("lines()") || lower.contains("read_line"))) 
+                || lower.contains("bufreader") && lower.contains("stdin") {
+                has_stdin_read = true;
+            }
+            
+            // Check for trim operations
+            if lower.contains(".trim()") || lower.contains(".trim_end()") || lower.contains(".trim_start()") {
+                has_trim = true;
+            }
+        }
+        
+        // Flag if we read from stdin but never trim
+        has_stdin_read && !has_trim
+    }
+}
+
+impl Rule for UntrimmedStdinRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            if self.looks_like_untrimmed_stdin(function) {
+                let mut evidence = vec![];
+                for line in &function.body {
+                    if line.to_lowercase().contains("stdin") 
+                        || line.to_lowercase().contains("lines") 
+                        || line.to_lowercase().contains("read_line") {
+                        evidence.push(line.clone());
+                        if evidence.len() >= 3 {
+                            break;
+                        }
+                    }
+                }
+                
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: "Lines read from stdin are not trimmed. Untrimmed input can contain trailing newlines or whitespace that enable injection attacks when passed to commands, file paths, or other sensitive contexts. Use .trim() or .trim_end() to remove trailing whitespace.".to_string(),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence,
+                    span: None,
+                });
+            }
+        }
+
+        findings
+    }
+}
+
+
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
     engine.register_rule(Box::new(TransmuteRule::new()));
@@ -7013,6 +7105,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(MisorderedAssertEqRule::new())); // RUSTCOLA050
     engine.register_rule(Box::new(TryIoResultRule::new())); // RUSTCOLA051
     engine.register_rule(Box::new(LocalRefCellRule::new())); // RUSTCOLA052
+    engine.register_rule(Box::new(UntrimmedStdinRule::new())); // RUSTCOLA053
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

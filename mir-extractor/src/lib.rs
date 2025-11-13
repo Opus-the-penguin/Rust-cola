@@ -7149,6 +7149,109 @@ impl Rule for InfiniteIteratorRule {
     }
 }
 
+// RUSTCOLA055: Detect Unix permissions passed as decimal instead of octal
+struct UnixPermissionsNotOctalRule {
+    metadata: RuleMetadata,
+}
+
+impl UnixPermissionsNotOctalRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA055".to_string(),
+                name: "unix-permissions-not-octal".to_string(),
+                short_description: "Unix file permissions not in octal notation".to_string(),
+                full_description: "Detects Unix file permissions passed as decimal literals instead of octal notation. Decimal literals like 644 or 755 are confusing because they look like octal but are interpreted as decimal (755 decimal = 0o1363 octal). Use explicit octal notation with 0o prefix (e.g., 0o644, 0o755).".to_string(),
+                help_uri: None,
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn looks_like_decimal_permission(&self, function: &MirFunction) -> bool {
+        let body_str = format!("{:?}", function.body);
+        
+        // Look for permission-related function calls
+        let has_permission_api = body_str.contains("from_mode")
+            || body_str.contains("set_mode")
+            || body_str.contains("chmod")
+            || body_str.contains("DirBuilder")
+            || body_str.contains("create_dir");
+        
+        if !has_permission_api {
+            return false;
+        }
+        
+        // Common decimal permission patterns that look like octal
+        // 644 (rw-r--r--), 755 (rwxr-xr-x), 777 (rwxrwxrwx), etc.
+        // These are problematic because they look like octal but are decimal
+        let suspicious_decimals = [
+            "644_u32", "755_u32", "777_u32", "666_u32",
+            "600_u32", "700_u32", "750_u32", "640_u32",
+            "= 644", "= 755", "= 777", "= 666",
+            "= 600", "= 700", "= 750", "= 640",
+        ];
+        
+        for pattern in &suspicious_decimals {
+            if body_str.contains(pattern) {
+                // Make sure it's not already in octal (0o prefix)
+                let context_check = format!("0o{}", pattern);
+                if !body_str.contains(&context_check) {
+                    return true;
+                }
+            }
+        }
+        
+        false
+    }
+}
+
+impl Rule for UnixPermissionsNotOctalRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            if self.looks_like_decimal_permission(function) {
+                let body_str = format!("{:?}", function.body);
+                let mut evidence = Vec::new();
+
+                // Collect evidence of permission usage
+                for line in body_str.lines().take(200) {
+                    if (line.contains("from_mode") || line.contains("set_mode") 
+                        || line.contains("chmod") || line.contains("DirBuilder"))
+                        && (line.contains("644") || line.contains("755") 
+                            || line.contains("777") || line.contains("666")
+                            || line.contains("600") || line.contains("700")
+                            || line.contains("750") || line.contains("640")) {
+                        evidence.push(line.trim().to_string());
+                        if evidence.len() >= 3 {
+                            break;
+                        }
+                    }
+                }
+                
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: "Unix file permissions appear to use decimal notation instead of octal. Decimal values like 644 or 755 are confusing because they look like octal permissions but are interpreted as decimal (755 decimal = 0o1363 octal, not the intended rwxr-xr-x). Use explicit octal notation with 0o prefix (e.g., 0o644 for rw-r--r--, 0o755 for rwxr-xr-x).".to_string(),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence,
+                    span: None,
+                });
+            }
+        }
+
+        findings
+    }
+}
+
 
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
@@ -7196,6 +7299,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(LocalRefCellRule::new())); // RUSTCOLA052
     engine.register_rule(Box::new(UntrimmedStdinRule::new())); // RUSTCOLA053
     engine.register_rule(Box::new(InfiniteIteratorRule::new())); // RUSTCOLA054
+    engine.register_rule(Box::new(UnixPermissionsNotOctalRule::new())); // RUSTCOLA055
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

@@ -32,5 +32,6 @@ members = [
     "examples/local-refcell",
     "examples/untrimmed-stdin",
     "examples/infinite-iterator",
+    "examples/unix-permissions",
 ]
 resolver = "2"

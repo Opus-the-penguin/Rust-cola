@@ -104,7 +104,7 @@ Feasibility legend:
 68. **Dead stores in arrays** – Dylint `basic_dead_store`; prevent stale security-critical state. **Feasibility:** Heuristic.
 69. **Non-local effect before panic in tests** – Variation of Dylint `non_local_effect_before_error_return`. **Feasibility:** Advanced.
 70. **Misordered assert_eq arguments** *(RUSTCOLA050 shipped)* – Dylint `assert_eq_arg_misordering`; detects assert_eq!(literal, variable) which creates backwards error messages. Convention is assert_eq!(actual, expected). **Signal:** Promoted constants in first position of assert_failed calls. **Feasibility:** Heuristic.
-71. **Try operator on io::Result** – Dylint `try_io_result`; enforce explicit error handling. **Feasibility:** Heuristic.
+71. **Try operator on io::Result** *(RUSTCOLA051 shipped)* – Dylint `try_io_result`; detects use of ? operator on std::io::Result without error context. **Signal:** Functions returning Result<T, io::Error> with discriminant checks (? desugaring). Recommends .map_err() or custom error types. **Feasibility:** Heuristic.
 72. **Overscoped allow attributes** – Dylint `overscoped_allow`; keep lints active. **Feasibility:** Heuristic.
 73. **Local RefCell usage** – Dylint `local_ref_cell`; prefer safer concurrency primitives. **Feasibility:** Heuristic.
 74. **Unnecessary borrow_mut** – Dylint `unnecessary_borrow_mut`; reduce RefCell churn. **Feasibility:** Heuristic.

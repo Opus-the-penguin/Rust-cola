@@ -3,9 +3,10 @@
 //! This module analyzes taint flow separately for each execution path through a function's CFG.
 //! This enables detecting vulnerabilities where only some branches lack sanitization.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use super::cfg::{ControlFlowGraph, BasicBlock, Terminator};
 use super::closure::ClosureInfo;
+use super::field::{FieldTaintMap, FieldTaint, FieldPath};
 use crate::MirFunction;
 
 /// Taint state for a variable
@@ -233,6 +234,127 @@ impl PathSensitiveTaintAnalysis {
             source_calls,
             sanitizer_calls,
         );
+    }
+    
+    /// Process a statement (assignment, etc.) with field-sensitive analysis
+    fn process_statement_field_sensitive(
+        &self,
+        block_id: &str,
+        statement: &str,
+        field_map: &mut FieldTaintMap,
+        sink_calls: &mut Vec<SinkCall>,
+        source_calls: &mut Vec<SourceCall>,
+        sanitizer_calls: &mut Vec<SanitizerCall>,
+    ) {
+        use super::field::parser;
+        
+        // Check for sink calls (e.g., "_11 = execute_command(copy _12) -> [...]")
+        if statement.contains("execute_command")
+            || statement.contains("Command::new")
+            || statement.contains("Command::spawn")
+            || statement.contains("Command::arg")
+            || statement.contains("exec")
+        {
+            // This is a sink call - extract the argument
+            if let Some(paren_start) = statement.find('(') {
+                if let Some(paren_end) = statement.find(')') {
+                    let args_str = &statement[paren_start + 1..paren_end];
+                    
+                    // Extract all arguments (can be multiple, comma-separated)
+                    let mut tainted_args = Vec::new();
+                    for arg in args_str.split(',') {
+                        let arg_trimmed = arg.trim();
+                        // Check if the argument is tainted (field-sensitive)
+                        if Self::is_field_tainted(field_map, arg_trimmed) {
+                            if let Some(arg_var) = parser::extract_base_var(arg_trimmed) {
+                                tainted_args.push(arg_var);
+                            }
+                        }
+                    }
+                    
+                    // If any argument is tainted, this is a vulnerable sink
+                    if !tainted_args.is_empty() {
+                        let sink_name = if statement.contains("Command::spawn") {
+                            "Command::spawn"
+                        } else if statement.contains("Command::arg") {
+                            "Command::arg"
+                        } else if statement.contains("Command::new") {
+                            "Command::new"
+                        } else {
+                            "execute_command"
+                        };
+                        
+                        sink_calls.push(SinkCall {
+                            block_id: block_id.to_string(),
+                            statement: statement.to_string(),
+                            sink_function: sink_name.to_string(),
+                            tainted_args,
+                        });
+                    }
+                }
+            }
+        }
+        
+        // Parse assignments: _1 = move _2; or (_1.0: Type) = move _2;
+        if let Some((lhs, rhs)) = Self::parse_assignment(statement) {
+            // Check if LHS is a field access
+            let is_field_write = parser::contains_field_access(&lhs);
+            
+            // Check for environment field access (closure captured variables)
+            // Pattern: _7 = deref_copy ((*_1).0: &std::string::String)
+            if let Some(env_field) = Self::extract_env_field_access(&rhs) {
+                // This is accessing a captured variable in a closure
+                let taint_state = Self::get_field_taint_state(field_map, &env_field);
+                Self::set_field_taint_state(field_map, &lhs, &taint_state);
+            }
+            // Propagate taint from RHS to LHS (field-sensitive)
+            else if parser::contains_field_access(&rhs) || Self::extract_variable(&rhs).is_some() {
+                // Get taint from RHS (could be field or variable)
+                let rhs_taint = Self::get_field_taint_state(field_map, &rhs);
+                
+                // Set taint on LHS
+                if is_field_write {
+                    // Writing to a specific field - only that field becomes tainted
+                    Self::set_field_taint_state(field_map, &lhs, &rhs_taint);
+                } else {
+                    // Writing to entire variable - propagate to all fields
+                    Self::set_field_taint_state(field_map, &lhs, &rhs_taint);
+                }
+            }
+            
+            // Check for source patterns
+            if Self::is_source_call(&rhs) {
+                let taint = TaintState::Tainted {
+                    source_type: "environment".to_string(),
+                    source_location: rhs.clone(),
+                };
+                Self::set_field_taint_state(field_map, &lhs, &taint);
+                
+                source_calls.push(SourceCall {
+                    block_id: block_id.to_string(),
+                    statement: statement.to_string(),
+                    source_function: rhs.clone(),
+                    result_var: lhs.clone(),
+                });
+            }
+            
+            // Check for sanitizer patterns
+            if Self::is_sanitizer_call(&rhs) {
+                if let Some(input_var) = Self::extract_variable(&rhs) {
+                    let taint = TaintState::Sanitized {
+                        sanitizer: rhs.clone(),
+                    };
+                    Self::set_field_taint_state(field_map, &lhs, &taint);
+                    
+                    sanitizer_calls.push(SanitizerCall {
+                        block_id: block_id.to_string(),
+                        statement: statement.to_string(),
+                        sanitizer_function: rhs.clone(),
+                        sanitized_var: input_var,
+                    });
+                }
+            }
+        }
     }
     
     /// Process a statement (assignment, etc.)
@@ -464,6 +586,98 @@ impl PathSensitiveTaintAnalysis {
             || expr.contains("parse::<")
             || expr.contains("to_string()")
     }
+    
+    /// Convert TaintState to FieldTaint
+    fn taint_state_to_field_taint(taint: &TaintState) -> FieldTaint {
+        match taint {
+            TaintState::Clean => FieldTaint::Clean,
+            TaintState::Tainted { source_type, source_location } => FieldTaint::Tainted {
+                source_type: source_type.clone(),
+                source_location: source_location.clone(),
+            },
+            TaintState::Sanitized { sanitizer } => FieldTaint::Sanitized {
+                sanitizer: sanitizer.clone(),
+            },
+        }
+    }
+    
+    /// Convert FieldTaint to TaintState
+    fn field_taint_to_taint_state(taint: &FieldTaint) -> TaintState {
+        match taint {
+            FieldTaint::Clean => TaintState::Clean,
+            FieldTaint::Tainted { source_type, source_location } => TaintState::Tainted {
+                source_type: source_type.clone(),
+                source_location: source_location.clone(),
+            },
+            FieldTaint::Sanitized { sanitizer } => TaintState::Sanitized {
+                sanitizer: sanitizer.clone(),
+            },
+            FieldTaint::Unknown => TaintState::Clean, // Conservative: treat unknown as clean
+        }
+    }
+    
+    /// Check if a variable or field is tainted in the field-sensitive map
+    fn is_field_tainted(field_map: &FieldTaintMap, var_or_field: &str) -> bool {
+        use super::field::parser;
+        
+        // Try to parse as field access first
+        if parser::contains_field_access(var_or_field) {
+            if let Some(field_path) = parser::parse_field_access(var_or_field) {
+                return matches!(field_map.get_field_taint(&field_path), FieldTaint::Tainted { .. });
+            }
+        }
+        
+        // Fall back to whole variable check
+        if let Some(base_var) = parser::extract_base_var(var_or_field) {
+            let whole_var_path = FieldPath::whole_var(base_var);
+            return matches!(field_map.get_field_taint(&whole_var_path), FieldTaint::Tainted { .. })
+                || field_map.has_tainted_field(&whole_var_path.base_var);
+        }
+        
+        false
+    }
+    
+    /// Get taint state for a variable or field from the field-sensitive map
+    fn get_field_taint_state(field_map: &FieldTaintMap, var_or_field: &str) -> TaintState {
+        use super::field::parser;
+        
+        // Try to parse as field access first
+        if parser::contains_field_access(var_or_field) {
+            if let Some(field_path) = parser::parse_field_access(var_or_field) {
+                let field_taint = field_map.get_field_taint(&field_path);
+                return Self::field_taint_to_taint_state(&field_taint);
+            }
+        }
+        
+        // Fall back to whole variable check
+        if let Some(base_var) = parser::extract_base_var(var_or_field) {
+            let whole_var_path = FieldPath::whole_var(base_var);
+            let field_taint = field_map.get_field_taint(&whole_var_path);
+            return Self::field_taint_to_taint_state(&field_taint);
+        }
+        
+        TaintState::Clean
+    }
+    
+    /// Set taint for a variable or field in the field-sensitive map
+    fn set_field_taint_state(field_map: &mut FieldTaintMap, var_or_field: &str, taint: &TaintState) {
+        use super::field::parser;
+        
+        let field_taint = Self::taint_state_to_field_taint(taint);
+        
+        // Try to parse as field access first
+        if parser::contains_field_access(var_or_field) {
+            if let Some(field_path) = parser::parse_field_access(var_or_field) {
+                field_map.set_field_taint(field_path, field_taint);
+                return;
+            }
+        }
+        
+        // Fall back to whole variable
+        if let Some(base_var) = parser::extract_base_var(var_or_field) {
+            field_map.set_var_taint(&base_var, field_taint);
+        }
+    }
 }
 
 /// Result of path-sensitive analysis
@@ -573,5 +787,30 @@ mod tests {
             PathSensitiveTaintAnalysis::extract_env_field_access("deref_copy _2"),
             None
         );
+    }
+    
+    #[test]
+    fn test_field_sensitive_helpers() {
+        use super::super::field::FieldTaintMap;
+        
+        let mut field_map = FieldTaintMap::new();
+        
+        // Test setting and getting field taint
+        let taint = TaintState::Tainted {
+            source_type: "test".to_string(),
+            source_location: "test_source".to_string(),
+        };
+        
+        PathSensitiveTaintAnalysis::set_field_taint_state(&mut field_map, "(_1.0: String)", &taint);
+        
+        // Check that the field is tainted
+        assert!(PathSensitiveTaintAnalysis::is_field_tainted(&field_map, "(_1.0: String)"));
+        
+        // Check that a different field is not tainted
+        assert!(!PathSensitiveTaintAnalysis::is_field_tainted(&field_map, "(_1.1: i32)"));
+        
+        // Test whole variable taint
+        PathSensitiveTaintAnalysis::set_field_taint_state(&mut field_map, "_2", &taint);
+        assert!(PathSensitiveTaintAnalysis::is_field_tainted(&field_map, "_2"));
     }
 }

@@ -4,6 +4,14 @@
 
 name: "CodeQL Config for Rust-cola"
 
+# Disable specific queries that produce false positives in our detection code
+disable-default-queries: false
+queries:
+  - exclude:
+      id: 
+        - rust/weak-cryptographic-algorithm
+        - rust/insufficient-random-values
+
 # Paths to include in analysis (production code only)
 # All other paths, especially examples/* with test vulnerabilities, are excluded by default
 paths:

@@ -6704,6 +6704,90 @@ impl Rule for CrateWideAllowRule {
     }
 }
 
+// RUSTCOLA050: Misordered assert_eq arguments detection
+struct MisorderedAssertEqRule {
+    metadata: RuleMetadata,
+}
+
+impl MisorderedAssertEqRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA050".to_string(),
+                name: "misordered-assert-eq".to_string(),
+                short_description: "assert_eq arguments may be misordered".to_string(),
+                full_description: "Detects assert_eq! calls where a literal or constant appears as the first argument instead of the second. Convention is assert_eq!(actual, expected) so error messages show 'expected X but got Y' correctly.".to_string(),
+                help_uri: None,
+                default_severity: Severity::Low,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn looks_like_misordered_assert(&self, function: &MirFunction) -> bool {
+        // Look for the promoted constant pattern used by assert_eq!
+        // Misordered: _3 = const <function>::promoted[N]; (literal first)
+        // Correct: _4 = const <function>::promoted[N]; (literal second)
+        
+        let mut has_misordered_promoted = false;
+        let mut has_assert_failed = false;
+        
+        for line in &function.body {
+            let trimmed = line.trim();
+            
+            // Check for promoted constant in FIRST position (_3)
+            // This indicates a literal is being loaded as the first argument
+            if trimmed.starts_with("_3 = const") && trimmed.contains("::promoted[") {
+                has_misordered_promoted = true;
+            }
+            
+            // Check for assert_failed call (indicates this is an assertion)
+            if trimmed.contains("assert_failed") {
+                has_assert_failed = true;
+            }
+        }
+        
+        // Misordered if we have a promoted constant in position _3 (first arg)
+        // and an assert_failed call
+        has_misordered_promoted && has_assert_failed
+    }
+}
+
+impl Rule for MisorderedAssertEqRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            if self.looks_like_misordered_assert(function) {
+                // Find the promoted const line as evidence
+                let mut evidence = vec![];
+                for line in &function.body {
+                    if line.contains("::promoted[") || line.contains("assert_failed") {
+                        evidence.push(line.clone());
+                    }
+                }
+                
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: "assert_eq! may have misordered arguments. Convention is assert_eq!(actual, expected) where 'expected' is typically a literal. This ensures error messages show 'expected X but got Y' correctly.".to_string(),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence,
+                    span: None,
+                });
+            }
+        }
+
+        findings
+    }
+}
+
 
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
@@ -6746,6 +6830,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(EnvVarLiteralRule::new())); // RUSTCOLA047
     engine.register_rule(Box::new(InvisibleUnicodeRule::new())); // RUSTCOLA048
     engine.register_rule(Box::new(CrateWideAllowRule::new())); // RUSTCOLA049
+    engine.register_rule(Box::new(MisorderedAssertEqRule::new())); // RUSTCOLA050
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

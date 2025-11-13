@@ -27,5 +27,6 @@ members = [
     "examples/env-var-literal",
     "examples/invisible-unicode",
     "examples/crate-wide-allow",
+    "examples/misordered-assert",
 ]
 resolver = "2"

@@ -37,5 +37,6 @@ members = [
     "examples/unnecessary-borrow-mut",
     "examples/absolute-path-join",
     "examples/ctor-dtor-std",
+    "examples/connection-string-password",
 ]
 resolver = "2"

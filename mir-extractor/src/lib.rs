@@ -7651,6 +7651,137 @@ impl Rule for CtorDtorStdApiRule {
 }
 
 
+// ============================================================================
+// RUSTCOLA060: Connection strings with empty or hardcoded passwords
+// ============================================================================
+
+struct ConnectionStringPasswordRule {
+    metadata: RuleMetadata,
+}
+
+impl ConnectionStringPasswordRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA060".to_string(),
+                name: "connection-string-password".to_string(),
+                short_description: "Connection string with empty or hardcoded password".to_string(),
+                full_description: "Detects database or message broker connection strings with empty passwords or hardcoded credentials. Credentials should be loaded from environment variables or secret management systems, not embedded in code. Mirrors Checkmarx Empty_Password_In_Connection_String and Hardcoded_Password_in_Connection_String rules.".to_string(),
+                help_uri: None,
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn looks_like_connection_string_with_password_issue(&self, function: &MirFunction) -> bool {
+        // Look for string literals that look like connection strings
+        // Common patterns: postgres://, postgresql://, mysql://, redis://, amqp://, mongodb://
+        for line in &function.body {
+            if self.has_connection_string_issue(line) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn has_connection_string_issue(&self, line: &str) -> bool {
+        let line_lower = line.to_lowercase();
+        
+        // Check for connection string protocols
+        let protocols = ["postgres://", "postgresql://", "mysql://", "redis://", "amqp://", "mongodb://"];
+        let has_protocol = protocols.iter().any(|p| line_lower.contains(p));
+        
+        if !has_protocol {
+            return false;
+        }
+
+        // Exclude cases where the protocol is in an array literal (format! macro)
+        // format! creates arrays like ["mysql://", ":", "@", "/mydb"]
+        if line.contains("[const") && line.contains(",") {
+            return false;
+        }
+
+        // Check for empty password pattern: user:@host or user@host (no password)
+        // Pattern: protocol://user:@host or protocol://user@host
+        if line_lower.contains(":@") {
+            return true;
+        }
+
+        // Check for hardcoded password patterns
+        // Look for :password@ or :123@ or :secret@ etc
+        // We'll use a simple heuristic: if there's a : followed by non-empty text before @
+        // and it's not localhost or a port number
+        if line_lower.contains("://") && line_lower.contains("@") {
+            // Extract the part between :// and @
+            if let Some(creds_start) = line_lower.find("://") {
+                if let Some(at_pos) = line_lower[creds_start+3..].find('@') {
+                    let creds = &line_lower[creds_start+3..creds_start+3+at_pos];
+                    
+                    // Check if there's a colon (indicating user:pass format)
+                    if let Some(colon_pos) = creds.find(':') {
+                        let password = &creds[colon_pos+1..];
+                        
+                        // Flag if password is present and not empty (hardcoded password)
+                        if !password.is_empty() && password != "@" {
+                            // Exclude cases where it might be a port (all digits)
+                            if !password.chars().all(|c| c.is_ascii_digit()) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        false
+    }
+}
+
+impl Rule for ConnectionStringPasswordRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            if self.looks_like_connection_string_with_password_issue(function) {
+                // Collect evidence lines containing connection strings
+                let mut evidence = vec![];
+                for line in &function.body {
+                    let line_lower = line.to_lowercase();
+                    if line_lower.contains("postgres://") || line_lower.contains("postgresql://") ||
+                       line_lower.contains("mysql://") || line_lower.contains("redis://") ||
+                       line_lower.contains("amqp://") || line_lower.contains("mongodb://") {
+                        evidence.push(line.clone());
+                        if evidence.len() >= 3 {
+                            break;
+                        }
+                    }
+                }
+                
+                if !evidence.is_empty() {
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: "Connection string contains empty or hardcoded password. Store credentials in environment variables or secret management systems instead of embedding them in code.".to_string(),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence,
+                        span: None,
+                    });
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
     engine.register_rule(Box::new(TransmuteRule::new()));
@@ -7702,6 +7833,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(UnnecessaryBorrowMutRule::new())); // RUSTCOLA057
     engine.register_rule(Box::new(AbsolutePathInJoinRule::new())); // RUSTCOLA058
     engine.register_rule(Box::new(CtorDtorStdApiRule::new())); // RUSTCOLA059
+    engine.register_rule(Box::new(ConnectionStringPasswordRule::new())); // RUSTCOLA060
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

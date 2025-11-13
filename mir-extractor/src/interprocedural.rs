@@ -23,6 +23,7 @@ use anyhow::Result;
 
 use crate::{MirPackage, MirFunction};
 use crate::dataflow::cfg::ControlFlowGraph;
+use crate::dataflow::closure::{ClosureRegistry, ClosureRegistryBuilder};
 
 /// Call graph representing function call relationships
 #[derive(Debug, Clone)]
@@ -336,16 +337,31 @@ impl FunctionSummary {
     pub fn from_mir_function(
         function: &MirFunction,
         callee_summaries: &HashMap<String, FunctionSummary>,
+        closure_registry: Option<&ClosureRegistry>,
     ) -> Result<Self> {
         let mut summary = FunctionSummary::new(function.name.clone());
         
         // Phase 3.5.1: Use CFG-based path-sensitive analysis for branching functions
+        // Phase 3.5.2: Use closure context if available
         let cfg = ControlFlowGraph::from_mir_function(function);
-        if cfg.has_branching() {
+        if cfg.has_branching() || closure_registry.is_some() {
             use crate::dataflow::path_sensitive::PathSensitiveTaintAnalysis;
             
             let mut path_analysis = PathSensitiveTaintAnalysis::new(cfg);
-            let result = path_analysis.analyze(function);
+            
+            // Check if this is a closure function
+            let result = if let Some(registry) = closure_registry {
+                if let Some(closure_info) = registry.get_closure(&function.name) {
+                    // This is a closure - analyze with captured variable context
+                    path_analysis.analyze_closure(function, closure_info)
+                } else {
+                    // Not a closure - use regular analysis
+                    path_analysis.analyze(function)
+                }
+            } else {
+                // No closure registry - use regular analysis
+                path_analysis.analyze(function)
+            };
             
             // If ANY path has a vulnerable flow (source -> sink without sanitization),
             // mark the function as having a param-to-sink propagation
@@ -616,16 +632,21 @@ pub struct InterProceduralAnalysis {
     
     /// Computed function summaries
     pub summaries: HashMap<String, FunctionSummary>,
+    
+    /// Closure registry for tracking closures and captures
+    pub closure_registry: ClosureRegistry,
 }
 
 impl InterProceduralAnalysis {
     /// Create a new inter-procedural analysis
     pub fn new(package: &MirPackage) -> Result<Self> {
         let call_graph = CallGraph::from_mir_package(package)?;
+        let closure_registry = ClosureRegistryBuilder::build_from_package(package);
         
         Ok(InterProceduralAnalysis {
             call_graph,
             summaries: HashMap::new(),
+            closure_registry,
         })
     }
     
@@ -641,10 +662,11 @@ impl InterProceduralAnalysis {
         // Analyze functions in bottom-up order (callees before callers)
         for function_name in self.call_graph.analysis_order.clone() {
             if let Some(function) = function_map.get(&function_name) {
-                // Generate summary using summaries of callees
+                // Generate summary using summaries of callees and closure registry
                 let summary = FunctionSummary::from_mir_function(
                     function,
                     &self.summaries,
+                    Some(&self.closure_registry),
                 )?;
                 
                 // Store summary

@@ -82,7 +82,7 @@ Feasibility legend:
 55. **Unbounded read_to_end** – Detect reading arbitrary streams into memory. **Feasibility:** Advanced.
 56. **I/O buffers not fully processed** – Sonar RSPEC-7419 parity. **Feasibility:** Advanced.
 57. **Lines from stdin not trimmed** *(shipped — RUSTCOLA053)* – Detects stdin().lines() without .trim(), which can enable injection attacks via trailing newlines/whitespace. Heuristic-based detection (checks for stdin + lines without trim in function body). Known limitation: 50% false positive rate on test suite due to simple pattern matching rather than dataflow analysis. Sonar RSPEC-7441 parity. **Feasibility:** Heuristic.
-58. **Infinite iterators without termination** – Sonar RSPEC-7464; potential DoS. **Feasibility:** Heuristic.
+58. **Infinite iterators without termination** *(shipped — RUSTCOLA054)* – Detects infinite iterators (std::iter::repeat, cycle, repeat_with) without termination methods (take, take_while, any, find, position), which can cause DoS through unbounded loops. Heuristic pattern matching in MIR. Test results: 75% recall (3/4 problematic detected), 14% FP rate (1/7 safe functions flagged). Known limitation: cannot detect manual break statements in loops. Sonar RSPEC-7464 parity. **Feasibility:** Heuristic.
 
 ## Configuration & Platform Issues
 

@@ -36,5 +36,6 @@ members = [
     "examples/openoptions-flags",
     "examples/unnecessary-borrow-mut",
     "examples/absolute-path-join",
+    "examples/ctor-dtor-std",
 ]
 resolver = "2"

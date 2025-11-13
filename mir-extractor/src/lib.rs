@@ -6789,6 +6789,97 @@ impl Rule for MisorderedAssertEqRule {
 }
 
 
+// ============================================================================
+// RUSTCOLA051: Try operator on io::Result
+// ============================================================================
+
+struct TryIoResultRule {
+    metadata: RuleMetadata,
+}
+
+impl TryIoResultRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA051".to_string(),
+                name: "try-io-result".to_string(),
+                short_description: "Try operator (?) used on io::Result".to_string(),
+                full_description: "Detects use of the ? operator on std::io::Result, which can obscure IO errors. Prefer explicit error handling with .map_err() to add context or use a custom error type that wraps IO errors with additional information.".to_string(),
+                help_uri: None,
+                default_severity: Severity::Low,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn looks_like_io_result_try(&self, function: &MirFunction) -> bool {
+        // Look for MIR patterns indicating ? operator on io::Result
+        // The ? operator on Result<T, E> desugars to a match that propagates the error
+        // In MIR, this appears as:
+        // 1. Function returns Result<T, io::Error>
+        // 2. Discriminant checks on Result values (the ? desugaring)
+        
+        let mut has_io_error_type = false;
+        let mut has_discriminant_check = false;
+        
+        // Check signature for io::Result return type
+        if function.signature.contains("std::io::Error") || function.signature.contains("io::Error") {
+            has_io_error_type = true;
+        }
+        
+        // Look for discriminant checks in body (indicates ? operator)
+        for line in &function.body {
+            if line.contains("discriminant(") {
+                has_discriminant_check = true;
+                break;
+            }
+        }
+        
+        has_io_error_type && has_discriminant_check
+    }
+}
+
+impl Rule for TryIoResultRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            if self.looks_like_io_result_try(function) {
+                // Find evidence lines
+                let mut evidence = vec![];
+                for line in &function.body {
+                    if line.to_lowercase().contains("io::error") 
+                        || line.to_lowercase().contains("discriminant") 
+                        || line.to_lowercase().contains("from_error") {
+                        evidence.push(line.clone());
+                        if evidence.len() >= 3 {
+                            break;
+                        }
+                    }
+                }
+                
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: "Using ? operator on io::Result may lose error context. Consider using .map_err() to add file paths, operation details, or other context to IO errors.".to_string(),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence,
+                    span: None,
+                });
+            }
+        }
+
+        findings
+    }
+}
+
+
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
     engine.register_rule(Box::new(TransmuteRule::new()));
@@ -6831,6 +6922,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(InvisibleUnicodeRule::new())); // RUSTCOLA048
     engine.register_rule(Box::new(CrateWideAllowRule::new())); // RUSTCOLA049
     engine.register_rule(Box::new(MisorderedAssertEqRule::new())); // RUSTCOLA050
+    engine.register_rule(Box::new(TryIoResultRule::new())); // RUSTCOLA051
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

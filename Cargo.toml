@@ -28,5 +28,6 @@ members = [
     "examples/invisible-unicode",
     "examples/crate-wide-allow",
     "examples/misordered-assert",
+    "examples/try-io-result",
 ]
 resolver = "2"

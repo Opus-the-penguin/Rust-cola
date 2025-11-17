@@ -1,0 +1,14 @@
+[package]
+name = "weak-hashing-extended"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+# Intentionally using weak cryptographic hash functions for testing RUSTCOLA062
+ripemd = "0.1"
+crc = "3.0"
+crc32fast = "1.3"
+adler = "1.0"

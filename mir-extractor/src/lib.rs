@@ -292,6 +292,52 @@ fn line_contains_sha1_usage(line: &str) -> bool {
     lower.contains("sha1::") || lower.contains("::sha1")
 }
 
+fn line_contains_weak_hash_extended(line: &str) -> bool {
+    let lower = line.to_lowercase();
+    
+    // Skip const string assignments and hex dumps entirely
+    if lower.starts_with("    _") && lower.contains("= [const \"") {
+        return false;
+    }
+    if lower.starts_with("0x") || (lower.contains("0x") && lower.contains("│")) {
+        return false;
+    }
+    
+    // RIPEMD family (all variants are deprecated)
+    if lower.contains("ripemd") {
+        if lower.contains("ripemd::") 
+            || lower.contains("::ripemd") 
+            || lower.contains("ripemd128") 
+            || lower.contains("ripemd160")
+            || lower.contains("ripemd256")
+            || lower.contains("ripemd320") {
+            return true;
+        }
+    }
+    
+    // CRC family (non-cryptographic checksums)
+    if lower.contains("crc") {
+        // Be specific to avoid false positives on words containing "crc"
+        if lower.contains("crc::") 
+            || lower.contains("::crc") 
+            || lower.contains("crc32")
+            || lower.contains("crc_32")
+            || lower.contains("crc16")
+            || lower.contains("crc_16")
+            || lower.contains("crc64")
+            || lower.contains("crc_64") {
+            return true;
+        }
+    }
+    
+    // Adler32 (non-cryptographic checksum)
+    if lower.contains("adler") && (lower.contains("adler::") || lower.contains("::adler") || lower.contains("adler32")) {
+        return true;
+    }
+    
+    false
+}
+
 fn command_rule_should_skip(function: &MirFunction, package: &MirPackage) -> bool {
     if package.crate_name == "mir-extractor" {
         matches!(
@@ -1019,6 +1065,76 @@ impl Rule for InsecureSha1Rule {
                 rule_name: self.metadata.name.clone(),
                 severity: self.metadata.default_severity,
                 message: format!("Insecure SHA-1 hashing detected in `{}`", function.name),
+                function: function.name.clone(),
+                function_signature: function.signature.clone(),
+                evidence,
+                span: function.span.clone(),
+            });
+        }
+
+        findings
+    }
+}
+
+struct WeakHashingExtendedRule {
+    metadata: RuleMetadata,
+}
+
+impl WeakHashingExtendedRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA062".to_string(),
+                name: "weak-hashing-extended".to_string(),
+                short_description: "Usage of weak cryptographic hash algorithms".to_string(),
+                full_description: "Detects usage of weak or deprecated cryptographic hash algorithms beyond MD5/SHA-1, including RIPEMD (all variants), CRC32, CRC32Fast, and Adler32. These algorithms should not be used for security-sensitive operations like password hashing, authentication tokens, or cryptographic signatures. Use SHA-256, SHA-3, BLAKE2, or BLAKE3 instead.".to_string(),
+                help_uri: None,
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for WeakHashingExtendedRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        // Self-exclusion: don't flag our own rule implementation
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Self-exclusion: don't flag the detection function itself
+            if function.name.contains("WeakHashingExtendedRule") 
+                || function.name.contains("line_contains_weak_hash_extended") {
+                continue;
+            }
+
+            let evidence: Vec<String> = function
+                .body
+                .iter()
+                .filter(|line| line_contains_weak_hash_extended(line))
+                .map(|line| line.trim().to_string())
+                .collect();
+            
+            if evidence.is_empty() {
+                continue;
+            }
+
+            findings.push(Finding {
+                rule_id: self.metadata.id.clone(),
+                rule_name: self.metadata.name.clone(),
+                severity: self.metadata.default_severity,
+                message: format!(
+                    "Weak cryptographic hash algorithm detected in `{}`",
+                    function.name
+                ),
                 function: function.name.clone(),
                 function_signature: function.signature.clone(),
                 evidence,
@@ -7923,6 +8039,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(UnsafeUsageRule::new()));
     engine.register_rule(Box::new(InsecureMd5Rule::new()));
     engine.register_rule(Box::new(InsecureSha1Rule::new()));
+    engine.register_rule(Box::new(WeakHashingExtendedRule::new()));
     engine.register_rule(Box::new(UntrustedEnvInputRule::new()));
     engine.register_rule(Box::new(CommandInjectionRiskRule::new()));
     engine.register_rule(Box::new(VecSetLenRule::new()));

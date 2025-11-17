@@ -39,5 +39,6 @@ members = [
     "examples/ctor-dtor-std",
     "examples/connection-string-password",
     "examples/password-field-masking",
+    "examples/weak-hashing-extended",
 ]
 resolver = "2"

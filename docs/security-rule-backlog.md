@@ -27,7 +27,7 @@ Feasibility legend:
 13. **slice::from_raw_parts length inflation** – Validate slice length when constructed from raw pointers. **Feasibility:** Advanced.
 14. **ptr::copy overlap** – Ensure non-overlapping regions for `copy_nonoverlapping`. **Feasibility:** Advanced.
 15. **Unsafe FFI pointer returns** – Require invariants when `extern "C"` returns raw pointers. **Feasibility:** Heuristic.
-16. **Null pointer transmutes** – Flag `transmute` of null pointers or to function pointers. **Feasibility:** Heuristic.
+16. **Null pointer transmutes** *(shipped — RUSTCOLA063)* – Detects transmutation of null pointers or zero values to references and function pointers, which causes undefined behavior. Provides Sonar RSPEC-7427 parity (https://rules.sonarsource.com/rust/RSPEC-7427/). **Detection patterns:** (1) transmute(const 0) or transmute(0_usize), (2) transmute(std::ptr::null()) or transmute(std::ptr::null_mut()), (3) any transmute involving 'null' keyword. Filters out internal compiler (Transmute) cast operations to reduce false positives. **Test suite:** 14 functions (7 problematic covering null→ref/mut ref/fn pointer, 7 safe covering legitimate transmutes and proper null handling). **Signal:** Heuristic – pattern matching in MIR for transmute calls with null/zero arguments. **Feasibility:** Heuristic.
 17. **Raw pointer to slice of different element size** – Detect mismatched slice casts. **Feasibility:** MIR dataflow.
 18. **Pointer arithmetic on zero-sized types** – Sonar RSPEC-7412 parity. **Feasibility:** Heuristic.
 

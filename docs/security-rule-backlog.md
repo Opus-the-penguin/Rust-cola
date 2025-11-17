@@ -42,7 +42,7 @@ Feasibility legend:
 25. **OpenSSL VerifyNone** *(shipped)* – Detect `set_verify(VerifyNone)`. **Feasibility:** Heuristic.
 26. **Non-HTTPS URLs** – Spot HTTP URLs in network clients. **Feasibility:** Heuristic.
 27. **TLS verification disabled in custom clients** – Extend detection beyond reqwest (e.g., hyper). **Feasibility:** MIR dataflow.
-28. **Weak hashing beyond MD5/SHA-1** – Include RIPEMD, CRC for sensitive data. **Feasibility:** Heuristic.
+28. **Weak hashing beyond MD5/SHA-1** *(shipped — RUSTCOLA062)* – Detects usage of weak or deprecated cryptographic hash algorithms beyond MD5/SHA-1, including RIPEMD family (RIPEMD-128, RIPEMD-160, RIPEMD-256, RIPEMD-320), CRC family (CRC16, CRC32, CRC32Fast, CRC64), and Adler32 checksums. These algorithms should not be used for security-sensitive operations like password hashing, authentication tokens, or cryptographic signatures. **Test suite:** 15 functions (8 problematic, 7 safe) covering RIPEMD/CRC/Adler usages and secure alternatives. **Signal:** Heuristic – pattern matching in MIR for type names and function calls. **Metrics:** 100% recall (8/8 detected), 89% precision (1/7 FP on error message string containing hash names). **Feasibility:** Heuristic.
 29. **Cleartext env var exposure** – Identify `env::set_var` with sensitive values. **Feasibility:** Heuristic.
 
 ## Data Exposure & Logging

@@ -38,5 +38,6 @@ members = [
     "examples/absolute-path-join",
     "examples/ctor-dtor-std",
     "examples/connection-string-password",
+    "examples/password-field-masking",
 ]
 resolver = "2"

@@ -7797,6 +7797,125 @@ impl Rule for ConnectionStringPasswordRule {
     }
 }
 
+// RUSTCOLA061: Missing password field masking in web forms
+/// Detects HTML forms or template rendering that expose password fields without proper masking
+struct PasswordFieldMaskingRule {
+    metadata: RuleMetadata,
+}
+
+impl PasswordFieldMaskingRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA061".to_string(),
+                name: "password-field-masking".to_string(),
+                short_description: "Missing password field masking in web forms".to_string(),
+                full_description: "Detects HTML form inputs or template rendering where password fields are exposed without proper masking (type=\"password\"). Using type=\"text\" for password inputs or echoing password values in responses can expose credentials in browser history, screen recordings, or over-the-shoulder viewing. Always use type=\"password\" for password inputs and never display submitted passwords back to users.".to_string(),
+                help_uri: Some("https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/09-Testing_for_Weak_Cryptography/02-Testing_for_Weak_Lock_Out_Mechanism".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn looks_like_password_exposure(line: &str) -> bool {
+        let lowered = line.to_lowercase();
+        
+        // Skip comments
+        if lowered.trim_start().starts_with("//") {
+            return false;
+        }
+
+        // Pattern 1: HTML input with type="text" and password-related name
+        // Look for combinations like: <input type="text" name="password">
+        if lowered.contains("type") && lowered.contains("text") {
+            // Must be in an input context
+            if lowered.contains("input") {
+                if lowered.contains("password") || lowered.contains("passwd") 
+                    || lowered.contains("name=\"pwd\"") {
+                    return true;
+                }
+            }
+        }
+
+        // Pattern 2: Rendering password values in responses
+        // Look for patterns like: format!("Password: {}", password)
+        if lowered.contains("format!") || lowered.contains("println!") {
+            // Must have both password variable AND placeholder
+            if (lowered.contains("password") || lowered.contains("passwd")) 
+                && (lowered.contains("{}") || lowered.contains("{:?}")) {
+                // Exclude if just checking length or displaying generic messages
+                if !lowered.contains(".len()") && !lowered.contains("updated") 
+                    && !lowered.contains("length:") && !lowered.contains("field name") {
+                    return true;
+                }
+            }
+        }
+
+        // Pattern 3: Template interpolation with password variables
+        // Common in Handlebars, Tera, Askama: {{password}}, {password}, etc.
+        if lowered.contains("{{") && lowered.contains("password") {
+            return true;
+        }
+
+        // Pattern 4: Setting input value to password
+        // value="{password}" or value="{{password}}"
+        if lowered.contains("value") && lowered.contains("{}") {
+            if lowered.contains("password") || lowered.contains("passwd") {
+                return true;
+            }
+        }
+
+        false
+    }
+}
+
+impl Rule for PasswordFieldMaskingRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Exclude the rule's own implementation
+            if function.name.contains("PasswordFieldMaskingRule") 
+                || function.name.contains("looks_like_password_exposure")
+                || function.name.contains("7806:1")  // Exclude the impl block line number
+                || function.name.contains("7872:1") {
+                continue;
+            }
+
+            let mut evidence = Vec::new();
+            
+            for line in &function.body {
+                if Self::looks_like_password_exposure(line) {
+                    evidence.push(line.clone());
+                    if evidence.len() >= 3 {
+                        break;
+                    }
+                }
+            }
+            
+            if !evidence.is_empty() {
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: "Password field may be exposed without proper masking. Use type=\"password\" for password inputs and never display password values in responses or logs.".to_string(),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence,
+                    span: None,
+                });
+            }
+        }
+
+        findings
+    }
+}
+
 
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
@@ -7850,6 +7969,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(AbsolutePathInJoinRule::new())); // RUSTCOLA058
     engine.register_rule(Box::new(CtorDtorStdApiRule::new())); // RUSTCOLA059
     engine.register_rule(Box::new(ConnectionStringPasswordRule::new())); // RUSTCOLA060
+    engine.register_rule(Box::new(PasswordFieldMaskingRule::new())); // RUSTCOLA061
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

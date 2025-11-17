@@ -6177,6 +6177,7 @@ impl WeakCipherRule {
         
         // Weak cipher patterns in common Rust crypto crates
         // These patterns are designed to match actual cipher usage in MIR, not arbitrary strings
+        // lgtm[rust/weak-cryptographic-algorithm]
         let weak_patterns = [
             // DES variants - looking for module paths and types
             "::des::",
@@ -6246,6 +6247,12 @@ impl Rule for WeakCipherRule {
 
         // Check MIR bodies for weak cipher usage
         for function in &package.functions {
+            // Exclude the rule's own implementation to avoid self-detection
+            if function.name.contains("WeakCipherRule") 
+                || function.name.contains("contains_weak_cipher") {
+                continue;
+            }
+
             for line in &function.body {
                 if Self::contains_weak_cipher(line) {
                     findings.push(Finding {
@@ -6307,6 +6314,7 @@ impl PredictableRandomnessRule {
         // Common patterns in Rust RNG crates
         
         // Pattern 1: seed_from_u64(constant) - most common pattern
+        // lgtm[rust/insufficient-random-values]
         if lowered.contains("seed_from_u64") {
             // Check if followed by a constant literal
             // MIR shows: seed_from_u64(const 12345_u64) or similar
@@ -6324,6 +6332,7 @@ impl PredictableRandomnessRule {
         }
 
         // Pattern 3: StdRng::seed_from_u64, ChaChaRng::seed_from_u64, etc.
+        // lgtm[rust/insufficient-random-values]
         let seedable_rngs = [
             "stdrng::seed_from_u64",
             "chacharng::seed_from_u64",
@@ -6372,6 +6381,13 @@ impl Rule for PredictableRandomnessRule {
         let mut findings = Vec::new();
 
         for function in &package.functions {
+            // Exclude the rule's own implementation to avoid self-detection
+            if function.name.contains("PredictableRandomnessRule") 
+                || function.name.contains("is_predictable_seed")
+                || function.name.contains("looks_like_crypto_context") {
+                continue;
+            }
+
             for line in &function.body {
                 if Self::is_predictable_seed(line) {
                     let in_crypto_context = Self::looks_like_crypto_context(&function.name);

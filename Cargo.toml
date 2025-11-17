@@ -41,5 +41,6 @@ members = [
     "examples/password-field-masking",
     "examples/weak-hashing-extended",
     "examples/null-pointer-transmute",
+    "examples/zst-pointer-arithmetic",
 ]
 resolver = "2"

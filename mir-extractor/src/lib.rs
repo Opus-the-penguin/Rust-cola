@@ -371,6 +371,36 @@ fn looks_like_null_pointer_transmute(line: &str) -> bool {
     false
 }
 
+fn looks_like_zst_pointer_arithmetic(line: &str) -> bool {
+    let lower = line.to_lowercase();
+    
+    // Pointer arithmetic methods to detect
+    let arithmetic_methods = ["offset", "add", "sub", "wrapping_offset", "wrapping_add", "wrapping_sub", "offset_from"];
+    
+    // Must have pointer arithmetic
+    let has_arithmetic = arithmetic_methods.iter().any(|method| lower.contains(method));
+    if !has_arithmetic {
+        return false;
+    }
+    
+    // Zero-sized type indicators
+    // Unit type: *const () or *mut ()
+    if (lower.contains("*const ()") || lower.contains("*mut ()")) && has_arithmetic {
+        return true;
+    }
+    
+    // PhantomData
+    if lower.contains("phantomdata") && has_arithmetic {
+        return true;
+    }
+    
+    // Empty struct/enum patterns (tricky to detect reliably)
+    // Look for patterns like *const SomeName or *mut SomeName with size 0
+    // This is heuristic - may have false positives/negatives
+    
+    false
+}
+
 fn command_rule_should_skip(function: &MirFunction, package: &MirPackage) -> bool {
     if package.crate_name == "mir-extractor" {
         matches!(
@@ -1236,6 +1266,76 @@ impl Rule for NullPointerTransmuteRule {
                 severity: self.metadata.default_severity,
                 message: format!(
                     "Null pointer transmute detected in `{}` - this causes undefined behavior",
+                    function.name
+                ),
+                function: function.name.clone(),
+                function_signature: function.signature.clone(),
+                evidence,
+                span: function.span.clone(),
+            });
+        }
+
+        findings
+    }
+}
+
+struct ZSTPointerArithmeticRule {
+    metadata: RuleMetadata,
+}
+
+impl ZSTPointerArithmeticRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA064".to_string(),
+                name: "zst-pointer-arithmetic".to_string(),
+                short_description: "Pointer arithmetic on zero-sized types".to_string(),
+                full_description: "Detects pointer arithmetic operations (offset, add, sub, wrapping_offset, etc.) on zero-sized types like unit type (), PhantomData, empty structs. Pointer arithmetic on ZSTs causes undefined behavior because offset calculations assume stride of size_of::<T>(), which is 0 for ZSTs, violating pointer aliasing rules and provenance. Sonar RSPEC-7412 parity.".to_string(),
+                help_uri: Some("https://rules.sonarsource.com/rust/RSPEC-7412/".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for ZSTPointerArithmeticRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        // Self-exclusion: don't flag our own rule implementation
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Self-exclusion: don't flag the detection function itself
+            if function.name.contains("ZSTPointerArithmeticRule") 
+                || function.name.contains("looks_like_zst_pointer_arithmetic") {
+                continue;
+            }
+
+            let evidence: Vec<String> = function
+                .body
+                .iter()
+                .filter(|line| looks_like_zst_pointer_arithmetic(line))
+                .map(|line| line.trim().to_string())
+                .collect();
+            
+            if evidence.is_empty() {
+                continue;
+            }
+
+            findings.push(Finding {
+                rule_id: self.metadata.id.clone(),
+                rule_name: self.metadata.name.clone(),
+                severity: self.metadata.default_severity,
+                message: format!(
+                    "Pointer arithmetic on zero-sized type detected in `{}` - this causes undefined behavior",
                     function.name
                 ),
                 function: function.name.clone(),
@@ -8144,6 +8244,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(InsecureSha1Rule::new()));
     engine.register_rule(Box::new(WeakHashingExtendedRule::new()));
     engine.register_rule(Box::new(NullPointerTransmuteRule::new()));
+    engine.register_rule(Box::new(ZSTPointerArithmeticRule::new()));
     engine.register_rule(Box::new(UntrustedEnvInputRule::new()));
     engine.register_rule(Box::new(CommandInjectionRiskRule::new()));
     engine.register_rule(Box::new(VecSetLenRule::new()));

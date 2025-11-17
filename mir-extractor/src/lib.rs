@@ -338,6 +338,39 @@ fn line_contains_weak_hash_extended(line: &str) -> bool {
     false
 }
 
+fn looks_like_null_pointer_transmute(line: &str) -> bool {
+    let lower = line.to_lowercase();
+    
+    // Must contain transmute
+    if !lower.contains("transmute") {
+        return false;
+    }
+    
+    // Skip internal compiler transmute casts (shown as "(Transmute)")
+    // These are type conversions like Unique<T> → NonNull<T>, not user-written transmute calls
+    if lower.contains("(transmute)") {
+        return false;
+    }
+    
+    // Pattern 1: transmute(0) or transmute(0usize) - transmuting zero
+    if lower.contains("transmute(const 0") || lower.contains("transmute(0_") {
+        return true;
+    }
+    
+    // Pattern 2: transmute(std::ptr::null()) or transmute(std::ptr::null_mut())
+    if (lower.contains("std::ptr::null") || lower.contains("::ptr::null")) 
+        && lower.contains("transmute") {
+        return true;
+    }
+    
+    // Pattern 3: Look for transmute in context with "null" keyword
+    if lower.contains("null") && lower.contains("transmute") {
+        return true;
+    }
+    
+    false
+}
+
 fn command_rule_should_skip(function: &MirFunction, package: &MirPackage) -> bool {
     if package.crate_name == "mir-extractor" {
         matches!(
@@ -1133,6 +1166,76 @@ impl Rule for WeakHashingExtendedRule {
                 severity: self.metadata.default_severity,
                 message: format!(
                     "Weak cryptographic hash algorithm detected in `{}`",
+                    function.name
+                ),
+                function: function.name.clone(),
+                function_signature: function.signature.clone(),
+                evidence,
+                span: function.span.clone(),
+            });
+        }
+
+        findings
+    }
+}
+
+struct NullPointerTransmuteRule {
+    metadata: RuleMetadata,
+}
+
+impl NullPointerTransmuteRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA063".to_string(),
+                name: "null-pointer-transmute".to_string(),
+                short_description: "Null pointer transmuted to reference or function pointer".to_string(),
+                full_description: "Detects transmute operations involving null pointers, which cause undefined behavior. This includes transmuting zero/null to references, function pointers, or other non-nullable types. Use proper Option types or explicit null checks instead. Sonar RSPEC-7427 parity.".to_string(),
+                help_uri: Some("https://rules.sonarsource.com/rust/RSPEC-7427/".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for NullPointerTransmuteRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        // Self-exclusion: don't flag our own rule implementation
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Self-exclusion: don't flag the detection function itself
+            if function.name.contains("NullPointerTransmuteRule") 
+                || function.name.contains("looks_like_null_pointer_transmute") {
+                continue;
+            }
+
+            let evidence: Vec<String> = function
+                .body
+                .iter()
+                .filter(|line| looks_like_null_pointer_transmute(line))
+                .map(|line| line.trim().to_string())
+                .collect();
+            
+            if evidence.is_empty() {
+                continue;
+            }
+
+            findings.push(Finding {
+                rule_id: self.metadata.id.clone(),
+                rule_name: self.metadata.name.clone(),
+                severity: self.metadata.default_severity,
+                message: format!(
+                    "Null pointer transmute detected in `{}` - this causes undefined behavior",
                     function.name
                 ),
                 function: function.name.clone(),
@@ -8040,6 +8143,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(InsecureMd5Rule::new()));
     engine.register_rule(Box::new(InsecureSha1Rule::new()));
     engine.register_rule(Box::new(WeakHashingExtendedRule::new()));
+    engine.register_rule(Box::new(NullPointerTransmuteRule::new()));
     engine.register_rule(Box::new(UntrustedEnvInputRule::new()));
     engine.register_rule(Box::new(CommandInjectionRiskRule::new()));
     engine.register_rule(Box::new(VecSetLenRule::new()));

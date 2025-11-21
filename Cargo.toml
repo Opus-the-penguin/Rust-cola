@@ -42,5 +42,6 @@ members = [
     "examples/weak-hashing-extended",
     "examples/null-pointer-transmute",
     "examples/zst-pointer-arithmetic",
+    "examples/cleartext-env-var",
 ]
 resolver = "2"

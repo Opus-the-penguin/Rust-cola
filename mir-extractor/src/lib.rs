@@ -401,6 +401,45 @@ fn looks_like_zst_pointer_arithmetic(line: &str) -> bool {
     false
 }
 
+fn looks_like_cleartext_env_var(line: &str) -> bool {
+    let lower = line.to_lowercase();
+    
+    // Must contain set_var function call (various forms in MIR)
+    if !lower.contains("set_var") {
+        return false;
+    }
+    
+    // Must look like an environment variable setting
+    // In MIR this appears as: std::env::set_var::<&str, &str>
+    if !lower.contains("std::env") && !lower.contains("::env::") {
+        return false;
+    }
+    
+    // Sensitive environment variable name patterns
+    let sensitive_names = [
+        "password",
+        "passwd", 
+        "pwd",
+        "secret",
+        "token",
+        "api_key",
+        "apikey",
+        "auth",
+        "private_key",
+        "privatekey",
+        "jwt",
+        "access_token",
+        "refresh_token",
+        "bearer",
+        "credential",
+        "db_password",
+        "database_password",
+    ];
+    
+    // Check if any sensitive name appears in the line or nearby const string
+    sensitive_names.iter().any(|name| lower.contains(name))
+}
+
 fn command_rule_should_skip(function: &MirFunction, package: &MirPackage) -> bool {
     if package.crate_name == "mir-extractor" {
         matches!(
@@ -1336,6 +1375,103 @@ impl Rule for ZSTPointerArithmeticRule {
                 severity: self.metadata.default_severity,
                 message: format!(
                     "Pointer arithmetic on zero-sized type detected in `{}` - this causes undefined behavior",
+                    function.name
+                ),
+                function: function.name.clone(),
+                function_signature: function.signature.clone(),
+                evidence,
+                span: function.span.clone(),
+            });
+        }
+
+        findings
+    }
+}
+
+struct CleartextEnvVarRule {
+    metadata: RuleMetadata,
+}
+
+impl CleartextEnvVarRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA065".to_string(),
+                name: "cleartext-env-var".to_string(),
+                short_description: "Cleartext environment variable exposure".to_string(),
+                full_description: "Detects env::set_var() calls with sensitive variable names like PASSWORD, SECRET, TOKEN, API_KEY, etc. Setting environment variables with sensitive values in cleartext can expose secrets to other processes, child processes, and system logs. Environment variables are visible via /proc on Linux and process inspection tools. Sensitive data should use secure credential storage (e.g., keyrings, secret management services) instead of environment variables.".to_string(),
+                help_uri: None,
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for CleartextEnvVarRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        // Self-exclusion: don't flag our own rule implementation
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Self-exclusion: don't flag the detection function itself
+            if function.name.contains("CleartextEnvVarRule") 
+                || function.name.contains("looks_like_cleartext_env_var") {
+                continue;
+            }
+
+            // Check if function body contains set_var call
+            let body_str = function.body.join("\n").to_lowercase();
+            
+            if !body_str.contains("set_var") {
+                continue;
+            }
+            
+            // Check for sensitive variable names in the function body
+            let sensitive_names = [
+                "password", "passwd", "pwd", "secret", "token", 
+                "api_key", "apikey", "auth", "private_key", "privatekey",
+                "jwt", "access_token", "refresh_token", "bearer", 
+                "credential", "db_password", "database_password",
+            ];
+            
+            let has_sensitive_name = sensitive_names.iter().any(|name| body_str.contains(name));
+            
+            if !has_sensitive_name {
+                continue;
+            }
+
+            // Collect evidence lines
+            let evidence: Vec<String> = function
+                .body
+                .iter()
+                .filter(|line| {
+                    let lower = line.to_lowercase();
+                    (lower.contains("set_var") && (lower.contains("std::env") || lower.contains("::env::")))
+                        || sensitive_names.iter().any(|name| lower.contains(name))
+                })
+                .take(5) // Limit evidence to avoid overwhelming output
+                .map(|line| line.trim().to_string())
+                .collect();
+            
+            if evidence.is_empty() {
+                continue;
+            }
+
+            findings.push(Finding {
+                rule_id: self.metadata.id.clone(),
+                rule_name: self.metadata.name.clone(),
+                severity: self.metadata.default_severity,
+                message: format!(
+                    "Sensitive environment variable set in cleartext in `{}` - use secure credential storage instead",
                     function.name
                 ),
                 function: function.name.clone(),
@@ -8245,6 +8381,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(WeakHashingExtendedRule::new()));
     engine.register_rule(Box::new(NullPointerTransmuteRule::new()));
     engine.register_rule(Box::new(ZSTPointerArithmeticRule::new()));
+    engine.register_rule(Box::new(CleartextEnvVarRule::new()));
     engine.register_rule(Box::new(UntrustedEnvInputRule::new()));
     engine.register_rule(Box::new(CommandInjectionRiskRule::new()));
     engine.register_rule(Box::new(VecSetLenRule::new()));

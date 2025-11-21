@@ -1485,6 +1485,127 @@ impl Rule for CleartextEnvVarRule {
     }
 }
 
+struct ModuloBiasRandomRule {
+    metadata: RuleMetadata,
+}
+
+impl ModuloBiasRandomRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA066".to_string(),
+                name: "modulo-bias-random".to_string(),
+                short_description: "Modulo bias on random outputs".to_string(),
+                full_description: "Detects modulo operations (%) applied to random number generator outputs in cryptographic contexts. Modulo creates non-uniform distributions because the range of possible values doesn't divide evenly into the modulus. For example, rand() % 3 on a 0-255 RNG will favor values 0 and 1 over 2 (since 256 % 3 = 1). This bias can be exploited in cryptographic operations like key generation, nonce creation, signature schemes (ECDSA k-value attacks), and token generation. Use gen_range(), fill_bytes(), or rejection sampling instead for uniform distributions.".to_string(),
+                help_uri: None,
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for ModuloBiasRandomRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        // Self-exclusion
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Self-exclusion
+            if function.name.contains("ModuloBiasRandomRule") {
+                continue;
+            }
+
+            let body_str = function.body.join("\n").to_lowercase();
+            
+            // Check for cryptographic context based on function name
+            let crypto_keywords = [
+                "crypto", "crypt", "key", "token", "auth", "sign", "encrypt", "decrypt",
+                "hash", "hmac", "nonce", "salt", "secret", "password", "credential",
+                "session", "verify", "signature",
+            ];
+            
+            let is_crypto_context = crypto_keywords.iter().any(|kw| {
+                function.name.to_lowercase().contains(kw)
+            });
+            
+            if !is_crypto_context {
+                continue;
+            }
+            
+            // Check for random number generation
+            let rand_patterns = [
+                "::gen::<",  // rng.gen::<T>()
+                "::gen(",    // rng.gen()
+                "random::",  // random::random()
+                "threadrng", // thread_rng()
+                "rng",       // general rng variable
+            ];
+            
+            let has_random = rand_patterns.iter().any(|pattern| body_str.contains(pattern));
+            
+            if !has_random {
+                continue;
+            }
+            
+            // Check for modulo operation
+            // In MIR, modulo appears as "Rem" operation
+            let modulo_patterns = [
+                "rem(",      // Rem operation
+                "% ",        // Modulo symbol  
+                "_rem",      // _rem helper
+            ];
+            
+            let has_modulo = modulo_patterns.iter().any(|pattern| body_str.contains(pattern));
+            
+            if !has_modulo {
+                continue;
+            }
+
+            // Collect evidence lines showing random + modulo
+            let evidence: Vec<String> = function
+                .body
+                .iter()
+                .filter(|line| {
+                    let lower = line.to_lowercase();
+                    rand_patterns.iter().any(|p| lower.contains(p))
+                        || modulo_patterns.iter().any(|p| lower.contains(p))
+                })
+                .take(10)
+                .map(|line| line.trim().to_string())
+                .collect();
+            
+            if evidence.is_empty() {
+                continue;
+            }
+
+            findings.push(Finding {
+                rule_id: self.metadata.id.clone(),
+                rule_name: self.metadata.name.clone(),
+                severity: self.metadata.default_severity,
+                message: format!(
+                    "Modulo bias on random output in cryptographic function `{}` - use gen_range() or rejection sampling for uniform distribution",
+                    function.name
+                ),
+                function: function.name.clone(),
+                function_signature: function.signature.clone(),
+                evidence,
+                span: function.span.clone(),
+            });
+        }
+
+        findings
+    }
+}
+
 struct UntrustedEnvInputRule {
     metadata: RuleMetadata,
 }
@@ -8382,6 +8503,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(NullPointerTransmuteRule::new()));
     engine.register_rule(Box::new(ZSTPointerArithmeticRule::new()));
     engine.register_rule(Box::new(CleartextEnvVarRule::new()));
+    engine.register_rule(Box::new(ModuloBiasRandomRule::new()));
     engine.register_rule(Box::new(UntrustedEnvInputRule::new()));
     engine.register_rule(Box::new(CommandInjectionRiskRule::new()));
     engine.register_rule(Box::new(VecSetLenRule::new()));

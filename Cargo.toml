@@ -43,5 +43,6 @@ members = [
     "examples/null-pointer-transmute",
     "examples/zst-pointer-arithmetic",
     "examples/cleartext-env-var",
+    "examples/modulo-bias-random",
 ]
 resolver = "2"

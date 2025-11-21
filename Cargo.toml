@@ -44,5 +44,6 @@ members = [
     "examples/zst-pointer-arithmetic",
     "examples/cleartext-env-var",
     "examples/modulo-bias-random",
+    "examples/spawned-child-no-wait",
 ]
 resolver = "2"

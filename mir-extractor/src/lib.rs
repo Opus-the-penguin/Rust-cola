@@ -1606,6 +1606,110 @@ impl Rule for ModuloBiasRandomRule {
     }
 }
 
+struct SpawnedChildNoWaitRule {
+    metadata: RuleMetadata,
+}
+
+impl SpawnedChildNoWaitRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA067".to_string(),
+                name: "spawned-child-no-wait".to_string(),
+                short_description: "Spawned child process not waited on".to_string(),
+                full_description: "Detects child processes spawned via Command::spawn() that are not waited on via wait(), status(), or wait_with_output(). Failing to wait on spawned children creates zombie processes that consume system resources (PIDs, kernel memory for process table entries) until the parent process exits. This is particularly problematic in long-running services that spawn many child processes. Implements Clippy's zombie_processes lint. Note: This is a heuristic check within a single function - children passed to other functions or stored in structs may be waited on elsewhere.".to_string(),
+                help_uri: None,
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for SpawnedChildNoWaitRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        // Self-exclusion
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Self-exclusion
+            if function.name.contains("SpawnedChildNoWaitRule") {
+                continue;
+            }
+
+            let body_str = function.body.join("\n").to_lowercase();
+            
+            // Check for Command::spawn()
+            let spawn_patterns = [
+                "::spawn(",
+                "command::spawn",
+            ];
+            
+            let has_spawn = spawn_patterns.iter().any(|pattern| body_str.contains(pattern));
+            
+            if !has_spawn {
+                continue;
+            }
+            
+            // Check for wait methods that would collect the child
+            let wait_patterns = [
+                "::wait(",
+                "::status(",
+                "::wait_with_output(",
+                "child.wait",
+                ".wait()",
+                ".status()",
+                ".wait_with_output()",
+            ];
+            
+            let has_wait = wait_patterns.iter().any(|pattern| body_str.contains(pattern));
+            
+            // If spawn without wait, flag it
+            if !has_wait {
+                // Collect evidence lines showing spawn
+                let evidence: Vec<String> = function
+                    .body
+                    .iter()
+                    .filter(|line| {
+                        let lower = line.to_lowercase();
+                        spawn_patterns.iter().any(|p| lower.contains(p))
+                    })
+                    .take(5)
+                    .map(|line| line.trim().to_string())
+                    .collect();
+                
+                if evidence.is_empty() {
+                    continue;
+                }
+
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "Child process spawned in `{}` but not waited on - call wait(), status(), or wait_with_output() to prevent zombie processes",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence,
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        findings
+    }
+}
+
 struct UntrustedEnvInputRule {
     metadata: RuleMetadata,
 }
@@ -8504,6 +8608,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(ZSTPointerArithmeticRule::new()));
     engine.register_rule(Box::new(CleartextEnvVarRule::new()));
     engine.register_rule(Box::new(ModuloBiasRandomRule::new()));
+    engine.register_rule(Box::new(SpawnedChildNoWaitRule::new()));
     engine.register_rule(Box::new(UntrustedEnvInputRule::new()));
     engine.register_rule(Box::new(CommandInjectionRiskRule::new()));
     engine.register_rule(Box::new(VecSetLenRule::new()));

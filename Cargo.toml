@@ -47,5 +47,6 @@ members = [
     "examples/spawned-child-no-wait",
     "examples/hardcoded-home-paths",
     "examples/dead-stores-arrays",
+    "examples/commented-code",
 ]
 resolver = "2"

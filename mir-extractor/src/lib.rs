@@ -154,6 +154,80 @@ pub struct MirPackage {
     pub functions: Vec<MirFunction>,
 }
 
+// ============================================================================
+// Source-Level Analysis Infrastructure (Tier 2)
+// ============================================================================
+
+/// Represents parsed source code for a Rust file
+#[derive(Clone, Debug)]
+pub struct SourceFile {
+    pub path: PathBuf,
+    pub content: String,
+    pub syntax_tree: Option<syn::File>,
+}
+
+impl SourceFile {
+    pub fn from_path(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref().to_path_buf();
+        let content = fs::read_to_string(&path)
+            .with_context(|| format!("Failed to read source file: {}", path.display()))?;
+        
+        let syntax_tree = syn::parse_file(&content).ok();
+        
+        Ok(Self {
+            path,
+            content,
+            syntax_tree,
+        })
+    }
+    
+    /// Get all source files in a crate recursively
+    pub fn collect_crate_sources(crate_root: impl AsRef<Path>) -> Result<Vec<Self>> {
+        let mut sources = Vec::new();
+        let crate_root = crate_root.as_ref();
+        
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| {
+                // Skip target, .git, and hidden directories
+                let file_name = e.file_name().to_string_lossy();
+                !file_name.starts_with('.') && file_name != "target"
+            })
+            .filter_map(|e| e.ok())
+        {
+            if entry.file_type().is_file() {
+                if let Some(ext) = entry.path().extension() {
+                    if ext == "rs" {
+                        if let Ok(source) = Self::from_path(entry.path()) {
+                            sources.push(source);
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok(sources)
+    }
+}
+
+/// Package with both MIR and source-level information
+#[derive(Clone, Debug)]
+pub struct EnrichedPackage {
+    pub mir: MirPackage,
+    pub sources: Vec<SourceFile>,
+}
+
+impl EnrichedPackage {
+    pub fn new(mir: MirPackage, crate_root: impl AsRef<Path>) -> Result<Self> {
+        let sources = SourceFile::collect_crate_sources(crate_root)?;
+        Ok(Self { mir, sources })
+    }
+}
+
+// ============================================================================
+// End Source-Level Analysis Infrastructure
+// ============================================================================
+
 #[derive(Clone, Debug)]
 pub struct ExtractionArtifacts {
     pub mir: MirPackage,
@@ -8644,6 +8718,198 @@ impl Rule for PasswordFieldMaskingRule {
     }
 }
 
+// RUSTCOLA067: Commented-out code detection (Source-level analysis)
+struct CommentedOutCodeRule {
+    metadata: RuleMetadata,
+}
+
+impl CommentedOutCodeRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA067".to_string(),
+                name: "commented-out-code".to_string(),
+                short_description: "Commented-out code detected".to_string(),
+                full_description: "Detects commented-out code that should be removed to maintain clean, analyzable codebases. Commented-out code creates maintenance burden, confuses readers about actual functionality, and should be removed in favor of version control for historical reference.".to_string(),
+                help_uri: None,
+                default_severity: Severity::Low,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Check if a comment line looks like commented-out code
+    fn looks_like_commented_code(line: &str) -> bool {
+        let trimmed = line.trim();
+        
+        // Must start with comment marker
+        if !trimmed.starts_with("//") {
+            return false;
+        }
+        
+        // Remove comment marker and whitespace
+        let content = trimmed.trim_start_matches('/').trim();
+        
+        // Skip empty lines
+        if content.is_empty() {
+            return false;
+        }
+        
+        // Skip doc comments
+        if trimmed.starts_with("///") || trimmed.starts_with("//!") {
+            return false;
+        }
+        
+        // Skip common documentation patterns
+        let lowercase = content.to_lowercase();
+        if lowercase.starts_with("todo:") 
+            || lowercase.starts_with("fixme:") 
+            || lowercase.starts_with("note:") 
+            || lowercase.starts_with("hack:")
+            || lowercase.starts_with("xxx:")
+            || lowercase.starts_with("see:")
+            || lowercase.starts_with("example")
+            || lowercase.starts_with("usage:")
+            || lowercase.contains("http://")
+            || lowercase.contains("https://")
+            || content.starts_with('=')  // Decorative lines
+            || content.starts_with('|')  // Box drawing
+            || content.starts_with('-')  // Separators
+            || content.chars().all(|c| c == '=' || c == '-' || c.is_whitespace()) {
+            return false;
+        }
+        
+        // Detect code patterns
+        // Rust keywords that indicate code
+        let code_keywords = [
+            "pub fn", "fn ", "let ", "let mut", "struct ", "enum ", "impl ", 
+            "use ", "mod ", "trait ", "const ", "static ", "match ", "if ", 
+            "for ", "while ", "loop ", "return ", "self.", "println!", "format!",
+            "=> ", ".unwrap()", ".expect(", "Vec<", "HashMap<", "Option<", "Result<",
+        ];
+        
+        for keyword in &code_keywords {
+            if content.contains(keyword) {
+                return true;
+            }
+        }
+        
+        // Check for assignment patterns: identifier = value
+        if content.contains(" = ") && !content.ends_with(':') {
+            // But not explanations like "x = value means..."
+            if !lowercase.contains("means") && !lowercase.contains("where") 
+                && !lowercase.contains("when") && !lowercase.contains("if ") {
+                return true;
+            }
+        }
+        
+        // Check for code-like punctuation patterns
+        let has_semicolon = content.ends_with(';');
+        let has_braces = content.contains('{') || content.contains('}');
+        let has_brackets = content.contains('[') || content.contains(']');
+        
+        if has_semicolon || (has_braces && has_brackets) {
+            // But exclude prose descriptions
+            if !lowercase.starts_with("this ") && !lowercase.starts_with("the ") 
+                && !lowercase.starts_with("a ") && !lowercase.starts_with("an ") {
+                return true;
+            }
+        }
+        
+        false
+    }
+}
+
+impl Rule for CommentedOutCodeRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        // This rule requires source-level analysis
+        // We need to read the actual source files to detect commented-out code
+        let mut findings = Vec::new();
+        
+        let crate_root = Path::new(&package.crate_root);
+        let sources = match SourceFile::collect_crate_sources(crate_root) {
+            Ok(s) => s,
+            Err(_) => return findings, // Silently skip if can't read sources
+        };
+        
+        for source in sources {
+            let mut evidence = Vec::new();
+            let mut consecutive_code_lines = 0;
+            let mut first_code_line_num = 0;
+            
+            for (line_num, line) in source.content.lines().enumerate() {
+                if Self::looks_like_commented_code(line) {
+                    if consecutive_code_lines == 0 {
+                        first_code_line_num = line_num + 1;
+                    }
+                    consecutive_code_lines += 1;
+                    
+                    if evidence.len() < 3 {
+                        evidence.push(format!("Line {}: {}", line_num + 1, line.trim()));
+                    }
+                } else {
+                    // Report if we found 2+ consecutive lines of commented code
+                    if consecutive_code_lines >= 2 {
+                        let relative_path = source.path.strip_prefix(crate_root)
+                            .unwrap_or(&source.path)
+                            .display()
+                            .to_string();
+                        
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: self.metadata.default_severity,
+                            message: format!(
+                                "Commented-out code detected in {} starting at line {} ({} consecutive lines)",
+                                relative_path,
+                                first_code_line_num,
+                                consecutive_code_lines
+                            ),
+                            function: relative_path.clone(),
+                            function_signature: String::new(),
+                            evidence: evidence.clone(),
+                            span: None,
+                        });
+                        
+                        evidence.clear();
+                    }
+                    consecutive_code_lines = 0;
+                }
+            }
+            
+            // Check for trailing commented code
+            if consecutive_code_lines >= 2 {
+                let relative_path = source.path.strip_prefix(crate_root)
+                    .unwrap_or(&source.path)
+                    .display()
+                    .to_string();
+                
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "Commented-out code detected in {} starting at line {} ({} consecutive lines)",
+                        relative_path,
+                        first_code_line_num,
+                        consecutive_code_lines
+                    ),
+                    function: relative_path,
+                    function_signature: String::new(),
+                    evidence,
+                    span: None,
+                });
+            }
+        }
+        
+        findings
+    }
+}
+
 // RUSTCOLA068: Dead stores in arrays
 struct DeadStoreArrayRule {
     metadata: RuleMetadata,
@@ -8893,6 +9159,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(CtorDtorStdApiRule::new())); // RUSTCOLA059
     engine.register_rule(Box::new(ConnectionStringPasswordRule::new())); // RUSTCOLA060
     engine.register_rule(Box::new(PasswordFieldMaskingRule::new())); // RUSTCOLA061
+    engine.register_rule(Box::new(CommentedOutCodeRule::new())); // RUSTCOLA067
     engine.register_rule(Box::new(DeadStoreArrayRule::new())); // RUSTCOLA068
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));

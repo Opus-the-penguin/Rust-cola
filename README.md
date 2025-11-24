@@ -1,17 +1,23 @@
-# Rust-cola — OSS Security Scanner for Rust (prototype)
+# Rust-cola — Static Security Analysis for Rust
 
-Rust-cola is an experimental **static application security testing (SAST)** engine that focuses on deep Rust semantics and learns from the same mid-level IR the compiler uses. Instead of guessing from surface syntax, it follows lifetimes, async state machines, and cross-crate FFI edges the way rustc actually lowers them—exposing subtle security vulnerabilities that simpler linters never see. The current prototype can:
+Rust-cola is a static application security testing tool for Rust code. It analyzes Rust programs using the Mid-level Intermediate Representation (MIR) that the Rust compiler generates during compilation.
 
-- Extract MIR for a crate/workspace and emit a structured JSON model.
-- Run built-in security rules that catch:
-	- Memory-safety pitfalls such as leaking `Box` pointers, unchecked `transmute`, risky `Vec::set_len`, and premature `MaybeUninit::assume_init`, plus calls to long-deprecated zero-initialization helpers.
-	- Dangerous execution patterns, including unsafe blocks/functions, reading untrusted environment variables, and spawning external commands that can be influenced by user input.
-	- Weak crypto and network hygiene issues like MD5/SHA-1 usage, literal `http://` URLs, and toggles that bypass TLS certificate validation.
-	- Concurrency and FFI hazards, from unsafe `Send`/`Sync` impls to allocator mismatches across foreign-function boundaries.
-	- Supply-chain red flags, highlighting hard-coded home directory paths, yanked or unsound dependencies, and binaries missing `cargo auditable` metadata.
-- Emit human-readable findings plus SARIF output suitable for CI integration.
+## Features
 
-In addition to the shipped rules, we maintain MIR-based research prototypes for RustSec-inspired findings (Content-Length DoS guards, protocol length truncation casts, Tokio broadcast payload unsoundness) in [`mir-extractor/src/prototypes.rs`](mir-extractor/src/prototypes.rs) with write-ups under [`docs/research/`](docs/research/).
+- Extracts MIR from Rust crates and workspaces, producing structured JSON output
+- Analyzes code with 67 built-in security rules covering:
+	- Memory safety issues: `Box::into_raw` leaks, unchecked `transmute`, `Vec::set_len` misuse, premature `MaybeUninit::assume_init`, deprecated zero-initialization functions
+	- Unsafe code patterns: unsafe blocks, untrusted environment variable reads, command execution with user-influenced input
+	- Cryptography: weak hash algorithms (MD5, SHA-1, RIPEMD, CRC), weak ciphers (DES, RC4, Blowfish), hard-coded cryptographic keys, predictable random seeds
+	- Network security: HTTP URLs, disabled TLS certificate validation
+	- Concurrency: unsafe `Send`/`Sync` implementations, mutex guard issues, panic in destructors
+	- FFI: allocator mismatches, dangling CString pointers, blocking calls in async contexts
+	- Input validation: untrusted input to commands and file operations
+- Generates findings in JSON format and SARIF format for CI/CD integration
+- Supports custom rule extensions via YAML rulepacks
+- Includes experimental research prototypes for additional vulnerability patterns
+
+Research prototypes are available in [`mir-extractor/src/prototypes.rs`](mir-extractor/src/prototypes.rs) with documentation in [`docs/research/`](docs/research/).
 
 ## Getting started
 
@@ -31,7 +37,7 @@ rustup toolchain install nightly
 
 Restart your shell (or source `$HOME/.cargo/env`) so that `cargo` and `rustc` are on your `PATH`.
 
-Run the prototype analysis against the bundled example crate:
+Run the analysis against the bundled example crate:
 
 ```powershell
 # Windows PowerShell
@@ -40,7 +46,6 @@ cargo run -p cargo-cola -- --crate-path examples/simple --out-dir out/cola --sar
 ```
 
 ```bash
-> Tip: Prefer tool-specific inspection? `readelf --notes target/auditable/release/cargo-cola` (Linux) or `otool -l target/auditable/release/cargo-cola` (macOS) will also display the embedded metadata.
 # macOS/Linux (bash/zsh)
 cd Rust-cola
 cargo run -p cargo-cola -- --crate-path examples/simple --out-dir out/cola --sarif out/cola/cola.sarif --fail-on-findings=false
@@ -50,7 +55,7 @@ This command will:
 
 1. Run `cargo +nightly rustc -- -Zunpretty=mir` to obtain MIR for `examples/simple`.
 2. Convert the textual output into `out/cola/mir.json`.
-3. Run the prototype rules, writing `out/cola/findings.json` and a SARIF report (default `out/cola/cola.sarif`).
+3. Run the security rules, writing `out/cola/findings.json` and a SARIF report (default `out/cola/cola.sarif`).
 4. Exit with a non-zero status if findings are present (omit `--fail-on-findings` or set it to `true`).
 
 Inspect the structured MIR directly:
@@ -79,15 +84,15 @@ cargo run -p cargo-cola -- --crate-path examples/simple --out-dir out/cola --rul
 cargo run -p cargo-cola -- --crate-path examples/simple --out-dir out/cola --rulepack examples/rulepacks/example-basic.yaml --fail-on-findings=false
 ```
 
-Each `--rulepack` flag loads another YAML file. Rulepacks support simple string matching on MIR function signatures and bodies—perfect for organization-specific hygiene checks (see the comments inside the example file for the schema).
+Each `--rulepack` flag loads another YAML file. Rulepacks support string matching on MIR function signatures and bodies for organization-specific checks. See the comments inside the example file for the schema.
 
-> **Experimental WASM stubs**
+> **Experimental WASM support**
 >
-> We’re laying the foundation for WASM-based rule plugins. You can point the CLI at `.wasm` modules via `--wasm-rule path/to/rule.wasm` today; the engine records metadata for those modules, ready for future execution wiring.
+> WASM-based rule plugins are under development. The CLI accepts `.wasm` modules via `--wasm-rule path/to/rule.wasm` and records metadata for future execution.
 
 ### Security rule backlog
 
-Curious what’s coming next? The living backlog in [`docs/security-rule-backlog.md`](docs/security-rule-backlog.md) tracks 100+ candidate security rules sourced from public advisories, along with feasibility notes and prototype links. Contributions welcome!
+The backlog in [`docs/security-rule-backlog.md`](docs/security-rule-backlog.md) tracks over 100 candidate security rules with feasibility notes and prototype links.
 
 ## Example commands
 
@@ -145,7 +150,7 @@ All commands accept `--mir-json` and `--findings-json` to override output paths,
 
 ## Auditable release builds
 
-Supply-chain metadata is embedded in the release binary using [`cargo-auditable`](https://github.com/rust-secure-code/cargo-auditable). The CI workflow installs the plugin, produces an auditable `cargo-cola` binary, and asserts that the artifact includes the `cargo-auditable` metadata marker. To reproduce the same check locally:
+Supply-chain metadata is embedded in the release binary using [`cargo-auditable`](https://github.com/rust-secure-code/cargo-auditable). The CI workflow installs the plugin, produces an auditable `cargo-cola` binary, and asserts that the artifact includes the metadata marker. To reproduce the same check locally:
 
 ```powershell
 # Windows PowerShell
@@ -184,18 +189,19 @@ if b"cargo-auditable" not in data:
 	raise SystemExit("cargo-auditable metadata marker not found")
 PY
 ```
-> Tip: Prefer tool-specific inspection? `readelf --notes target/auditable/release/cargo-cola` (Linux) or `otool -l target/auditable/release/cargo-cola` (macOS) will also display the embedded metadata.
 
-The generated binary now carries provenance metadata so downstream consumers can run `cargo auditable` tooling or other supply-chain scanners without rebuilding from source.
+> Tip: You can inspect the embedded metadata using `readelf --notes target/auditable/release/cargo-cola` (Linux) or `otool -l target/auditable/release/cargo-cola` (macOS).
 
-## Roadmap (abridged)
+The generated binary includes provenance metadata for supply-chain analysis tools.
 
-- Replace the command-line rustc invocation with an in-process `rustc_interface` harness for richer MIR/HIR data.
-- Graduate prototype detectors (Content-Length guards, length truncation casts, Tokio broadcast payloads) into first-class rules with SARIF metadata.
-- Expand MIR dataflow (range guards, trusted sources/sinks) and add async misuse & FFI boundary modelling.
-- Pluggable rulepacks (native + WASM) and organization-specific configuration.
-- First-class SARIF publishing (GitHub Action) with incremental caching for CI-grade latency.
+## Roadmap
 
-## GitHub Action (experimental)
+- Integrate with `rustc_interface` for direct MIR/HIR access
+- Promote research prototypes to production rules with full SARIF metadata
+- Expand dataflow analysis capabilities  
+- Support pluggable rulepacks in native code and WASM
+- Add GitHub Action for SARIF publishing and CI integration
 
-A starter workflow is available in `.github/workflows/cola-ci.yml`. It runs `cargo cola` on every push/PR, writes SARIF to `target/cola/cola.sarif`, and uploads the results to GitHub’s code scanning dashboard. The workflow keeps the job green by passing `--fail-on-findings=false`, letting GitHub surface findings directly.
+## GitHub Action
+
+A workflow example is available in `.github/workflows/cola-ci.yml`. It runs the analysis on each push or pull request, generates SARIF output, and uploads results to GitHub's code scanning dashboard.

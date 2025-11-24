@@ -1,6 +1,6 @@
 // Test suite for RUSTCOLA063: Null pointer transmutes
 // Tests detection of transmute calls involving null pointers which cause undefined behavior
-// Sonar RSPEC-7427 parity: https://rules.sonarsource.com/rust/RSPEC-7427/
+// Reference: Public security rule guidance on null pointer transmutation
 
 use std::mem::transmute;
 

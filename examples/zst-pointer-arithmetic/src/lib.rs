@@ -6,7 +6,7 @@
 // - For ZSTs, this means all offsets point to the same address
 // - This violates pointer aliasing rules and provenance
 //
-// This provides Sonar RSPEC-7412 parity
+// Reference: Public security rule guidance on zero-sized type pointer arithmetic
 
 // Test type definitions
 pub struct EmptyStruct;

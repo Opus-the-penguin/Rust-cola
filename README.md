@@ -1,11 +1,14 @@
 # Rust-cola — Static Security Analysis for Rust
 
-Rust-cola is a static application security testing tool for Rust code. It analyzes Rust programs using the Mid-level Intermediate Representation (MIR) that the Rust compiler generates during compilation.
+Rust-cola is a static application security testing tool for Rust code. It employs a three-tier hybrid analysis approach combining MIR heuristics, source-level inspection, and (planned) semantic analysis.
 
 ## Features
 
-- Extracts MIR from Rust crates and workspaces, producing structured JSON output
-- Analyzes code with 70 built-in security rules covering:
+- **Three-Tier Analysis Architecture:**
+  - **Tier 1 (MIR Heuristics):** 68 rules using pattern matching on compiler-generated MIR
+  - **Tier 2 (Source Analysis):** 2 rules using AST inspection for comments and attributes  
+  - **Tier 3 (Semantic Analysis):** Planned HIR integration for advanced type-aware rules
+- **70 Built-in Security Rules** covering:
 	- Memory safety issues: `Box::into_raw` leaks, unchecked `transmute`, `Vec::set_len` misuse, premature `MaybeUninit::assume_init`, deprecated zero-initialization functions
 	- Unsafe code patterns: unsafe blocks, untrusted environment variable reads, command execution with user-influenced input
 	- Cryptography: weak hash algorithms (MD5, SHA-1, RIPEMD, CRC), weak ciphers (DES, RC4, Blowfish), hard-coded cryptographic keys, predictable random seeds
@@ -13,9 +16,32 @@ Rust-cola is a static application security testing tool for Rust code. It analyz
 	- Concurrency: unsafe `Send`/`Sync` implementations, mutex guard issues, panic in destructors
 	- FFI: allocator mismatches, dangling CString pointers, blocking calls in async contexts
 	- Input validation: untrusted input to commands and file operations
+	- Code hygiene: commented-out code, overscoped allow attributes
 - Generates findings in JSON format and SARIF format for CI/CD integration
 - Supports custom rule extensions via YAML rulepacks
 - Includes experimental research prototypes for additional vulnerability patterns
+
+## Architecture
+
+Rust-cola uses a hybrid three-tier detection approach:
+
+```
+┌─────────────────────────────────────────────────┐
+│           Rust-cola Analysis Engine             │
+├─────────────────────────────────────────────────┤
+│  Tier 1: MIR        Tier 2: Source    Tier 3:   │
+│  Heuristics         Analysis          HIR       │
+│  (68 rules)         (2 rules)         (Planned) │
+│  ✅ Pattern          ✅ Comments/      🔨 Type    │
+│     matching           Attributes        queries │
+└─────────────────────────────────────────────────┘
+```
+
+**Tier 1 (MIR Heuristics):** Fast pattern matching on Mid-level Intermediate Representation strings for API misuse, dangerous patterns, and common vulnerabilities. Best for clear-cut security violations.
+
+**Tier 2 (Source Analysis):** AST-based inspection using the `syn` crate for patterns requiring source-level context like comments, attributes, and formatting that don't appear in MIR.
+
+**Tier 3 (Semantic Analysis - Planned):** Deep semantic analysis via rustc HIR integration for type-aware rules, proper taint tracking, trait/generic analysis. See `docs/tier3-hir-architecture.md`.
 
 Research prototypes are available in [`mir-extractor/src/prototypes.rs`](mir-extractor/src/prototypes.rs) with documentation in [`docs/research/`](docs/research/).
 

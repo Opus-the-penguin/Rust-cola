@@ -5,7 +5,7 @@ Rust-cola is a static application security testing tool for Rust code. It analyz
 ## Features
 
 - Extracts MIR from Rust crates and workspaces, producing structured JSON output
-- Analyzes code with 67 built-in security rules covering:
+- Analyzes code with 68 built-in security rules covering:
 	- Memory safety issues: `Box::into_raw` leaks, unchecked `transmute`, `Vec::set_len` misuse, premature `MaybeUninit::assume_init`, deprecated zero-initialization functions
 	- Unsafe code patterns: unsafe blocks, untrusted environment variable reads, command execution with user-influenced input
 	- Cryptography: weak hash algorithms (MD5, SHA-1, RIPEMD, CRC), weak ciphers (DES, RC4, Blowfish), hard-coded cryptographic keys, predictable random seeds

@@ -48,5 +48,6 @@ members = [
     "examples/hardcoded-home-paths",
     "examples/dead-stores-arrays",
     "examples/commented-code",
+    "examples/overscoped-allow",
 ]
 resolver = "2"

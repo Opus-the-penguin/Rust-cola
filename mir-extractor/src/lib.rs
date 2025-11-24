@@ -8718,6 +8718,137 @@ impl Rule for PasswordFieldMaskingRule {
     }
 }
 
+// RUSTCOLA072: Overscoped allow attributes (Source-level analysis)
+struct OverscopedAllowRule {
+    metadata: RuleMetadata,
+}
+
+impl OverscopedAllowRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA072".to_string(),
+                name: "overscoped-allow".to_string(),
+                short_description: "Crate-wide allow attribute suppresses security lints".to_string(),
+                full_description: "Detects #![allow(...)] attributes at crate level that suppress warnings across the entire crate. Such broad suppression can hide security issues that should be addressed. Prefer module-level or item-level allows that target specific warnings in specific contexts.".to_string(),
+                help_uri: None,
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Check if this attribute path is a security-relevant lint
+    fn is_security_relevant_lint(path: &str) -> bool {
+        // List of lints that have security implications
+        matches!(path,
+            "warnings" |             // Blanket suppression
+            "unsafe_code" |          // Unsafe code marker
+            "unused_must_use" |      // Result/error handling
+            "dead_code" |            // Potentially bypassed validation
+            "deprecated" |           // Security-fixed APIs
+            "non_snake_case" |       // Code obfuscation
+            "non_camel_case_types" | // Code obfuscation
+            "clippy::all" |          // Blanket Clippy suppression
+            "clippy::pedantic" |     // Broad suppression
+            "clippy::restriction" |  // Security-focused checks
+            "clippy::unwrap_used" |  // Panic on error
+            "clippy::expect_used" |  // Panic on error
+            "clippy::panic" |        // Explicit panic suppression
+            "clippy::indexing_slicing" | // Panic on bounds
+            "clippy::mem_forget" |   // Resource leak
+            "clippy::cast_ptr_alignment" | // Alignment issues
+            "clippy::integer_arithmetic"   // Overflow risks
+        )
+    }
+}
+
+impl Rule for OverscopedAllowRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        let crate_root = Path::new(&package.crate_root);
+        let sources = match SourceFile::collect_crate_sources(crate_root) {
+            Ok(s) => s,
+            Err(_) => return findings, // Silently skip if can't read sources
+        };
+
+        // Walk all source files
+        for source in sources {
+            // Parse as syn AST
+            let syntax_tree = match syn::parse_file(&source.content) {
+                Ok(tree) => tree,
+                Err(_) => continue,
+            };
+
+            // Check for crate-level (inner) allow attributes
+            for attr in &syntax_tree.attrs {
+                // Inner attributes have ! (e.g., #![allow(...)])
+                // Inner attributes are represented by having a "not" token
+                match attr.style {
+                    syn::AttrStyle::Inner(_) => {}, // This is what we want
+                    syn::AttrStyle::Outer => continue, // Skip outer attributes
+                }
+
+                // Check if it's an allow attribute
+                if !attr.path().is_ident("allow") {
+                    continue;
+                }
+
+                // Parse the attribute arguments
+                if let syn::Meta::List(meta_list) = &attr.meta {
+                    // Parse nested meta items (the things being allowed)
+                    let nested = match meta_list.parse_args_with(
+                        syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated
+                    ) {
+                        Ok(n) => n,
+                        Err(_) => continue,
+                    };
+
+                    for meta in nested {
+                        if let syn::Meta::Path(path) = meta {
+                            // Convert path to string
+                            let lint_name = path.segments.iter()
+                                .map(|s| s.ident.to_string())
+                                .collect::<Vec<_>>()
+                                .join("::");
+
+                            if Self::is_security_relevant_lint(&lint_name) {
+                                let relative_path = source.path.strip_prefix(crate_root)
+                                    .unwrap_or(&source.path)
+                                    .display()
+                                    .to_string();
+
+                                findings.push(Finding {
+                                    rule_id: self.metadata.id.clone(),
+                                    rule_name: self.metadata.name.clone(),
+                                    severity: self.metadata.default_severity,
+                                    message: format!(
+                                        "Crate-level #![allow({})] in {} suppresses warnings across entire crate. \
+                                        Consider module-level or item-level suppression instead.",
+                                        lint_name,
+                                        relative_path
+                                    ),
+                                    function: relative_path,
+                                    function_signature: String::new(),
+                                    evidence: vec![format!("#![allow({})]", lint_name)],
+                                    span: None,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 // RUSTCOLA067: Commented-out code detection (Source-level analysis)
 struct CommentedOutCodeRule {
     metadata: RuleMetadata,
@@ -9161,6 +9292,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(PasswordFieldMaskingRule::new())); // RUSTCOLA061
     engine.register_rule(Box::new(CommentedOutCodeRule::new())); // RUSTCOLA067
     engine.register_rule(Box::new(DeadStoreArrayRule::new())); // RUSTCOLA068
+    engine.register_rule(Box::new(OverscopedAllowRule::new())); // RUSTCOLA072
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

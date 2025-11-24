@@ -2335,10 +2335,10 @@ impl HardcodedHomePathRule {
             metadata: RuleMetadata {
                 id: "RUSTCOLA014".to_string(),
                 name: "hardcoded-home-path".to_string(),
-                short_description: "Hard-coded absolute home directory path".to_string(),
-                full_description: "Highlights string literals that embed absolute paths into user home directories, which risk leaking secrets or reducing portability.".to_string(),
+                short_description: "Hard-coded home directory path detected".to_string(),
+                full_description: "Detects absolute paths to user home directories hard-coded in string literals. Hard-coded home paths reduce portability and create security issues: (1) Code breaks when run under different users or in containers/CI, (2) Exposes username information in source code, (3) Prevents proper multi-user deployments, (4) Makes code non-portable across operating systems. Use environment variables (HOME, USERPROFILE), std::env::home_dir(), or the dirs crate instead. Detects patterns like /home/username, /Users/username, C:\\Users\\username, and ~username (with username).".to_string(),
                 help_uri: None,
-                default_severity: Severity::Medium,
+                default_severity: Severity::Low,
                 origin: RuleOrigin::BuiltIn,
             },
         }
@@ -2356,10 +2356,58 @@ impl Rule for HardcodedHomePathRule {
         }
 
         let mut findings = Vec::new();
-        let patterns = ["/home/", "\\\\users\\", "/users/", "~/"];
 
         for function in &package.functions {
-            let evidence = collect_case_insensitive_matches(&function.body, &patterns);
+            // Self-exclusion
+            if function.name.contains("HardcodedHomePathRule") {
+                continue;
+            }
+
+            let body_str = function.body.join("\n");
+            
+            // Patterns for hard-coded home directory paths
+            // Unix/Linux: /home/username
+            // macOS: /Users/username  
+            // Windows: C:\Users\username or C:/Users/username
+            // Tilde with username: ~username (but not ~/something)
+            let home_patterns = [
+                "\"/home/",
+                "\"/Users/",
+                "\"C:\\\\Users\\\\",
+                "\"C:/Users/",
+            ];
+            
+            let mut found_hardcoded = false;
+            
+            for pattern in &home_patterns {
+                if body_str.contains(pattern) {
+                    found_hardcoded = true;
+                    break;
+                }
+            }
+            
+            // Check for ~username (tilde with username, not just ~/)
+            // Look for "~ followed by non-slash characters
+            if body_str.contains("\"~") && !body_str.contains("\"~/") {
+                found_hardcoded = true;
+            }
+            
+            if !found_hardcoded {
+                continue;
+            }
+
+            // Collect evidence lines
+            let evidence: Vec<String> = function
+                .body
+                .iter()
+                .filter(|line| {
+                    home_patterns.iter().any(|p| line.contains(p)) ||
+                    (line.contains("\"~") && !line.contains("\"~/"))
+                })
+                .take(5)
+                .map(|line| line.trim().to_string())
+                .collect();
+            
             if evidence.is_empty() {
                 continue;
             }
@@ -2369,7 +2417,7 @@ impl Rule for HardcodedHomePathRule {
                 rule_name: self.metadata.name.clone(),
                 severity: self.metadata.default_severity,
                 message: format!(
-                    "Hard-coded home directory path detected in `{}`",
+                    "Hard-coded home directory path in `{}` - use environment variables (HOME/USERPROFILE) or std::env::home_dir() instead",
                     function.name
                 ),
                 function: function.name.clone(),

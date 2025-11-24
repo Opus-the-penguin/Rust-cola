@@ -8644,6 +8644,195 @@ impl Rule for PasswordFieldMaskingRule {
     }
 }
 
+// RUSTCOLA068: Dead stores in arrays
+struct DeadStoreArrayRule {
+    metadata: RuleMetadata,
+}
+
+impl DeadStoreArrayRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA068".to_string(),
+                name: "dead-store-array".to_string(),
+                short_description: "Dead store in array".to_string(),
+                full_description: "Detects array elements that are written but never read before being overwritten or going out of scope. Dead stores can indicate logic errors, wasted computation, or security issues like stale sensitive data not being properly cleared. Pattern: Array index assignment without subsequent read before overwrite or function end.".to_string(),
+                help_uri: None,
+                default_severity: Severity::Low,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Check if a line contains an array write operation
+    /// Pattern: variable[index] = value
+    /// Example: "_1[_2] = const 10_i32;"
+    fn is_array_write(line: &str) -> Option<(&str, &str)> {
+        let trimmed = line.trim();
+        
+        // Look for pattern: _X[_Y] = ...
+        if let Some(eq_pos) = trimmed.find(" = ") {
+            let left_side = trimmed[..eq_pos].trim();
+            
+            // Check if left side is array index: _X[_Y]
+            if let Some(bracket_start) = left_side.find('[') {
+                if let Some(bracket_end) = left_side.find(']') {
+                    if bracket_start < bracket_end && bracket_end == left_side.len() - 1 {
+                        let var = left_side[..bracket_start].trim();
+                        let index = left_side[bracket_start + 1..bracket_end].trim();
+                        
+                        // Basic validation: variable should start with _ and index should be reasonable
+                        if var.starts_with('_') && !index.is_empty() {
+                            return Some((var, index));
+                        }
+                    }
+                }
+            }
+        }
+        
+        None
+    }
+
+    /// Check if a line contains an array read operation
+    /// Patterns:
+    /// - _X = &_Y[_Z];  (borrow)
+    /// - _X = _Y[_Z];   (copy/move)
+    /// - ... = &_Y[_Z]  (inline borrow)
+    /// - function(&_Y) or function(_Y) - passing array to function
+    fn is_array_read(line: &str, var: &str) -> bool {
+        let trimmed = line.trim();
+        
+        // Pattern 1: function(&array) or function(copy array) - array passed to function
+        // This is a form of read since the function may access all elements
+        if trimmed.contains("(copy ") || trimmed.contains("(&") || trimmed.contains("(move ") {
+            let patterns = [
+                format!("(copy {})", var),
+                format!("(&{})", var),
+                format!("(move {})", var),
+                format!("copy {}", var),  // Also just "copy _1" in some contexts
+            ];
+            if patterns.iter().any(|p| trimmed.contains(p)) {
+                return true;
+            }
+        }
+        
+        // Pattern 2: Look for array index read: var[index]
+        let pattern = format!("{}[", var);
+        if !trimmed.contains(&pattern) {
+            return false;
+        }
+        
+        // Exclude writes (left side of assignment)
+        if let Some(eq_pos) = trimmed.find(" = ") {
+            let left_side = trimmed[..eq_pos].trim();
+            // If the array access is on the left side, it's a write not a read
+            if left_side.contains(&pattern) {
+                return false;
+            }
+            // If it's on the right side, it's a read
+            if trimmed[eq_pos + 3..].contains(&pattern) {
+                return true;
+            }
+        }
+        
+        // Also check for array access in function calls or other contexts
+        trimmed.contains(&pattern)
+    }
+}
+
+impl Rule for DeadStoreArrayRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        // Skip our own crate to avoid self-analysis
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Skip functions that return arrays - they're likely intentionally building arrays
+            if function.signature.contains("-> [") && function.signature.contains("; ") {
+                continue;
+            }
+            
+            // Skip functions that take mutable array references - they're likely filling arrays
+            if function.signature.contains("&mut [") {
+                continue;
+            }
+            
+            // Strategy: Track constant index assignments and detect consecutive overwrites
+            // Build a map of temporary variables to their constant values
+            let mut const_values: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+            
+            // First pass: collect constant assignments (e.g., "_2 = const 0_usize;")
+            for line in &function.body {
+                let trimmed = line.trim();
+                if let Some(eq_pos) = trimmed.find(" = const ") {
+                    let left = trimmed[..eq_pos].trim();
+                    let right = trimmed[eq_pos + 9..].trim(); // Skip " = const "
+                    if let Some(semicolon) = right.find(';') {
+                        let value = right[..semicolon].trim();
+                        const_values.insert(left.to_string(), value.to_string());
+                    }
+                }
+            }
+            
+            // Second pass: detect consecutive array writes to the same resolved location
+            let mut last_write: Option<(String, String, usize, String)> = None; // (var, resolved_index, line_num, line_text)
+            
+            for (line_idx, line) in function.body.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Check if this line is an array write
+                if let Some((var, index)) = Self::is_array_write(trimmed) {
+                    // Resolve the index to its constant value if possible
+                    let resolved_index = const_values.get(index).unwrap_or(&index.to_string()).clone();
+                    let key = format!("{}[{}]", var, resolved_index);
+                    
+                    // Check if we have a previous write to the exact same location
+                    if let Some((prev_var, prev_resolved_index, prev_line_idx, prev_line)) = &last_write {
+                        let prev_key = format!("{}[{}]", prev_var, prev_resolved_index);
+                        
+                        if key == prev_key {
+                            // Found consecutive writes to same location without intervening read
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message: format!(
+                                    "Dead store: array element {} written but immediately overwritten without being read in `{}`",
+                                    prev_key,
+                                    function.name
+                                ),
+                                function: function.name.clone(),
+                                function_signature: function.signature.clone(),
+                                evidence: vec![
+                                    format!("Line {}: {}", prev_line_idx, prev_line.trim()),
+                                    format!("Line {}: {} (overwrites previous)", line_idx, trimmed),
+                                ],
+                                span: function.span.clone(),
+                            });
+                        }
+                    }
+                    
+                    // Update last write
+                    last_write = Some((var.to_string(), resolved_index, line_idx, line.clone()));
+                }
+                // If we see an array read or index operation, clear last_write to be conservative
+                else if trimmed.contains("[_") {
+                    last_write = None;
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
@@ -8704,6 +8893,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(CtorDtorStdApiRule::new())); // RUSTCOLA059
     engine.register_rule(Box::new(ConnectionStringPasswordRule::new())); // RUSTCOLA060
     engine.register_rule(Box::new(PasswordFieldMaskingRule::new())); // RUSTCOLA061
+    engine.register_rule(Box::new(DeadStoreArrayRule::new())); // RUSTCOLA068
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

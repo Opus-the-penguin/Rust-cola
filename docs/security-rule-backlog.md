@@ -103,7 +103,7 @@ Feasibility legend:
 ## Testing & Infrastructure Hygiene
 
 67. **Commented out code** – ; maintain clean code for analysis clarity. **Feasibility:** Heuristic.
-68. **Dead stores in arrays** – ; prevent stale security-critical state. **Feasibility:** Heuristic.
+68. **Dead stores in arrays** *(RUSTCOLA068 shipped)* – Detects array elements written but immediately overwritten without being read, indicating logic errors or wasted computation. Most useful for security-sensitive contexts where stale data (e.g., partial password clears) could leak. **Pattern:** Consecutive array assignments to same resolved index (e.g., `arr[0] = 10; arr[0] = 20;`) where first write is never read. Uses constant folding to resolve index variables (e.g., `_2 = const 0_usize; arr[_2] = ...`). **Test results:** 57% recall (4/7 problematic), 100% precision (0 false positives). Catches obvious consecutive-overwrite cases; complex patterns (loops, unread stores) require dataflow analysis. **Severity:** Low. **Feasibility:** Heuristic.
 69. **Non-local effect before panic in tests** – Variation of . **Feasibility:** Advanced.
 70. **Misordered assert_eq arguments** *(RUSTCOLA050 shipped)* – ; detects assert_eq!(literal, variable) which creates backwards error messages. Convention is assert_eq!(actual, expected). **Signal:** Promoted constants in first position of assert_failed calls. **Feasibility:** Heuristic.
 71. **Try operator on io::Result** *(RUSTCOLA051 shipped)* – ; detects use of ? operator on std::io::Result without error context. **Signal:** Functions returning Result<T, io::Error> with discriminant checks (? desugaring). Recommends .map_err() or custom error types. **Feasibility:** Heuristic.

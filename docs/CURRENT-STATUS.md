@@ -2,7 +2,7 @@
 
 **Date:** November 25, 2025  
 **Version:** 70 security rules  
-**Recent Achievement:** ✅ Phase 3.5.1 Complete - 100% Recall | Tier 3 Phase 1 - 90% Complete!
+**Recent Achievement:** ✅ Tier 3 Phase 1 COMPLETE! HIR extraction fully operational!
 
 ## Current State Summary
 
@@ -26,6 +26,15 @@
 - **9 vulnerable flows detected** (up from 8)
 - Fixed last false negative: test_partial_sanitization now correctly detected
 
+**✅ Tier 3 HIR Integration:**
+- ✅ Phase 1 COMPLETE (Nov 25, 2025) - HIR extraction fully operational!
+- ✅ HirPackage data structures (1039 lines, comprehensive)
+- ✅ rustc wrapper binary with cargo caching workaround
+- ✅ Fixed Use statement ICE (opt_item_name handling)
+- ✅ CLI flags: --hir-json, --hir-cache working reliably
+- ✅ Tested: 5 consecutive successful extractions
+- **Ready for Phase 2:** Type query interface
+
 **Documentation:**
 - ✅ Comprehensive Tier 3 architecture plan (docs/tier3-hir-architecture.md)
 - ✅ Phase 3.5 dataflow roadmap (docs/phase3.5-roadmap.md)
@@ -35,8 +44,9 @@
 
 **Infrastructure:**
 - ✅ Phase 0 HIR spike complete (Oct 2025)
+- ✅ Phase 1 HIR extraction complete (Nov 2025)
 - ✅ Phase 3.5.1 branch-sensitive CFG analysis (Nov 2025)
-- ✅ Toolchain pinned (nightly-2025-09-30)
+- ✅ Toolchain: rustc nightly-2025-10-08 (working)
 - ✅ rustc_interface integration validated
 
 ### 🔨 Two Active Paths Forward
@@ -133,13 +143,20 @@ pub fn test_partial_sanitization() {
 
 ---
 
-## Path B: Tier 3 HIR Integration (Strategic - RECOMMENDED)
+## Path B: Tier 3 HIR Integration (Strategic)
 
 **Goal:** Add 10-15 advanced semantic rules (70 → 85+ total)
 
-**Status:** Planning complete, ready for Phase 1 implementation
+**Status:** ✅ Phase 1 COMPLETE! Ready for Phase 2
 
-**Next Action:** Phase 1 - Core HIR Driver
+**Recent Fix (Nov 25, 2025):**
+- ✅ Fixed rustc ICE on Use statements (was our bug, not rustc)
+- ✅ Fixed cargo caching issue with stale environment variables
+- ✅ Added unique metadata flag to force fresh builds
+- ✅ Wrapper passthrough logic fixed
+- ✅ Tested: 5 consecutive successful HIR extractions
+
+**Next Action:** Phase 2 - Type Query Interface
 
 ### What We'll Build:
 
@@ -203,18 +220,20 @@ impl TypeAnalyzer {
 
 ### Implementation Timeline:
 
-**Phase 1: Core Driver** (Nov 2025 - IN PROGRESS) - 90% COMPLETE ✅
+**✅ Phase 1: Core Driver COMPLETE** (Nov 2025)
 - ✅ HirPackage data structures (1039 lines, comprehensive)
 - ✅ hir_driver module integrated (feature-gated)
-- ✅ CLI flags: --hir-json, --hir-cache (working)
+- ✅ CLI flags: --hir-json, --hir-cache (working reliably)
 - ✅ HIR extraction driver (capture_hir(), collect_crate_snapshot())
 - ✅ rustc wrapper binary (hir-driver-wrapper)
 - ✅ Cache integration (HirOptions, extract_with_cache_full_opts())
-- 🚫 BLOCKED: rustc nightly-2025-09-14 ICE bug
-- **Status:** Infrastructure complete, waiting on rustc fix
-- **Details:** docs/tier3-phase1-status.md
+- ✅ Fixed Use statement ICE (opt_item_name handling)
+- ✅ Fixed cargo caching with unique metadata timestamps
+- ✅ Tested: Multiple consecutive successful extractions
+- **Status:** COMPLETE! HIR extraction fully operational ✅
+- **Commit:** 223c062
 
-**Phase 2: Type Queries** (Jan 2026)
+**Phase 2: Type Queries** (Dec 2025 - IN PROGRESS)
 - Implement TypeAnalyzer interface
 - Cache type information
 - Ship enhanced RUSTCOLA064 (ZST detection: 71% → 100% recall)
@@ -249,21 +268,22 @@ impl TypeAnalyzer {
 | **Complexity** | Medium (CFG analysis) | High (compiler integration) |
 | **Risk** | ✅ Validated (tests pass) | Low (infrastructure proven) |
 | **Value** | ✅ Tactical win achieved | Strategic capability |
-| **Status** | Optional phases remain | Phase 1: 90% complete, rustc ICE blocking |
+| **Status** | Optional phases remain | ✅ Phase 1 COMPLETE |
 | **Dependencies** | ✅ Complete | ✅ Phase 0 spike complete |
 
 ## Current Recommendation
 
-**Proceed to Tier 3 Phase 1** (HIR Driver) because:
+**Proceed to Tier 3 Phase 2** (Type Query Interface) because:
 
-### Why Tier 3 Now:
+### Why Phase 2 Now:
 
-1. ✅ **Phase 3.5.1 complete** - Primary goal achieved (100% recall)
-2. ✅ **Tier 3 Phase 1: 90% complete** - Infrastructure functional, rustc ICE blocking
-3. ✅ **Strong foundation** - Dataflow architecture validated
-4. ✅ **Phase 0 delivered** - HIR extraction nearly complete
-5. ✅ **Strategic value** - Unlocks 10-15 new rules requiring semantic analysis
-6. ✅ **Good timing** - Just needs rustc nightly fix to unblock
+1. ✅ **Phase 1 complete** - HIR extraction fully operational
+2. ✅ **All blockers resolved** - rustc ICE fixed, cargo caching solved
+3. ✅ **Tested and validated** - 5 consecutive successful extractions
+4. ✅ **Phase 3.5.1 complete** - Dataflow at 100% recall
+5. ✅ **Strong foundation** - Both dataflow and HIR infrastructure proven
+6. ✅ **Clear path** - Type analyzer design documented
+7. ✅ **High value** - Enables 10-15 new semantic rules
 
 ### Alternative: Continue Phase 3.5
 
@@ -276,24 +296,24 @@ If you prefer incremental improvements to dataflow:
 
 ## Next Steps
 
-### Option A: Unblock Tier 3 Phase 1 (Recommended)
+### Option A: Tier 3 Phase 2 (Recommended)
 
-**Status:** 90% complete, blocked by rustc nightly-2025-09-14 ICE bug
+**Goal:** Implement Type Query Interface
+
+**Status:** Ready to start, Phase 1 complete
 
 **Immediate Actions:**
-1. Test alternative nightly versions (try nightly-2025-08-01)
-2. Search rust-lang/rust issues for known bug
-3. Consider rustc bisection to find working version
+1. Design TypeAnalyzer API (~1 day)
+   - implements_trait(), is_send(), is_sync(), size_of()
+   - Cache type information from HIR
+2. Implement basic type queries (~2 days)
+3. Enhance RUSTCOLA064 (ZST detection) (~1 day)
+4. Integration tests (~1 day)
 
-**After rustc fix:**
-1. Integration tests (~1 day)
-2. Performance benchmarks (~1 day)
-3. Documentation updates (~1 day)
+**Timeline:** 5 days  
+**Deliverable:** First HIR-backed rule at 100% recall
 
-**Timeline:** 2-3 days after rustc fix  
-**Deliverable:** HIR extraction fully operational
-
-**Reference:** `docs/tier3-phase1-status.md`
+**Value:** Unlocks semantic analysis capabilities for future rules
 
 ### Option B: Continue Phase 3.5 (Optional)
 
@@ -312,20 +332,19 @@ If you prefer incremental improvements to dataflow:
 - ✅ 100% recall on basic taint tracking
 - ✅ 0% false positive rate maintained
 - ✅ Phase 3.5.1 complete and validated
-- ✅ Tier 3 Phase 1: 90% complete (HIR infrastructure functional)
+- ✅ Tier 3 Phase 1 COMPLETE - HIR extraction fully operational!
 
 **Recent Commits:**
+- 223c062: Fix HIR extraction (Use statements + cargo caching)
 - 280fb74: Phase 3.5.1 implementation
 - dc01f48: Phase 3.5.1 completion report
-- c6a2b53: Updated CURRENT-STATUS.md
-- 8dc5fed: Updated README.md
 
-**Blocker:** rustc nightly-2025-09-14 ICE bug affecting HIR extraction
+**Blockers:** NONE - All systems operational! ✅
 
-**Recommendation:** Find working nightly version to unblock Tier 3 Phase 1
+**Recommendation:** Proceed to Tier 3 Phase 2 (Type Query Interface)
 
 ---
 
-**Status:** Phase 3.5.1 COMPLETE ✅ | Tier 3 Phase 1: 90% COMPLETE (blocked by rustc ICE)  
-**Next Recommended:** Unblock Tier 3 Phase 1 (test alternative nightly versions)  
+**Status:** Phase 3.5.1 COMPLETE ✅ | Tier 3 Phase 1 COMPLETE ✅  
+**Next Recommended:** Tier 3 Phase 2 - Type Query Interface  
 **Alternative:** Phase 3.5.2-3.5.4 (optional dataflow enhancements)

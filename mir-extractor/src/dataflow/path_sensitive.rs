@@ -431,6 +431,36 @@ impl PathSensitiveTaintAnalysis {
                     });
                 }
             }
+            // Check for generic function calls: if any argument is tainted, result is tainted
+            // This handles library functions we don't have summaries for (e.g., Iterator::nth, Option::unwrap_or_default)
+            else if rhs.contains('(') && rhs.contains(')') 
+                && !Self::is_source_call(&rhs) 
+                && !Self::is_sanitizer_call(&rhs) {
+                // Conservative approach: check if RHS contains any tainted variables
+                // This works even for complex MIR expressions we can't fully parse
+                let mut has_tainted_arg = false;
+                
+                // Try to extract all _N variables from the RHS
+                for word in rhs.split(|c: char| !c.is_alphanumeric() && c != '_') {
+                    if word.starts_with('_') && word[1..].chars().all(|c| c.is_numeric()) {
+                        // This is a variable like _1, _2, etc.
+                        let var_path = super::field::FieldPath::whole_var(word.to_string());
+                        if matches!(field_map.get_field_taint(&var_path), super::field::FieldTaint::Tainted { .. }) {
+                            has_tainted_arg = true;
+                            break;
+                        }
+                    }
+                }
+                
+                // Conservative taint propagation: if function receives tainted input, output is tainted
+                if has_tainted_arg {
+                    let taint = TaintState::Tainted {
+                        source_type: "propagated".to_string(),
+                        source_location: format!("via function call"),
+                    };
+                    Self::set_field_taint_state(field_map, &lhs, &taint);
+                }
+            }
         }
     }
     

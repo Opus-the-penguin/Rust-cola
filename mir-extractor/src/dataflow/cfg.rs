@@ -147,6 +147,7 @@ impl ControlFlowGraph {
                 || trimmed.starts_with("unreachable")
             {
                 // If this is a call (has " = " and " -> [return:"), also add it as a statement
+                // This ensures we can analyze taint flow through function call results
                 if trimmed.contains(" = ") && trimmed.contains(" -> [return:") {
                     current_statements.push(trimmed.to_string());
                 }

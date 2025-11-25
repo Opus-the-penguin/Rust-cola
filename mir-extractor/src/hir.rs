@@ -421,6 +421,12 @@ pub fn capture_hir(crate_path: &Path) -> Result<HirPackage> {
     cmd.current_dir(&canonical);
     cmd.env_remove("RUSTC");
     cmd.env_remove("RUSTFLAGS");
+    
+    // Use a dedicated target directory for HIR capture to avoid cache issues
+    let hir_target_dir = env::temp_dir().join("rust-cola-hir-builds");
+    fs::create_dir_all(&hir_target_dir).ok();
+    cmd.env("CARGO_TARGET_DIR", &hir_target_dir);
+    
     cmd.arg("rustc");
 
     match &primary {
@@ -450,6 +456,16 @@ pub fn capture_hir(crate_path: &Path) -> Result<HirPackage> {
 
     cmd.arg("--");
     cmd.args(["--emit", "metadata"]);
+    
+    // Add a unique metadata string to force cargo to treat each HIR capture as a fresh build
+    // This prevents cargo from reusing cached builds with stale environment variables
+    let unique_metadata = format!("hir_capture_{}", 
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    );
+    cmd.args(["-C", &format!("metadata={}", unique_metadata)]);
 
     let command_display = describe_command(&cmd);
     let output = cmd
@@ -559,12 +575,15 @@ pub fn locate_wrapper_executable() -> Result<PathBuf> {
 }
 
 fn unique_output_path() -> Result<PathBuf> {
+    // Use PID to make path unique per process, not timestamp
+    // This avoids issues with cargo caching stale timestamps
     let mut path = env::temp_dir();
+    let pid = std::process::id();
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
-    path.push(format!("rust-cola-hir-{nanos}.json"));
+    path.push(format!("rust-cola-hir-{pid}-{nanos}.json"));
     Ok(path)
 }
 
@@ -787,7 +806,10 @@ fn classify_crate_item<'tcx>(
     def_id: DefId,
     item: &'tcx hir::Item<'tcx>,
 ) -> HirItemKind {
-    let name = tcx.item_name(def_id).to_string();
+    // Use opt_item_name because some items (like Use statements) don't have names
+    let name = tcx.opt_item_name(def_id)
+        .map(|sym| sym.to_string())
+        .unwrap_or_else(|| String::from(""));
     match &item.kind {
         hir::ItemKind::Mod(..) => HirItemKind::Module(HirNamedItem { name }),
         hir::ItemKind::Struct(_, _, data) => HirItemKind::Struct(HirStruct {
@@ -845,7 +867,9 @@ fn classify_crate_item<'tcx>(
 }
 
 fn classify_impl_item(tcx: TyCtxt<'_>, def_id: DefId, item: &hir::ImplItem<'_>) -> HirItemKind {
-    let name = tcx.item_name(def_id).to_string();
+    let name = tcx.opt_item_name(def_id)
+        .map(|sym| sym.to_string())
+        .unwrap_or_else(|| String::from(""));
     match item.kind {
         hir::ImplItemKind::Fn(ref sig, _) => {
             let parent_impl = tcx
@@ -863,7 +887,9 @@ fn classify_impl_item(tcx: TyCtxt<'_>, def_id: DefId, item: &hir::ImplItem<'_>) 
 }
 
 fn classify_trait_item(tcx: TyCtxt<'_>, def_id: DefId, item: &hir::TraitItem<'_>) -> HirItemKind {
-    let name = tcx.item_name(def_id).to_string();
+    let name = tcx.opt_item_name(def_id)
+        .map(|sym| sym.to_string())
+        .unwrap_or_else(|| String::from(""));
     match item.kind {
         hir::TraitItemKind::Fn(ref sig, ref trait_fn) => {
             let provided = matches!(trait_fn, hir::TraitFn::Provided(_));
@@ -883,7 +909,9 @@ fn classify_foreign_item(
     def_id: DefId,
     item: &hir::ForeignItem<'_>,
 ) -> HirItemKind {
-    let name = tcx.item_name(def_id).to_string();
+    let name = tcx.opt_item_name(def_id)
+        .map(|sym| sym.to_string())
+        .unwrap_or_else(|| String::from(""));
     match item.kind {
         hir::ForeignItemKind::Fn(ref sig, ..) => {
             let abi = sig.header.abi.as_str().to_string();
@@ -959,7 +987,9 @@ fn trait_owner_info(tcx: TyCtxt<'_>, def_id: DefId, provided: bool) -> HirFuncti
     let trait_def_id = tcx
         .opt_parent(def_id)
         .expect("trait item without parent trait");
-    let trait_name = tcx.item_name(trait_def_id).to_string();
+    let trait_name = tcx.opt_item_name(trait_def_id)
+        .map(|sym| sym.to_string())
+        .unwrap_or_else(|| String::from(""));
     HirFunctionOwner::Trait {
         trait_name,
         provided,

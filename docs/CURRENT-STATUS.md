@@ -2,7 +2,7 @@
 
 **Date:** November 25, 2025  
 **Version:** 70 security rules  
-**Recent Achievement:** Tier 2 source-level analysis operational + Tier 3 planning complete
+**Recent Achievement:** ✅ Phase 3.5.1 Complete - 100% Recall Achieved!
 
 ## Current State Summary
 
@@ -20,104 +20,96 @@
   - Infrastructure operational and proven
 
 **Advanced Dataflow:**
-- Phase 3.4: Inter-procedural taint tracking complete
-- 0% false positive rate (exceptional!)
-- ~91% recall (10/11 vulnerable cases detected)
-- 1 false negative: test_partial_sanitization (branch-sensitivity issue)
+- ✅ Phase 3.5.1: Branch-sensitive CFG analysis COMPLETE (Nov 25, 2025)
+- **100% recall** (11/11 vulnerable cases detected) ✅
+- **0% false positive rate** (maintained) ✅
+- **9 vulnerable flows detected** (up from 8)
+- Fixed last false negative: test_partial_sanitization now correctly detected
 
 **Documentation:**
 - ✅ Comprehensive Tier 3 architecture plan (docs/tier3-hir-architecture.md)
 - ✅ Phase 3.5 dataflow roadmap (docs/phase3.5-roadmap.md)
+- ✅ Phase 3.5.1 completion report (docs/phase3.5.1-complete.md)
 - ✅ Quick start guide (docs/phase3.5-next-steps.md)
 - ✅ Three-tier architecture documented in README
 
 **Infrastructure:**
 - ✅ Phase 0 HIR spike complete (Oct 2025)
+- ✅ Phase 3.5.1 branch-sensitive CFG analysis (Nov 2025)
 - ✅ Toolchain pinned (nightly-2025-09-30)
 - ✅ rustc_interface integration validated
 
 ### 🔨 Two Active Paths Forward
 
-## Path A: Phase 3.5 Dataflow Improvements (Tactical)
+## Path A: Phase 3.5 Dataflow Improvements (Tactical - IN PROGRESS)
 
-**Goal:** Achieve 100% recall on taint tracking (91% → 100%)
+**Goal:** Enhance interprocedural taint tracking capabilities
 
-**Status:** Ready to implement, well-documented
+**Status:** Phase 3.5.1 COMPLETE ✅ - Optional phases remain
 
-**Next Action:** Phase 3.5.1 - Branch-Sensitive Analysis
+**✅ COMPLETED: Phase 3.5.1 - Branch-Sensitive Analysis**
 
-### What We'll Build:
+### What We Built:
 
 **Control Flow Graph (CFG) Extraction:**
-```rust
-// New module: mir-extractor/src/dataflow/cfg.rs
-pub struct ControlFlowGraph {
-    pub blocks: HashMap<String, BasicBlock>,
-    pub edges: HashMap<String, Vec<String>>,
-    pub entry_block: String,
-}
-
-// Parse MIR basic_blocks to build CFG
-// Track branches (if/else, match) separately
-```
+- Parse MIR basic blocks to build CFG
+- Track branches (if/else, match) separately
+- Enumerate all execution paths
 
 **Path-Sensitive Taint Tracking:**
-```rust
-// New module: mir-extractor/src/dataflow/path_sensitive.rs
-pub struct PathSensitiveTaintAnalysis {
-    cfg: ControlFlowGraph,
-    taint_at_block: HashMap<(String, String), TaintState>,
-}
+- Analyze each branch independently
+- Conservative taint propagation through library functions
+- If ANY path is vulnerable, report vulnerability
 
-// Analyze each branch independently
-// If ANY path is vulnerable, report vulnerability
-```
+### The Fix in Action:
 
-### The Fix:
-
-**Before (91% recall):**
+**Test Case (test_partial_sanitization):**
 ```rust
 pub fn test_partial_sanitization() {
     let input = env::args().nth(1);
     
     if input.contains("safe") {
-        let safe = validate_input(&input);  // Sanitized ✓
+        let safe = validate_input(&input);  // Path 1: Sanitized ✓
         execute_command(&safe);
     } else {
-        execute_command(&input);           // VULNERABLE but MISSED ✗
+        execute_command(&input);           // Path 2: VULNERABLE ✓
     }
 }
-
-// Current: Sees validate_input() → marks whole function SAFE
-// Result: FALSE NEGATIVE (dangerous!)
 ```
 
-**After (100% recall):**
-```
-Branch 1 (if): input → validate_input → safe → execute ✓ SAFE
-Branch 2 (else): input → execute ✗ VULNERABLE
+**Before Phase 3.5.1:**
+- Analysis: Saw `validate_input()` → marked whole function SAFE
+- Result: **FALSE NEGATIVE** (dangerous!)
+- Recall: 91% (10/11 detected)
 
-Analysis: At least one path vulnerable → REPORT VULNERABILITY ✓
-Result: TRUE POSITIVE (correct!)
-```
+**After Phase 3.5.1:**
+- Analysis: Path 1 SAFE, Path 2 VULNERABLE → Function VULNERABLE
+- Result: **TRUE POSITIVE** (correct!) ✅
+- Recall: **100%** (11/11 detected) ✅
 
-### Implementation Plan:
+### Implementation Details:
 
-**Phase 3.5.1: Branch Analysis** (Priority 1)
-- Step 1: CFG extraction (1-2 hours)
-- Step 2: Path enumeration (1 hour)
-- Step 3: Path-sensitive taint tracking (2-3 hours)
-- Step 4: Integration with FunctionSummary (1 hour)
-- Step 5: Testing & validation (1-2 hours)
-- **Total: ~7-9 hours (1-2 coding sessions)**
+**Files Modified:**
+- `mir-extractor/src/dataflow/cfg.rs` - Fixed call statement extraction
+- `mir-extractor/src/dataflow/path_sensitive.rs` - Added conservative taint propagation
+- `mir-extractor/tests/test_path_sensitive.rs` - Added comprehensive test
 
-**Expected Gain:** +1 recall (91% → 100% on basic cases)
+**Commits:**
+- 280fb74: feat: Phase 3.5.1 implementation
+- dc01f48: docs: Phase 3.5.1 completion report
+
+**Full Details:** See `docs/phase3.5.1-complete.md`
+
+---
+
+### 🔮 OPTIONAL: Remaining Phase 3.5 Sub-phases
 
 **Phase 3.5.2: Closure Support** (Priority 2)
 - Detect closures (function names with `{closure#N}`)
 - Extract captured variables
 - Propagate taint through captures
 - **Total: ~200-300 lines, 1-2 sessions**
+- **Status:** Infrastructure exists in closure.rs, needs integration
 
 **Expected Gain:** +1 advanced case (closure_capture)
 
@@ -125,6 +117,7 @@ Result: TRUE POSITIVE (correct!)
 - Build trait implementation map
 - Conservative analysis (consider all impls)
 - **Total: ~250 lines, 1 session**
+- **Status:** Well-documented design
 
 **Expected Gain:** +1 advanced case (trait_method)
 
@@ -132,19 +125,15 @@ Result: TRUE POSITIVE (correct!)
 - Detect async functions
 - Propagate taint through Futures
 - **Total: ~100-150 lines, 1 session**
+- **Status:** Clear implementation path
 
 **Expected Gain:** +1 advanced case (async_flow)
 
-### Success Metrics:
-
-**Target (Phase 3.5 complete):**
-- ✅ 100% recall (11/11 basic + 3/3 advanced = 14/14 total)
-- ✅ 0% false positive rate (maintained)
-- ✅ Performance <2x current analysis time
+**Note:** These phases are **optional enhancements**. The primary goal of 100% recall on basic cases has been achieved. Consider proceeding to Tier 3 for strategic value.
 
 ---
 
-## Path B: Tier 3 HIR Integration (Strategic)
+## Path B: Tier 3 HIR Integration (Strategic - RECOMMENDED)
 
 **Goal:** Add 10-15 advanced semantic rules (70 → 85+ total)
 
@@ -251,91 +240,79 @@ impl TypeAnalyzer {
 
 | Aspect | Phase 3.5 (Dataflow) | Tier 3 (HIR) |
 |--------|---------------------|--------------|
-| **Effort** | ~7-9 hours for 3.5.1 | ~2-3 weeks for Phase 1 |
-| **Impact** | Perfects 1 existing rule | Unlocks 10-15 new rules |
+| **Effort** | ✅ Phase 3.5.1 DONE (7-9 hours) | ~2-3 weeks for Phase 1 |
+| **Impact** | ✅ Achieved 100% recall | Unlocks 10-15 new rules |
 | **Complexity** | Medium (CFG analysis) | High (compiler integration) |
-| **Risk** | Low (clear problem) | Medium (nightly API changes) |
-| **Value** | Tactical quick win | Strategic capability |
-| **Momentum** | Existing dataflow code | Fresh planning complete |
-| **Dependencies** | None (standalone) | Phase 0 spike (done) |
+| **Risk** | ✅ Validated (tests pass) | Medium (nightly API changes) |
+| **Value** | ✅ Tactical win achieved | Strategic capability |
+| **Status** | Optional phases remain | Ready to start Phase 1 |
+| **Dependencies** | ✅ Complete | Phase 0 spike (done) |
 
-## Recommendation
+## Current Recommendation
 
-I recommend **starting with Phase 3.5.1** (Branch-Sensitive Analysis) because:
+**Proceed to Tier 3 Phase 1** (HIR Driver) because:
 
-### Pros:
-1. ✅ **Quick win** - 7-9 hours to 100% recall
-2. ✅ **Low risk** - Clear problem, existing codebase
-3. ✅ **Validates architecture** - Tests dataflow improvements
-4. ✅ **Builds skills** - CFG experience useful for Tier 3
-5. ✅ **Immediate value** - Fixes dangerous false negative
+### Why Tier 3 Now:
 
-### Why not Tier 3 first?
-- Tier 3 Phase 1 is 2-3 weeks of work
-- Phase 3.5.1 can be done in 1-2 sessions
-- Quick win provides validation before larger investment
-- CFG analysis skills will inform Tier 3 design
+1. ✅ **Phase 3.5.1 complete** - Primary goal achieved (100% recall)
+2. ✅ **Strong foundation** - Dataflow architecture validated
+3. ✅ **Strategic value** - Unlocks 10-15 new rules requiring semantic analysis
+4. ✅ **Good timing** - Comprehensive planning complete, ready to implement
+5. ✅ **Skill progression** - CFG experience from Phase 3.5.1 informs HIR work
 
-### Suggested Sequence:
+### Alternative: Continue Phase 3.5
 
-**Week 1:** Phase 3.5.1 (Branch Analysis)
-- ✅ Achieve 100% recall on taint tracking
-- ✅ Validate dataflow architecture
-- ✅ Build CFG extraction skills
+If you prefer incremental improvements to dataflow:
+- Phase 3.5.2: Closure support (~1-2 sessions)
+- Phase 3.5.3: Trait dispatch (~1 session)
+- Phase 3.5.4: Async support (~1 session)
 
-**Week 2-3:** Phase 3.5.2 & 3.5.3 (Closures & Traits) - Optional
-- Continue if momentum good
-- Or pivot to Tier 3 with lessons learned
+**Note:** These are optional enhancements. The core goal is achieved.
 
-**Week 4+:** Tier 3 Phase 1 (HIR Driver)
-- Start HIR integration with confidence
-- Apply lessons from dataflow work
+## Next Steps
 
-## Next Immediate Steps
+### Option A: Start Tier 3 Phase 1 (Recommended)
 
-### To Start Phase 3.5.1:
+**Goal:** Build HIR extraction infrastructure
 
-```bash
-cd /Users/peteralbert/Projects/Rust-cola
+**Steps:**
+1. Create `mir-extractor/src/hir_types.rs` with data structures
+2. Integrate `hir_driver.rs` from Phase 0 spike
+3. Add `--hir-json` CLI flag
+4. Test on `examples/simple`
+5. Validate extraction overhead <1.2x
 
-# Create new modules
-mkdir -p mir-extractor/src/dataflow
-touch mir-extractor/src/dataflow/cfg.rs
-touch mir-extractor/src/dataflow/path_sensitive.rs
+**Timeline:** 2-3 weeks  
+**Deliverable:** HIR extraction working, linked to MIR
 
-# Examine the problem case
-grep -A 15 "test_partial_sanitization" examples/interprocedural/src/lib.rs
+**Reference:** `docs/tier3-hir-architecture.md`
 
-# Look at current MIR structure
-cargo run --bin mir-extractor -- \
-  --crate-path examples/interprocedural \
-  --mir-json target/partial_mir.json
+### Option B: Continue Phase 3.5 (Optional)
 
-cat target/partial_mir.json | jq '.functions[] | select(.name | contains("partial_sanitization"))'
+**Phase 3.5.2:** Closure support (~1-2 sessions)  
+**Phase 3.5.3:** Trait dispatch (~1 session)  
+**Phase 3.5.4:** Async support (~1 session)
 
-# Run current tests (baseline)
-cargo test --test test_function_summaries test_inter_procedural_detection -- --nocapture
-```
-
-### Files to Reference:
-
-- **Implementation guide:** `docs/phase3.5-next-steps.md`
-- **Full design:** `docs/phase3.5-roadmap.md`
-- **Test cases:** `examples/interprocedural/src/lib.rs`
-- **Current analysis:** `mir-extractor/src/interprocedural.rs`
-
-## Questions?
-
-Ready to proceed with Phase 3.5.1 (Branch Analysis)? 
-
-Or would you prefer to:
-- Start Tier 3 Phase 1 instead (HIR driver)?
-- Review the design docs more deeply?
-- Something else?
+**Note:** Optional enhancements - core goal already achieved
 
 ---
 
-**Status:** Ready to implement  
-**Recommended:** Phase 3.5.1 (Branch Analysis)  
-**Estimated Time:** 1-2 coding sessions (7-9 hours)  
-**Expected Outcome:** 100% recall on taint tracking (perfect detection)
+## Summary
+
+**Current State:**
+- ✅ 70 rules shipped (68 Tier 1, 2 Tier 2)
+- ✅ 100% recall on basic taint tracking
+- ✅ 0% false positive rate maintained
+- ✅ Phase 3.5.1 complete and validated
+
+**Recent Commits:**
+- 280fb74: Phase 3.5.1 implementation
+- dc01f48: Phase 3.5.1 completion report
+
+**Recommendation:** Start Tier 3 Phase 1 for strategic expansion
+
+---
+
+**Status:** Phase 3.5.1 COMPLETE ✅  
+**Next Recommended:** Tier 3 Phase 1 (HIR Driver)  
+**Alternative:** Phase 3.5.2-3.5.4 (optional dataflow enhancements)

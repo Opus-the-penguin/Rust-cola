@@ -2,6 +2,8 @@
 
 Rust-cola is a static application security testing tool for Rust code. It employs a three-tier hybrid analysis approach combining MIR heuristics, source-level inspection, and (planned) semantic analysis.
 
+> **Recent Achievement (Nov 2025):** Phase 3.5.1 branch-sensitive CFG analysis complete - achieving **100% recall** on interprocedural taint tracking with **0% false positives**. See `docs/phase3.5.1-complete.md`.
+
 ## Features
 
 - **Three-Tier Analysis Architecture:**

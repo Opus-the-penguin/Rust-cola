@@ -32,6 +32,8 @@ use walkdir::{DirEntry, WalkDir};
 pub mod dataflow;
 #[cfg(feature = "hir-driver")]
 mod hir;
+#[cfg(feature = "hir-driver")]
+mod type_analyzer;
 mod prototypes;
 pub mod interprocedural;
 
@@ -41,6 +43,8 @@ pub use hir::{
     capture_hir, capture_root_from_env, collect_crate_snapshot, target_spec_from_env,
     HirFunctionBody, HirIndex, HirItem, HirPackage, HirTargetSpec,
 };
+#[cfg(feature = "hir-driver")]
+pub use type_analyzer::{TypeAnalyzer, CacheStats};
 pub use prototypes::{
     detect_broadcast_unsync_payloads, detect_command_invocations,
     detect_content_length_allocations, detect_openssl_verify_none, detect_truncating_len_casts,

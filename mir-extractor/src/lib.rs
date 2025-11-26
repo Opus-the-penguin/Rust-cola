@@ -33,6 +33,8 @@ pub mod dataflow;
 #[cfg(feature = "hir-driver")]
 mod hir;
 #[cfg(feature = "hir-driver")]
+mod hir_query;
+#[cfg(feature = "hir-driver")]
 mod type_analyzer;
 mod prototypes;
 pub mod interprocedural;
@@ -41,8 +43,10 @@ pub use dataflow::{Assignment, MirDataflow};
 #[cfg(feature = "hir-driver")]
 pub use hir::{
     capture_hir, capture_root_from_env, collect_crate_snapshot, target_spec_from_env,
-    HirFunctionBody, HirIndex, HirItem, HirPackage, HirTargetSpec,
+    HirFunctionBody, HirIndex, HirItem, HirPackage, HirTargetSpec, HirTypeMetadata,
 };
+#[cfg(feature = "hir-driver")]
+pub use hir_query::HirQuery;
 #[cfg(feature = "hir-driver")]
 pub use type_analyzer::{TypeAnalyzer, CacheStats};
 pub use prototypes::{
@@ -461,20 +465,49 @@ fn looks_like_zst_pointer_arithmetic(line: &str) -> bool {
         return false;
     }
     
-    // Zero-sized type indicators
-    // Unit type: *const () or *mut ()
+    // Enhanced zero-sized type detection
+    
+    // 1. Unit type: *const () or *mut ()
     if (lower.contains("*const ()") || lower.contains("*mut ()")) && has_arithmetic {
         return true;
     }
     
-    // PhantomData
+    // 2. PhantomData (common marker types)
     if lower.contains("phantomdata") && has_arithmetic {
         return true;
     }
     
-    // Empty struct/enum patterns (tricky to detect reliably)
-    // Look for patterns like *const SomeName or *mut SomeName with size 0
-    // This is heuristic - may have false positives/negatives
+    // 3. PhantomPinned (another std marker type)
+    if lower.contains("phantompinned") && has_arithmetic {
+        return true;
+    }
+    
+    // 4. Full paths to marker types
+    if (lower.contains("std::marker::phantomdata") 
+        || lower.contains("::marker::phantomdata")
+        || lower.contains("core::marker::phantomdata")) && has_arithmetic {
+        return true;
+    }
+    
+    if (lower.contains("std::marker::phantompinned")
+        || lower.contains("::marker::phantompinned") 
+        || lower.contains("core::marker::phantompinned")) && has_arithmetic {
+        return true;
+    }
+    
+    // 5. Empty tuple/array patterns
+    if (lower.contains("*const [(); 0]") || lower.contains("*mut [(); 0]")) && has_arithmetic {
+        return true;
+    }
+    
+    // 6. Check for explicit size annotations in comments or variable names
+    // Sometimes ZST status is indicated in naming: ptr_zst, zst_ptr, etc.
+    if (lower.contains("_zst") || lower.contains("zst_")) && has_arithmetic {
+        return true;
+    }
+    
+    // Future enhancement: When HIR type_metadata is available, check size_bytes field
+    // TODO: Add HIR metadata lookup here once extract_type_size() is implemented
     
     false
 }

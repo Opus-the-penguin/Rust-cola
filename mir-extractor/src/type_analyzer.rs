@@ -45,10 +45,17 @@ impl<'tcx> TypeAnalyzer<'tcx> {
     ///     // MyStruct is Send...
     /// }
     /// ```
-    pub fn implements_trait(&mut self, ty_name: &str, trait_name: &str) -> Result<bool> {
-        // TODO: Implement using rustc's trait solver
-        // For now, return a conservative error
-        anyhow::bail!("implements_trait not yet implemented")
+    pub fn implements_trait(&mut self, _ty_name: &str, _trait_name: &str) -> Result<bool> {
+        // TODO: Trait checking requires complex trait solver integration
+        // The trait solver API has changed in recent rustc nightlies
+        // For now, this is stubbed - trait information should be extracted
+        // during HIR/MIR analysis and stored in metadata
+        //
+        // Future implementation options:
+        // 1. Use rustc's trait solver (needs API research for current nightly)
+        // 2. Pre-compute trait implementations during HIR extraction
+        // 3. Use DefId-based API instead of string-based
+        anyhow::bail!("implements_trait not yet implemented - use HIR metadata for Send/Sync info")
     }
 
     /// Check if a type is Send
@@ -102,9 +109,28 @@ impl<'tcx> TypeAnalyzer<'tcx> {
             return Ok(*size);
         }
 
-        // TODO: Implement using rustc's layout computation
-        // For now, return error
-        anyhow::bail!("size_of not yet implemented")
+        // Resolve type name to DefId
+        let def_id = self.resolve_type(ty_name)?;
+        
+        // Use the same logic as extract_type_size from hir.rs
+        use rustc_middle::ty::layout::LayoutOf;
+        
+        let ty = self.tcx.type_of(def_id).instantiate_identity();
+        let typing_env = rustc_middle::ty::TypingEnv::non_body_analysis(self.tcx, def_id);
+        let query_input = rustc_middle::ty::PseudoCanonicalInput {
+            typing_env,
+            value: ty,
+        };
+        
+        let result = match self.tcx.layout_of(query_input) {
+            Ok(layout) => Some(layout.size.bytes() as usize),
+            Err(_) => None,
+        };
+        
+        // Cache the result
+        self.size_cache.insert(ty_name.to_string(), result);
+        
+        Ok(result)
     }
 
     /// Check if a type is zero-sized (ZST)

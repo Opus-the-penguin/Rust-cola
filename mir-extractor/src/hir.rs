@@ -217,6 +217,26 @@ pub struct HirPackage {
     pub items: Vec<HirItem>,
     #[serde(default)]
     pub functions: Vec<HirFunctionBody>,
+    #[serde(default)]
+    pub type_metadata: Vec<HirTypeMetadata>,
+}
+
+/// Type metadata for semantic analysis
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HirTypeMetadata {
+    /// Type name (def_path)
+    pub type_name: String,
+    /// Size in bytes (None for unsized types)
+    pub size_bytes: Option<usize>,
+    /// Whether the type implements Send
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_send: Option<bool>,
+    /// Whether the type implements Sync
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_sync: Option<bool>,
+    /// Whether the type is zero-sized (computed from size_bytes == Some(0))
+    #[serde(default)]
+    pub is_zst: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -728,12 +748,40 @@ pub fn collect_crate_snapshot<'tcx>(
         });
     }
 
+    // Collect type metadata for structs and enums
+    let mut type_metadata = Vec::new();
+    for local_def_id in hir_items.definitions() {
+        let def_id: DefId = local_def_id.to_def_id();
+        let def_kind = tcx.def_kind(def_id);
+        
+        // Only collect metadata for types that can have instances
+        if matches!(def_kind, DefKind::Struct | DefKind::Enum | DefKind::Union) {
+            let def_path = tcx.def_path_str(def_id);
+            
+            // Try to get type size
+            let size_bytes = extract_type_size(tcx, def_id);
+            
+            // Compute is_zst from size
+            let is_zst = size_bytes == Some(0);
+            
+            // For now, skip Send/Sync detection (complex, requires trait solving)
+            type_metadata.push(HirTypeMetadata {
+                type_name: def_path,
+                size_bytes,
+                is_send: None,
+                is_sync: None,
+                is_zst,
+            });
+        }
+    }
+
     HirPackage {
         crate_name,
         crate_root: crate_root.to_string(),
         target: target.clone(),
         items,
         functions,
+        type_metadata,
     }
 }
 
@@ -742,6 +790,29 @@ fn collect_attributes(tcx: TyCtxt<'_>, def_id: DefId) -> Vec<String> {
         .iter()
         .map(attribute_name)
         .collect()
+}
+
+/// Extract the size of a type in bytes
+/// Returns None for unsized types or if size cannot be determined
+fn extract_type_size<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> Option<usize> {
+    use rustc_middle::ty::layout::LayoutOf;
+    
+    // Get the type
+    let ty = tcx.type_of(def_id).instantiate_identity();
+    
+    // Create TypingEnv from def_id - the API takes a def_id, not a param_env
+    let typing_env = rustc_middle::ty::TypingEnv::non_body_analysis(tcx, def_id);
+    
+    // Create the query input
+    let query_input = rustc_middle::ty::PseudoCanonicalInput {
+        typing_env,
+        value: ty,
+    };
+    
+    match tcx.layout_of(query_input) {
+        Ok(layout) => Some(layout.size.bytes() as usize),
+        Err(_) => None,
+    }
 }
 
 fn attribute_name(attr: &hir::Attribute) -> String {

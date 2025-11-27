@@ -1,8 +1,8 @@
 # Rust-cola Current Status & Next Steps
 
-**Date:** November 25, 2025  
+**Date:** November 26, 2025  
 **Version:** 70 security rules  
-**Recent Achievement:** ✅ Tier 3 Phase 1 COMPLETE! HIR extraction fully operational!
+**Recent Achievement:** ✅ Tier 3 Phase 2 COMPLETE! Type size extraction with 100% accuracy!
 
 ## Current State Summary
 
@@ -28,12 +28,16 @@
 
 **✅ Tier 3 HIR Integration:**
 - ✅ Phase 1 COMPLETE (Nov 25, 2025) - HIR extraction fully operational!
+- ✅ Phase 2 COMPLETE (Nov 25-26, 2025) - Type Query Interface shipped!
 - ✅ HirPackage data structures (1039 lines, comprehensive)
+- ✅ HirQuery API (270 lines, 5/5 tests passing)
+- ✅ Type size extraction (100% accuracy on 8/8 test types)
+- ✅ Enhanced RUSTCOLA064 (71% → 100% recall on std ZSTs)
 - ✅ rustc wrapper binary with cargo caching workaround
 - ✅ Fixed Use statement ICE (opt_item_name handling)
 - ✅ CLI flags: --hir-json, --hir-cache working reliably
-- ✅ Tested: 5 consecutive successful extractions
-- **Ready for Phase 2:** Type query interface
+- ✅ Comprehensive documentation (1,607 lines added)
+- **Ready for Phase 3:** Trait detection (Send/Sync queries)
 
 **Documentation:**
 - ✅ Comprehensive Tier 3 architecture plan (docs/tier3-hir-architecture.md)
@@ -41,13 +45,19 @@
 - ✅ Phase 3.5.1 completion report (docs/phase3.5.1-complete.md)
 - ✅ Quick start guide (docs/phase3.5-next-steps.md)
 - ✅ Three-tier architecture documented in README
+- ✅ Type metadata usage guide (docs/type-metadata-usage-guide.md - 374 lines)
+- ✅ rustc layout API solution (docs/rustc-layout-api-solution.md - 311 lines)
+- ✅ Tier 3 Phase 2 complete (docs/tier3-phase2-complete.md - 311 lines)
+- ✅ Handoff document for new sessions (docs/HANDOFF-2025-11-26.md)
 
 **Infrastructure:**
 - ✅ Phase 0 HIR spike complete (Oct 2025)
 - ✅ Phase 1 HIR extraction complete (Nov 2025)
+- ✅ Phase 2 Type Query Interface complete (Nov 2025)
 - ✅ Phase 3.5.1 branch-sensitive CFG analysis (Nov 2025)
 - ✅ Toolchain: rustc nightly-2025-10-08 (working)
 - ✅ rustc_interface integration validated
+- ✅ rustc layout API migration solved (PseudoCanonicalInput)
 
 ### 🔨 Two Active Paths Forward
 
@@ -147,16 +157,17 @@ pub fn test_partial_sanitization() {
 
 **Goal:** Add 10-15 advanced semantic rules (70 → 85+ total)
 
-**Status:** ✅ Phase 1 COMPLETE! Ready for Phase 2
+**Status:** ✅ Phase 2 COMPLETE! Ready for Phase 3 (Trait Detection)
 
-**Recent Fix (Nov 25, 2025):**
-- ✅ Fixed rustc ICE on Use statements (was our bug, not rustc)
-- ✅ Fixed cargo caching issue with stale environment variables
-- ✅ Added unique metadata flag to force fresh builds
-- ✅ Wrapper passthrough logic fixed
-- ✅ Tested: 5 consecutive successful HIR extractions
+**Recent Completion (Nov 25-26, 2025):**
+- ✅ Type size extraction working (100% accuracy)
+- ✅ HirQuery API shipped (270 lines, 5/5 tests passing)
+- ✅ Enhanced RUSTCOLA064 (71% → 100% recall on std ZSTs)
+- ✅ rustc layout API migration solved (PseudoCanonicalInput)
+- ✅ Comprehensive documentation (1,607 lines added)
+- ✅ All tests passing (8/8 type tests, 5/5 unit tests)
 
-**Next Action:** Phase 2 - Type Query Interface
+**Next Action:** Phase 3 - Trait Detection (Send/Sync queries)
 
 ### What We'll Build:
 
@@ -220,6 +231,11 @@ impl TypeAnalyzer {
 
 ### Implementation Timeline:
 
+**✅ Phase 0: HIR Spike COMPLETE** (Oct 2025)
+- ✅ Prototyped HIR extraction
+- ✅ Validated rustc_interface approach
+- **Status:** COMPLETE - Proved feasibility
+
 **✅ Phase 1: Core Driver COMPLETE** (Nov 2025)
 - ✅ HirPackage data structures (1039 lines, comprehensive)
 - ✅ hir_driver module integrated (feature-gated)
@@ -233,18 +249,30 @@ impl TypeAnalyzer {
 - **Status:** COMPLETE! HIR extraction fully operational ✅
 - **Commit:** 223c062
 
-**Phase 2: Type Queries** (Dec 2025 - IN PROGRESS)
-- Implement TypeAnalyzer interface
-- Cache type information
-- Ship enhanced RUSTCOLA064 (ZST detection: 71% → 100% recall)
-- **Deliverable:** First HIR-backed rule working
+**✅ Phase 2: Type Queries COMPLETE** (Nov 2025)
+- ✅ Implemented type size extraction (extract_type_size())
+- ✅ Solved rustc layout API migration (PseudoCanonicalInput)
+- ✅ Created HirQuery API for offline analysis
+- ✅ Extended HirPackage with type_metadata field
+- ✅ Enhanced RUSTCOLA064 (ZST detection: 71% → 100% recall)
+- ✅ Comprehensive documentation (1,607 lines)
+- ✅ All tests passing (8/8 type tests, 5/5 unit tests)
+- **Status:** COMPLETE! Type queries operational ✅
+- **Commit:** edbe13d
+- **Deliverable:** First HIR-backed rule at 100% recall achieved
 
-**Phase 3: Dataflow Integration** (Feb 2026)
+**Phase 3: Trait Detection** (Dec 2025 - NEXT)
+- Implement Send/Sync detection
+- Research trait solver API (similar to layout API)
+- Pre-compute during HIR extraction
+- **Deliverable:** Type-aware trait queries working
+
+**Phase 4: Dataflow Integration** (Feb 2026)
 - Type-aware taint tracking
 - Ship SQL injection detection
 - **Deliverable:** Type-aware dataflow rules
 
-**Phase 4: Production** (Mar 2026)
+**Phase 5: Production** (Mar 2026)
 - Ship 5+ HIR rules
 - CI integration
 - Documentation complete
@@ -252,10 +280,12 @@ impl TypeAnalyzer {
 
 ### Success Metrics:
 
-**Phase 1:** HIR extraction working, linked to MIR
-**Phase 2:** Enhanced RUSTCOLA064 at 100% recall
-**Phase 3:** SQL injection detection <5% FP rate
-**Phase 4:** 5+ HIR rules shipped, 75+ total rules
+**✅ Phase 0:** HIR extraction prototype working
+**✅ Phase 1:** HIR extraction working, linked to MIR
+**✅ Phase 2:** Enhanced RUSTCOLA064 at 100% recall (ACHIEVED!)
+**Phase 3:** Send/Sync trait queries working
+**Phase 4:** SQL injection detection <5% FP rate
+**Phase 5:** 5+ HIR rules shipped, 75+ total rules
 
 ---
 
@@ -263,27 +293,27 @@ impl TypeAnalyzer {
 
 | Aspect | Phase 3.5 (Dataflow) | Tier 3 (HIR) |
 |--------|---------------------|--------------|
-| **Effort** | ✅ Phase 3.5.1 DONE (7-9 hours) | ~2-3 days remaining (90% done) |
-| **Impact** | ✅ Achieved 100% recall | Unlocks 10-15 new rules |
+| **Effort** | ✅ Phase 3.5.1 DONE (7-9 hours) | ✅ Phase 2 DONE (~8 hours) |
+| **Impact** | ✅ Achieved 100% recall | ✅ Type queries working |
 | **Complexity** | Medium (CFG analysis) | High (compiler integration) |
-| **Risk** | ✅ Validated (tests pass) | Low (infrastructure proven) |
-| **Value** | ✅ Tactical win achieved | Strategic capability |
-| **Status** | Optional phases remain | ✅ Phase 1 COMPLETE |
-| **Dependencies** | ✅ Complete | ✅ Phase 0 spike complete |
+| **Risk** | ✅ Validated (tests pass) | ✅ Phase 2 validated |
+| **Value** | ✅ Tactical win achieved | Strategic capability unlocked |
+| **Status** | Optional phases remain | ✅ Phase 2 COMPLETE |
+| **Dependencies** | ✅ Complete | ✅ Phases 0-2 complete |
 
 ## Current Recommendation
 
-**Proceed to Tier 3 Phase 2** (Type Query Interface) because:
+**Proceed to Tier 3 Phase 3** (Trait Detection) because:
 
-### Why Phase 2 Now:
+### Why Phase 3 Now:
 
-1. ✅ **Phase 1 complete** - HIR extraction fully operational
-2. ✅ **All blockers resolved** - rustc ICE fixed, cargo caching solved
-3. ✅ **Tested and validated** - 5 consecutive successful extractions
-4. ✅ **Phase 3.5.1 complete** - Dataflow at 100% recall
+1. ✅ **Phase 2 complete** - Type size extraction at 100% accuracy
+2. ✅ **HirQuery API shipped** - 5/5 tests passing, fully documented
+3. ✅ **RUSTCOLA064 enhanced** - 71% → 100% recall achieved
+4. ✅ **Pattern established** - Successfully solved rustc layout API (can repeat for traits)
 5. ✅ **Strong foundation** - Both dataflow and HIR infrastructure proven
-6. ✅ **Clear path** - Type analyzer design documented
-7. ✅ **High value** - Enables 10-15 new semantic rules
+6. ✅ **Clear path** - Trait detection design documented
+7. ✅ **High value** - Enables Send/Sync based security rules
 
 ### Alternative: Continue Phase 3.5
 
@@ -296,24 +326,32 @@ If you prefer incremental improvements to dataflow:
 
 ## Next Steps
 
-### Option A: Tier 3 Phase 2 (Recommended)
+### Option A: Tier 3 Phase 3 (Recommended)
 
-**Goal:** Implement Type Query Interface
+**Goal:** Implement Trait Detection (Send/Sync queries)
 
-**Status:** Ready to start, Phase 1 complete
+**Status:** Ready to start, Phase 2 complete
 
 **Immediate Actions:**
-1. Design TypeAnalyzer API (~1 day)
-   - implements_trait(), is_send(), is_sync(), size_of()
-   - Cache type information from HIR
-2. Implement basic type queries (~2 days)
-3. Enhance RUSTCOLA064 (ZST detection) (~1 day)
-4. Integration tests (~1 day)
+1. Research rustc trait solver API (~3-4 hours)
+   - Study trait solver (similar approach to layout API)
+   - Find examples of auto-trait checking (Send/Sync)
+   - Look for TraitEngine or InferCtxt usage patterns
+2. Implement Send/Sync detection (~3-4 hours)
+   - Pre-compute during HIR extraction
+   - Populate HirTypeMetadata.is_send and is_sync
+3. Create examples and tests (~2-3 hours)
+   - Test with Arc, Rc, RefCell, etc.
+   - Document trait query patterns
+4. Enhance RUSTCOLA055 (~1 day)
+   - Broadcast unsync payloads detection
 
-**Timeline:** 5 days  
-**Deliverable:** First HIR-backed rule at 100% recall
+**Timeline:** 8-12 hours (similar to Phase 2)  
+**Deliverable:** Send/Sync detection working, at least 1 rule enhanced
 
-**Value:** Unlocks semantic analysis capabilities for future rules
+**Value:** Unlocks thread-safety based security rules
+
+**See:** `docs/HANDOFF-2025-11-26.md` for detailed Phase 3 guidance
 
 ### Option B: Continue Phase 3.5 (Optional)
 
@@ -333,18 +371,22 @@ If you prefer incremental improvements to dataflow:
 - ✅ 0% false positive rate maintained
 - ✅ Phase 3.5.1 complete and validated
 - ✅ Tier 3 Phase 1 COMPLETE - HIR extraction fully operational!
+- ✅ Tier 3 Phase 2 COMPLETE - Type queries working at 100% accuracy!
 
 **Recent Commits:**
-- 223c062: Fix HIR extraction (Use statements + cargo caching)
+- edbe13d: Phase 2 complete (Type Query Interface)
+- 223c062: Phase 1 complete (HIR extraction)
 - 280fb74: Phase 3.5.1 implementation
 - dc01f48: Phase 3.5.1 completion report
 
 **Blockers:** NONE - All systems operational! ✅
 
-**Recommendation:** Proceed to Tier 3 Phase 2 (Type Query Interface)
+**Recommendation:** Proceed to Tier 3 Phase 3 (Trait Detection)
 
 ---
 
-**Status:** Phase 3.5.1 COMPLETE ✅ | Tier 3 Phase 1 COMPLETE ✅  
-**Next Recommended:** Tier 3 Phase 2 - Type Query Interface  
+**Status:** Phase 3.5.1 COMPLETE ✅ | Tier 3 Phase 2 COMPLETE ✅  
+**Next Recommended:** Tier 3 Phase 3 - Trait Detection (Send/Sync)  
 **Alternative:** Phase 3.5.2-3.5.4 (optional dataflow enhancements)
+
+**📖 For detailed handoff:** See `docs/HANDOFF-2025-11-26.md`

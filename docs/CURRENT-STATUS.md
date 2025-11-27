@@ -1,18 +1,18 @@
 # Rust-cola Current Status & Next Steps
 
 **Date:** November 26, 2025  
-**Version:** 76 security rules  
-**Recent Achievement:** ✅ MIR Dataflow Rules Complete! RUSTCOLA075-078 shipped!
+**Version:** 77 security rules  
+**Recent Achievement:** ✅ MIR Dataflow Rules Complete! RUSTCOLA075-079 shipped!
 
 ## Current State Summary
 
 ### ✅ What's Completed
 
-**76 Security Rules Shipped:**
-- **Tier 1 (MIR Heuristics):** 74 rules - Pattern matching on compiler IR
+**77 Security Rules Shipped:**
+- **Tier 1 (MIR Heuristics):** 75 rules - Pattern matching on compiler IR
   - Memory safety, crypto, concurrency, FFI, input validation
   - 10-30% typical false positive rate (acceptable for heuristics)
-  - Recent additions: RUSTCOLA075-078 (MIR dataflow rules)
+  - Recent additions: RUSTCOLA075-079 (MIR dataflow rules)
 
 - **Tier 2 (Source Analysis):** 2 rules - AST inspection with syn crate
   - RUSTCOLA067: Commented-out code (87.5% recall, 100% precision)
@@ -24,6 +24,7 @@
 - ✅ RUSTCOLA076: Log injection (untrusted input to log sinks)
 - ✅ RUSTCOLA077: Division by untrusted denominator
 - ✅ RUSTCOLA078: MaybeUninit::assume_init without initialization
+- ✅ RUSTCOLA079: Regex injection (80% recall, 100% precision)
 
 **Advanced Dataflow:**
 - ✅ Phase 3.5.1: Branch-sensitive CFG analysis COMPLETE (Nov 25, 2025)
@@ -376,13 +377,13 @@ If you prefer incremental improvements to dataflow:
 ## Summary
 
 **Current State:**
-- ✅ 76 rules shipped (74 Tier 1, 2 Tier 2)
+- ✅ 77 rules shipped (75 Tier 1, 2 Tier 2)
 - ✅ 100% recall on basic taint tracking
 - ✅ 0% false positive rate maintained
 - ✅ Phase 3.5.1 complete and validated
 - ✅ Tier 3 Phase 1 COMPLETE - HIR extraction fully operational!
 - ✅ Tier 3 Phase 2 COMPLETE - Type queries working at 100% accuracy!
-- ✅ RUSTCOLA075-078 shipped - MIR dataflow rules complete!
+- ✅ RUSTCOLA075-079 shipped - MIR dataflow rules complete!
 
 **Recent Commits:**
 - edbe13d: Phase 2 complete (Type Query Interface)

@@ -10373,6 +10373,246 @@ impl Rule for MaybeUninitAssumeInitDataflowRule {
 }
 
 
+// RUSTCOLA079: Regex Injection
+/// Detects untrusted input flowing to Regex::new or RegexBuilder without validation,
+/// which can enable ReDoS (Regular Expression Denial of Service) attacks.
+struct RegexInjectionRule {
+    metadata: RuleMetadata,
+}
+
+impl RegexInjectionRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA079".to_string(),
+                name: "regex-injection".to_string(),
+                short_description: "Untrusted input used to construct regex pattern".to_string(),
+                full_description: "Detects environment variables, command-line arguments, or other \
+                    untrusted input flowing to Regex::new(), RegexBuilder::new(), or regex! macro \
+                    without sanitization. Attackers can craft malicious patterns causing catastrophic \
+                    backtracking (ReDoS), consuming excessive CPU and causing denial of service. \
+                    Validate regex patterns, use timeouts, limit pattern complexity, or use \
+                    regex crates with ReDoS protection (e.g., `regex` crate's default is safe, \
+                    but user-controlled patterns can still match unexpectedly)."
+                    .to_string(),
+                help_uri: Some("https://cwe.mitre.org/data/definitions/1333.html".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Input source patterns (untrusted data origins)
+    fn input_source_patterns() -> &'static [&'static str] {
+        &[
+            "= var::",            // env::var - MIR format: var::<&str>(const "...")
+            "= var(",             // env::var - alternate format
+            "var_os(",            // env::var_os
+            "= args(",            // env::args
+            "args_os(",           // env::args_os
+            "::nth(",             // iterator nth (often on args)
+            "read_line(",         // stdin - includes BufRead>::read_line
+            "read_to_string",     // file/stdin reads - includes fs::read_to_string
+            "Read>::read(",       // file reads
+            "::get(",             // HashMap/BTreeMap get, query params
+            "query(",             // URL query parameters
+            "body(",              // HTTP body
+            "json(",              // JSON payload
+            "= stdin(",           // stdin() call
+        ]
+    }
+
+    /// Sanitizer patterns that validate or escape regex input
+    fn sanitizer_patterns() -> &'static [&'static str] {
+        &[
+            "escape(",        // regex::escape()
+            "is_match(",      // Pre-validated pattern
+            "validate",       // Custom validation
+            "sanitize",       
+            "whitelist",
+            "allowlist",
+            "allowed_pattern",
+            "safe_pattern",
+        ]
+    }
+
+    /// Regex sink patterns where injection can occur
+    fn regex_sink_patterns() -> &'static [&'static str] {
+        &[
+            "Regex::new",            // Matches both Regex::new( and Regex::new::<
+            "RegexBuilder::new",     // Matches regex::RegexBuilder::new
+            "RegexSet::new",         // Matches regex::RegexSet::new::<...>
+            "regex!(",
+            "Regex::from_str",
+            "RegexBuilder::from_str",
+            "RegexBuilder::build",   // The final build call
+        ]
+    }
+
+    /// Check if a MIR line contains a specific variable with proper word boundaries
+    /// e.g., "_1" should not match "_11" or "_10"
+    fn contains_var(line: &str, var: &str) -> bool {
+        // Look for the variable followed by a non-digit character
+        // Common patterns: move _N, copy _N, &_N, _N), _N,, (_N
+        for (idx, _) in line.match_indices(var) {
+            // Check what comes after the variable
+            let after_pos = idx + var.len();
+            if after_pos >= line.len() {
+                return true; // var at end of line
+            }
+            let next_char = line[after_pos..].chars().next().unwrap();
+            // If next char is a digit, this is a longer variable like _11 when looking for _1
+            if !next_char.is_ascii_digit() {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Track untrusted input variables
+    fn track_untrusted_vars(body: &[String]) -> HashSet<String> {
+        let mut untrusted_vars = HashSet::new();
+        let source_patterns = Self::input_source_patterns();
+        let sanitizer_patterns = Self::sanitizer_patterns();
+        
+        for line in body {
+            let trimmed = line.trim();
+            
+            // Check if this line contains an input source
+            let is_source = source_patterns.iter().any(|p| trimmed.contains(p));
+            
+            if is_source {
+                // Extract target variable
+                if let Some(eq_pos) = trimmed.find(" = ") {
+                    let target = trimmed[..eq_pos].trim();
+                    if let Some(var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                        .find(|s| s.starts_with('_'))
+                    {
+                        untrusted_vars.insert(var.to_string());
+                    }
+                }
+            }
+        }
+        
+        // Second pass: propagate taint through assignments
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for line in body {
+                let trimmed = line.trim();
+                
+                // Pattern: _N = ... _M ... where _M is untrusted
+                if trimmed.contains(" = ") {
+                    if let Some(eq_pos) = trimmed.find(" = ") {
+                        let target = trimmed[..eq_pos].trim();
+                        let source = trimmed[eq_pos + 3..].trim();
+                        
+                        // Check if source uses an untrusted var (with word boundary matching)
+                        let uses_untrusted = untrusted_vars.iter().any(|v| {
+                            Self::contains_var(source, v)
+                        });
+                        
+                        if uses_untrusted {
+                            // Check if there's a sanitizer on this line
+                            let has_sanitizer = sanitizer_patterns
+                                .iter()
+                                .any(|p| source.to_lowercase().contains(&p.to_lowercase()));
+                            
+                            if !has_sanitizer {
+                                // Propagate taint
+                                if let Some(target_var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                                    .find(|s| s.starts_with('_'))
+                                {
+                                    if !untrusted_vars.contains(target_var) {
+                                        untrusted_vars.insert(target_var.to_string());
+                                        changed = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        untrusted_vars
+    }
+
+    /// Find regex sinks using untrusted variables
+    fn find_regex_injections(body: &[String], untrusted_vars: &HashSet<String>) -> Vec<String> {
+        let mut evidence = Vec::new();
+        let regex_sinks = Self::regex_sink_patterns();
+        
+        for line in body {
+            let trimmed = line.trim();
+            
+            // Check if this is a regex sink
+            let is_regex_sink = regex_sinks.iter().any(|p| trimmed.contains(p));
+            
+            if is_regex_sink {
+                // Check if any untrusted variable is used (with proper word boundaries)
+                for var in untrusted_vars {
+                    if Self::contains_var(trimmed, var) {
+                        evidence.push(trimmed.to_string());
+                        break;
+                    }
+                }
+            }
+        }
+        
+        evidence
+    }
+}
+
+impl Rule for RegexInjectionRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Skip internal functions
+            if function.name.contains("mir_extractor") || function.name.contains("mir-extractor") {
+                continue;
+            }
+
+            // Track untrusted input variables
+            let untrusted_vars = Self::track_untrusted_vars(&function.body);
+            
+            if untrusted_vars.is_empty() {
+                continue;
+            }
+
+            // Find regex injections
+            let injections = Self::find_regex_injections(&function.body, &untrusted_vars);
+            
+            if !injections.is_empty() {
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "Untrusted input flows to regex construction in `{}`. \
+                        Attackers may craft patterns causing ReDoS (catastrophic backtracking) \
+                        or unexpected matches. Use regex::escape() for literal matching or \
+                        validate patterns against an allowlist.",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence: injections.into_iter().take(3).collect(),
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        findings
+    }
+}
+
+
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
     engine.register_rule(Box::new(TransmuteRule::new()));
@@ -10441,6 +10681,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(LogInjectionRule::new())); // RUSTCOLA076
     engine.register_rule(Box::new(DivisionByUntrustedRule::new())); // RUSTCOLA077
     engine.register_rule(Box::new(MaybeUninitAssumeInitDataflowRule::new())); // RUSTCOLA078
+    engine.register_rule(Box::new(RegexInjectionRule::new())); // RUSTCOLA079
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

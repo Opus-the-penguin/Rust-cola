@@ -53,5 +53,6 @@ members = [
     "examples/log-injection",
     "examples/division-by-untrusted",
     "examples/maybeuninit-dataflow",
+    "examples/regex-injection",
 ]
 resolver = "2"

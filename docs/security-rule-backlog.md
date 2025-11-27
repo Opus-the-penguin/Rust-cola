@@ -58,7 +58,7 @@ Feasibility legend:
 
 36. **SQL injection** – Track untrusted input to `diesel::sql_query` and raw SQL builders. **Feasibility:** Advanced.
 37. **Path traversal** – Detect tainted paths passed to filesystem APIs. **Feasibility:** Advanced.
-38. **Regular expression injection** – Taint to `Regex::new` or `RegexBuilder`. **Feasibility:** MIR dataflow.
+38. **Regular expression injection** *(shipped — RUSTCOLA079)* – Detects untrusted input (env vars, CLI args, file contents) flowing to Regex::new(), RegexBuilder::new(), or RegexSet::new() without sanitization. Attackers can craft malicious patterns causing ReDoS (catastrophic backtracking) or unexpected matches. Use regex::escape() for literal matching or validate patterns against an allowlist. **Signal:** MIR dataflow – tracks untrusted sources to regex construction sinks. **Test results:** 80% recall (8/10 detected), 100% precision (0/8 false positives). **Feasibility:** MIR dataflow.
 39. **Server-side request forgery** – Taint external URLs used in HTTP clients. **Feasibility:** Advanced.
 40. **Command injection (process::Command)** *(shipped)* – Track execution of external commands. **Feasibility:** Heuristic.
 41. **Command argument taint** *(shipped — RUSTCOLA006, deepened with dataflow)* – Ensure user input (env vars, network, files) passed to `Command::arg` is sanitized. Tracks taint from env::var/env::var_os to Command::arg, fs::write, fs::remove_file. Phase 1 complete: 52% FP reduction (95% → 43%). Phase 2 pending: sanitization detection. **Feasibility:** MIR dataflow.

@@ -1,15 +1,15 @@
 # Rust-cola — Static Security Analysis for Rust
 
-Rust-cola is a static application security testing tool for Rust code. It employs a three-tier hybrid analysis approach combining MIR heuristics, source-level inspection, and (planned) semantic analysis.
+Rust-cola is a static application security testing tool for Rust code. It employs a three-tier hybrid analysis approach combining MIR heuristics, source-level inspection, and semantic analysis via rustc HIR integration.
 
-> **Recent Achievement (Nov 2025):** Phase 3.5.1 branch-sensitive CFG analysis complete - achieving **100% recall** on interprocedural taint tracking with **0% false positives**. See `docs/phase3.5.1-complete.md`.
+> **Recent Achievement (Nov 2025):** Tier 3 Phase 3 Send/Sync trait detection complete - using rustc's trait solver to detect auto-trait implementations. Type metadata now includes `is_send`/`is_sync` fields for concrete types. See commit `b35df17`.
 
 ## Features
 
 - **Three-Tier Analysis Architecture:**
   - **Tier 1 (MIR Heuristics):** 68 rules using pattern matching on compiler-generated MIR
   - **Tier 2 (Source Analysis):** 2 rules using AST inspection for comments and attributes  
-  - **Tier 3 (Semantic Analysis):** Planned HIR integration for advanced type-aware rules
+  - **Tier 3 (Semantic Analysis):** HIR integration for type-aware rules (type sizes, Send/Sync detection)
 - **70 Built-in Security Rules** covering:
 	- Memory safety issues: `Box::into_raw` leaks, unchecked `transmute`, `Vec::set_len` misuse, premature `MaybeUninit::assume_init`, deprecated zero-initialization functions
 	- Unsafe code patterns: unsafe blocks, untrusted environment variable reads, command execution with user-influenced input
@@ -33,9 +33,11 @@ Rust-cola uses a hybrid three-tier detection approach:
 ├─────────────────────────────────────────────────┤
 │  Tier 1: MIR        Tier 2: Source    Tier 3:   │
 │  Heuristics         Analysis          HIR       │
-│  (68 rules)         (2 rules)         (Planned) │
-│  ✅ Pattern          ✅ Comments/      🔨 Type    │
+│  (68 rules)         (2 rules)         ✅ Active │
+│  ✅ Pattern          ✅ Comments/      ✅ Type    │
 │     matching           Attributes        queries │
+│                                       ✅ Send/   │
+│                                          Sync   │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -43,7 +45,7 @@ Rust-cola uses a hybrid three-tier detection approach:
 
 **Tier 2 (Source Analysis):** AST-based inspection using the `syn` crate for patterns requiring source-level context like comments, attributes, and formatting that don't appear in MIR.
 
-**Tier 3 (Semantic Analysis - Planned):** Deep semantic analysis via rustc HIR integration for type-aware rules, proper taint tracking, trait/generic analysis. See `docs/tier3-hir-architecture.md`.
+**Tier 3 (Semantic Analysis):** Deep semantic analysis via rustc HIR integration for type-aware rules. Currently supports type size queries (100% accuracy) and Send/Sync trait detection. See `docs/tier3-hir-architecture.md`.
 
 Research prototypes are available in [`mir-extractor/src/prototypes.rs`](mir-extractor/src/prototypes.rs) with documentation in [`docs/research/`](docs/research/).
 

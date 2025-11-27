@@ -19,7 +19,7 @@ Feasibility legend:
 5. **mem::uninitialized / mem::zeroed** *(shipped — RUSTCOLA010)* – Flag usage of deprecated zero-init APIs on non-zero types. **Feasibility:** Heuristic.
 6. **Dangling pointer use-after-free** – Ensure no access after `drop` or reallocation. **Feasibility:** Advanced.
 7. **Access of invalid pointer** – Catch derefs of null or misaligned pointers. **Feasibility:** Advanced.
-8. **Unsafe Send/Sync impls** *(RUSTCOLA015 shipped for missing generic bounds; doc commentary lint pending)* – Highlight `unsafe impl Send/Sync` without safety commentary. **Feasibility:** Heuristic (doc-aware).
+8. **Unsafe Send/Sync impls** *(RUSTCOLA015 shipped for missing generic bounds; Tier 3 Send/Sync detection complete)* – Highlight `unsafe impl Send/Sync` without safety commentary. RUSTCOLA015 detects missing generic bounds on unsafe Send/Sync impls. Tier 3 Phase 3 adds Send/Sync trait detection via rustc's trait solver, populating `is_send`/`is_sync` fields in HirTypeMetadata for concrete types. Generic types return `null` (indeterminate without substitution). **Feasibility:** Heuristic (RUSTCOLA015) + Semantic (Tier 3 trait solver).
 9. **static mut globals** *(shipped — RUSTCOLA025)* – Warn about mutable statics that break thread safety. **Feasibility:** Heuristic.
 10. **NonNull::new_unchecked misuse** *(shipped — RUSTCOLA026)* – Ensure null checks before `new_unchecked`. **Feasibility:** Heuristic.
 11. **mem::forget on guards** *(shipped — RUSTCOLA027)* – Catch forgetting RAII guards that release locks/resources. **Feasibility:** MIR dataflow.

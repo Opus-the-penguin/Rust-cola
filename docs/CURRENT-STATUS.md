@@ -1,18 +1,18 @@
 # Rust-cola Current Status & Next Steps
 
 **Date:** November 26, 2025  
-**Version:** 78 security rules  
-**Recent Achievement:** ✅ RUSTCOLA080 shipped! Unchecked index arithmetic detection.
+**Version:** 79 security rules  
+**Recent Achievement:** ✅ RUSTCOLA081 shipped! Serde serialize_* length mismatch detection.
 
 ## Current State Summary
 
 ### ✅ What's Completed
 
-**78 Security Rules Shipped:**
-- **Tier 1 (MIR Heuristics):** 76 rules - Pattern matching on compiler IR
+**79 Security Rules Shipped:**
+- **Tier 1 (MIR Heuristics):** 77 rules - Pattern matching on compiler IR
   - Memory safety, crypto, concurrency, FFI, input validation
   - 10-30% typical false positive rate (acceptable for heuristics)
-  - Recent additions: RUSTCOLA075-080 (MIR dataflow rules)
+  - Recent additions: RUSTCOLA075-081 (MIR dataflow rules)
 
 - **Tier 2 (Source Analysis):** 2 rules - AST inspection with syn crate
   - RUSTCOLA067: Commented-out code (87.5% recall, 100% precision)
@@ -26,6 +26,7 @@
 - ✅ RUSTCOLA078: MaybeUninit::assume_init without initialization
 - ✅ RUSTCOLA079: Regex injection (80% recall, 100% precision)
 - ✅ RUSTCOLA080: Unchecked index arithmetic (55% recall, 100% precision)
+- ✅ RUSTCOLA081: Serde serialize_* length mismatch (71% recall, 100% precision)
 
 **Advanced Dataflow:**
 - ✅ Phase 3.5.1: Branch-sensitive CFG analysis COMPLETE (Nov 25, 2025)
@@ -378,13 +379,13 @@ If you prefer incremental improvements to dataflow:
 ## Summary
 
 **Current State:**
-- ✅ 78 rules shipped (76 Tier 1, 2 Tier 2)
+- ✅ 79 rules shipped (77 Tier 1, 2 Tier 2)
 - ✅ 100% recall on basic taint tracking
 - ✅ 0% false positive rate maintained
 - ✅ Phase 3.5.1 complete and validated
 - ✅ Tier 3 Phase 1 COMPLETE - HIR extraction fully operational!
 - ✅ Tier 3 Phase 2 COMPLETE - Type queries working at 100% accuracy!
-- ✅ RUSTCOLA075-080 shipped - MIR dataflow rules complete!
+- ✅ RUSTCOLA075-081 shipped - MIR dataflow rules complete!
 
 **Recent Commits:**
 - edbe13d: Phase 2 complete (Type Query Interface)

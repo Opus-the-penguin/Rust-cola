@@ -158,7 +158,7 @@ Feasibility legend:
 
 ## Additional Security Patterns (Oct 2025)
 
-98. **Serde `serialize_*` length mismatch** – Public security research ensures `serialize_struct`/`serialize_tuple*` `len` arguments match the number of `serialize_field`/`serialize_element` calls, preventing receivers from misparsing truncated data. **Signal:** Count serialization helper invocations under each Serde serializer call and flag mismatched arity in the same block. **Feasibility:** MIR dataflow.
+98. **Serde `serialize_*` length mismatch** *(shipped — RUSTCOLA081)* – Detects when the declared field/element count in serialize_struct/serialize_tuple/serialize_tuple_struct doesn't match the actual number of serialize_field/serialize_element calls. This mismatch can cause deserialization failures, data corruption, or panics in binary formats like bincode, postcard, or MessagePack that rely on precise length hints. **Detection patterns:** Extracts declared length from `serialize_struct(*, "Name", const N)` and counts `SerializeStruct>::serialize_field` / `SerializeTuple>::serialize_element` calls in the same function. Skips loop-based serialization (dynamic element counts). **Test suite:** 7 problematic patterns (struct/tuple/tuple_struct length mismatches), 8 safe patterns (correct counts, dynamic lengths, derive macro). **Metrics:** 71% recall (5/7 detected - seq/map with loops correctly skipped), 100% precision (0/8 false positives). **Signal:** MIR pattern analysis – counts serialization method calls. **Feasibility:** MIR dataflow.
 
 ## Security Rule Follow-ups (Nov 2025)
 

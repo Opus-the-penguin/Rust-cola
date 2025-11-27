@@ -55,5 +55,6 @@ members = [
     "examples/maybeuninit-dataflow",
     "examples/regex-injection",
     "examples/unchecked-index",
+    "examples/serde-length-mismatch",
 ]
 resolver = "2"

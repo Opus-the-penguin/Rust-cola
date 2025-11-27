@@ -10989,6 +10989,306 @@ impl Rule for UncheckedIndexRule {
 }
 
 
+// =============================================================================
+// RUSTCOLA081: Serde serialize_* length mismatch
+// =============================================================================
+
+/// Detects when the declared length argument to serialize_struct/serialize_tuple/etc
+/// doesn't match the actual number of serialize_field/serialize_element calls.
+/// This can cause deserialization failures in binary formats.
+struct SerdeLengthMismatchRule {
+    metadata: RuleMetadata,
+}
+
+impl SerdeLengthMismatchRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA081".to_string(),
+                name: "serde-length-mismatch".to_string(),
+                short_description: "Serde serialize_* length mismatch".to_string(),
+                full_description: "Detects when the declared field/element count in \
+                    serialize_struct/serialize_tuple/etc doesn't match the actual number \
+                    of serialize_field/serialize_element calls. This mismatch can cause \
+                    deserialization failures, data corruption, or panics in binary formats \
+                    like bincode, postcard, or MessagePack that rely on precise length hints."
+                    .to_string(),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+                help_uri: None,
+            },
+        }
+    }
+
+    /// Extract declared length from serialize_struct/tuple/etc calls
+    /// Returns: Vec<(serializer_type, struct_name, declared_len, line)>
+    fn find_serializer_declarations(body: &[String]) -> Vec<(String, String, usize, String)> {
+        let mut declarations = Vec::new();
+        
+        for line in body {
+            let trimmed = line.trim();
+            
+            // Pattern: serialize_struct(move _N, const "Name", const K_usize)
+            if trimmed.contains("serialize_struct(") && !trimmed.contains("serialize_struct_variant") {
+                if let Some(decl) = Self::extract_struct_declaration(trimmed) {
+                    declarations.push(("struct".to_string(), decl.0, decl.1, trimmed.to_string()));
+                }
+            }
+            
+            // Pattern: serialize_tuple(move _N, const K_usize)
+            if trimmed.contains("serialize_tuple(") && !trimmed.contains("serialize_tuple_struct") && !trimmed.contains("serialize_tuple_variant") {
+                if let Some(len) = Self::extract_tuple_length(trimmed) {
+                    declarations.push(("tuple".to_string(), "".to_string(), len, trimmed.to_string()));
+                }
+            }
+            
+            // Pattern: serialize_tuple_struct(move _N, const "Name", const K_usize)
+            if trimmed.contains("serialize_tuple_struct(") {
+                if let Some(decl) = Self::extract_struct_declaration(trimmed) {
+                    declarations.push(("tuple_struct".to_string(), decl.0, decl.1, trimmed.to_string()));
+                }
+            }
+            
+            // Pattern: serialize_seq(Some(K)) - only when K is a constant
+            if trimmed.contains("serialize_seq(") {
+                if let Some(len) = Self::extract_seq_length(trimmed) {
+                    declarations.push(("seq".to_string(), "".to_string(), len, trimmed.to_string()));
+                }
+            }
+            
+            // Pattern: serialize_map(Some(K)) - only when K is a constant
+            if trimmed.contains("serialize_map(") {
+                if let Some(len) = Self::extract_map_length(trimmed) {
+                    declarations.push(("map".to_string(), "".to_string(), len, trimmed.to_string()));
+                }
+            }
+        }
+        
+        declarations
+    }
+
+    /// Extract struct name and declared field count from serialize_struct call
+    fn extract_struct_declaration(line: &str) -> Option<(String, usize)> {
+        // Pattern: serialize_struct(move _N, const "Name", const K_usize)
+        // or: serialize_tuple_struct(move _N, const "Name", const K_usize)
+        
+        // Find the struct name in quotes
+        let name_start = line.find("const \"")? + 7;
+        let name_end = line[name_start..].find("\"")? + name_start;
+        let name = line[name_start..name_end].to_string();
+        
+        // Find the length constant after the name
+        let after_name = &line[name_end..];
+        // Look for "const N_usize" pattern
+        if let Some(const_pos) = after_name.find("const ") {
+            let len_start = const_pos + 6;
+            let len_str = &after_name[len_start..];
+            // Extract the number before _usize
+            if let Some(usize_pos) = len_str.find("_usize") {
+                let num_str = &len_str[..usize_pos];
+                if let Ok(len) = num_str.trim().parse::<usize>() {
+                    return Some((name, len));
+                }
+            }
+        }
+        
+        None
+    }
+
+    /// Extract length from serialize_tuple call
+    fn extract_tuple_length(line: &str) -> Option<usize> {
+        // Pattern: serialize_tuple(move _N, const K_usize)
+        if let Some(const_pos) = line.rfind("const ") {
+            let after_const = &line[const_pos + 6..];
+            if let Some(usize_pos) = after_const.find("_usize") {
+                let num_str = &after_const[..usize_pos];
+                if let Ok(len) = num_str.trim().parse::<usize>() {
+                    return Some(len);
+                }
+            }
+        }
+        None
+    }
+
+    /// Extract length from serialize_seq(Some(K)) where K is constant
+    fn extract_seq_length(line: &str) -> Option<usize> {
+        // Pattern: serialize_seq(Some(K)) represented as const N_usize or move _var
+        // We only flag when it's a hardcoded constant, not dynamic like self.data.len()
+        
+        // Skip if it uses None (dynamic length)
+        if line.contains("Option::<usize>::None") || line.contains("None::<usize>") {
+            return None;
+        }
+        
+        // Look for const pattern - indicates hardcoded length
+        if let Some(const_pos) = line.rfind("const ") {
+            let after_const = &line[const_pos + 6..];
+            if let Some(usize_pos) = after_const.find("_usize") {
+                let num_str = &after_const[..usize_pos];
+                if let Ok(len) = num_str.trim().parse::<usize>() {
+                    return Some(len);
+                }
+            }
+        }
+        
+        None
+    }
+
+    /// Extract length from serialize_map(Some(K)) where K is constant
+    fn extract_map_length(line: &str) -> Option<usize> {
+        // Same logic as seq
+        Self::extract_seq_length(line)
+    }
+
+    /// Count serialize_field calls in the function body
+    fn count_serialize_fields(body: &[String]) -> usize {
+        body.iter()
+            .filter(|line| {
+                let trimmed = line.trim();
+                // Count SerializeStruct::serialize_field calls
+                trimmed.contains("SerializeStruct>::serialize_field") ||
+                // Also count SerializeStructVariant::serialize_field
+                trimmed.contains("SerializeStructVariant>::serialize_field")
+            })
+            .count()
+    }
+
+    /// Count serialize_element calls in the function body
+    fn count_serialize_elements(body: &[String]) -> usize {
+        body.iter()
+            .filter(|line| {
+                let trimmed = line.trim();
+                // Count SerializeTuple::serialize_element
+                trimmed.contains("SerializeTuple>::serialize_element") ||
+                // Count SerializeTupleStruct::serialize_field (not serialize_element!)
+                trimmed.contains("SerializeTupleStruct>::serialize_field")
+            })
+            .count()
+    }
+
+    /// Count serialize_element for seq
+    fn count_seq_elements(body: &[String]) -> usize {
+        body.iter()
+            .filter(|line| {
+                let trimmed = line.trim();
+                trimmed.contains("SerializeSeq>::serialize_element")
+            })
+            .count()
+    }
+
+    /// Count serialize_entry for map
+    fn count_map_entries(body: &[String]) -> usize {
+        body.iter()
+            .filter(|line| {
+                let trimmed = line.trim();
+                trimmed.contains("SerializeMap>::serialize_entry") ||
+                // Also count serialize_key/serialize_value pairs
+                trimmed.contains("SerializeMap>::serialize_key")
+            })
+            .count()
+    }
+
+    /// Check if this is a loop-based serialization (dynamic elements)
+    fn has_loop_serialization(body: &[String]) -> bool {
+        // If there's a loop pattern, the element count is dynamic
+        let body_str = body.join("\n");
+        
+        // Common loop patterns in MIR
+        body_str.contains("switchInt") && 
+        (body_str.contains("IntoIterator") || 
+         body_str.contains("Iterator>::next") ||
+         body_str.contains("Range"))
+    }
+}
+
+impl Rule for SerdeLengthMismatchRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Skip non-serialize functions
+            if !function.name.contains("serialize") && !function.signature.contains("Serialize") {
+                continue;
+            }
+            
+            // Skip derive-generated serializations (they're always correct)
+            if function.signature.contains("impl _::_serde::Serialize") ||
+               function.signature.contains("<impl Serialize") {
+                // This might be derive-generated, but also might be manual impl
+                // We'll still check it
+            }
+
+            // Find serializer declarations
+            let declarations = Self::find_serializer_declarations(&function.body);
+            
+            if declarations.is_empty() {
+                continue;
+            }
+
+            for (ser_type, name, declared_len, decl_line) in &declarations {
+                let actual_count = match ser_type.as_str() {
+                    "struct" => Self::count_serialize_fields(&function.body),
+                    "tuple" | "tuple_struct" => Self::count_serialize_elements(&function.body),
+                    "seq" => {
+                        // Skip if there's loop-based serialization
+                        if Self::has_loop_serialization(&function.body) {
+                            continue;
+                        }
+                        Self::count_seq_elements(&function.body)
+                    }
+                    "map" => {
+                        if Self::has_loop_serialization(&function.body) {
+                            continue;
+                        }
+                        Self::count_map_entries(&function.body)
+                    }
+                    _ => continue,
+                };
+
+                // Check for mismatch
+                if actual_count != *declared_len {
+                    let type_desc = match ser_type.as_str() {
+                        "struct" => "struct fields",
+                        "tuple" | "tuple_struct" => "tuple elements",
+                        "seq" => "sequence elements",
+                        "map" => "map entries",
+                        _ => "elements",
+                    };
+
+                    let name_info = if name.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" for `{}`", name)
+                    };
+
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: format!(
+                            "Serde serialize_{}{} declares {} {} but actually serializes {}. \
+                            This mismatch can cause deserialization failures in binary formats. \
+                            Update the length argument to match the actual count.",
+                            ser_type, name_info, declared_len, type_desc, actual_count
+                        ),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence: vec![decl_line.clone()],
+                        span: function.span.clone(),
+                    });
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
     engine.register_rule(Box::new(TransmuteRule::new()));
@@ -11059,6 +11359,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(MaybeUninitAssumeInitDataflowRule::new())); // RUSTCOLA078
     engine.register_rule(Box::new(RegexInjectionRule::new())); // RUSTCOLA079
     engine.register_rule(Box::new(UncheckedIndexRule::new())); // RUSTCOLA080
+    engine.register_rule(Box::new(SerdeLengthMismatchRule::new())); // RUSTCOLA081
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

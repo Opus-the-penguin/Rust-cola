@@ -9271,6 +9271,245 @@ impl Rule for DeadStoreArrayRule {
     }
 }
 
+// RUSTCOLA073: Unsafe FFI pointer returns
+/// Detects extern "C" functions that return raw pointers without safety documentation
+struct UnsafeFfiPointerReturnRule {
+    metadata: RuleMetadata,
+}
+
+impl UnsafeFfiPointerReturnRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA073".to_string(),
+                name: "unsafe-ffi-pointer-return".to_string(),
+                short_description: "FFI function returns raw pointer without safety invariants".to_string(),
+                full_description: "Detects extern \"C\" functions that return raw pointers (*const T or *mut T). \
+                    These functions expose memory that must be managed correctly by callers, but the Rust \
+                    type system cannot enforce this across FFI boundaries. Functions returning raw pointers \
+                    should document ownership semantics (who frees the memory), lifetime requirements, \
+                    and validity invariants. Consider using safer alternatives like returning by value \
+                    or using output parameters with clear ownership.".to_string(),
+                help_uri: Some("https://doc.rust-lang.org/nomicon/ffi.html".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Check if a function signature indicates an extern "C" function returning a pointer
+    fn is_ffi_returning_pointer(signature: &str, body: &[String]) -> Option<String> {
+        // Check if it's an extern "C" function
+        if !signature.contains("extern \"C\"") && !signature.contains("extern \"system\"") {
+            return None;
+        }
+
+        // Check if it returns a raw pointer
+        // Pattern: -> *const T or -> *mut T
+        if let Some(arrow_pos) = signature.find("->") {
+            let return_type = signature[arrow_pos + 2..].trim();
+            if return_type.starts_with("*const") || return_type.starts_with("*mut") {
+                // Check if there's safety documentation in the function body
+                let has_safety_doc = body.iter().any(|line| {
+                    let lower = line.to_lowercase();
+                    lower.contains("safety:") || 
+                    lower.contains("# safety") ||
+                    lower.contains("invariant") ||
+                    lower.contains("ownership") ||
+                    lower.contains("caller must") ||
+                    lower.contains("must be freed")
+                });
+
+                if !has_safety_doc {
+                    return Some(return_type.to_string());
+                }
+            }
+        }
+
+        None
+    }
+}
+
+impl Rule for UnsafeFfiPointerReturnRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            if let Some(return_type) = Self::is_ffi_returning_pointer(&function.signature, &function.body) {
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "extern \"C\" function `{}` returns raw pointer `{}` without documented safety invariants. \
+                        Consider documenting ownership (who frees), lifetime requirements, and validity constraints.",
+                        function.name,
+                        return_type
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence: vec![
+                        format!("Returns: {}", return_type),
+                        "No safety documentation found (SAFETY:, # Safety, invariant, ownership, caller must, must be freed)".to_string(),
+                    ],
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        findings
+    }
+}
+
+// RUSTCOLA074: Non-thread-safe calls in tests
+/// Detects #[test] functions using non-Send/Sync types that may cause race conditions
+struct NonThreadSafeTestRule {
+    metadata: RuleMetadata,
+}
+
+impl NonThreadSafeTestRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA074".to_string(),
+                name: "non-thread-safe-test".to_string(),
+                short_description: "Test function uses non-thread-safe types".to_string(),
+                full_description: "Detects test functions that use non-thread-safe types like Rc, RefCell, \
+                    Cell, or raw pointers in ways that could cause issues when tests run in parallel. \
+                    The Rust test framework runs tests concurrently by default, and using !Send or !Sync \
+                    types with shared state (like static variables) can lead to data races or undefined \
+                    behavior. Consider using thread-safe alternatives (Arc, Mutex, AtomicCell) or marking \
+                    tests that require serialization with #[serial].".to_string(),
+                help_uri: Some("https://doc.rust-lang.org/book/ch16-04-extensible-concurrency-sync-and-send.html".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Non-Send/Sync type patterns
+    fn non_thread_safe_patterns() -> &'static [&'static str] {
+        &[
+            "Rc<",
+            "Rc::",
+            "RefCell<",
+            "RefCell::",
+            "Cell<",
+            "Cell::",
+            "UnsafeCell<",
+            "UnsafeCell::",
+            "*const ",
+            "*mut ",
+        ]
+    }
+
+    /// Check if function name indicates it's a test
+    fn is_test_function(name: &str, signature: &str) -> bool {
+        // Test functions typically have names starting with test or are in test modules
+        // and have no parameters, returning ()
+        let looks_like_test_name = name.contains("::test_") || 
+            name.starts_with("test_") ||
+            name.contains("::tests::") ||
+            name.ends_with("_test");
+
+        // Test functions don't take arguments (except for rstest parameterized tests)
+        let no_params = signature.contains("fn()") || 
+            signature.contains("fn ()") ||
+            (signature.contains('(') && signature.contains("()"));
+
+        looks_like_test_name && no_params
+    }
+
+    /// Check if function body uses non-thread-safe types
+    fn uses_non_thread_safe_types(body: &[String]) -> Vec<String> {
+        let mut evidence = Vec::new();
+        let patterns = Self::non_thread_safe_patterns();
+
+        for line in body {
+            let trimmed = line.trim();
+            
+            // Skip comments
+            if trimmed.starts_with("//") {
+                continue;
+            }
+
+            for pattern in patterns {
+                if trimmed.contains(pattern) {
+                    // Check if it's actually being used (not just in a type annotation comment)
+                    evidence.push(trimmed.to_string());
+                    break;
+                }
+            }
+        }
+
+        evidence
+    }
+
+    /// Check if test accesses static/global state
+    fn accesses_static_state(body: &[String]) -> bool {
+        body.iter().any(|line| {
+            let trimmed = line.trim();
+            trimmed.contains("static ") ||
+            trimmed.contains("lazy_static!") ||
+            trimmed.contains("thread_local!") ||
+            trimmed.contains("GLOBAL") ||
+            trimmed.contains("STATE")
+        })
+    }
+}
+
+impl Rule for NonThreadSafeTestRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Only check test functions
+            if !Self::is_test_function(&function.name, &function.signature) {
+                continue;
+            }
+
+            let non_thread_safe_usage = Self::uses_non_thread_safe_types(&function.body);
+            
+            if !non_thread_safe_usage.is_empty() {
+                // Higher severity if it also accesses static state
+                let severity = if Self::accesses_static_state(&function.body) {
+                    Severity::High
+                } else {
+                    self.metadata.default_severity
+                };
+
+                // Limit evidence to first 5 occurrences
+                let limited_evidence: Vec<_> = non_thread_safe_usage.into_iter().take(5).collect();
+
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity,
+                    message: format!(
+                        "Test function `{}` uses non-thread-safe types (Rc, RefCell, Cell, raw pointers). \
+                        Tests run in parallel by default; consider using thread-safe alternatives or #[serial].",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence: limited_evidence,
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        findings
+    }
+}
+
 
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
@@ -9334,6 +9573,8 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(CommentedOutCodeRule::new())); // RUSTCOLA067
     engine.register_rule(Box::new(DeadStoreArrayRule::new())); // RUSTCOLA068
     engine.register_rule(Box::new(OverscopedAllowRule::new())); // RUSTCOLA072
+    engine.register_rule(Box::new(UnsafeFfiPointerReturnRule::new())); // RUSTCOLA073
+    engine.register_rule(Box::new(NonThreadSafeTestRule::new())); // RUSTCOLA074
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

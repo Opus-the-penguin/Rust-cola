@@ -7,7 +7,7 @@ Rust-cola is a static application security testing tool for Rust code. It employ
 ## Features
 
 - **Three-Tier Analysis Architecture:**
-  - **Tier 1 (MIR Heuristics):** 68 rules using pattern matching on compiler-generated MIR
+  - **Tier 1 (MIR Heuristics):** 70 rules using pattern matching on compiler-generated MIR
   - **Tier 2 (Source Analysis):** 2 rules using AST inspection for comments and attributes  
   - **Tier 3 (Semantic Analysis):** HIR integration for type-aware rules (type sizes, Send/Sync detection)
 - **70 Built-in Security Rules** covering:
@@ -33,7 +33,7 @@ Rust-cola uses a hybrid three-tier detection approach:
 ├─────────────────────────────────────────────────┤
 │  Tier 1: MIR        Tier 2: Source    Tier 3:   │
 │  Heuristics         Analysis          HIR       │
-│  (68 rules)         (2 rules)         ✅ Active │
+│  (70 rules)         (2 rules)         ✅ Active │
 │  ✅ Pattern          ✅ Comments/      ✅ Type    │
 │     matching           Attributes        queries │
 │                                       ✅ Send/   │

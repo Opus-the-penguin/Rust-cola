@@ -8,8 +8,8 @@
 
 ### ✅ What's Completed
 
-**70 Security Rules Shipped:**
-- **Tier 1 (MIR Heuristics):** 68 rules - Pattern matching on compiler IR
+**72 Security Rules Shipped:**
+- **Tier 1 (MIR Heuristics):** 70 rules - Pattern matching on compiler IR
   - Memory safety, crypto, concurrency, FFI, input validation
   - 10-30% typical false positive rate (acceptable for heuristics)
   - Mature and mostly exhausted for simple patterns
@@ -370,7 +370,7 @@ If you prefer incremental improvements to dataflow:
 ## Summary
 
 **Current State:**
-- ✅ 70 rules shipped (68 Tier 1, 2 Tier 2)
+- ✅ 72 rules shipped (70 Tier 1, 2 Tier 2)
 - ✅ 100% recall on basic taint tracking
 - ✅ 0% false positive rate maintained
 - ✅ Phase 3.5.1 complete and validated

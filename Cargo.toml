@@ -54,5 +54,6 @@ members = [
     "examples/division-by-untrusted",
     "examples/maybeuninit-dataflow",
     "examples/regex-injection",
+    "examples/unchecked-index",
 ]
 resolver = "2"

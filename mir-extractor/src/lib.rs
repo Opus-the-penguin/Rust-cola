@@ -10613,6 +10613,382 @@ impl Rule for RegexInjectionRule {
 }
 
 
+// RUSTCOLA080: Unchecked Index Arithmetic
+/// Detects untrusted input used as array/slice index without bounds checking,
+/// which can cause panics or out-of-bounds access.
+struct UncheckedIndexRule {
+    metadata: RuleMetadata,
+}
+
+impl UncheckedIndexRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA080".to_string(),
+                name: "unchecked-indexing".to_string(),
+                short_description: "Untrusted input used as array index without bounds check".to_string(),
+                full_description: "Detects array or slice indexing operations where the index \
+                    originates from untrusted sources (environment variables, command-line \
+                    arguments, file contents, network input) without bounds validation. Direct \
+                    indexing with [] can panic if the index is out of bounds, causing denial of \
+                    service. Use .get() for safe access that returns Option, or validate the \
+                    index against the array length before indexing."
+                    .to_string(),
+                help_uri: Some("https://cwe.mitre.org/data/definitions/129.html".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Input source patterns (untrusted data origins)
+    fn input_source_patterns() -> &'static [&'static str] {
+        &[
+            "= var::",            // env::var
+            "= var(",             // env::var alternate
+            "var_os(",            // env::var_os
+            "= args(",            // env::args
+            "args_os(",           // env::args_os
+            "::nth(",             // iterator nth (often on args)
+            "read_line(",         // stdin read_line
+            "Stdin::read_line",   // explicit Stdin::read_line
+            "read_to_string",     // file/stdin reads
+            "Read>::read(",       // file reads
+            "::get(",             // HashMap/query params (can be untrusted)
+            "= stdin(",           // stdin() call
+            "fs::read_to_string", // fs::read_to_string
+        ]
+    }
+
+    /// Check if a MIR line contains a specific variable with proper word boundaries
+    fn contains_var(line: &str, var: &str) -> bool {
+        for (idx, _) in line.match_indices(var) {
+            let after_pos = idx + var.len();
+            if after_pos >= line.len() {
+                return true;
+            }
+            let next_char = line[after_pos..].chars().next().unwrap();
+            if !next_char.is_ascii_digit() {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Track untrusted index variables (especially numeric ones)
+    fn track_untrusted_indices(body: &[String]) -> HashSet<String> {
+        let mut untrusted_vars = HashSet::new();
+        let source_patterns = Self::input_source_patterns();
+        
+        // Build a map of &mut refs: _ref -> _target
+        let mut mut_refs: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        for line in body {
+            let trimmed = line.trim();
+            // Pattern: _12 = &mut _7;
+            if trimmed.contains("= &mut _") {
+                if let Some(eq_pos) = trimmed.find(" = ") {
+                    let target = trimmed[..eq_pos].trim();
+                    let source = trimmed[eq_pos + 3..].trim();
+                    if let Some(target_var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                        .find(|s| s.starts_with('_'))
+                    {
+                        // Extract _N from "&mut _7" or "&mut _7;"
+                        if let Some(src_start) = source.find("_") {
+                            let src_var: String = source[src_start..].chars()
+                                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                                .collect();
+                            if !src_var.is_empty() {
+                                mut_refs.insert(target_var.to_string(), src_var);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        for line in body {
+            let trimmed = line.trim();
+            
+            // Check if this line contains an input source
+            let is_source = source_patterns.iter().any(|p| trimmed.contains(p));
+            
+            if is_source {
+                // Extract target variable
+                if let Some(eq_pos) = trimmed.find(" = ") {
+                    let target = trimmed[..eq_pos].trim();
+                    if let Some(var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                        .find(|s| s.starts_with('_'))
+                    {
+                        untrusted_vars.insert(var.to_string());
+                    }
+                }
+                
+                // For read_line, also taint the buffer being written to
+                // Pattern: Stdin::read_line(move _10, copy _12) where _12 is &mut _7
+                if trimmed.contains("read_line") {
+                    for (ref_var, target_var) in &mut_refs {
+                        if trimmed.contains(ref_var) {
+                            untrusted_vars.insert(target_var.clone());
+                        }
+                    }
+                }
+            }
+            
+            // Track .parse() results - these convert strings to indices
+            if trimmed.contains("::parse") || trimmed.contains("parse::") {
+                let uses_untrusted = untrusted_vars.iter().any(|v| Self::contains_var(trimmed, v));
+                if uses_untrusted {
+                    if let Some(eq_pos) = trimmed.find(" = ") {
+                        let target = trimmed[..eq_pos].trim();
+                        if let Some(var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                            .find(|s| s.starts_with('_'))
+                        {
+                            untrusted_vars.insert(var.to_string());
+                        }
+                    }
+                }
+            }
+            
+            // Track from_str results
+            if trimmed.contains("from_str") {
+                let uses_untrusted = untrusted_vars.iter().any(|v| Self::contains_var(trimmed, v));
+                if uses_untrusted {
+                    if let Some(eq_pos) = trimmed.find(" = ") {
+                        let target = trimmed[..eq_pos].trim();
+                        if let Some(var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                            .find(|s| s.starts_with('_'))
+                        {
+                            untrusted_vars.insert(var.to_string());
+                        }
+                    }
+                }
+            }
+            
+            // Track unwrap/expect results (propagate taint from Result/Option)
+            if trimmed.contains("::unwrap(") || trimmed.contains("::expect(") {
+                let uses_untrusted = untrusted_vars.iter().any(|v| Self::contains_var(trimmed, v));
+                if uses_untrusted {
+                    if let Some(eq_pos) = trimmed.find(" = ") {
+                        let target = trimmed[..eq_pos].trim();
+                        if let Some(var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                            .find(|s| s.starts_with('_'))
+                        {
+                            untrusted_vars.insert(var.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Second pass: propagate taint through assignments
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for line in body {
+                let trimmed = line.trim();
+                
+                if trimmed.contains(" = ") {
+                    if let Some(eq_pos) = trimmed.find(" = ") {
+                        let target = trimmed[..eq_pos].trim();
+                        let source = trimmed[eq_pos + 3..].trim();
+                        
+                        let uses_untrusted = untrusted_vars.iter().any(|v| Self::contains_var(source, v));
+                        
+                        if uses_untrusted {
+                            if let Some(target_var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                                .find(|s| s.starts_with('_'))
+                            {
+                                if !untrusted_vars.contains(target_var) {
+                                    untrusted_vars.insert(target_var.to_string());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        untrusted_vars
+    }
+
+    /// Check if function has bounds validation for indices
+    fn has_bounds_validation(body: &[String], untrusted_vars: &HashSet<String>) -> bool {
+        for line in body {
+            let trimmed = line.trim();
+            
+            // Skip safe .get() calls - they're the alternative, not a validation
+            if trimmed.contains("::get(") || trimmed.contains("::get_mut(") || trimmed.contains("::get::<") {
+                continue;
+            }
+            
+            // Check for length comparisons involving untrusted vars
+            // Must be explicit len() comparison, not just any "<" or ">"
+            if trimmed.contains(".len()") || trimmed.contains("::len(") {
+                for var in untrusted_vars {
+                    if Self::contains_var(trimmed, var) {
+                        // Looks like a bounds check
+                        return true;
+                    }
+                }
+            }
+            
+            // Check for min/max bounds clamping
+            // Pattern like: raw_idx.min(data.len() - 1) or ::min(...)
+            if (trimmed.contains("::min(") || trimmed.contains("::max(")) && 
+               (trimmed.contains("len") || trimmed.contains("_")) {
+                for var in untrusted_vars {
+                    if Self::contains_var(trimmed, var) {
+                        return true;
+                    }
+                }
+            }
+            
+            // Check for explicit < or > comparisons with untrusted variable
+            // Avoid matching MIR syntax like `<Vec<i32> as Index<usize>>`
+            let has_comparison = trimmed.contains("Lt(") || trimmed.contains("Le(") || 
+                                  trimmed.contains("Gt(") || trimmed.contains("Ge(");
+            if has_comparison {
+                for var in untrusted_vars {
+                    if Self::contains_var(trimmed, var) {
+                        return true;
+                    }
+                }
+            }
+            
+            // Check for assert with bounds
+            if trimmed.contains("assert") && trimmed.contains("len") {
+                return true;
+            }
+        }
+        
+        false
+    }
+
+    /// Find unsafe indexing operations using untrusted indices
+    fn find_unsafe_indexing(body: &[String], untrusted_vars: &HashSet<String>) -> Vec<String> {
+        let mut evidence = Vec::new();
+        
+        for line in body {
+            let trimmed = line.trim();
+            
+            // MIR uses Index trait: <Vec<T> as Index<usize>>::index(..., copy _N)
+            // The index is the SECOND argument after the comma
+            // Pattern: ::index(move _20, copy _13) - _13 is the index
+            if trimmed.contains("::index(") || trimmed.contains("::index_mut(") {
+                // Skip safe get() methods - they return Option
+                if trimmed.contains("::get(") || trimmed.contains("::get_mut(") {
+                    continue;
+                }
+                
+                // Extract the index argument (second parameter after comma)
+                // Pattern: ::index(move _X, copy _Y) or ::index(move _X, move _Y)
+                if let Some(idx_start) = trimmed.find("::index") {
+                    let after_index = &trimmed[idx_start..];
+                    // Find the comma separating arguments
+                    if let Some(comma_pos) = after_index.find(", ") {
+                        let index_arg = &after_index[comma_pos + 2..];
+                        // Check if any untrusted variable is the index
+                        for var in untrusted_vars {
+                            if Self::contains_var(index_arg, var) {
+                                evidence.push(trimmed.to_string());
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Also check for direct array indexing pattern: [_N] in MIR
+            // This appears for arrays: (*_1)[_2] or _X = copy _Y[_Z]
+            // But NOT array literals like: _25 = [move _26]
+            if trimmed.contains('[') && trimmed.contains(']') {
+                // Skip array literals - pattern: "= [" means creating array, not indexing
+                if trimmed.contains("= [") {
+                    continue;
+                }
+                
+                // Skip type declarations and safe .get() patterns
+                if trimmed.contains("let ") || trimmed.contains("::get") {
+                    continue;
+                }
+                
+                // Extract the index variable from brackets
+                if let Some(bracket_start) = trimmed.find('[') {
+                    if let Some(bracket_end) = trimmed[bracket_start..].find(']') {
+                        let index_content = &trimmed[bracket_start + 1..bracket_start + bracket_end];
+                        
+                        // Check if any untrusted variable is used as index
+                        for var in untrusted_vars {
+                            if Self::contains_var(index_content, var) {
+                                evidence.push(trimmed.to_string());
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        evidence
+    }
+}
+
+impl Rule for UncheckedIndexRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Skip internal functions and test harnesses
+            if function.name.contains("mir_extractor") || 
+               function.name.contains("mir-extractor") ||
+               function.name.contains("__") {
+                continue;
+            }
+
+            // Track untrusted index variables
+            let untrusted_vars = Self::track_untrusted_indices(&function.body);
+            
+            if untrusted_vars.is_empty() {
+                continue;
+            }
+
+            // Check if function has bounds validation
+            if Self::has_bounds_validation(&function.body, &untrusted_vars) {
+                continue;
+            }
+
+            // Find unsafe indexing operations
+            let unsafe_indexing = Self::find_unsafe_indexing(&function.body, &untrusted_vars);
+            
+            if !unsafe_indexing.is_empty() {
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "Untrusted input used as array index in `{}` without bounds checking. \
+                        This can cause panic if index is out of bounds. Use .get() for safe \
+                        access or validate index < array.len() before indexing.",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence: unsafe_indexing.into_iter().take(3).collect(),
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        findings
+    }
+}
+
+
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
     engine.register_rule(Box::new(TransmuteRule::new()));
@@ -10682,6 +11058,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(DivisionByUntrustedRule::new())); // RUSTCOLA077
     engine.register_rule(Box::new(MaybeUninitAssumeInitDataflowRule::new())); // RUSTCOLA078
     engine.register_rule(Box::new(RegexInjectionRule::new())); // RUSTCOLA079
+    engine.register_rule(Box::new(UncheckedIndexRule::new())); // RUSTCOLA080
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

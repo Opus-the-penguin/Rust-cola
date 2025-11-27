@@ -438,7 +438,159 @@ After completing Phase 3 inter-procedural analysis, these features could further
 
 ---
 
-## 📝 Notes
+## � Phase 5: Distribution & Release (FUTURE)
+**Status**: Planned  
+**Target**: After rule stabilization and refactoring complete  
+**Prerequisites**: 90+ rules, lib.rs refactored, comprehensive test coverage
+
+### Overview
+Make `cargo-cola` easily installable as a standalone binary without building from source.
+
+### Distribution Channels
+
+#### 1. crates.io Publication
+**Priority**: High  
+**Effort**: 2-4 hours
+
+**Steps**:
+1. Review and finalize package metadata in `Cargo.toml`:
+   - `description`, `license`, `repository`, `keywords`, `categories`
+   - Ensure `mir-extractor` is also publishable (or inline it)
+2. Add `README.md` to cargo-cola crate for crates.io display
+3. Run `cargo publish --dry-run` to validate
+4. Create crates.io account (if needed) and publish
+5. Test installation: `cargo install cargo-cola`
+
+**Result**: Users can install with `cargo install cargo-cola`
+
+#### 2. GitHub Releases with Prebuilt Binaries
+**Priority**: High  
+**Effort**: 4-8 hours
+
+**Platforms to support**:
+- `x86_64-unknown-linux-gnu` (Linux x64)
+- `x86_64-apple-darwin` (macOS Intel)
+- `aarch64-apple-darwin` (macOS Apple Silicon)
+- `x86_64-pc-windows-msvc` (Windows x64)
+
+**Implementation Options**:
+
+**Option A: cargo-dist (Recommended)**
+```bash
+cargo install cargo-dist
+cargo dist init
+# Generates GitHub Actions workflow for cross-platform releases
+```
+- Automatic release creation on git tags
+- Generates shell/PowerShell installers
+- Homebrew formula generation (optional)
+
+**Option B: Manual GitHub Actions Workflow**
+```yaml
+# .github/workflows/release.yml
+on:
+  push:
+    tags: ['v*']
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo build --release --target ${{ matrix.target }}
+      - uses: softprops/action-gh-release@v1
+        with:
+          files: target/${{ matrix.target }}/release/cargo-cola*
+```
+
+**Result**: Users download binary from GitHub Releases
+
+#### 3. Homebrew (macOS)
+**Priority**: Medium  
+**Effort**: 2-4 hours (after GitHub Releases)
+
+**Options**:
+- Create homebrew tap: `brew tap opus-the-penguin/rust-cola`
+- Submit to homebrew-core (requires popularity/stability)
+
+**Formula Template**:
+```ruby
+class CargoCola < Formula
+  desc "Security-focused static analyzer for Rust"
+  homepage "https://github.com/Opus-the-penguin/Rust-cola"
+  url "https://github.com/Opus-the-penguin/Rust-cola/releases/download/v0.1.0/cargo-cola-x86_64-apple-darwin.tar.gz"
+  sha256 "..."
+  license "MIT"
+  
+  def install
+    bin.install "cargo-cola"
+  end
+end
+```
+
+**Result**: Users install with `brew install opus-the-penguin/rust-cola/cargo-cola`
+
+#### 4. Docker Image
+**Priority**: Low  
+**Effort**: 2-4 hours
+
+**Use case**: CI/CD pipelines, reproducible environments
+
+```dockerfile
+FROM rust:1.75-slim as builder
+WORKDIR /app
+COPY . .
+RUN cargo build --release -p cargo-cola
+
+FROM debian:bookworm-slim
+COPY --from=builder /app/target/release/cargo-cola /usr/local/bin/
+ENTRYPOINT ["cargo-cola"]
+```
+
+**Result**: `docker run ghcr.io/opus-the-penguin/cargo-cola --crate-path /src`
+
+### Pre-Distribution Checklist
+
+- [ ] **Refactoring**: Split `mir-extractor/src/lib.rs` (~15,000 lines) into modules
+- [ ] **Rule Count**: Target 90+ rules with solid test coverage
+- [ ] **Documentation**: User guide, rule documentation, examples
+- [ ] **Versioning**: Establish semantic versioning (0.1.0 initial release)
+- [ ] **Changelog**: Maintain `CHANGELOG.md` with release notes
+- [ ] **CI Hardening**: Cross-platform testing, release automation
+- [ ] **License Review**: Ensure all dependencies are license-compatible
+- [ ] **Security Audit**: Run `cargo audit`, review dependencies
+
+### Version Numbering Plan
+
+| Version | Milestone |
+|---------|-----------|
+| 0.1.0 | Initial public release (80+ rules, basic functionality) |
+| 0.2.0 | HIR integration, improved precision |
+| 0.3.0 | Inter-procedural analysis complete |
+| 0.5.0 | User-configurable rules, IDE integration |
+| 1.0.0 | Production-ready, stable API, comprehensive docs |
+
+### Marketing & Adoption
+
+- [ ] Write blog post introducing cargo-cola
+- [ ] Submit to Rust security tools comparison lists
+- [ ] Post on r/rust, Rust Users Forum
+- [ ] Consider conference talks (RustConf, RustNation)
+- [ ] Add badges to README (crates.io version, downloads, CI status)
+
+---
+
+## �📝 Notes
 
 ### Success Criteria for Phase 3
 - **Quality**: Maintain 0% false positive rate

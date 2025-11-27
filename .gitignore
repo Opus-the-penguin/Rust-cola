@@ -4,3 +4,4 @@ out/
 **/*.rs.bk
 .DS_Store
 **/.DS_Store
+test_output/

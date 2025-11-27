@@ -2,15 +2,15 @@
 
 Rust-cola is a static application security testing tool for Rust code. It employs a three-tier hybrid analysis approach combining MIR heuristics, source-level inspection, and semantic analysis via rustc HIR integration.
 
-> **Recent Achievement (Nov 2025):** Tier 3 Phase 3 Send/Sync trait detection complete - using rustc's trait solver to detect auto-trait implementations. Type metadata now includes `is_send`/`is_sync` fields for concrete types. See commit `b35df17`.
+> **Recent Achievement (Nov 2025):** Added 4 new MIR dataflow rules (RUSTCOLA075-078) for cleartext logging, log injection, division by untrusted input, and MaybeUninit misuse. Total: 76 security rules.
 
 ## Features
 
 - **Three-Tier Analysis Architecture:**
-  - **Tier 1 (MIR Heuristics):** 70 rules using pattern matching on compiler-generated MIR
+  - **Tier 1 (MIR Heuristics):** 74 rules using pattern matching on compiler-generated MIR
   - **Tier 2 (Source Analysis):** 2 rules using AST inspection for comments and attributes  
   - **Tier 3 (Semantic Analysis):** HIR integration for type-aware rules (type sizes, Send/Sync detection)
-- **70 Built-in Security Rules** covering:
+- **76 Built-in Security Rules** covering:
 	- Memory safety issues: `Box::into_raw` leaks, unchecked `transmute`, `Vec::set_len` misuse, premature `MaybeUninit::assume_init`, deprecated zero-initialization functions
 	- Unsafe code patterns: unsafe blocks, untrusted environment variable reads, command execution with user-influenced input
 	- Cryptography: weak hash algorithms (MD5, SHA-1, RIPEMD, CRC), weak ciphers (DES, RC4, Blowfish), hard-coded cryptographic keys, predictable random seeds
@@ -33,7 +33,7 @@ Rust-cola uses a hybrid three-tier detection approach:
 ├─────────────────────────────────────────────────┤
 │  Tier 1: MIR        Tier 2: Source    Tier 3:   │
 │  Heuristics         Analysis          HIR       │
-│  (70 rules)         (2 rules)         ✅ Active │
+│  (74 rules)         (2 rules)         ✅ Active │
 │  ✅ Pattern          ✅ Comments/      ✅ Type    │
 │     matching           Attributes        queries │
 │                                       ✅ Send/   │

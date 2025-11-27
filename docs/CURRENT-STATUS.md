@@ -1,23 +1,29 @@
 # Rust-cola Current Status & Next Steps
 
 **Date:** November 26, 2025  
-**Version:** 70 security rules  
-**Recent Achievement:** ✅ Tier 3 Phase 3 COMPLETE! Send/Sync trait detection shipped!
+**Version:** 76 security rules  
+**Recent Achievement:** ✅ MIR Dataflow Rules Complete! RUSTCOLA075-078 shipped!
 
 ## Current State Summary
 
 ### ✅ What's Completed
 
-**72 Security Rules Shipped:**
-- **Tier 1 (MIR Heuristics):** 70 rules - Pattern matching on compiler IR
+**76 Security Rules Shipped:**
+- **Tier 1 (MIR Heuristics):** 74 rules - Pattern matching on compiler IR
   - Memory safety, crypto, concurrency, FFI, input validation
   - 10-30% typical false positive rate (acceptable for heuristics)
-  - Mature and mostly exhausted for simple patterns
+  - Recent additions: RUSTCOLA075-078 (MIR dataflow rules)
 
 - **Tier 2 (Source Analysis):** 2 rules - AST inspection with syn crate
   - RUSTCOLA067: Commented-out code (87.5% recall, 100% precision)
   - RUSTCOLA072: Overscoped allow attributes (100% recall, 100% precision)
   - Infrastructure operational and proven
+
+**New MIR Dataflow Rules (Nov 2025):**
+- ✅ RUSTCOLA075: Cleartext logging of secrets (86% recall, 67% precision)
+- ✅ RUSTCOLA076: Log injection (untrusted input to log sinks)
+- ✅ RUSTCOLA077: Division by untrusted denominator
+- ✅ RUSTCOLA078: MaybeUninit::assume_init without initialization
 
 **Advanced Dataflow:**
 - ✅ Phase 3.5.1: Branch-sensitive CFG analysis COMPLETE (Nov 25, 2025)
@@ -370,12 +376,13 @@ If you prefer incremental improvements to dataflow:
 ## Summary
 
 **Current State:**
-- ✅ 72 rules shipped (70 Tier 1, 2 Tier 2)
+- ✅ 76 rules shipped (74 Tier 1, 2 Tier 2)
 - ✅ 100% recall on basic taint tracking
 - ✅ 0% false positive rate maintained
 - ✅ Phase 3.5.1 complete and validated
 - ✅ Tier 3 Phase 1 COMPLETE - HIR extraction fully operational!
 - ✅ Tier 3 Phase 2 COMPLETE - Type queries working at 100% accuracy!
+- ✅ RUSTCOLA075-078 shipped - MIR dataflow rules complete!
 
 **Recent Commits:**
 - edbe13d: Phase 2 complete (Type Query Interface)

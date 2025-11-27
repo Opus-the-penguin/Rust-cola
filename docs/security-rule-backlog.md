@@ -1,6 +1,6 @@
 # Security Rule Backlog
 
-This backlog consolidates security-focused rule ideas for Rust-cola compiled from public advisories and vulnerability pattern documentation published by various security research teams and tools. Each entry captures the rationale, the primary analysis signal we expect to leverage, and a rough feasibility tier.
+This backlog consolidates security-focused rule ideas for Rust-cola compiled from public advisories and vuln87. **Division by unchecked denominator** *(shipped — RUSTCOLA077)* – Detects division and modulo operations where the denominator comes from untrusted sources (command-line args, environment variables, file contents, network data) without validation guards. Division by zero causes panics; division by small values can cause integer overflow. **Signal:** MIR dataflow – tracks untrusted sources to Div/Rem operations. **Feasibility:** MIR dataflow.rability pattern documentation published by various security research teams and tools. Each entry captures the rationale, the primary analysis signal we expect to leverage, and a rough feasibility tier.
 
 ## Advisory Coverage Follow-ups (Oct 2025)
 
@@ -15,7 +15,7 @@ Feasibility legend:
 1. **Box::into_raw escape** *(shipped)* – Detect raw pointer escapes via `Box::into_raw`. **Feasibility:** Heuristic.
 2. **std::mem::transmute usage** *(shipped)* – Flag calls to `std::mem::transmute`. **Feasibility:** Heuristic.
 3. **Vec::set_len misuse** *(shipped — RUSTCOLA038)* – Identify `Vec::set_len` when the vector is not fully initialized. **Feasibility:** MIR dataflow.
-4. **MaybeUninit::assume_init before initialization** – Detect `assume_init` without a preceding `write`. **Feasibility:** MIR dataflow.
+4. **MaybeUninit::assume_init before initialization** *(shipped — RUSTCOLA078)* – Detects `MaybeUninit::assume_init()` and `assume_init_read()` calls where the MaybeUninit value has not been initialized via `write()`, `as_mut_ptr()` writes, or safe constructors like `new()` or `zeroed()`. Reading uninitialized memory is undefined behavior. **Signal:** MIR dataflow – tracks MaybeUninit::uninit() allocations and detects assume_init/assume_init_read without preceding initialization. **Feasibility:** MIR dataflow.
 5. **mem::uninitialized / mem::zeroed** *(shipped — RUSTCOLA010)* – Flag usage of deprecated zero-init APIs on non-zero types. **Feasibility:** Heuristic.
 6. **Dangling pointer use-after-free** – Ensure no access after `drop` or reallocation. **Feasibility:** Advanced.
 7. **Access of invalid pointer** – Catch derefs of null or misaligned pointers. **Feasibility:** Advanced.
@@ -47,10 +47,10 @@ Feasibility legend:
 
 ## Data Exposure & Logging
 
-30. **Cleartext logging of secrets** – Taint track secret sources into log macros. **Feasibility:** MIR dataflow.
+30. **Cleartext logging of secrets** *(shipped — RUSTCOLA075)* – Detects sensitive data (passwords, API keys, tokens, secrets) from environment variables flowing into logging macros (log, tracing, println!, eprintln!). **Signal:** MIR dataflow – tracks env::var() calls with sensitive variable names to log macro sinks. **Test results:** 86% recall (6/7 detected), 67% precision. **Feasibility:** MIR dataflow.
 31. **Cleartext storage in databases** – Detect inserts of sensitive data without encryption. **Feasibility:** Advanced.
 32. **Cleartext transmission** – Identify writes of sensitive data to non-TLS channels. **Feasibility:** Advanced.
-33. **Log injection** – Taint newline-containing input to logging calls. **Feasibility:** MIR dataflow.
+33. **Log injection** *(shipped — RUSTCOLA076)* – Detects untrusted input (command-line args, environment variables, file contents, network data) flowing into logging macros without sanitization. Log injection can enable log spoofing, log forging attacks, and CRLF injection. **Signal:** MIR dataflow – tracks untrusted sources to log sinks. **Feasibility:** MIR dataflow.
 34. **Hard-coded home directory paths** *(shipped — RUSTCOLA014)* – Detects absolute paths to user home directories hard-coded in string literals. Hard-coded home paths reduce portability and create security issues: code breaks when run under different users or in containers/CI, exposes username information, prevents proper multi-user deployments, and makes code non-portable across operating systems. Detects Unix/Linux (/home/username), macOS (/Users/username), Windows (C:\Users\username or C:/Users/username), and tilde with username (~username but not ~/path) patterns. Recommends using environment variables (HOME, USERPROFILE), std::env::home_dir(), or the dirs crate. **Test suite:** 17 functions (7 problematic covering all major OS path patterns, 10 safe covering environment variables, relative paths, system paths, and proper user directory access). **Signal:** Heuristic – pattern matching in MIR for home directory string literals. **Metrics:** 100% recall (7/7 detected), 100% precision (0/10 false positives). **Feasibility:** Heuristic.
 35. **Invisible Unicode characters** *(shipped — RUSTCOLA048)* – Detects invisible or control Unicode characters (zero-width, bidirectional overrides, private use areas) that could enable Trojan Source attacks (CVE-2021-42574, CVE-2021-42694) or identifier spoofing. Note: Rust's compiler provides first-line defense by rejecting most invisible Unicode in identifiers (Public security rule guidance). **Feasibility:** Heuristic.
 

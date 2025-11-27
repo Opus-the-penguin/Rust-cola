@@ -49,5 +49,9 @@ members = [
     "examples/dead-stores-arrays",
     "examples/commented-code",
     "examples/overscoped-allow",
+    "examples/cleartext-logging",
+    "examples/log-injection",
+    "examples/division-by-untrusted",
+    "examples/maybeuninit-dataflow",
 ]
 resolver = "2"

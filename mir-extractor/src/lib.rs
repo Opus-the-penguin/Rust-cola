@@ -9510,6 +9510,868 @@ impl Rule for NonThreadSafeTestRule {
     }
 }
 
+// RUSTCOLA075: Cleartext Logging of Secrets
+/// Detects sensitive data (passwords, tokens, API keys) from environment variables
+/// being logged through print macros, log crate, or format strings.
+struct CleartextLoggingRule {
+    metadata: RuleMetadata,
+}
+
+impl CleartextLoggingRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA075".to_string(),
+                name: "cleartext-logging-secrets".to_string(),
+                short_description: "Sensitive data logged in cleartext".to_string(),
+                full_description: "Detects sensitive data (passwords, tokens, API keys, secrets) \
+                    from environment variables being logged through println!, eprintln!, format!, \
+                    panic!, or log crate macros. Logging secrets in cleartext exposes them in log \
+                    files, monitoring systems, stdout/stderr captures, and audit trails. Consider \
+                    masking sensitive values (e.g., showing only first/last 4 characters), using \
+                    structured logging with secret redaction, or avoiding logging secrets entirely."
+                    .to_string(),
+                help_uri: Some("https://cwe.mitre.org/data/definitions/532.html".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Environment variable names that indicate sensitive data
+    fn sensitive_env_var_patterns() -> &'static [&'static str] {
+        &[
+            "PASSWORD",
+            "PASSWD",
+            "SECRET",
+            "TOKEN",
+            "API_KEY",
+            "APIKEY",
+            "AUTH",
+            "CREDENTIAL",
+            "PRIVATE_KEY",
+            "PRIV_KEY",
+            "JWT",
+            "BEARER",
+            "ACCESS_KEY",
+            "ENCRYPTION_KEY",
+            "SIGNING_KEY",
+        ]
+    }
+
+    /// Log sink patterns in MIR (desugarings of print/log macros)
+    fn log_sink_patterns() -> &'static [&'static str] {
+        &[
+            "_print(",           // println!, print! desugaring
+            "eprint",            // eprintln!, eprint!
+            "::fmt(",            // format! and Debug/Display impl calls
+            "Arguments::new",    // format_args! macro
+            "panic_fmt",         // panic! with formatting
+            "begin_panic",       // older panic desugaring
+            "::log(",            // log crate macros
+            "::info(",
+            "::warn(",
+            "::error(",
+            "::debug(",
+            "::trace(",
+        ]
+    }
+
+    /// Check if an env var name is sensitive
+    fn is_sensitive_env_var(env_var_context: &str) -> bool {
+        let upper = env_var_context.to_uppercase();
+        Self::sensitive_env_var_patterns()
+            .iter()
+            .any(|pattern| upper.contains(pattern))
+    }
+
+    /// Extract the env var name from a line if present
+    fn extract_env_var_name(line: &str) -> Option<String> {
+        // Look for patterns like: var::<...>(const "ENV_VAR_NAME")
+        // MIR format: var::<&str>(const "DB_PASSWORD") -> ...
+        
+        // Find (const " pattern which precedes the env var name
+        if let Some(start) = line.find("(const \"") {
+            let after_const = &line[start + 8..]; // skip past '(const "'
+            if let Some(quote_end) = after_const.find('"') {
+                return Some(after_const[..quote_end].to_string());
+            }
+        }
+        
+        // Fallback: look for var( pattern without const
+        if let Some(start) = line.find("var(") {
+            let after_var = &line[start + 4..];
+            if let Some(quote_start) = after_var.find('"') {
+                let after_quote = &after_var[quote_start + 1..];
+                if let Some(quote_end) = after_quote.find('"') {
+                    return Some(after_quote[..quote_end].to_string());
+                }
+            }
+        }
+        None
+    }
+
+    /// Track which MIR local variables hold sensitive data
+    fn track_sensitive_vars(body: &[String]) -> HashMap<String, String> {
+        let mut sensitive_vars: HashMap<String, String> = HashMap::new(); // var -> env_name
+        
+        for line in body {
+            let trimmed = line.trim();
+            
+            // Look for env::var calls - pattern: _N = var::<...>(const "ENV_NAME")
+            if trimmed.contains("var::<") || trimmed.contains("var(") || trimmed.contains("var_os(") {
+                // Extract the target variable (left side of assignment)
+                if let Some(eq_pos) = trimmed.find(" = ") {
+                    let target = trimmed[..eq_pos].trim();
+                    
+                    // Extract MIR local variable (e.g., "_2" from "_2 = var::")
+                    let var_name = Self::extract_mir_local(target);
+                    
+                    if let Some(var) = var_name {
+                        // Check if this env var is sensitive
+                        if let Some(env_name) = Self::extract_env_var_name(trimmed) {
+                            if Self::is_sensitive_env_var(&env_name) {
+                                sensitive_vars.insert(var, env_name);
+                            }
+                        } else if Self::is_sensitive_env_var(trimmed) {
+                            // Fallback: check if line mentions sensitive keywords
+                            sensitive_vars.insert(var, "SENSITIVE".to_string());
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Second pass: propagate taint through assignments
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for line in body {
+                let trimmed = line.trim();
+                
+                // Pattern: _N = ... _M ... where _M is sensitive
+                if trimmed.contains(" = ") && !trimmed.contains("var::<") {
+                    if let Some(eq_pos) = trimmed.find(" = ") {
+                        let target = trimmed[..eq_pos].trim();
+                        let source = trimmed[eq_pos + 3..].trim();
+                        
+                        // Check if any sensitive var appears in source
+                        for (sensitive_var, env_name) in sensitive_vars.clone() {
+                            // Check for various MIR patterns: move _N, copy _N, _N, &_N
+                            let patterns = [
+                                format!("move {}", sensitive_var),
+                                format!("copy {}", sensitive_var),
+                                format!("&{}", sensitive_var),
+                                format!("&mut {}", sensitive_var),
+                                sensitive_var.clone(),
+                            ];
+                            
+                            let found = patterns.iter().any(|p| source.contains(p));
+                            
+                            if found {
+                                if let Some(target_var) = Self::extract_mir_local(target) {
+                                    if !sensitive_vars.contains_key(&target_var) {
+                                        sensitive_vars.insert(target_var, env_name);
+                                        changed = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        sensitive_vars
+    }
+    
+    /// Extract MIR local variable name (e.g., "_1", "_2") from a string
+    fn extract_mir_local(s: &str) -> Option<String> {
+        // Look for pattern like "_N" where N is digits
+        for word in s.split(|c: char| !c.is_alphanumeric() && c != '_') {
+            if word.starts_with('_') && word.len() > 1 && word[1..].chars().all(|c| c.is_ascii_digit()) {
+                return Some(word.to_string());
+            }
+        }
+        None
+    }
+
+    /// Check if a line is a log sink that uses a sensitive variable
+    fn find_logged_secrets(body: &[String], sensitive_vars: &HashMap<String, String>) -> Vec<(String, String)> {
+        let mut findings = Vec::new();
+        let sink_patterns = Self::log_sink_patterns();
+        
+        // Strategy: If a function has sensitive vars and log sinks,
+        // check if any sensitive var is used anywhere in the logging flow
+        // MIR logging pattern: 
+        //   _N = &sensitive_var
+        //   _M = Argument::new_display(copy _N)
+        //   _X = [move _M]
+        //   _Y = Arguments::new_v1(...)
+        //   _print(move _Y)
+        
+        // Find all log sink lines
+        let log_lines: Vec<(usize, &str)> = body.iter()
+            .enumerate()
+            .filter(|(_, line)| sink_patterns.iter().any(|p| line.contains(p)))
+            .map(|(i, line)| (i, line.trim()))
+            .collect();
+        
+        if log_lines.is_empty() {
+            return findings;
+        }
+        
+        // For each log sink, scan backward to see if any sensitive var flows to it
+        for (log_idx, log_line) in &log_lines {
+            // Look for pattern: Arguments or fmt related calls that precede the log
+            // and check if any sensitive var is used in the window before the log call
+            let start_idx = log_idx.saturating_sub(15); // Look back ~15 lines
+            
+            for (var, env_name) in sensitive_vars {
+                // Check if sensitive var (or ref to it) appears in the window before log
+                let var_patterns = [
+                    format!("&{}", var),
+                    format!("copy {}", var),
+                    format!("move {}", var),
+                    var.clone(),
+                ];
+                
+                for check_idx in start_idx..*log_idx {
+                    let check_line = body.get(check_idx).map(|s| s.trim()).unwrap_or("");
+                    
+                    // Check if this line uses the sensitive var in a formatting context
+                    let is_fmt_related = check_line.contains("Argument::") || 
+                                        check_line.contains("::fmt") ||
+                                        check_line.contains("new_display") ||
+                                        check_line.contains("new_debug") ||
+                                        check_line.contains("Arguments");
+                    
+                    if is_fmt_related {
+                        for pattern in &var_patterns {
+                            if check_line.contains(pattern) {
+                                findings.push((env_name.clone(), log_line.to_string()));
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Deduplicate findings by env_name
+        findings.sort_by(|a, b| a.0.cmp(&b.0));
+        findings.dedup_by(|a, b| a.0 == b.0);
+        
+        findings
+    }
+}
+
+impl Rule for CleartextLoggingRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Skip internal functions
+            if function.name.contains("mir_extractor") || function.name.contains("mir-extractor") {
+                continue;
+            }
+
+            // Track which variables hold sensitive data
+            let sensitive_vars = Self::track_sensitive_vars(&function.body);
+            
+            if sensitive_vars.is_empty() {
+                continue;
+            }
+
+            // Find log sinks that use sensitive variables
+            let logged_secrets = Self::find_logged_secrets(&function.body, &sensitive_vars);
+            
+            for (env_name, evidence_line) in logged_secrets {
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "Sensitive data from `{}` may be logged in cleartext in function `{}`. \
+                        Consider masking or redacting sensitive values before logging.",
+                        env_name,
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence: vec![evidence_line],
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        findings
+    }
+}
+
+// RUSTCOLA076: Log Injection
+/// Detects untrusted input containing newlines being passed to logging functions,
+/// which can forge log entries and confuse log analysis.
+struct LogInjectionRule {
+    metadata: RuleMetadata,
+}
+
+impl LogInjectionRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA076".to_string(),
+                name: "log-injection".to_string(),
+                short_description: "Untrusted input may enable log injection".to_string(),
+                full_description: "Detects environment variables or command-line arguments \
+                    that flow to logging functions without newline sanitization. Attackers can \
+                    inject newline characters to forge log entries, evade detection, or corrupt \
+                    log analysis. Sanitize by replacing or escaping \\n, \\r characters, or use \
+                    structured logging formats (JSON) that properly escape special characters."
+                    .to_string(),
+                help_uri: Some("https://cwe.mitre.org/data/definitions/117.html".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Input source patterns (untrusted data origins)
+    fn input_source_patterns() -> &'static [&'static str] {
+        &[
+            "var(",           // env::var
+            "var_os(",        // env::var_os
+            "args(",          // env::args
+            "args_os(",       // env::args_os
+            "nth(",           // iterator nth (often on args)
+            "read_line(",     // stdin
+            "read_to_string(", // file/stdin reads
+        ]
+    }
+
+    /// Sanitizer patterns that remove/escape newlines
+    fn newline_sanitizer_patterns() -> &'static [&'static str] {
+        &[
+            "replace(",       // .replace("\n", "")
+            "trim(",          // .trim() removes trailing newlines
+            "trim_end(",      
+            "trim_matches(",
+            "escape_",        // escape_default, escape_debug
+            "lines(",         // .lines() splits on newlines
+            "split(",         // .split('\n')
+        ]
+    }
+
+    /// Track untrusted input variables
+    fn track_untrusted_vars(body: &[String]) -> HashSet<String> {
+        let mut untrusted_vars = HashSet::new();
+        let source_patterns = Self::input_source_patterns();
+        
+        for line in body {
+            let trimmed = line.trim();
+            
+            // Check if this line contains an input source
+            let is_source = source_patterns.iter().any(|p| trimmed.contains(p));
+            
+            if is_source {
+                // Extract target variable
+                if let Some(eq_pos) = trimmed.find(" = ") {
+                    let target = trimmed[..eq_pos].trim();
+                    if let Some(var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                        .find(|s| s.starts_with('_'))
+                    {
+                        untrusted_vars.insert(var.to_string());
+                    }
+                }
+            }
+            
+            // Propagate through assignments (but check for sanitizers)
+            if trimmed.contains(" = ") && !is_source {
+                if let Some(eq_pos) = trimmed.find(" = ") {
+                    let target = trimmed[..eq_pos].trim();
+                    let source = trimmed[eq_pos + 3..].trim();
+                    
+                    // Check if source uses an untrusted var
+                    let uses_untrusted = untrusted_vars.iter().any(|v| source.contains(v));
+                    
+                    if uses_untrusted {
+                        // Check if there's a sanitizer on this line
+                        let has_sanitizer = Self::newline_sanitizer_patterns()
+                            .iter()
+                            .any(|p| source.contains(p));
+                        
+                        if !has_sanitizer {
+                            // Propagate taint
+                            if let Some(target_var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                                .find(|s| s.starts_with('_'))
+                            {
+                                untrusted_vars.insert(target_var.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        untrusted_vars
+    }
+
+    /// Find log sinks using untrusted variables
+    fn find_log_injections(body: &[String], untrusted_vars: &HashSet<String>) -> Vec<String> {
+        let mut evidence = Vec::new();
+        let log_sinks = CleartextLoggingRule::log_sink_patterns();
+        
+        for line in body {
+            let trimmed = line.trim();
+            
+            // Check if this is a log sink
+            let is_log_sink = log_sinks.iter().any(|p| trimmed.contains(p));
+            
+            if is_log_sink {
+                // Check if any untrusted variable is used
+                for var in untrusted_vars {
+                    if trimmed.contains(var) {
+                        evidence.push(trimmed.to_string());
+                        break;
+                    }
+                }
+            }
+        }
+        
+        evidence
+    }
+}
+
+impl Rule for LogInjectionRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Skip internal functions
+            if function.name.contains("mir_extractor") || function.name.contains("mir-extractor") {
+                continue;
+            }
+
+            // Track untrusted input variables
+            let untrusted_vars = Self::track_untrusted_vars(&function.body);
+            
+            if untrusted_vars.is_empty() {
+                continue;
+            }
+
+            // Find log injections
+            let injections = Self::find_log_injections(&function.body, &untrusted_vars);
+            
+            if !injections.is_empty() {
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "Untrusted input flows to logging in `{}` without newline sanitization. \
+                        Attackers may inject newlines to forge log entries.",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence: injections.into_iter().take(3).collect(),
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        findings
+    }
+}
+
+// RUSTCOLA077: Division by Untrusted Denominator
+/// Detects division or modulo operations where the denominator comes from
+/// untrusted input without validation, risking divide-by-zero panics.
+struct DivisionByUntrustedRule {
+    metadata: RuleMetadata,
+}
+
+impl DivisionByUntrustedRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA077".to_string(),
+                name: "division-by-untrusted".to_string(),
+                short_description: "Division by untrusted input without zero check".to_string(),
+                full_description: "Detects division (/) or modulo (%) operations where the \
+                    denominator originates from environment variables, command-line arguments, \
+                    or other untrusted sources without preceding zero validation. An attacker \
+                    can cause denial-of-service by providing zero, triggering a panic. Use \
+                    checked_div, checked_rem, or validate the denominator is non-zero before use."
+                    .to_string(),
+                help_uri: Some("https://cwe.mitre.org/data/definitions/369.html".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Division/modulo operation patterns in MIR
+    fn division_patterns() -> &'static [&'static str] {
+        &[
+            "Div(",           // Division operation
+            "Rem(",           // Remainder/modulo operation
+            " / ",            // Infix division
+            " % ",            // Infix modulo
+        ]
+    }
+
+    /// Patterns that indicate zero checking
+    fn zero_check_patterns() -> &'static [&'static str] {
+        &[
+            "checked_div",
+            "checked_rem",
+            "saturating_div",
+            "wrapping_div",
+            "!= 0",
+            "!= 0_",
+            "> 0",
+            ">= 1",
+            "is_zero",
+            "NonZero",
+        ]
+    }
+
+    /// Track untrusted numeric variables
+    fn track_untrusted_numerics(body: &[String]) -> HashSet<String> {
+        let mut untrusted_vars = HashSet::new();
+        let source_patterns = LogInjectionRule::input_source_patterns();
+        
+        for line in body {
+            let trimmed = line.trim();
+            
+            // Check if this line contains an input source
+            let is_source = source_patterns.iter().any(|p| trimmed.contains(p));
+            
+            if is_source {
+                // Extract target variable
+                if let Some(eq_pos) = trimmed.find(" = ") {
+                    let target = trimmed[..eq_pos].trim();
+                    if let Some(var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                        .find(|s| s.starts_with('_'))
+                    {
+                        untrusted_vars.insert(var.to_string());
+                    }
+                }
+            }
+            
+            // Also track .parse() results from untrusted data
+            if trimmed.contains("::parse::") {
+                // Check if source is untrusted
+                let uses_untrusted = untrusted_vars.iter().any(|v| trimmed.contains(v));
+                if uses_untrusted {
+                    if let Some(eq_pos) = trimmed.find(" = ") {
+                        let target = trimmed[..eq_pos].trim();
+                        if let Some(var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                            .find(|s| s.starts_with('_'))
+                        {
+                            untrusted_vars.insert(var.to_string());
+                        }
+                    }
+                }
+            }
+            
+            // Propagate through assignments
+            if trimmed.contains(" = ") && !is_source {
+                if let Some(eq_pos) = trimmed.find(" = ") {
+                    let target = trimmed[..eq_pos].trim();
+                    let source = trimmed[eq_pos + 3..].trim();
+                    
+                    let uses_untrusted = untrusted_vars.iter().any(|v| source.contains(v));
+                    
+                    if uses_untrusted {
+                        if let Some(target_var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                            .find(|s| s.starts_with('_'))
+                        {
+                            untrusted_vars.insert(target_var.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        
+        untrusted_vars
+    }
+
+    /// Check if function has zero validation for untrusted vars
+    fn has_zero_validation(body: &[String], untrusted_vars: &HashSet<String>) -> bool {
+        let check_patterns = Self::zero_check_patterns();
+        
+        for line in body {
+            let trimmed = line.trim();
+            
+            // Check for zero validation patterns
+            let has_check = check_patterns.iter().any(|p| trimmed.contains(p));
+            
+            if has_check {
+                // Check if it involves an untrusted variable
+                for var in untrusted_vars {
+                    if trimmed.contains(var) {
+                        return true;
+                    }
+                }
+            }
+        }
+        
+        false
+    }
+
+    /// Find division operations using untrusted denominators
+    fn find_unsafe_divisions(body: &[String], untrusted_vars: &HashSet<String>) -> Vec<String> {
+        let mut evidence = Vec::new();
+        let div_patterns = Self::division_patterns();
+        
+        for line in body {
+            let trimmed = line.trim();
+            
+            // Check if this is a division operation
+            let is_division = div_patterns.iter().any(|p| trimmed.contains(p));
+            
+            if is_division {
+                // Check if denominator might be untrusted
+                // In MIR, Div(a, b) has b as second operand
+                for var in untrusted_vars {
+                    if trimmed.contains(var) {
+                        evidence.push(trimmed.to_string());
+                        break;
+                    }
+                }
+            }
+        }
+        
+        evidence
+    }
+}
+
+impl Rule for DivisionByUntrustedRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Skip internal functions
+            if function.name.contains("mir_extractor") || function.name.contains("mir-extractor") {
+                continue;
+            }
+
+            // Track untrusted numeric variables
+            let untrusted_vars = Self::track_untrusted_numerics(&function.body);
+            
+            if untrusted_vars.is_empty() {
+                continue;
+            }
+
+            // Check if there's zero validation
+            if Self::has_zero_validation(&function.body, &untrusted_vars) {
+                continue;
+            }
+
+            // Find unsafe divisions
+            let unsafe_divs = Self::find_unsafe_divisions(&function.body, &untrusted_vars);
+            
+            if !unsafe_divs.is_empty() {
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "Division in `{}` uses untrusted input as denominator without zero validation. \
+                        Use checked_div/checked_rem or validate denominator != 0.",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence: unsafe_divs.into_iter().take(3).collect(),
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        findings
+    }
+}
+
+// RUSTCOLA078: MaybeUninit assume_init without write (dataflow-enhanced)
+/// Enhanced version of RUSTCOLA009 that uses dataflow analysis to detect
+/// assume_init() calls without preceding MaybeUninit::write() operations.
+struct MaybeUninitAssumeInitDataflowRule {
+    metadata: RuleMetadata,
+}
+
+impl MaybeUninitAssumeInitDataflowRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA078".to_string(),
+                name: "maybeuninit-assume-init-without-write".to_string(),
+                short_description: "MaybeUninit::assume_init without preceding write".to_string(),
+                full_description: "Detects MaybeUninit::assume_init() or assume_init_read() calls \
+                    where no preceding MaybeUninit::write(), write_slice(), or ptr::write() \
+                    initializes the data. Reading uninitialized memory is undefined behavior and \
+                    can lead to crashes, data corruption, or security vulnerabilities. Always \
+                    initialize MaybeUninit values before assuming them initialized."
+                    .to_string(),
+                help_uri: Some("https://doc.rust-lang.org/std/mem/union.MaybeUninit.html".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Patterns that indicate MaybeUninit creation
+    fn uninit_creation_patterns() -> &'static [&'static str] {
+        &[
+            "MaybeUninit::uninit",
+            "MaybeUninit::<",  // Generic instantiation
+            "uninit_array",
+            "uninit(",
+        ]
+    }
+
+    /// Patterns that initialize MaybeUninit
+    fn init_patterns() -> &'static [&'static str] {
+        &[
+            ".write(",
+            "::write(",
+            "write_slice(",
+            "ptr::write(",
+            "ptr::write_bytes(",
+            "ptr::copy(",
+            "ptr::copy_nonoverlapping(",
+            "as_mut_ptr()",   // Often used with ptr::write
+            "zeroed(",        // MaybeUninit::zeroed is pre-initialized
+            "MaybeUninit::new(",  // Pre-initialized
+        ]
+    }
+
+    /// Patterns that assume initialization
+    fn assume_init_patterns() -> &'static [&'static str] {
+        &[
+            "assume_init(",
+            "assume_init_read(",
+            "assume_init_ref(",
+            "assume_init_mut(",
+            "assume_init_drop(",
+        ]
+    }
+
+    /// Track MaybeUninit variables and their initialization state
+    fn analyze_uninit_flow(body: &[String]) -> Vec<(String, String)> {
+        let mut uninitialized_vars: HashMap<String, String> = HashMap::new(); // var -> creation_line
+        let mut initialized_vars: HashSet<String> = HashSet::new();
+        let mut unsafe_assumes: Vec<(String, String)> = Vec::new(); // (var, assume_line)
+        
+        let creation_patterns = Self::uninit_creation_patterns();
+        let init_patterns = Self::init_patterns();
+        let assume_patterns = Self::assume_init_patterns();
+        
+        for line in body {
+            let trimmed = line.trim();
+            
+            // Check for MaybeUninit creation
+            let is_creation = creation_patterns.iter().any(|p| trimmed.contains(p));
+            
+            if is_creation && !trimmed.contains("zeroed") && !trimmed.contains("::new(") {
+                // Extract target variable
+                if let Some(eq_pos) = trimmed.find(" = ") {
+                    let target = trimmed[..eq_pos].trim();
+                    if let Some(var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                        .find(|s| s.starts_with('_'))
+                    {
+                        uninitialized_vars.insert(var.to_string(), trimmed.to_string());
+                    }
+                }
+            }
+            
+            // Check for initialization
+            let is_init = init_patterns.iter().any(|p| trimmed.contains(p));
+            
+            if is_init {
+                // Mark any referenced uninit vars as initialized
+                for var in uninitialized_vars.keys() {
+                    if trimmed.contains(var) {
+                        initialized_vars.insert(var.clone());
+                    }
+                }
+            }
+            
+            // Check for assume_init calls
+            let is_assume = assume_patterns.iter().any(|p| trimmed.contains(p));
+            
+            if is_assume {
+                // Check if any uninit var is assumed without being initialized
+                for (var, creation_line) in &uninitialized_vars {
+                    if trimmed.contains(var) && !initialized_vars.contains(var) {
+                        unsafe_assumes.push((creation_line.clone(), trimmed.to_string()));
+                    }
+                }
+            }
+        }
+        
+        unsafe_assumes
+    }
+}
+
+impl Rule for MaybeUninitAssumeInitDataflowRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Skip internal functions and test harnesses
+            if function.name.contains("mir_extractor") || 
+               function.name.contains("mir-extractor") ||
+               function.name.contains("MaybeUninit") {
+                continue;
+            }
+
+            // Check for unsafe assume_init patterns
+            let unsafe_assumes = Self::analyze_uninit_flow(&function.body);
+            
+            for (creation_line, assume_line) in unsafe_assumes {
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "MaybeUninit::assume_init() called in `{}` without preceding initialization. \
+                        Reading uninitialized memory is undefined behavior.",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence: vec![
+                        format!("Created: {}", creation_line),
+                        format!("Assumed: {}", assume_line),
+                    ],
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        findings
+    }
+}
+
 
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
@@ -9575,6 +10437,10 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(OverscopedAllowRule::new())); // RUSTCOLA072
     engine.register_rule(Box::new(UnsafeFfiPointerReturnRule::new())); // RUSTCOLA073
     engine.register_rule(Box::new(NonThreadSafeTestRule::new())); // RUSTCOLA074
+    engine.register_rule(Box::new(CleartextLoggingRule::new())); // RUSTCOLA075
+    engine.register_rule(Box::new(LogInjectionRule::new())); // RUSTCOLA076
+    engine.register_rule(Box::new(DivisionByUntrustedRule::new())); // RUSTCOLA077
+    engine.register_rule(Box::new(MaybeUninitAssumeInitDataflowRule::new())); // RUSTCOLA078
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

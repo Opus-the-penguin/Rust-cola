@@ -7,6 +7,8 @@ extern crate rustc_driver;
 #[cfg(feature = "hir-driver")]
 extern crate rustc_hir;
 #[cfg(feature = "hir-driver")]
+extern crate rustc_infer;
+#[cfg(feature = "hir-driver")]
 extern crate rustc_interface;
 #[cfg(feature = "hir-driver")]
 extern crate rustc_middle;
@@ -14,6 +16,8 @@ extern crate rustc_middle;
 extern crate rustc_session;
 #[cfg(feature = "hir-driver")]
 extern crate rustc_span;
+#[cfg(feature = "hir-driver")]
+extern crate rustc_trait_selection;
 
 use anyhow::{anyhow, Context, Result};
 use semver::{Version, VersionReq};

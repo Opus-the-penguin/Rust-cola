@@ -764,12 +764,15 @@ pub fn collect_crate_snapshot<'tcx>(
             // Compute is_zst from size
             let is_zst = size_bytes == Some(0);
             
-            // For now, skip Send/Sync detection (complex, requires trait solving)
+            // Extract Send/Sync trait implementation status
+            let is_send = extract_type_is_send(tcx, def_id);
+            let is_sync = extract_type_is_sync(tcx, def_id);
+            
             type_metadata.push(HirTypeMetadata {
                 type_name: def_path,
                 size_bytes,
-                is_send: None,
-                is_sync: None,
+                is_send,
+                is_sync,
                 is_zst,
             });
         }
@@ -795,8 +798,6 @@ fn collect_attributes(tcx: TyCtxt<'_>, def_id: DefId) -> Vec<String> {
 /// Extract the size of a type in bytes
 /// Returns None for unsized types or if size cannot be determined
 fn extract_type_size<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> Option<usize> {
-    use rustc_middle::ty::layout::LayoutOf;
-    
     // Get the type
     let ty = tcx.type_of(def_id).instantiate_identity();
     
@@ -813,6 +814,78 @@ fn extract_type_size<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> Option<usize> {
         Ok(layout) => Some(layout.size.bytes() as usize),
         Err(_) => None,
     }
+}
+
+/// Check if a type implements a given trait
+/// Uses the trait solver to properly evaluate trait bounds including auto traits
+fn type_implements_trait<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    def_id: DefId,
+    trait_def_id: DefId,
+) -> Option<bool> {
+    use rustc_infer::infer::TyCtxtInferExt;
+    use rustc_infer::traits::{Obligation, ObligationCause};
+    use rustc_middle::ty::{TypeVisitableExt, Upcast};
+    use rustc_trait_selection::traits::query::evaluate_obligation::InferCtxtExt;
+    
+    // Get the type
+    let ty = tcx.type_of(def_id).instantiate_identity();
+    
+    // Skip types with unsubstituted generics - we can't evaluate trait bounds for them
+    if ty.has_param() {
+        return None;
+    }
+    
+    // Create TypingEnv for non-body analysis
+    let typing_env = ty::TypingEnv::non_body_analysis(tcx, def_id);
+    
+    // Build inference context
+    let (infcx, param_env) = tcx.infer_ctxt().build_with_typing_env(typing_env);
+    
+    // Create the trait reference: ty: Trait
+    let trait_ref = ty::TraitRef::new(tcx, trait_def_id, [ty]);
+    
+    // Create the obligation
+    let obligation = Obligation {
+        cause: ObligationCause::dummy(),
+        param_env,
+        recursion_depth: 0,
+        predicate: trait_ref.upcast(tcx),
+    };
+    
+    // Evaluate the obligation
+    // EvaluatedToOk or EvaluatedToOkModuloRegions means it definitely implements
+    // EvaluatedToErr means it definitely does not implement
+    // Other results (ambiguous) mean we can't determine
+    let result = infcx.evaluate_obligation(&obligation);
+    match result {
+        Ok(eval_result) => {
+            use rustc_middle::traits::EvaluationResult::*;
+            match eval_result {
+                EvaluatedToOk | EvaluatedToOkModuloRegions | EvaluatedToOkModuloOpaqueTypes => {
+                    Some(true)
+                }
+                EvaluatedToErr => Some(false),
+                // Ambiguous results - can't determine
+                _ => None,
+            }
+        }
+        Err(_) => None,
+    }
+}
+
+/// Extract whether a type implements Send
+fn extract_type_is_send<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> Option<bool> {
+    use rustc_span::sym;
+    let send_trait = tcx.get_diagnostic_item(sym::Send)?;
+    type_implements_trait(tcx, def_id, send_trait)
+}
+
+/// Extract whether a type implements Sync
+fn extract_type_is_sync<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> Option<bool> {
+    use rustc_span::sym;
+    let sync_trait = tcx.get_diagnostic_item(sym::Sync)?;
+    type_implements_trait(tcx, def_id, sync_trait)
 }
 
 fn attribute_name(attr: &hir::Attribute) -> String {

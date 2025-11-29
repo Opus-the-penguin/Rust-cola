@@ -56,5 +56,6 @@ members = [
     "examples/regex-injection",
     "examples/unchecked-index",
     "examples/serde-length-mismatch",
+    "examples/slice-element-mismatch",
 ]
 resolver = "2"

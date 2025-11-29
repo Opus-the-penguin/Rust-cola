@@ -11289,6 +11289,375 @@ impl Rule for SerdeLengthMismatchRule {
 }
 
 
+// =============================================================================
+// RUSTCOLA082: Raw pointer to slice of different element size
+// =============================================================================
+
+/// Detects unsafe transmutes between slice/pointer types where the element sizes
+/// differ. This can cause memory corruption because the slice length field doesn't
+/// account for the size difference.
+///
+/// Example: transmuting &[u8] to &[u32] corrupts the slice - if the u8 slice has
+/// length 8, the result claims to have 8 u32 elements (32 bytes) instead of 2.
+struct SliceElementSizeMismatchRule {
+    metadata: RuleMetadata,
+}
+
+impl SliceElementSizeMismatchRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA082".to_string(),
+                name: "slice-element-size-mismatch".to_string(),
+                short_description: "Raw pointer to slice of different element size".to_string(),
+                full_description: "Detects transmutes between slice types with different \
+                    element sizes (e.g., &[u8] to &[u32]). This is unsound because the slice \
+                    length field isn't adjusted for the size difference, causing the new slice \
+                    to reference memory beyond the original allocation. Use slice::from_raw_parts \
+                    or slice::align_to instead."
+                    .to_string(),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+                help_uri: None,
+            },
+        }
+    }
+
+    /// Get element size for primitive types
+    fn get_primitive_size(type_name: &str) -> Option<usize> {
+        // Extract the inner type from slice/reference patterns
+        let inner = type_name
+            .trim_start_matches('&')
+            .trim_start_matches("mut ")
+            .trim_start_matches("*const ")
+            .trim_start_matches("*mut ")
+            .trim_start_matches('[')
+            .trim_end_matches(']');
+
+        match inner {
+            "u8" | "i8" | "bool" => Some(1),
+            "u16" | "i16" => Some(2),
+            "u32" | "i32" | "f32" | "char" => Some(4),
+            "u64" | "i64" | "f64" => Some(8),
+            "u128" | "i128" => Some(16),
+            "usize" | "isize" => Some(8), // Assume 64-bit
+            _ => None,
+        }
+    }
+
+    /// Parse a slice type and return the element type
+    /// Handles: &[T], &mut [T], *const [T], *mut [T]
+    fn extract_slice_element_type(type_str: &str) -> Option<String> {
+        let trimmed = type_str.trim();
+        
+        // Check if it's a slice type
+        if !trimmed.contains('[') || !trimmed.contains(']') {
+            return None;
+        }
+        
+        // Extract element type from patterns like:
+        // &[u8], &mut [u32], *const [u64], *mut [i8]
+        let start = trimmed.find('[')? + 1;
+        let end = trimmed.rfind(']')?;
+        
+        if start >= end {
+            return None;
+        }
+        
+        Some(trimmed[start..end].trim().to_string())
+    }
+
+    /// Check if types are slices with different element sizes
+    fn is_slice_size_mismatch(from_type: &str, to_type: &str) -> Option<(String, String, usize, usize)> {
+        let from_elem = Self::extract_slice_element_type(from_type)?;
+        let to_elem = Self::extract_slice_element_type(to_type)?;
+        
+        // Same element type is fine
+        if from_elem == to_elem {
+            return None;
+        }
+        
+        let from_size = Self::get_primitive_size(&from_elem)?;
+        let to_size = Self::get_primitive_size(&to_elem)?;
+        
+        // Same size is fine (e.g., u32 -> i32)
+        if from_size == to_size {
+            return None;
+        }
+        
+        Some((from_elem, to_elem, from_size, to_size))
+    }
+
+    /// Check if types are Vecs with different element sizes
+    fn is_vec_size_mismatch(from_type: &str, to_type: &str) -> Option<(String, String, usize, usize)> {
+        // Pattern: std::vec::Vec<u8> to std::vec::Vec<u32>
+        let extract_vec_elem = |t: &str| -> Option<String> {
+            if !t.contains("Vec<") {
+                return None;
+            }
+            let start = t.find("Vec<")? + 4;
+            let end = t.rfind('>')?;
+            if start >= end {
+                return None;
+            }
+            Some(t[start..end].trim().to_string())
+        };
+        
+        let from_elem = extract_vec_elem(from_type)?;
+        let to_elem = extract_vec_elem(to_type)?;
+        
+        if from_elem == to_elem {
+            return None;
+        }
+        
+        let from_size = Self::get_primitive_size(&from_elem)?;
+        let to_size = Self::get_primitive_size(&to_elem)?;
+        
+        if from_size == to_size {
+            return None;
+        }
+        
+        Some((from_elem, to_elem, from_size, to_size))
+    }
+
+    /// Parse transmute_copy pattern
+    /// Pattern: _0 = transmute_copy::<&[u8], &[u32]>(copy _2)
+    fn parse_transmute_copy_line(line: &str) -> Option<(String, String)> {
+        let trimmed = line.trim();
+        
+        if !trimmed.contains("transmute_copy::<") {
+            return None;
+        }
+        
+        // Extract type parameters: transmute_copy::<FROM, TO>
+        let start = trimmed.find("transmute_copy::<")? + 17;
+        let end = trimmed[start..].find(">")? + start;
+        
+        let type_params = &trimmed[start..end];
+        
+        // Split by comma, handling nested generics
+        let mut depth = 0;
+        let mut split_pos = None;
+        for (i, c) in type_params.char_indices() {
+            match c {
+                '<' => depth += 1,
+                '>' => depth -= 1,
+                ',' if depth == 0 => {
+                    split_pos = Some(i);
+                    break;
+                }
+                _ => {}
+            }
+        }
+        
+        let split = split_pos?;
+        let from_type = type_params[..split].trim().to_string();
+        let to_type = type_params[split + 1..].trim().to_string();
+        
+        Some((from_type, to_type))
+    }
+}
+
+impl Rule for SliceElementSizeMismatchRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Skip test functions
+            if function.signature.contains("#[test]") || function.name.contains("test") {
+                continue;
+            }
+
+            // Build a map of variable types from the function body
+            // Pattern: let _N: TYPE;
+            // Pattern: debug VAR => _N;
+            let mut var_types: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+            
+            // Also extract parameter types from signature
+            // Pattern: fn foo(_1: &[u8]) -> &[u32]
+            if let Some(params_start) = function.signature.find('(') {
+                if let Some(params_end) = function.signature.find(')') {
+                    let params = &function.signature[params_start + 1..params_end];
+                    // Parse parameters like "_1: &[u8], _2: i32"
+                    for param in params.split(',') {
+                        let param = param.trim();
+                        if let Some(colon_pos) = param.find(':') {
+                            let var_name = param[..colon_pos].trim();
+                            let var_type = param[colon_pos + 1..].trim();
+                            var_types.insert(var_name.to_string(), var_type.to_string());
+                        }
+                    }
+                }
+            }
+
+            // Parse variable declarations from body
+            for line in &function.body {
+                let trimmed = line.trim();
+                
+                // Pattern: let _0: &[u32];
+                // Pattern: let mut _0: Vec<u8>;
+                if trimmed.starts_with("let ") {
+                    let rest = trimmed.trim_start_matches("let ").trim_start_matches("mut ");
+                    if let Some(colon_pos) = rest.find(':') {
+                        let var_name = rest[..colon_pos].trim();
+                        let type_end = rest.find(';').unwrap_or(rest.len());
+                        let var_type = rest[colon_pos + 1..type_end].trim();
+                        var_types.insert(var_name.to_string(), var_type.to_string());
+                    }
+                }
+            }
+
+            for line in &function.body {
+                let trimmed = line.trim();
+
+                // Check for transmute_copy patterns first (has explicit types)
+                if let Some((from_type, to_type)) = Self::parse_transmute_copy_line(trimmed) {
+                    // Check for slice mismatch
+                    if let Some((from_elem, to_elem, from_size, to_size)) = 
+                        Self::is_slice_size_mismatch(&from_type, &to_type) 
+                    {
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: self.metadata.default_severity,
+                            message: format!(
+                                "transmute_copy between slices with different element sizes: \
+                                [{}] ({} bytes) to [{}] ({} bytes). The slice length won't be \
+                                adjusted, causing memory access beyond the original allocation. \
+                                Use slice::from_raw_parts with adjusted length instead.",
+                                from_elem, from_size, to_elem, to_size
+                            ),
+                            function: function.name.clone(),
+                            function_signature: function.signature.clone(),
+                            evidence: vec![trimmed.to_string()],
+                            span: function.span.clone(),
+                        });
+                        continue;
+                    }
+                    
+                    // Check for Vec mismatch
+                    if let Some((from_elem, to_elem, from_size, to_size)) = 
+                        Self::is_vec_size_mismatch(&from_type, &to_type) 
+                    {
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: self.metadata.default_severity,
+                            message: format!(
+                                "transmute_copy between Vecs with different element sizes: \
+                                Vec<{}> ({} bytes) to Vec<{}> ({} bytes). This corrupts the \
+                                Vec's length and capacity fields.",
+                                from_elem, from_size, to_elem, to_size
+                            ),
+                            function: function.name.clone(),
+                            function_signature: function.signature.clone(),
+                            evidence: vec![trimmed.to_string()],
+                            span: function.span.clone(),
+                        });
+                        continue;
+                    }
+                }
+
+                // Check for direct transmute patterns
+                // Pattern: _0 = copy _1 as &[u32] (Transmute);
+                if trimmed.contains("(Transmute)") && trimmed.contains(" as ") {
+                    // Extract source variable and destination type
+                    // Pattern: _0 = copy _1 as TYPE (Transmute);
+                    // Pattern: _0 = move _1 as TYPE (Transmute);
+                    
+                    let copy_move_pattern = if trimmed.contains("copy ") {
+                        "copy "
+                    } else if trimmed.contains("move ") {
+                        "move "
+                    } else {
+                        continue;
+                    };
+                    
+                    let as_pos = match trimmed.find(" as ") {
+                        Some(p) => p,
+                        None => continue,
+                    };
+                    
+                    let transmute_pos = match trimmed.find("(Transmute)") {
+                        Some(p) => p,
+                        None => continue,
+                    };
+                    
+                    // Get destination type
+                    let to_type = trimmed[as_pos + 4..transmute_pos].trim();
+                    
+                    // Get source variable
+                    let copy_pos = match trimmed.find(copy_move_pattern) {
+                        Some(p) => p,
+                        None => continue,
+                    };
+                    
+                    let src_start = copy_pos + copy_move_pattern.len();
+                    let src_end = as_pos;
+                    let src_var = trimmed[src_start..src_end].trim();
+                    
+                    // Look up source type
+                    let from_type = match var_types.get(src_var) {
+                        Some(t) => t.as_str(),
+                        None => continue,
+                    };
+
+                    // Check for slice mismatch
+                    if let Some((from_elem, to_elem, from_size, to_size)) = 
+                        Self::is_slice_size_mismatch(from_type, to_type) 
+                    {
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: self.metadata.default_severity,
+                            message: format!(
+                                "Transmute between slices with different element sizes: \
+                                [{}] ({} bytes) to [{}] ({} bytes). The slice length won't be \
+                                adjusted, causing memory access beyond the original allocation. \
+                                Use slice::from_raw_parts with adjusted length, or slice::align_to.",
+                                from_elem, from_size, to_elem, to_size
+                            ),
+                            function: function.name.clone(),
+                            function_signature: function.signature.clone(),
+                            evidence: vec![trimmed.to_string()],
+                            span: function.span.clone(),
+                        });
+                    }
+                    
+                    // Check for Vec mismatch
+                    if let Some((from_elem, to_elem, from_size, to_size)) = 
+                        Self::is_vec_size_mismatch(from_type, to_type) 
+                    {
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: self.metadata.default_severity,
+                            message: format!(
+                                "Transmute between Vecs with different element sizes: \
+                                Vec<{}> ({} bytes) to Vec<{}> ({} bytes). This corrupts the \
+                                Vec's length and capacity fields, potentially causing memory \
+                                corruption or use-after-free.",
+                                from_elem, from_size, to_elem, to_size
+                            ),
+                            function: function.name.clone(),
+                            function_signature: function.signature.clone(),
+                            evidence: vec![trimmed.to_string()],
+                            span: function.span.clone(),
+                        });
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
     engine.register_rule(Box::new(TransmuteRule::new()));
@@ -11360,6 +11729,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(RegexInjectionRule::new())); // RUSTCOLA079
     engine.register_rule(Box::new(UncheckedIndexRule::new())); // RUSTCOLA080
     engine.register_rule(Box::new(SerdeLengthMismatchRule::new())); // RUSTCOLA081
+    engine.register_rule(Box::new(SliceElementSizeMismatchRule::new())); // RUSTCOLA082
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

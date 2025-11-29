@@ -1,18 +1,18 @@
 # Rust-cola Current Status & Next Steps
 
-**Date:** November 26, 2025  
-**Version:** 79 security rules  
-**Recent Achievement:** ✅ RUSTCOLA081 shipped! Serde serialize_* length mismatch detection.
+**Date:** November 29, 2025  
+**Version:** 80 security rules  
+**Recent Achievement:** ✅ RUSTCOLA082 shipped! Slice element size mismatch detection.
 
 ## Current State Summary
 
 ### ✅ What's Completed
 
-**79 Security Rules Shipped:**
-- **Tier 1 (MIR Heuristics):** 77 rules - Pattern matching on compiler IR
+**80 Security Rules Shipped:**
+- **Tier 1 (MIR Heuristics):** 78 rules - Pattern matching on compiler IR
   - Memory safety, crypto, concurrency, FFI, input validation
   - 10-30% typical false positive rate (acceptable for heuristics)
-  - Recent additions: RUSTCOLA075-081 (MIR dataflow rules)
+  - Recent additions: RUSTCOLA075-082 (MIR dataflow rules)
 
 - **Tier 2 (Source Analysis):** 2 rules - AST inspection with syn crate
   - RUSTCOLA067: Commented-out code (87.5% recall, 100% precision)
@@ -27,6 +27,7 @@
 - ✅ RUSTCOLA079: Regex injection (80% recall, 100% precision)
 - ✅ RUSTCOLA080: Unchecked index arithmetic (55% recall, 100% precision)
 - ✅ RUSTCOLA081: Serde serialize_* length mismatch (71% recall, 100% precision)
+- ✅ RUSTCOLA082: Slice element size mismatch (90% recall, 100% precision)
 
 **Advanced Dataflow:**
 - ✅ Phase 3.5.1: Branch-sensitive CFG analysis COMPLETE (Nov 25, 2025)

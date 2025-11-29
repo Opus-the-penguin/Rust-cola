@@ -11658,6 +11658,336 @@ impl Rule for SliceElementSizeMismatchRule {
 }
 
 
+// =============================================================================
+// RUSTCOLA083: slice::from_raw_parts length inflation
+// =============================================================================
+
+/// Detects potentially dangerous uses of slice::from_raw_parts where the length
+/// argument may exceed the actual allocation size, causing undefined behavior
+/// through out-of-bounds memory access.
+///
+/// Flags cases where:
+/// - Length comes directly from function parameters (untrusted)
+/// - Length comes from environment variables or command-line args
+/// - Length is a large constant (> 10000)
+/// - Length is computed without validation
+///
+/// Does NOT flag when:
+/// - Length comes from .len() of a container
+/// - Length matches allocation count
+/// - Length is validated with bounds check before use
+/// - Length uses min/saturating operations
+struct SliceFromRawPartsRule {
+    metadata: RuleMetadata,
+}
+
+impl SliceFromRawPartsRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA083".to_string(),
+                name: "slice-from-raw-parts-length".to_string(),
+                short_description: "slice::from_raw_parts with potentially invalid length".to_string(),
+                full_description: "Detects calls to slice::from_raw_parts or from_raw_parts_mut \
+                    where the length argument may exceed the actual allocation, causing undefined \
+                    behavior. Common issues include using untrusted input for length, forgetting \
+                    to divide byte length by element size, or using unvalidated external lengths. \
+                    Ensure length is derived from a trusted source or properly validated."
+                    .to_string(),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+                help_uri: None,
+            },
+        }
+    }
+
+    /// Check if a variable name suggests it's from a trusted length source
+    fn is_trusted_length_source(var_name: &str, body: &[String]) -> bool {
+        // Check if the variable comes from a trusted source
+        let body_str = body.join("\n");
+        
+        // Trusted: length from .len() method
+        if body_str.contains(&format!("{} = ", var_name)) {
+            // Check for Vec::len, slice::len patterns
+            for line in body {
+                if line.contains(&format!("{} = ", var_name)) {
+                    if line.contains("::len(") || 
+                       line.contains(">::len(") ||
+                       line.contains(".len()") {
+                        return true;
+                    }
+                }
+            }
+        }
+        
+        // Trusted: variable named 'count' used in allocation and from_raw_parts
+        if var_name.contains("count") {
+            // Check if same count used for allocation
+            if body_str.contains("Layout::array") || body_str.contains("with_capacity") {
+                return true;
+            }
+        }
+        
+        false
+    }
+
+    /// Check if length is validated before from_raw_parts call
+    fn has_length_validation(len_var: &str, body: &[String]) -> bool {
+        let body_str = body.join("\n");
+        
+        // Check for comparison/validation patterns
+        // Pattern: Gt/Lt/Le/Ge comparisons involving the length variable
+        let comparison_patterns = [
+            format!("Gt(copy {}", len_var),
+            format!("Lt(copy {}", len_var),
+            format!("Le(copy {}", len_var),
+            format!("Ge(copy {}", len_var),
+            format!("Gt(move {}", len_var),
+            format!("Lt(move {}", len_var),
+            format!("Le(move {}", len_var),
+            format!("Ge(move {}", len_var),
+        ];
+        
+        for pattern in &comparison_patterns {
+            if body_str.contains(pattern) {
+                return true;
+            }
+        }
+        
+        // Check for min/saturating operations
+        if body_str.contains(&format!("min(")) && body_str.contains(len_var) {
+            return true;
+        }
+        if body_str.contains("saturating_") && body_str.contains(len_var) {
+            return true;
+        }
+        
+        // Check for checked arithmetic
+        if body_str.contains("checked_") && body_str.contains(len_var) {
+            return true;
+        }
+        
+        // Check for assert! on length
+        if body_str.contains("assert") && body_str.contains(len_var) {
+            return true;
+        }
+        
+        false
+    }
+
+    /// Check if a constant length is suspiciously large
+    fn is_large_constant(line: &str) -> Option<usize> {
+        // Pattern: from_raw_parts(ptr, const N_usize)
+        if let Some(const_pos) = line.rfind("const ") {
+            let after_const = &line[const_pos + 6..];
+            if let Some(usize_pos) = after_const.find("_usize") {
+                let num_str = &after_const[..usize_pos];
+                if let Ok(n) = num_str.trim().parse::<usize>() {
+                    if n > 10000 {
+                        return Some(n);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Check if length comes from untrusted source (env, args, etc.)
+    fn is_untrusted_length_source(_len_var: &str, body: &[String]) -> bool {
+        let body_str = body.join("\n");
+        
+        // Check if variable is derived from env::var
+        if body_str.contains("env::var") || body_str.contains("var::<") {
+            // Check if length var is in the taint chain
+            // Simple heuristic: if env::var and parse appear before from_raw_parts
+            if body_str.contains("parse") {
+                return true;
+            }
+        }
+        
+        // Check if variable comes from env::args
+        if body_str.contains("env::args") || body_str.contains("Args") {
+            return true;
+        }
+        
+        // Check if variable comes from stdin
+        if body_str.contains("stdin") || body_str.contains("Stdin") {
+            return true;
+        }
+        
+        // Check if it's a direct function parameter with 'len' in name
+        // This is less certain, so we'll mark it but with lower confidence
+        
+        false
+    }
+
+    /// Parse from_raw_parts call and extract length variable
+    fn parse_from_raw_parts_call(line: &str) -> Option<(String, String)> {
+        // Pattern: std::slice::from_raw_parts::<'_, T>(ptr, len)
+        // Pattern: std::slice::from_raw_parts_mut::<'_, T>(ptr, len)
+        
+        if !line.contains("from_raw_parts") {
+            return None;
+        }
+        
+        // Extract the arguments
+        // Find the last opening paren before the arrow
+        let call_start = if line.contains("from_raw_parts_mut") {
+            line.find("from_raw_parts_mut")?
+        } else {
+            line.find("from_raw_parts")?
+        };
+        
+        let after_call = &line[call_start..];
+        
+        // Find the argument list
+        let args_start = after_call.find('(')? + 1;
+        let args_end = after_call.rfind(')')?;
+        
+        if args_start >= args_end {
+            return None;
+        }
+        
+        let args_str = &after_call[args_start..args_end];
+        
+        // Split by comma - ptr is first, len is second
+        let parts: Vec<&str> = args_str.split(',').collect();
+        if parts.len() != 2 {
+            return None;
+        }
+        
+        let ptr_arg = parts[0].trim()
+            .trim_start_matches("copy ")
+            .trim_start_matches("move ")
+            .to_string();
+        let len_arg = parts[1].trim()
+            .trim_start_matches("copy ")
+            .trim_start_matches("move ")
+            .to_string();
+        
+        Some((ptr_arg, len_arg))
+    }
+
+    /// Check if the length variable is a function parameter
+    fn is_function_parameter(len_var: &str, signature: &str) -> bool {
+        // Pattern: fn foo(_1: *const u8, _2: usize)
+        // Check if len_var appears as parameter in signature
+        signature.contains(&format!("{}: usize", len_var)) ||
+        signature.contains(&format!("{}: u64", len_var)) ||
+        signature.contains(&format!("{}: u32", len_var))
+    }
+}
+
+impl Rule for SliceFromRawPartsRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Skip test functions
+            if function.signature.contains("#[test]") || function.name.contains("test") {
+                continue;
+            }
+
+            for line in &function.body {
+                let trimmed = line.trim();
+                
+                // Look for from_raw_parts calls
+                if !trimmed.contains("from_raw_parts") {
+                    continue;
+                }
+                
+                // Skip if it's just a type reference, not a call
+                if !trimmed.contains("->") || !trimmed.contains("(") {
+                    continue;
+                }
+
+                // Parse the call
+                let (_ptr_var, len_var) = match Self::parse_from_raw_parts_call(trimmed) {
+                    Some(p) => p,
+                    None => continue,
+                };
+
+                // Check for large constant length
+                if let Some(large_len) = Self::is_large_constant(trimmed) {
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: format!(
+                            "slice::from_raw_parts called with large constant length {}. \
+                            Ensure the pointer actually points to at least {} elements of \
+                            memory. Large constant lengths often indicate bugs.",
+                            large_len, large_len
+                        ),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence: vec![trimmed.to_string()],
+                        span: function.span.clone(),
+                    });
+                    continue;
+                }
+
+                // Check if length is from trusted source
+                if Self::is_trusted_length_source(&len_var, &function.body) {
+                    continue;
+                }
+
+                // Check if length is validated
+                if Self::has_length_validation(&len_var, &function.body) {
+                    continue;
+                }
+
+                // Check for untrusted sources (env, args, stdin)
+                if Self::is_untrusted_length_source(&len_var, &function.body) {
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: format!(
+                            "slice::from_raw_parts length '{}' derived from untrusted source \
+                            (environment variable, command-line argument, or user input). \
+                            Validate length against allocation size before creating slice.",
+                            len_var
+                        ),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence: vec![trimmed.to_string()],
+                        span: function.span.clone(),
+                    });
+                    continue;
+                }
+
+                // Check if length is a direct function parameter (potentially untrusted)
+                if Self::is_function_parameter(&len_var, &function.signature) {
+                    // This is a warning - the parameter could be from a trusted caller
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: Severity::Medium, // Lower severity for parameter case
+                        message: format!(
+                            "slice::from_raw_parts length '{}' comes directly from function \
+                            parameter without validation. If callers can pass arbitrary values, \
+                            add bounds checking or document the safety requirements.",
+                            len_var
+                        ),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence: vec![trimmed.to_string()],
+                        span: function.span.clone(),
+                    });
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
     engine.register_rule(Box::new(TransmuteRule::new()));
@@ -11730,6 +12060,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(UncheckedIndexRule::new())); // RUSTCOLA080
     engine.register_rule(Box::new(SerdeLengthMismatchRule::new())); // RUSTCOLA081
     engine.register_rule(Box::new(SliceElementSizeMismatchRule::new())); // RUSTCOLA082
+    engine.register_rule(Box::new(SliceFromRawPartsRule::new())); // RUSTCOLA083
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

@@ -57,5 +57,6 @@ members = [
     "examples/unchecked-index",
     "examples/serde-length-mismatch",
     "examples/slice-element-mismatch",
+    "examples/slice-from-raw-parts",
 ]
 resolver = "2"

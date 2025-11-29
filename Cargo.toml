@@ -58,5 +58,6 @@ members = [
     "examples/serde-length-mismatch",
     "examples/slice-element-mismatch",
     "examples/slice-from-raw-parts",
+    "examples/tls-verification-disabled",
 ]
 resolver = "2"

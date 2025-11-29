@@ -1,18 +1,18 @@
 # Rust-cola Current Status & Next Steps
 
 **Date:** November 29, 2025  
-**Version:** 81 security rules  
-**Recent Achievement:** ✅ RUSTCOLA083 shipped! slice::from_raw_parts length validation.
+**Version:** 82 security rules  
+**Recent Achievement:** ✅ RUSTCOLA084 shipped! TLS verification disabled detection.
 
 ## Current State Summary
 
 ### ✅ What's Completed
 
-**81 Security Rules Shipped:**
-- **Tier 1 (MIR Heuristics):** 79 rules - Pattern matching on compiler IR
+**82 Security Rules Shipped:**
+- **Tier 1 (MIR Heuristics):** 80 rules - Pattern matching on compiler IR
   - Memory safety, crypto, concurrency, FFI, input validation
   - 10-30% typical false positive rate (acceptable for heuristics)
-  - Recent additions: RUSTCOLA075-083 (MIR dataflow rules)
+  - Recent additions: RUSTCOLA075-084 (MIR dataflow rules)
 
 - **Tier 2 (Source Analysis):** 2 rules - AST inspection with syn crate
   - RUSTCOLA067: Commented-out code (87.5% recall, 100% precision)
@@ -29,6 +29,7 @@
 - ✅ RUSTCOLA081: Serde serialize_* length mismatch (71% recall, 100% precision)
 - ✅ RUSTCOLA082: Slice element size mismatch (90% recall, 100% precision)
 - ✅ RUSTCOLA083: slice::from_raw_parts length inflation (60% recall, 89% precision)
+- ✅ RUSTCOLA084: TLS verification disabled (100% recall, 100% precision)
 
 **Advanced Dataflow:**
 - ✅ Phase 3.5.1: Branch-sensitive CFG analysis COMPLETE (Nov 25, 2025)

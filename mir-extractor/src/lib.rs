@@ -11988,6 +11988,166 @@ impl Rule for SliceFromRawPartsRule {
 }
 
 
+// =============================================================================
+// RUSTCOLA084: TLS verification disabled in custom clients
+// =============================================================================
+
+/// Detects disabled TLS certificate verification across multiple HTTP/TLS libraries.
+/// This extends RUSTCOLA012 (reqwest) to cover native-tls, rustls, hyper-tls, and others.
+///
+/// Detects:
+/// - native-tls: danger_accept_invalid_certs(true), danger_accept_invalid_hostnames(true)
+/// - rustls: .dangerous() + custom verifier, DangerousClientConfigBuilder
+/// - reqwest: danger_accept_invalid_certs(true), danger_accept_invalid_hostnames(true)
+/// - hyper-tls: native-tls connector with verification disabled
+struct TlsVerificationDisabledRule {
+    metadata: RuleMetadata,
+}
+
+impl TlsVerificationDisabledRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA084".to_string(),
+                name: "tls-verification-disabled".to_string(),
+                short_description: "TLS certificate verification disabled".to_string(),
+                full_description: "Detects disabled TLS certificate verification in HTTP/TLS \
+                    client libraries including native-tls, rustls, reqwest, and hyper-tls. \
+                    Disabling certificate verification allows man-in-the-middle attacks. \
+                    Only disable in controlled environments (e.g., testing with self-signed certs) \
+                    and never in production code."
+                    .to_string(),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+                help_uri: None,
+            },
+        }
+    }
+}
+
+impl Rule for TlsVerificationDisabledRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Skip test functions (common to disable TLS verification in tests)
+            if function.signature.contains("#[test]") || 
+               function.name.contains("test") ||
+               function.signature.contains("#[cfg(test)]") {
+                continue;
+            }
+
+            let mut found_dangers: Vec<(String, String)> = Vec::new();
+
+            for line in &function.body {
+                let trimmed = line.trim();
+
+                // --- native-tls patterns ---
+                // Pattern: TlsConnectorBuilder::danger_accept_invalid_certs(_, const true)
+                if trimmed.contains("danger_accept_invalid_certs") && trimmed.contains("const true") {
+                    let library = if trimmed.contains("native_tls") || trimmed.contains("TlsConnectorBuilder") {
+                        "native-tls"
+                    } else if trimmed.contains("reqwest") || trimmed.contains("ClientBuilder") {
+                        "reqwest"
+                    } else {
+                        "TLS library"
+                    };
+                    found_dangers.push((
+                        format!("{}: danger_accept_invalid_certs(true) disables certificate validation", library),
+                        trimmed.to_string(),
+                    ));
+                }
+
+                // Pattern: TlsConnectorBuilder::danger_accept_invalid_hostnames(_, const true)
+                if trimmed.contains("danger_accept_invalid_hostnames") && trimmed.contains("const true") {
+                    let library = if trimmed.contains("native_tls") || trimmed.contains("TlsConnectorBuilder") {
+                        "native-tls"
+                    } else if trimmed.contains("reqwest") || trimmed.contains("ClientBuilder") {
+                        "reqwest"
+                    } else {
+                        "TLS library"
+                    };
+                    found_dangers.push((
+                        format!("{}: danger_accept_invalid_hostnames(true) disables hostname verification", library),
+                        trimmed.to_string(),
+                    ));
+                }
+
+                // --- rustls patterns ---
+                // Pattern: ConfigBuilder::dangerous() - entering dangerous mode
+                if (trimmed.contains(">::dangerous(") || trimmed.contains("::dangerous(move")) &&
+                   (trimmed.contains("rustls") || trimmed.contains("ConfigBuilder") || trimmed.contains("WantsVerifier")) {
+                    found_dangers.push((
+                        "rustls: .dangerous() enables unsafe TLS configuration".to_string(),
+                        trimmed.to_string(),
+                    ));
+                }
+
+                // Pattern: DangerousClientConfigBuilder::with_custom_certificate_verifier
+                if trimmed.contains("DangerousClientConfigBuilder") && trimmed.contains("with_custom_certificate_verifier") {
+                    found_dangers.push((
+                        "rustls: custom certificate verifier may bypass validation".to_string(),
+                        trimmed.to_string(),
+                    ));
+                }
+
+                // Pattern: ServerCertVerified::assertion() - always-accept verifier
+                if trimmed.contains("ServerCertVerified::assertion()") {
+                    found_dangers.push((
+                        "rustls: ServerCertVerified::assertion() unconditionally accepts certificates".to_string(),
+                        trimmed.to_string(),
+                    ));
+                }
+
+                // --- openssl patterns (if using openssl crate) ---
+                // Pattern: set_verify(SslVerifyMode::NONE) or SSL_VERIFY_NONE
+                if (trimmed.contains("set_verify") && trimmed.contains("NONE")) ||
+                   trimmed.contains("SSL_VERIFY_NONE") {
+                    found_dangers.push((
+                        "OpenSSL: SSL_VERIFY_NONE disables certificate verification".to_string(),
+                        trimmed.to_string(),
+                    ));
+                }
+
+                // --- Generic danger patterns ---
+                // Pattern: "danger" in function name being called with true
+                if trimmed.contains("danger") && trimmed.contains("const true") && 
+                   !found_dangers.iter().any(|(_, e)| e == trimmed) {
+                    found_dangers.push((
+                        "TLS danger method called with true - verification may be disabled".to_string(),
+                        trimmed.to_string(),
+                    ));
+                }
+            }
+
+            // Create findings for each dangerous pattern found
+            for (message, evidence) in found_dangers {
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "{}. This allows man-in-the-middle attacks. \
+                        Only disable in controlled test environments, never in production.",
+                        message
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence: vec![evidence],
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        findings
+    }
+}
+
+
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
     engine.register_rule(Box::new(TransmuteRule::new()));
@@ -12061,6 +12221,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(SerdeLengthMismatchRule::new())); // RUSTCOLA081
     engine.register_rule(Box::new(SliceElementSizeMismatchRule::new())); // RUSTCOLA082
     engine.register_rule(Box::new(SliceFromRawPartsRule::new())); // RUSTCOLA083
+    engine.register_rule(Box::new(TlsVerificationDisabledRule::new())); // RUSTCOLA084
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

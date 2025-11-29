@@ -1,0 +1,9 @@
+[package]
+name = "aws-s3-unscoped"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aws-config = "1.0"
+aws-sdk-s3 = "1.0"
+tokio = { version = "1", features = ["full"] }

@@ -59,5 +59,6 @@ members = [
     "examples/slice-element-mismatch",
     "examples/slice-from-raw-parts",
     "examples/tls-verification-disabled",
+    "examples/aws-s3-unscoped",
 ]
 resolver = "2"

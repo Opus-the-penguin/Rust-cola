@@ -12147,6 +12147,320 @@ impl Rule for TlsVerificationDisabledRule {
     }
 }
 
+// ============================================================================
+// RUSTCOLA085: AWS S3 Unscoped Access Rule
+// ============================================================================
+
+/// Detects AWS S3 operations where bucket names, keys, or prefixes come from
+/// untrusted sources (env vars, CLI args, etc.) without validation.
+/// This can enable data exfiltration, unauthorized deletions, or path traversal.
+struct AwsS3UnscopedAccessRule {
+    metadata: RuleMetadata,
+}
+
+impl AwsS3UnscopedAccessRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA085".to_string(),
+                name: "aws-s3-unscoped-access".to_string(),
+                short_description: "AWS S3 operation with untrusted bucket/key/prefix".to_string(),
+                full_description: "Detects AWS S3 SDK operations (list_objects, put_object, \
+                    delete_object, get_object, etc.) where bucket names, keys, or prefixes \
+                    come from untrusted sources (environment variables, CLI arguments) without \
+                    validation. Attackers can exploit this to access, modify, or delete arbitrary \
+                    S3 objects. Use allowlists, starts_with validation, or path sanitization.".to_string(),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+                help_uri: None,
+            },
+        }
+    }
+
+    /// Check if there's validation before the S3 call
+    fn has_validation(&self, lines: &[&str], s3_call_idx: usize) -> bool {
+        // Look for validation patterns before the S3 call
+        for i in 0..s3_call_idx {
+            let trimmed = lines[i].trim();
+            
+            // Allowlist check: contains() call typically used for allowlist validation
+            if trimmed.contains("::contains(") && !trimmed.contains("str>::contains") {
+                return true;
+            }
+            
+            // starts_with validation for prefix scoping
+            if trimmed.contains("starts_with") && !trimmed.contains("trim_start") {
+                return true;
+            }
+            
+            // Path traversal sanitization: replace("..", "")
+            if trimmed.contains("replace") && trimmed.contains("\"..\"") {
+                return true;
+            }
+            
+            // Explicit assertion/panic for invalid input
+            if (trimmed.contains("assert!") || trimmed.contains("panic!")) && 
+               (trimmed.contains("bucket") || trimmed.contains("key") || trimmed.contains("prefix")) {
+                return true;
+            }
+            
+            // filter() for character sanitization
+            if trimmed.contains("filter::<") && trimmed.contains("Chars") {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Get the S3 operation severity based on the method
+    fn get_operation_severity(&self, method: &str) -> Severity {
+        if method.contains("delete") || method.contains("Delete") {
+            Severity::High  // Deletion is most dangerous (using High since no Critical)
+        } else if method.contains("put") || method.contains("Put") || method.contains("copy") {
+            Severity::High  // Write operations
+        } else {
+            Severity::Medium  // Read operations (list, get, head)
+        }
+    }
+}
+
+impl Rule for AwsS3UnscopedAccessRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Skip test functions
+            if function.name.contains("test") || function.name.starts_with("test_") ||
+               function.signature.contains("#[test]") || function.signature.contains("#[cfg(test)]") {
+                continue;
+            }
+
+            let lines: Vec<&str> = function.body.iter().map(|s| s.as_str()).collect();
+            
+            // Track untrusted variable sources
+            let mut untrusted_vars: std::collections::HashSet<String> = std::collections::HashSet::new();
+            
+            // First pass: identify untrusted sources (env::var, args)
+            for (_idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Detect env::var Result variable declarations
+                // Pattern: let mut _4: std::result::Result<std::string::String, std::env::VarError>;
+                if trimmed.contains("Result<") && trimmed.contains("VarError") {
+                    if let Some(colon_pos) = trimmed.find(':') {
+                        let var_part = trimmed[..colon_pos].trim().trim_start_matches("let").trim().trim_start_matches("mut").trim();
+                        if var_part.starts_with('_') {
+                            untrusted_vars.insert(var_part.to_string());
+                        }
+                    }
+                }
+                
+                // env::var call (older pattern)
+                if trimmed.contains("var::<") && trimmed.contains("const \"") {
+                    // Extract the target variable: _X = var::<&str>(...)
+                    if let Some(eq_pos) = trimmed.find(" = ") {
+                        let var_part = trimmed[..eq_pos].trim();
+                        if var_part.starts_with('_') {
+                            untrusted_vars.insert(var_part.to_string());
+                        }
+                    }
+                }
+                
+                // env::args() collection
+                if trimmed.contains("env::args") || trimmed.contains("Args") {
+                    if let Some(eq_pos) = trimmed.find(" = ") {
+                        let var_part = trimmed[..eq_pos].trim();
+                        if var_part.starts_with('_') {
+                            untrusted_vars.insert(var_part.to_string());
+                        }
+                    }
+                }
+                
+                // Propagate taint through Result::unwrap with VarError
+                // Pattern: (((*_21) as variant#3).0: std::string::String) = Result::<std::string::String, VarError>::unwrap(move _4)
+                if trimmed.contains("VarError>::unwrap") || 
+                   (trimmed.contains("unwrap") && trimmed.contains("move _") && 
+                    untrusted_vars.iter().any(|v| trimmed.contains(&format!("move {}", v)))) {
+                    // Extract the destination variable
+                    if let Some(eq_pos) = trimmed.find(" = ") {
+                        let dest_part = trimmed[..eq_pos].trim();
+                        // Handle async closure patterns like (((*_21) as variant#3).0: std::string::String)
+                        if dest_part.contains(".0:") || dest_part.starts_with('_') {
+                            // Mark the unwrapped result as tainted
+                            if dest_part.starts_with('_') {
+                                untrusted_vars.insert(dest_part.to_string());
+                            }
+                            // Also track the complex field reference
+                            untrusted_vars.insert(dest_part.to_string());
+                        }
+                    }
+                }
+                
+                // Propagate taint through unwrap
+                if trimmed.contains("unwrap::<") && trimmed.contains("Result<std::string::String") {
+                    if let Some(eq_pos) = trimmed.find(" = ") {
+                        let var_part = trimmed[..eq_pos].trim();
+                        // Check if source is tainted
+                        for tainted in untrusted_vars.clone() {
+                            if trimmed.contains(&format!("move {}", tainted)) || 
+                               trimmed.contains(&format!("copy {}", tainted)) {
+                                untrusted_vars.insert(var_part.to_string());
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through index operations (args[1])
+                if trimmed.contains("Index>::index") || trimmed.contains("[") {
+                    if let Some(eq_pos) = trimmed.find(" = ") {
+                        let var_part = trimmed[..eq_pos].trim();
+                        for tainted in untrusted_vars.clone() {
+                            if trimmed.contains(&tainted) {
+                                untrusted_vars.insert(var_part.to_string());
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through simple assignments and copies
+                if trimmed.contains(" = copy ") || trimmed.contains(" = move ") {
+                    if let Some(eq_pos) = trimmed.find(" = ") {
+                        let var_part = trimmed[..eq_pos].trim();
+                        for tainted in untrusted_vars.clone() {
+                            if trimmed.contains(&format!("copy {}", tainted)) || 
+                               trimmed.contains(&format!("move {}", tainted)) ||
+                               trimmed.contains(&format!("&{}", tainted)) {
+                                untrusted_vars.insert(var_part.to_string());
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through reference operations to async state fields
+                // Pattern: _10 = &(((*_22) as variant#3).0: std::string::String);
+                if trimmed.contains(" = &") && trimmed.contains("variant#") && trimmed.contains(".0:") {
+                    if let Some(eq_pos) = trimmed.find(" = ") {
+                        let var_part = trimmed[..eq_pos].trim();
+                        // Check if this references a tainted async state field
+                        // The tainted field may be through any _N deref, so match on the field pattern
+                        for tainted in untrusted_vars.clone() {
+                            if tainted.contains("variant#") && tainted.contains(".0:") {
+                                // Both are async state fields - likely same data
+                                untrusted_vars.insert(var_part.to_string());
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through format! and string operations
+                if trimmed.contains("format_argument") || trimmed.contains("Arguments::") {
+                    if let Some(eq_pos) = trimmed.find(" = ") {
+                        let var_part = trimmed[..eq_pos].trim();
+                        for tainted in untrusted_vars.clone() {
+                            if trimmed.contains(&tainted) {
+                                untrusted_vars.insert(var_part.to_string());
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Second pass: find S3 operations with untrusted parameters
+            let s3_methods = [
+                "ListObjectsV2FluentBuilder::bucket",
+                "ListObjectsV2FluentBuilder::prefix",
+                "PutObjectFluentBuilder::bucket",
+                "PutObjectFluentBuilder::key",
+                "DeleteObjectFluentBuilder::bucket",
+                "DeleteObjectFluentBuilder::key",
+                "GetObjectFluentBuilder::bucket",
+                "GetObjectFluentBuilder::key",
+                "HeadObjectFluentBuilder::bucket",
+                "HeadObjectFluentBuilder::key",
+                "CopyObjectFluentBuilder::bucket",
+                "CopyObjectFluentBuilder::key",
+            ];
+            
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                for method in &s3_methods {
+                    if trimmed.contains(method) {
+                        // Skip if using const (hardcoded value - safe)
+                        if trimmed.contains("const \"") || 
+                           trimmed.contains("const safe_") ||
+                           trimmed.contains("::ALLOWED_") {
+                            continue;
+                        }
+                        
+                        // Check if any untrusted variable flows to this call
+                        let mut tainted_param = None;
+                        for tainted in &untrusted_vars {
+                            if trimmed.contains(&format!("move {}", tainted)) ||
+                               trimmed.contains(&format!("copy {}", tainted)) ||
+                               trimmed.contains(&format!("&{}", tainted)) {
+                                tainted_param = Some(tainted.clone());
+                                break;
+                            }
+                        }
+                        
+                        if let Some(_param) = tainted_param {
+                            // Check if there's validation before this call
+                            if self.has_validation(&lines, idx) {
+                                continue; // Validation found, skip
+                            }
+                            
+                            // Determine operation type and severity
+                            let op_type = if method.contains("bucket") { "bucket" } 
+                                         else if method.contains("prefix") { "prefix" }
+                                         else { "key" };
+                            
+                            let severity = self.get_operation_severity(method);
+                            
+                            let operation = if method.contains("List") { "list_objects" }
+                                           else if method.contains("Put") { "put_object" }
+                                           else if method.contains("Delete") { "delete_object" }
+                                           else if method.contains("Get") { "get_object" }
+                                           else if method.contains("Head") { "head_object" }
+                                           else if method.contains("Copy") { "copy_object" }
+                                           else { "S3 operation" };
+                            
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity,
+                                message: format!(
+                                    "S3 {} receives untrusted {} parameter from environment variable or CLI argument. \
+                                    Attackers can manipulate this to access, modify, or delete arbitrary S3 objects. \
+                                    Use allowlist validation, starts_with scoping, or input sanitization.",
+                                    operation, op_type
+                                ),
+                                function: function.name.clone(),
+                                function_signature: function.signature.clone(),
+                                evidence: vec![trimmed.to_string()],
+                                span: function.span.clone(),
+                            });
+                            
+                            break; // Only report once per S3 call
+                        }
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
@@ -12222,6 +12536,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(SliceElementSizeMismatchRule::new())); // RUSTCOLA082
     engine.register_rule(Box::new(SliceFromRawPartsRule::new())); // RUSTCOLA083
     engine.register_rule(Box::new(TlsVerificationDisabledRule::new())); // RUSTCOLA084
+    engine.register_rule(Box::new(AwsS3UnscopedAccessRule::new())); // RUSTCOLA085
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

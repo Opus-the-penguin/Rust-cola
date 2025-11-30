@@ -653,9 +653,11 @@ impl PathSensitiveTaintAnalysis {
         // E.g., "<String as Deref>::deref(copy _16)" -> "_16"
         if expr.contains('(') {
             if let Some(start) = expr.find('(') {
-                if let Some(end) = expr.find(')') {
-                    let arg = &expr[start + 1..end];
-                    return Self::extract_variable(arg); // Recursive call
+                if let Some(end) = expr.rfind(')') {
+                    if start < end {
+                        let arg = &expr[start + 1..end];
+                        return Self::extract_variable(arg); // Recursive call
+                    }
                 }
             }
         }

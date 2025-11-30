@@ -13078,6 +13078,618 @@ impl Rule for PathTraversalRule {
     }
 }
 
+/// RUSTCOLA087: SQL Injection Detection
+///
+/// Detects when user-controlled input flows to SQL query construction
+/// without proper parameterization. SQL injection occurs when untrusted
+/// data is concatenated or formatted directly into query strings.
+///
+/// **Sources:** env::var, env::args, stdin, HTTP request parameters  
+/// **Sinks:** format! with SQL keywords, string concat with SQL, raw query execution
+/// **Sanitizers:** Parameterized queries (?/$1 placeholders), prepared statements,
+///                 integer parsing, allowlist validation
+struct SqlInjectionRule {
+    metadata: RuleMetadata,
+}
+
+impl SqlInjectionRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA087".to_string(),
+                name: "sql-injection".to_string(),
+                short_description: "Untrusted input used in SQL query construction".to_string(),
+                full_description: "Detects when user-controlled input is concatenated or \
+                    formatted directly into SQL query strings instead of using parameterized \
+                    queries. This allows attackers to modify query logic, bypass authentication, \
+                    or extract/modify sensitive data. Use prepared statements with bind \
+                    parameters (?, $1, :name) instead of string interpolation.".to_string(),
+                help_uri: Some("https://owasp.org/www-community/attacks/SQL_Injection".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+    
+    /// SQL keywords that indicate query construction
+    const SQL_KEYWORDS: &'static [&'static str] = &[
+        "SELECT",
+        "INSERT",
+        "UPDATE", 
+        "DELETE",
+        "DROP",
+        "CREATE",
+        "ALTER",
+        "TRUNCATE",
+        "WHERE",
+        "FROM",
+        "INTO",
+        "VALUES",
+        "SET",
+        "ORDER BY",
+        "GROUP BY",
+        "HAVING",
+        "JOIN",
+        "UNION",
+    ];
+    
+    /// Patterns indicating SQL query construction sinks
+    const SQL_SINKS: &'static [&'static str] = &[
+        // Format patterns - queries built with format!
+        "format_args!",
+        "format!",
+        // String operations for building queries
+        "String::push_str",
+        "str::to_string",
+        "+",  // String concatenation
+        // Database execution patterns (various libraries)
+        "execute(",
+        "query(",
+        "query_as(",
+        "sql_query(",
+        "prepare(",
+        "execute_batch(",
+        "query_row(",
+        "query_map(",
+        "raw_query(",
+        "raw_sql(",
+        // sqlx patterns
+        "sqlx::query",
+        "sqlx::query_as",
+        "sqlx::query_scalar",
+        // diesel patterns  
+        "diesel::sql_query",
+        "diesel::delete",
+        "diesel::insert_into",
+        "diesel::update",
+        // rusqlite patterns
+        "rusqlite::execute",
+        "Connection::execute",
+        "Connection::query_row",
+        "Statement::execute",
+    ];
+    
+    /// Patterns indicating untrusted input sources
+    const UNTRUSTED_SOURCES: &'static [&'static str] = &[
+        // Environment variables
+        "env::var(",
+        "env::var_os(",
+        "std::env::var(",
+        "std::env::var_os(",
+        " = var(",
+        " = var::",
+        // Command-line arguments
+        "env::args()",
+        "std::env::args()",
+        " = args()",
+        "Args>::next(",
+        // User input - MIR patterns
+        " = stdin()",
+        "Stdin::lock(",
+        "BufRead>::read_line(",
+        "read_line(move",
+        "io::stdin()",
+        // Web framework input (common patterns)
+        "Request",
+        "Form",
+        "Query",
+        "Json",
+        "Path",
+    ];
+    
+    /// Patterns indicating SQL sanitization/parameterization
+    const SANITIZERS: &'static [&'static str] = &[
+        // Parameterized query placeholders
+        " ? ",           // SQLite/MySQL placeholder
+        "?)",            // End of params
+        "?, ",           // Multiple params
+        "$1",            // PostgreSQL placeholder
+        "$2",
+        ":name",         // Named parameter
+        ":username",
+        ":id",
+        // Binding functions
+        ".bind(",
+        "bind_value(",
+        "bind::<",
+        // Safe query builders (usually handle escaping)
+        "QueryBuilder",
+        "filter(",
+        ".eq(",
+        ".ne(",
+        ".gt(",
+        ".lt(",
+        // Integer parsing (prevents string injection)
+        "parse::<i",
+        "parse::<u",
+        "parse::<f",
+        "i32::from_str",
+        "i64::from_str",
+        "u32::from_str",
+        "u64::from_str",
+        // Allowlist/validation patterns
+        "::contains(move",
+        "::contains(copy",
+        "allowed_",
+        "whitelist",
+        "allowlist",
+        // Escaping functions
+        "escape(",
+        "quote(",
+        "sanitize",
+        "replace(",   // String replacement for escaping
+        "replace('",  // Single quote escaping
+        "::replace::", // MIR pattern for replace
+        // Type checking
+        "is_alphanumeric",
+        "chars().all(",
+        // MIR patterns for validation
+        " as Iterator>::all::<",  // .all() validation in MIR
+    ];
+
+    /// Track untrusted variables through the function body
+    fn track_untrusted_vars(&self, body: &[String]) -> HashSet<String> {
+        let mut untrusted_vars = HashSet::new();
+        
+        // First pass: find source variables
+        for line in body {
+            let trimmed = line.trim();
+            
+            // Check for untrusted sources
+            for source in Self::UNTRUSTED_SOURCES {
+                if trimmed.contains(source) {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        untrusted_vars.insert(target);
+                    }
+                }
+            }
+        }
+        
+        // Second pass: propagate taint through assignments
+        let mut changed = true;
+        let max_iterations = 20;
+        let mut iterations = 0;
+        
+        while changed && iterations < max_iterations {
+            changed = false;
+            iterations += 1;
+            
+            for line in body {
+                let trimmed = line.trim();
+                
+                if !trimmed.contains(" = ") {
+                    continue;
+                }
+                
+                if let Some(target) = self.extract_assignment_target(trimmed) {
+                    // Check if any untrusted variable appears in the RHS
+                    for untrusted in untrusted_vars.clone() {
+                        if self.contains_var(trimmed, &untrusted) {
+                            if !untrusted_vars.contains(&target) {
+                                untrusted_vars.insert(target.clone());
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through .unwrap(), .expect(), .unwrap_or_default(), etc.
+                if trimmed.contains("unwrap()") || 
+                   trimmed.contains("expect(") ||
+                   trimmed.contains("unwrap_or") ||
+                   trimmed.contains("Result::Ok(") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        for untrusted in untrusted_vars.clone() {
+                            if self.contains_var(trimmed, &untrusted) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through string formatting (critical for SQL injection)
+                if trimmed.contains("format!") || 
+                   trimmed.contains("format_args!") ||
+                   trimmed.contains("Arguments::") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        for untrusted in untrusted_vars.clone() {
+                            if self.contains_var(trimmed, &untrusted) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through string concatenation
+                if trimmed.contains("Add>::add(") || trimmed.contains("+ ") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        for untrusted in untrusted_vars.clone() {
+                            if self.contains_var(trimmed, &untrusted) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through Deref (String -> &str)
+                if trimmed.contains("Deref>::deref(") || trimmed.contains("as_str(") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        for untrusted in untrusted_vars.clone() {
+                            if self.contains_var(trimmed, &untrusted) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through str::trim()
+                if trimmed.contains("str>::trim(") || trimmed.contains("str>::trim_end(") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        for untrusted in untrusted_vars.clone() {
+                            if self.contains_var(trimmed, &untrusted) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through reference creation
+                if trimmed.contains(" = &") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        if let Some(amp_idx) = trimmed.find('&') {
+                            let after_amp = &trimmed[amp_idx + 1..];
+                            let referenced = if after_amp.starts_with("mut ") {
+                                after_amp[4..].trim().trim_end_matches(';')
+                            } else {
+                                after_amp.trim().trim_end_matches(';')
+                            };
+                            if untrusted_vars.contains(referenced) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through clone
+                if trimmed.contains("Clone>::clone(") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        for untrusted in untrusted_vars.clone() {
+                            if self.contains_var(trimmed, &untrusted) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through to_string
+                if trimmed.contains("ToString>::to_string(") || trimmed.contains("to_string(") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        for untrusted in untrusted_vars.clone() {
+                            if self.contains_var(trimmed, &untrusted) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        untrusted_vars
+    }
+    
+    /// Check if function has SQL sanitization/parameterization
+    fn has_sql_sanitization(&self, body: &[String]) -> bool {
+        let body_str = body.join("\n");
+        
+        // Check for sanitizer patterns
+        for sanitizer in Self::SANITIZERS {
+            if body_str.contains(sanitizer) {
+                return true;
+            }
+        }
+        
+        false
+    }
+    
+    /// Check if a string looks like a SQL query
+    fn looks_like_sql(&self, s: &str) -> bool {
+        let upper = s.to_uppercase();
+        Self::SQL_KEYWORDS.iter().any(|kw| upper.contains(kw))
+    }
+    
+    /// Find SQL query construction using untrusted input
+    fn find_unsafe_sql_operations(&self, body: &[String], untrusted_vars: &HashSet<String>) -> Vec<String> {
+        let mut evidence = Vec::new();
+        
+        // Check if any SQL keywords appear in the function (in const strings)
+        let has_sql_const = body.iter().any(|line| {
+            let line_upper = line.to_uppercase();
+            // Look for SQL keywords in const strings
+            (line.contains("const ") || line.contains("[const ")) &&
+            Self::SQL_KEYWORDS.iter().any(|kw| line_upper.contains(kw))
+        });
+        
+        if !has_sql_const {
+            return evidence;
+        }
+        
+        // Check if untrusted variables flow into format operations
+        let has_tainted_format = body.iter().any(|line| {
+            let trimmed = line.trim();
+            // Check for format machinery: fmt::Arguments, Argument
+            let is_format_related = trimmed.contains("fmt::Arguments") ||
+                                   trimmed.contains("fmt::rt::Argument") ||
+                                   trimmed.contains("Arguments::new") ||
+                                   trimmed.contains("Argument::new") ||
+                                   trimmed.contains("core::fmt::") ||
+                                   trimmed.contains("format_args");
+            
+            if is_format_related {
+                for var in untrusted_vars {
+                    if self.contains_var(trimmed, var) {
+                        return true;
+                    }
+                }
+            }
+            false
+        });
+        
+        if has_tainted_format {
+            // Collect SQL evidence
+            for line in body {
+                let line_upper = line.to_uppercase();
+                if (line.contains("const ") || line.contains("[const ")) &&
+                   Self::SQL_KEYWORDS.iter().any(|kw| line_upper.contains(kw)) {
+                    evidence.push(line.trim().to_string());
+                }
+            }
+            // Also add the tainted format operations
+            for line in body {
+                let trimmed = line.trim();
+                if trimmed.contains("fmt::Arguments") || 
+                   trimmed.contains("Argument::new") ||
+                   trimmed.contains("format_args") {
+                    for var in untrusted_vars {
+                        if self.contains_var(trimmed, var) {
+                            evidence.push(trimmed.to_string());
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Also check for string concatenation with SQL keywords
+        for line in body {
+            let trimmed = line.trim();
+            // Check for string concatenation involving SQL
+            if trimmed.contains("Add>::add(") || trimmed.contains("push_str(") {
+                let line_upper = line.to_uppercase();
+                if Self::SQL_KEYWORDS.iter().any(|kw| line_upper.contains(kw)) {
+                    for var in untrusted_vars {
+                        if self.contains_var(trimmed, var) {
+                            evidence.push(trimmed.to_string());
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Check for direct SQL sink patterns
+            for sink in Self::SQL_SINKS {
+                if trimmed.contains(sink) {
+                    for var in untrusted_vars {
+                        if trimmed.contains(&format!("move {}", var)) ||
+                           trimmed.contains(&format!("copy {}", var)) ||
+                           trimmed.contains(&format!("&{}", var)) ||
+                           trimmed.contains(&format!("({}", var)) {
+                            evidence.push(trimmed.to_string());
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        evidence
+    }
+    
+    /// Extract variable name from assignment target
+    fn extract_assignment_target(&self, line: &str) -> Option<String> {
+        let parts: Vec<&str> = line.split('=').collect();
+        if parts.len() >= 2 {
+            let target = parts[0].trim();
+            if target.starts_with('_') && target.chars().skip(1).all(|c| c.is_ascii_digit()) {
+                return Some(target.to_string());
+            }
+            if let Some(var) = target.split_whitespace().find(|s| s.starts_with('_')) {
+                let var_clean = var.trim_end_matches(':');
+                if var_clean.starts_with('_') {
+                    return Some(var_clean.to_string());
+                }
+            }
+        }
+        None
+    }
+    
+    /// Check if line contains a specific variable
+    fn contains_var(&self, line: &str, var: &str) -> bool {
+        line.contains(&format!("move {}", var)) ||
+        line.contains(&format!("copy {}", var)) ||
+        line.contains(&format!("&{}", var)) ||
+        line.contains(&format!("({})", var)) ||
+        line.contains(&format!("{},", var)) ||
+        line.contains(&format!(" {} ", var)) ||
+        line.contains(&format!("[{}]", var))
+    }
+}
+
+impl Rule for SqlInjectionRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        // Phase 1: Intra-procedural analysis
+        for function in &package.functions {
+            // Skip internal/test functions
+            if function.name.contains("mir_extractor") || 
+               function.name.contains("mir-extractor") ||
+               function.name.contains("__") ||
+               function.name.contains("test_") {
+                continue;
+            }
+
+            // Track untrusted variables
+            let untrusted_vars = self.track_untrusted_vars(&function.body);
+            
+            if untrusted_vars.is_empty() {
+                continue;
+            }
+
+            // Check if function has SQL sanitization
+            if self.has_sql_sanitization(&function.body) {
+                continue;
+            }
+
+            // Find unsafe SQL operations
+            let unsafe_ops = self.find_unsafe_sql_operations(&function.body, &untrusted_vars);
+            
+            if !unsafe_ops.is_empty() {
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: Severity::High,
+                    message: format!(
+                        "SQL injection vulnerability in `{}`. Untrusted input is used \
+                        in SQL query construction without parameterization. Use prepared \
+                        statements with bind parameters (?, $1, :name) instead of string \
+                        formatting or concatenation.",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence: unsafe_ops.into_iter().take(3).collect(),
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        // Phase 2: Inter-procedural analysis
+        if let Ok(mut inter_analysis) = interprocedural::InterProceduralAnalysis::new(package) {
+            if inter_analysis.analyze(package).is_ok() {
+                let flows = inter_analysis.detect_inter_procedural_flows();
+                
+                let mut reported_functions: std::collections::HashSet<String> = findings
+                    .iter()
+                    .map(|f| f.function.clone())
+                    .collect();
+                
+                for flow in flows {
+                    // Only consider SQL sinks
+                    if flow.sink_type != "sql" {
+                        continue;
+                    }
+                    
+                    // Skip internal functions
+                    let is_internal = flow.sink_function.contains("mir_extractor")
+                        || flow.sink_function.contains("__")
+                        || flow.source_function.contains("mir_extractor");
+                    if is_internal {
+                        continue;
+                    }
+                    
+                    if reported_functions.contains(&flow.sink_function) {
+                        continue;
+                    }
+                    
+                    if flow.sanitized {
+                        continue;
+                    }
+                    
+                    let sink_func = package.functions.iter()
+                        .find(|f| f.name == flow.sink_function);
+                    
+                    let span = sink_func.map(|f| f.span.clone()).unwrap_or_default();
+                    let signature = sink_func.map(|f| f.signature.clone()).unwrap_or_default();
+                    
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: Severity::High,
+                        message: format!(
+                            "Inter-procedural SQL injection: untrusted input from `{}` \
+                            flows through {} to SQL query in `{}`. Use parameterized \
+                            queries to prevent SQL injection.",
+                            flow.source_function,
+                            if flow.call_chain.len() > 2 {
+                                format!("{} function calls", flow.call_chain.len() - 1)
+                            } else {
+                                "helper function".to_string()
+                            },
+                            flow.sink_function
+                        ),
+                        function: flow.sink_function.clone(),
+                        function_signature: signature,
+                        evidence: vec![flow.describe()],
+                        span,
+                    });
+                    
+                    reported_functions.insert(flow.sink_function.clone());
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
@@ -13155,6 +13767,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(TlsVerificationDisabledRule::new())); // RUSTCOLA084
     engine.register_rule(Box::new(AwsS3UnscopedAccessRule::new())); // RUSTCOLA085
     engine.register_rule(Box::new(PathTraversalRule::new())); // RUSTCOLA086
+    engine.register_rule(Box::new(SqlInjectionRule::new())); // RUSTCOLA087
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

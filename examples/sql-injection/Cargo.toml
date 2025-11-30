@@ -1,0 +1,11 @@
+[package]
+name = "sql-injection-example"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Note: These are for type checking only - the MIR analysis doesn't execute code
+# rusqlite = "0.31"
+# sqlx = { version = "0.7", features = ["runtime-tokio", "postgres"] }
+# diesel = { version = "2.1", features = ["postgres"] }
+# tokio = { version = "1", features = ["full"] }

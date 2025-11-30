@@ -60,5 +60,7 @@ members = [
     "examples/slice-from-raw-parts",
     "examples/tls-verification-disabled",
     "examples/aws-s3-unscoped",
+    "examples/path-traversal",
+    "examples/sql-injection",
 ]
 resolver = "2"

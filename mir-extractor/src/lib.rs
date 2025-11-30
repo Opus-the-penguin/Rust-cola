@@ -13078,6 +13078,585 @@ impl Rule for PathTraversalRule {
     }
 }
 
+/// RUSTCOLA088: Server-Side Request Forgery (SSRF) Detection
+///
+/// Detects when user-controlled input flows to HTTP client URL parameters
+/// without proper validation. SSRF occurs when attackers can control server-side
+/// HTTP requests, enabling access to internal services, cloud metadata endpoints,
+/// or bypassing network access controls.
+///
+/// **Sources:** env::var, env::args, stdin, file contents  
+/// **Sinks:** reqwest::get, reqwest::Client::get/post, ureq::get, hyper::Client
+/// **Sanitizers:** URL parsing with host validation, allowlist checks, scheme validation
+struct SsrfRule {
+    metadata: RuleMetadata,
+}
+
+impl SsrfRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA088".to_string(),
+                name: "server-side-request-forgery".to_string(),
+                short_description: "Untrusted input used as HTTP request URL".to_string(),
+                full_description: "Detects when user-controlled input is used directly as \
+                    an HTTP request URL without validation. This enables attackers to make \
+                    the server send requests to arbitrary destinations, potentially accessing \
+                    internal services (localhost, cloud metadata at 169.254.169.254), scanning \
+                    internal networks, or exfiltrating data. Validate URLs against an allowlist \
+                    of permitted hosts and schemes before making requests.".to_string(),
+                help_uri: Some("https://owasp.org/www-community/attacks/Server_Side_Request_Forgery".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+    
+    /// HTTP client patterns that indicate URL sinks
+    const HTTP_SINKS: &'static [&'static str] = &[
+        // reqwest patterns - MIR style
+        "reqwest::blocking::get",
+        "reqwest::get",
+        "blocking::get",
+        "Client>::get",
+        "Client>::post",
+        "Client>::put",
+        "Client>::delete",
+        "Client>::patch",
+        "Client>::head",
+        "ClientBuilder",
+        "RequestBuilder>::send",
+        // ureq patterns - MIR style
+        "ureq::get",
+        "ureq::post",
+        "ureq::put",
+        "ureq::delete",
+        "ureq::request",
+        "Agent>::get",
+        "Agent>::post",
+        "Request>::call",
+        // hyper patterns
+        "hyper::Client",
+        "hyper::Request",
+        "Request>::builder",
+        "Uri::from_str",
+        // Generic HTTP patterns
+        "http::Request",
+        // Call patterns in MIR
+        "get::<&String>",
+        "get::<&str>",
+        "post::<&String>",
+        "post::<&str>",
+    ];
+    
+    /// Patterns indicating untrusted input sources (same as SQL injection)
+    const UNTRUSTED_SOURCES: &'static [&'static str] = &[
+        // Environment variables - MIR patterns
+        "env::var(",
+        "env::var_os(",
+        "std::env::var(",
+        "std::env::var_os(",
+        " = var(",       // Direct var call
+        " = var::",      // MIR style var call
+        "var::<&str>",   // Generic var call in MIR
+        "var_os::<",     // Generic var_os call
+        // Command-line arguments
+        "env::args()",
+        "std::env::args()",
+        " = args()",
+        "Args>::next(",
+        "args().collect",
+        // User input - MIR patterns
+        " = stdin()",
+        "Stdin::lock(",
+        "Stdin>::lock",
+        "BufRead>::read_line(",
+        "read_line(move",
+        "io::stdin()",
+        "Lines>::next(",  // stdin.lines().next()
+        // File contents (indirect)
+        "fs::read_to_string(",
+        "read_to_string(move",
+        "read_to_string::",
+        "BufReader>::read",
+        "Read>::read",
+        // Web framework input
+        "Request",
+        "Form",
+        "Query",
+        "Json",
+        "Path",
+    ];
+    
+    /// Patterns indicating SSRF sanitization/validation
+    const SANITIZERS: &'static [&'static str] = &[
+        // URL parsing with validation
+        "Url::parse(",
+        "url::Url::parse(",
+        "Uri::from_str(",
+        "host_str(",
+        "scheme(",
+        // Host validation patterns
+        "starts_with(",
+        "ends_with(",
+        "contains(",
+        // Allowlist patterns
+        "allowed",
+        "whitelist",
+        "allowlist",
+        "trusted",
+        "permitted",
+        // Blocklist patterns (blocking internal IPs)
+        "localhost",
+        "127.0.0.1",
+        "169.254.169.254",  // AWS metadata
+        "192.168.",
+        "10.",
+        "172.",
+        ".internal",
+        // Scheme validation
+        "== \"https\"",
+        "== \"http\"",
+        // Input validation
+        "is_alphanumeric",
+        "chars().all(",
+        // MIR patterns for validation
+        " as Iterator>::all::<",
+        "Eq>::eq::<",
+        "PartialEq>::eq::<",
+        // Pattern checks
+        "match ",
+        "Some(\"",
+    ];
+
+    /// Track untrusted variables through the function body
+    fn track_untrusted_vars(&self, body: &[String]) -> HashSet<String> {
+        let mut untrusted_vars = HashSet::new();
+        
+        // First pass: find source variables
+        for line in body {
+            let trimmed = line.trim();
+            
+            // Check for untrusted sources
+            for source in Self::UNTRUSTED_SOURCES {
+                if trimmed.contains(source) {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        untrusted_vars.insert(target);
+                    }
+                }
+            }
+        }
+        
+        // Second pass: propagate taint through assignments
+        let mut changed = true;
+        let max_iterations = 20;
+        let mut iterations = 0;
+        
+        while changed && iterations < max_iterations {
+            changed = false;
+            iterations += 1;
+            
+            for line in body {
+                let trimmed = line.trim();
+                
+                if !trimmed.contains(" = ") {
+                    continue;
+                }
+                
+                if let Some(target) = self.extract_assignment_target(trimmed) {
+                    // Check if any untrusted variable appears in the RHS
+                    for untrusted in untrusted_vars.clone() {
+                        if self.contains_var(trimmed, &untrusted) {
+                            if !untrusted_vars.contains(&target) {
+                                untrusted_vars.insert(target.clone());
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through Result::branch (? operator desugaring)
+                // Pattern: _X = <Result<...> as Try>::branch(move _Y)
+                if trimmed.contains("Try>::branch(") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        for untrusted in untrusted_vars.clone() {
+                            if self.contains_var(trimmed, &untrusted) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through Continue variant extraction
+                // Pattern: _X = move ((_Y as Continue).0: Type)
+                if trimmed.contains("as Continue).0") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        for untrusted in untrusted_vars.clone() {
+                            if self.contains_var(trimmed, &untrusted) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through .unwrap(), .expect(), etc.
+                if trimmed.contains("unwrap()") || 
+                   trimmed.contains("expect(") ||
+                   trimmed.contains("unwrap_or") ||
+                   trimmed.contains("Result::Ok(") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        for untrusted in untrusted_vars.clone() {
+                            if self.contains_var(trimmed, &untrusted) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through string formatting
+                if trimmed.contains("format!") || 
+                   trimmed.contains("format_args!") ||
+                   trimmed.contains("Arguments::") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        for untrusted in untrusted_vars.clone() {
+                            if self.contains_var(trimmed, &untrusted) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through string concatenation
+                if trimmed.contains("Add>::add(") || trimmed.contains("+ ") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        for untrusted in untrusted_vars.clone() {
+                            if self.contains_var(trimmed, &untrusted) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through Deref (String -> &str)
+                if trimmed.contains("Deref>::deref(") || trimmed.contains("as_str(") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        for untrusted in untrusted_vars.clone() {
+                            if self.contains_var(trimmed, &untrusted) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through str::trim()
+                if trimmed.contains("str>::trim(") || trimmed.contains("str>::trim_end(") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        for untrusted in untrusted_vars.clone() {
+                            if self.contains_var(trimmed, &untrusted) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through reference creation
+                if trimmed.contains(" = &") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        if let Some(amp_idx) = trimmed.find('&') {
+                            let after_amp = &trimmed[amp_idx + 1..];
+                            let referenced = if after_amp.starts_with("mut ") {
+                                after_amp[4..].trim().trim_end_matches(';')
+                            } else {
+                                after_amp.trim().trim_end_matches(';')
+                            };
+                            if untrusted_vars.contains(referenced) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through clone
+                if trimmed.contains("Clone>::clone(") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        for untrusted in untrusted_vars.clone() {
+                            if self.contains_var(trimmed, &untrusted) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through to_string
+                if trimmed.contains("ToString>::to_string(") || trimmed.contains("to_string(") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        for untrusted in untrusted_vars.clone() {
+                            if self.contains_var(trimmed, &untrusted) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        untrusted_vars
+    }
+    
+    /// Check if function has SSRF sanitization/validation
+    fn has_ssrf_sanitization(&self, body: &[String]) -> bool {
+        let body_str = body.join("\n");
+        
+        // Check for sanitizer patterns
+        for sanitizer in Self::SANITIZERS {
+            if body_str.contains(sanitizer) {
+                return true;
+            }
+        }
+        
+        false
+    }
+    
+    /// Find HTTP requests using untrusted URLs
+    fn find_unsafe_http_operations(&self, body: &[String], untrusted_vars: &HashSet<String>) -> Vec<String> {
+        let mut evidence = Vec::new();
+        
+        for line in body {
+            let trimmed = line.trim();
+            
+            // Check for HTTP sink patterns
+            for sink in Self::HTTP_SINKS {
+                if trimmed.contains(sink) {
+                    // Check if any untrusted variable is used on this line
+                    for var in untrusted_vars {
+                        if self.contains_var(trimmed, var) {
+                            evidence.push(trimmed.to_string());
+                            break;
+                        }
+                    }
+                    // Don't break - continue checking for more sinks
+                }
+            }
+            
+            // Also check for generic HTTP call patterns with untrusted args
+            if trimmed.contains("get(move") || 
+               trimmed.contains("get(copy") ||
+               trimmed.contains("post(move") ||
+               trimmed.contains("post(copy") ||
+               trimmed.contains("call(move") ||
+               trimmed.contains("call(copy") ||
+               trimmed.contains("send(move") ||
+               trimmed.contains("send(copy") {
+                for var in untrusted_vars {
+                    if self.contains_var(trimmed, var) {
+                        if !evidence.iter().any(|e| e == trimmed) {
+                            evidence.push(trimmed.to_string());
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        
+        evidence
+    }
+    
+    /// Extract variable name from assignment target
+    fn extract_assignment_target(&self, line: &str) -> Option<String> {
+        let parts: Vec<&str> = line.split('=').collect();
+        if parts.len() >= 2 {
+            let target = parts[0].trim();
+            if target.starts_with('_') && target.chars().skip(1).all(|c| c.is_ascii_digit()) {
+                return Some(target.to_string());
+            }
+            if let Some(var) = target.split_whitespace().find(|s| s.starts_with('_')) {
+                let var_clean = var.trim_end_matches(':');
+                if var_clean.starts_with('_') {
+                    return Some(var_clean.to_string());
+                }
+            }
+        }
+        None
+    }
+    
+    /// Check if line contains a specific variable
+    fn contains_var(&self, line: &str, var: &str) -> bool {
+        line.contains(&format!("move {}", var)) ||
+        line.contains(&format!("copy {}", var)) ||
+        line.contains(&format!("&{}", var)) ||
+        line.contains(&format!("({})", var)) ||
+        line.contains(&format!("{},", var)) ||
+        line.contains(&format!(" {} ", var)) ||
+        line.contains(&format!("[{}]", var)) ||
+        line.contains(&format!("(({} as", var))  // For pattern like ((_X as Continue).0)
+    }
+}
+
+impl Rule for SsrfRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        // Phase 1: Intra-procedural analysis
+        for function in &package.functions {
+            // Skip internal/test functions
+            if function.name.contains("mir_extractor") || 
+               function.name.contains("mir-extractor") ||
+               function.name.contains("__") ||
+               function.name.contains("test_") ||
+               function.name == "detect_toolchain" {
+                continue;
+            }
+
+            // Check if function uses HTTP client patterns
+            let body_str = function.body.join("\n");
+            let has_http_client = Self::HTTP_SINKS.iter().any(|s| body_str.contains(s)) ||
+                                  body_str.contains("reqwest") ||
+                                  body_str.contains("ureq") ||
+                                  body_str.contains("hyper");
+            
+            if !has_http_client {
+                continue;
+            }
+
+            // Track untrusted variables
+            let untrusted_vars = self.track_untrusted_vars(&function.body);
+            
+            if untrusted_vars.is_empty() {
+                continue;
+            }
+
+            // Check if function has SSRF sanitization
+            if self.has_ssrf_sanitization(&function.body) {
+                continue;
+            }
+
+            // Find unsafe HTTP operations
+            let unsafe_ops = self.find_unsafe_http_operations(&function.body, &untrusted_vars);
+            
+            if !unsafe_ops.is_empty() {
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: Severity::High,
+                    message: format!(
+                        "Server-Side Request Forgery (SSRF) vulnerability in `{}`. \
+                        User-controlled input is used as an HTTP request URL without \
+                        validation. Attackers could access internal services, cloud \
+                        metadata (169.254.169.254), or scan internal networks. Validate \
+                        URLs against an allowlist of permitted hosts.",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence: unsafe_ops.into_iter().take(3).collect(),
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        // Phase 2: Inter-procedural analysis
+        if let Ok(mut inter_analysis) = interprocedural::InterProceduralAnalysis::new(package) {
+            if inter_analysis.analyze(package).is_ok() {
+                let flows = inter_analysis.detect_inter_procedural_flows();
+                
+                let mut reported_functions: std::collections::HashSet<String> = findings
+                    .iter()
+                    .map(|f| f.function.clone())
+                    .collect();
+                
+                for flow in flows {
+                    // Only consider HTTP sinks
+                    if flow.sink_type != "http" {
+                        continue;
+                    }
+                    
+                    // Skip internal functions
+                    let is_internal = flow.sink_function.contains("mir_extractor")
+                        || flow.sink_function.contains("__")
+                        || flow.source_function.contains("mir_extractor");
+                    if is_internal {
+                        continue;
+                    }
+                    
+                    if reported_functions.contains(&flow.sink_function) {
+                        continue;
+                    }
+                    
+                    if flow.sanitized {
+                        continue;
+                    }
+                    
+                    let sink_func = package.functions.iter()
+                        .find(|f| f.name == flow.sink_function);
+                    
+                    let span = sink_func.map(|f| f.span.clone()).unwrap_or_default();
+                    let signature = sink_func.map(|f| f.signature.clone()).unwrap_or_default();
+                    
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: Severity::High,
+                        message: format!(
+                            "Inter-procedural SSRF: untrusted input from `{}` \
+                            flows through {} to HTTP request in `{}`. Validate \
+                            URLs against an allowlist before making requests.",
+                            flow.source_function,
+                            if flow.call_chain.len() > 2 {
+                                format!("{} function calls", flow.call_chain.len() - 1)
+                            } else {
+                                "helper function".to_string()
+                            },
+                            flow.sink_function
+                        ),
+                        function: flow.sink_function.clone(),
+                        function_signature: signature,
+                        evidence: vec![flow.describe()],
+                        span,
+                    });
+                    
+                    reported_functions.insert(flow.sink_function.clone());
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 /// RUSTCOLA087: SQL Injection Detection
 ///
 /// Detects when user-controlled input flows to SQL query construction
@@ -13768,6 +14347,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(AwsS3UnscopedAccessRule::new())); // RUSTCOLA085
     engine.register_rule(Box::new(PathTraversalRule::new())); // RUSTCOLA086
     engine.register_rule(Box::new(SqlInjectionRule::new())); // RUSTCOLA087
+    engine.register_rule(Box::new(SsrfRule::new())); // RUSTCOLA088
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

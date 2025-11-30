@@ -62,5 +62,6 @@ members = [
     "examples/aws-s3-unscoped",
     "examples/path-traversal",
     "examples/sql-injection",
+    "examples/ssrf",
 ]
 resolver = "2"

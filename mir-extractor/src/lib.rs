@@ -12461,6 +12461,623 @@ impl Rule for AwsS3UnscopedAccessRule {
     }
 }
 
+// ============================================================================
+// RUSTCOLA086: Path Traversal Vulnerability Detection
+// ============================================================================
+
+/// Detects path traversal vulnerabilities where untrusted input flows to
+/// filesystem operations without proper validation. Uses interprocedural 
+/// analysis to track taint through helper functions.
+///
+/// **Sources:** env::var, env::args, stdin, HTTP request parameters
+/// **Sinks:** fs::read*, fs::write*, fs::remove*, File::open, etc.
+/// **Sanitizers:** canonicalize + starts_with, allowlist validation, 
+///                 stripping dangerous characters (../, backslashes)
+struct PathTraversalRule {
+    metadata: RuleMetadata,
+}
+
+impl PathTraversalRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA086".to_string(),
+                name: "path-traversal".to_string(),
+                short_description: "Untrusted input used in filesystem path".to_string(),
+                full_description: "Detects when user-controlled input flows to filesystem \
+                    operations without proper validation. Attackers can use path traversal \
+                    sequences like '../' or absolute paths to access files outside intended \
+                    directories. Use canonicalize() + starts_with() validation, or strip \
+                    dangerous path components before use.".to_string(),
+                help_uri: Some("https://owasp.org/www-community/attacks/Path_Traversal".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+    
+    /// Filesystem sink patterns that can be exploited via path traversal
+    const FS_SINKS: &'static [&'static str] = &[
+        // Read operations
+        "fs::read_to_string",
+        "fs::read",
+        "File::open",
+        "std::fs::read_to_string",
+        "std::fs::read",
+        "std::fs::File::open",
+        "OpenOptions::open",
+        "read_to_string(",
+        "read_to_string::<",  // MIR monomorphized form
+        // Write operations  
+        "fs::write",
+        "fs::create_dir",
+        "fs::create_dir_all",
+        "std::fs::write",
+        "std::fs::create_dir",
+        "std::fs::create_dir_all",
+        "File::create",
+        "std::fs::File::create",
+        "create_dir_all::<",  // MIR monomorphized form
+        "create_dir::<",      // MIR monomorphized form
+        // Delete operations
+        "fs::remove_file",
+        "fs::remove_dir",
+        "fs::remove_dir_all",
+        "std::fs::remove_file",
+        "std::fs::remove_dir",
+        "std::fs::remove_dir_all",
+        "remove_file::<",     // MIR monomorphized form
+        "remove_dir::<",      // MIR monomorphized form
+        "remove_dir_all::<",  // MIR monomorphized form
+        // Copy/Move operations
+        "fs::copy",
+        "fs::rename",
+        "std::fs::copy",
+        "std::fs::rename",
+        "copy::<",            // MIR monomorphized form (be careful of false positives)
+        "rename::<",          // MIR monomorphized form
+        // Path operations that can enable traversal
+        "Path::join",
+        "PathBuf::push",
+        "PathBuf::join",
+    ];
+    
+    /// Patterns indicating untrusted input sources
+    const UNTRUSTED_SOURCES: &'static [&'static str] = &[
+        // Environment variables
+        "env::var(",
+        "env::var_os(",
+        "std::env::var(",
+        "std::env::var_os(",
+        " = var(",
+        " = var::",
+        // Command-line arguments
+        "env::args()",
+        "std::env::args()",
+        " = args()",
+        "Args>::next(",  // Iterator over args
+        // User input - MIR patterns
+        " = stdin()",
+        "Stdin::lock(",
+        "BufRead>::read_line(",
+        "read_line(move",
+        "io::stdin()",
+    ];
+    
+    /// Patterns indicating path sanitization/validation
+    const SANITIZERS: &'static [&'static str] = &[
+        // Canonicalization
+        "canonicalize(",
+        // Validation checks - MIR patterns
+        "starts_with(",
+        "strip_prefix(",
+        "is_relative(",
+        "is_absolute(",
+        // Allowlist/contains validation - MIR patterns
+        "::contains(move",
+        "::contains(copy",
+        "slice::<impl",  // slice::contains pattern
+        // String replacement/sanitization - MIR patterns
+        "String::replace",
+        "str::replace",
+        // Filter/validation patterns
+        ".filter(",
+        "chars().all(",
+        "is_alphanumeric",
+        // Common validation function names (will match in MIR function calls)
+        "validate",
+        "sanitize", 
+        "check_path",
+        "is_safe",
+        "safe_join",
+    ];
+
+    /// Track untrusted variables through the function body
+    fn track_untrusted_paths(&self, body: &[String]) -> HashSet<String> {
+        let mut untrusted_vars = HashSet::new();
+        
+        // First pass: find source variables
+        for line in body {
+            let trimmed = line.trim();
+            
+            // Check for untrusted sources
+            for source in Self::UNTRUSTED_SOURCES {
+                if trimmed.contains(source) {
+                    // Extract assignment target
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        untrusted_vars.insert(target);
+                    }
+                }
+            }
+        }
+        
+        // Second pass: propagate taint through assignments
+        let mut changed = true;
+        let max_iterations = 20;
+        let mut iterations = 0;
+        
+        while changed && iterations < max_iterations {
+            changed = false;
+            iterations += 1;
+            
+            for line in body {
+                let trimmed = line.trim();
+                
+                // Skip if not an assignment
+                if !trimmed.contains(" = ") {
+                    continue;
+                }
+                
+                // Extract target and source of assignment
+                if let Some(target) = self.extract_assignment_target(trimmed) {
+                    // Check if any untrusted variable appears in the RHS
+                    for untrusted in untrusted_vars.clone() {
+                        if self.contains_var(trimmed, &untrusted) {
+                            if !untrusted_vars.contains(&target) {
+                                untrusted_vars.insert(target.clone());
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+                
+                // PathBuf operations that propagate taint
+                if trimmed.contains("PathBuf::from(") || 
+                   trimmed.contains("Path::new(") ||
+                   trimmed.contains("::join(") ||
+                   trimmed.contains("::push(") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        for untrusted in untrusted_vars.clone() {
+                            if trimmed.contains(&format!("move {}", untrusted)) ||
+                               trimmed.contains(&format!("copy {}", untrusted)) ||
+                               trimmed.contains(&format!("&{}", untrusted)) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through .unwrap(), .expect(), .unwrap_or_default()
+                if trimmed.contains("unwrap()") || 
+                   trimmed.contains("expect(") ||
+                   trimmed.contains("unwrap_or") ||
+                   trimmed.contains("Result::Ok(") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        for untrusted in untrusted_vars.clone() {
+                            if self.contains_var(trimmed, &untrusted) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through string formatting
+                if trimmed.contains("format!") || trimmed.contains("format_args!") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        for untrusted in untrusted_vars.clone() {
+                            if self.contains_var(trimmed, &untrusted) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through vector/slice indexing: _x = _vec[_idx] or Index::index
+                if trimmed.contains("Index>::index(") || trimmed.contains("IndexMut>::index_mut(") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        for untrusted in untrusted_vars.clone() {
+                            if self.contains_var(trimmed, &untrusted) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through str::trim() operations
+                if trimmed.contains("str>::trim(") || trimmed.contains("str>::trim_end(") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        for untrusted in untrusted_vars.clone() {
+                            if self.contains_var(trimmed, &untrusted) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through Deref (String -> &str, etc.)
+                if trimmed.contains("Deref>::deref(") || trimmed.contains("as_str(") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        for untrusted in untrusted_vars.clone() {
+                            if self.contains_var(trimmed, &untrusted) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Propagate through reference creation (_14 = &_2)
+                if trimmed.contains(" = &") {
+                    if let Some(target) = self.extract_assignment_target(trimmed) {
+                        // Find what's being referenced
+                        if let Some(amp_idx) = trimmed.find('&') {
+                            let after_amp = &trimmed[amp_idx + 1..];
+                            let referenced = if after_amp.starts_with("mut ") {
+                                after_amp[4..].trim().trim_end_matches(';')
+                            } else {
+                                after_amp.trim().trim_end_matches(';')
+                            };
+                            if untrusted_vars.contains(referenced) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Special handling for read_line: taint flows to the buffer argument
+        // Pattern: read_line(move _x, copy _y) or read_line(move _x, move _y)
+        // The buffer (_y in `&mut _y`) becomes tainted
+        for line in body {
+            if line.contains("read_line(") {
+                // Extract the buffer argument - it's the variable being read into
+                // In MIR: _4 = <StdinLock<'_> as BufRead>::read_line(move _5, copy _8)
+                // where _8 is &mut String that receives the input
+                if let Some(buffer_ref) = Self::extract_read_line_buffer(line) {
+                    eprintln!("DEBUG read_line buffer_ref: {}", buffer_ref);
+                    // buffer_ref might be _8, but we need to find what _8 points to
+                    // Look for "_8 = &mut _2" pattern
+                    if let Some(actual_var) = Self::resolve_reference(body, &buffer_ref) {
+                        untrusted_vars.insert(actual_var);
+                    } else {
+                        // If we can't resolve, taint the reference var anyway
+                        untrusted_vars.insert(buffer_ref);
+                    }
+                }
+            }
+        }
+        
+        untrusted_vars
+    }
+    
+    /// Resolve a reference variable to its target
+    /// Given _8, finds "_8 = &mut _2" and returns "_2"
+    fn resolve_reference(body: &[String], ref_var: &str) -> Option<String> {
+        for line in body {
+            let trimmed = line.trim();
+            // Pattern: _8 = &mut _2 or _8 = &_2
+            if trimmed.starts_with(ref_var) && trimmed.contains(" = &") {
+                // Extract target after & or &mut
+                if let Some(amp_idx) = trimmed.find('&') {
+                    let after_amp = &trimmed[amp_idx + 1..];
+                    // Skip "mut " if present
+                    let target = if after_amp.starts_with("mut ") {
+                        after_amp[4..].trim_end_matches(';')
+                    } else {
+                        after_amp.trim_end_matches(';')
+                    };
+                    let target = target.trim();
+                    if target.starts_with('_') {
+                        return Some(target.to_string());
+                    }
+                }
+            }
+        }
+        None
+    }
+    
+    /// Extract the buffer variable from a read_line call
+    fn extract_read_line_buffer(line: &str) -> Option<String> {
+        // Pattern: read_line(move _X, copy _Y) or read_line(move _X, move _Y)
+        // We want _Y (the string buffer)
+        if let Some(idx) = line.find("read_line(") {
+            let after = &line[idx..];
+            // Find the second argument (after the comma)
+            if let Some(comma_idx) = after.find(',') {
+                let second_arg = &after[comma_idx + 1..];
+                // Extract _N pattern
+                for word in second_arg.split_whitespace() {
+                    let clean = word.trim_matches(|c| c == ')' || c == '(' || c == '&');
+                    if clean.starts_with('_') && clean.len() > 1 {
+                        return Some(clean.to_string());
+                    }
+                }
+            }
+        }
+        None
+    }
+    
+    /// Check if function has path sanitization/validation
+    fn has_path_sanitization(&self, body: &[String], _untrusted_vars: &HashSet<String>) -> bool {
+        let body_str = body.join("\n");
+        
+        // Check for sanitizer patterns anywhere in the function
+        for sanitizer in Self::SANITIZERS {
+            if body_str.contains(sanitizer) {
+                return true;
+            }
+        }
+        
+        // Check for conditional checks that guard path operations
+        // MIR pattern: switchInt after contains/starts_with check
+        if body_str.contains("switchInt(") {
+            // Look for path validation patterns before switchInt
+            if body_str.contains("contains(") || 
+               body_str.contains("starts_with(") ||
+               body_str.contains("is_relative()") ||
+               body_str.contains("strip_prefix(") {
+                return true;
+            }
+        }
+        
+        // Check for early return on validation failure
+        // Pattern: if !path.starts_with(...) { return Err(...) }
+        if body_str.contains("Err(") && 
+           (body_str.contains("Permission") || 
+            body_str.contains("Invalid") ||
+            body_str.contains("traversal") ||
+            body_str.contains("not in allow")) {
+            return true;
+        }
+        
+        false
+    }
+    
+    /// Find filesystem operations using untrusted paths
+    fn find_unsafe_fs_operations(&self, body: &[String], untrusted_vars: &HashSet<String>) -> Vec<String> {
+        let mut evidence = Vec::new();
+        
+        for line in body {
+            let trimmed = line.trim();
+            
+            // Check for filesystem sink patterns
+            for sink in Self::FS_SINKS {
+                if trimmed.contains(sink) {
+                    // Check if any untrusted variable is used
+                    for var in untrusted_vars {
+                        if trimmed.contains(&format!("move {}", var)) ||
+                           trimmed.contains(&format!("copy {}", var)) ||
+                           trimmed.contains(&format!("&{}", var)) ||
+                           trimmed.contains(&format!("({}", var)) {
+                            evidence.push(trimmed.to_string());
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        evidence
+    }
+    
+    /// Extract variable name from assignment target
+    fn extract_assignment_target(&self, line: &str) -> Option<String> {
+        let parts: Vec<&str> = line.split('=').collect();
+        if parts.len() >= 2 {
+            let target = parts[0].trim();
+            // Extract MIR local name (_1, _2, etc.)
+            if target.starts_with('_') && target.chars().skip(1).all(|c| c.is_ascii_digit()) {
+                return Some(target.to_string());
+            }
+            // Also handle more complex patterns
+            if let Some(var) = target.split_whitespace().find(|s| s.starts_with('_')) {
+                let var_clean = var.trim_end_matches(':');
+                if var_clean.starts_with('_') {
+                    return Some(var_clean.to_string());
+                }
+            }
+        }
+        None
+    }
+    
+    /// Check if line contains a specific variable
+    fn contains_var(&self, line: &str, var: &str) -> bool {
+        // Match the variable exactly, not as a substring
+        line.contains(&format!("move {}", var)) ||
+        line.contains(&format!("copy {}", var)) ||
+        line.contains(&format!("&{}", var)) ||
+        line.contains(&format!("({})", var)) ||
+        line.contains(&format!("({})", var)) ||
+        line.contains(&format!("{},", var)) ||
+        line.contains(&format!(" {} ", var)) ||
+        line.contains(&format!("[{}]", var))
+    }
+}
+
+impl Rule for PathTraversalRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        // Phase 1: Intra-procedural analysis (direct source → sink in same function)
+        for function in &package.functions {
+            // Skip internal/test/toolchain functions
+            if function.name.contains("mir_extractor") || 
+               function.name.contains("mir-extractor") ||
+               function.name.contains("__") ||
+               function.name.contains("test_") ||
+               function.name.contains("detect_rustup") ||
+               function.name.contains("find_rust_toolchain") ||
+               function.name.contains("detect_toolchain") ||
+               function.name.contains("find_cargo_cola_workspace") {
+                continue;
+            }
+
+            // Track untrusted path variables
+            let untrusted_vars = self.track_untrusted_paths(&function.body);
+            
+            if untrusted_vars.is_empty() {
+                continue;
+            }
+
+            // Check if function has path sanitization
+            if self.has_path_sanitization(&function.body, &untrusted_vars) {
+                continue;
+            }
+
+            // Find unsafe filesystem operations
+            let unsafe_ops = self.find_unsafe_fs_operations(&function.body, &untrusted_vars);
+            
+            if !unsafe_ops.is_empty() {
+                // Determine severity based on operation type
+                let severity = if unsafe_ops.iter().any(|op| 
+                    op.contains("remove") || op.contains("write") || 
+                    op.contains("create") || op.contains("rename")) {
+                    Severity::High
+                } else {
+                    Severity::Medium
+                };
+                
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity,
+                    message: format!(
+                        "Untrusted input used in filesystem path in `{}`. \
+                        User-controlled paths can enable access to files outside \
+                        intended directories using '../' sequences or absolute paths. \
+                        Use canonicalize() + starts_with() validation, or sanitize \
+                        path input to remove dangerous components.",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence: unsafe_ops.into_iter().take(3).collect(),
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        // Phase 2: Inter-procedural analysis (flows through helper functions)
+        // This detects patterns like:
+        //   fn get_user_file() -> String { env::var("FILE").unwrap() }
+        //   fn read_file() { fs::read_to_string(get_user_file()); }
+        if let Ok(mut inter_analysis) = interprocedural::InterProceduralAnalysis::new(package) {
+            if inter_analysis.analyze(package).is_ok() {
+                let flows = inter_analysis.detect_inter_procedural_flows();
+                
+                // Track already reported functions to avoid duplicates
+                let mut reported_functions: std::collections::HashSet<String> = findings
+                    .iter()
+                    .map(|f| f.function.clone())
+                    .collect();
+                
+                for flow in flows {
+                    // Only consider filesystem sinks for path traversal
+                    if flow.sink_type != "filesystem" {
+                        continue;
+                    }
+                    
+                    // Skip internal/toolchain functions
+                    let is_internal = flow.sink_function.contains("mir_extractor")
+                        || flow.sink_function.contains("mir-extractor")
+                        || flow.sink_function.contains("cache_envelope")
+                        || flow.sink_function.contains("detect_toolchain")
+                        || flow.sink_function.contains("extract_artifacts")
+                        || flow.sink_function.contains("__")
+                        || flow.source_function.contains("mir_extractor")
+                        || flow.source_function.contains("mir-extractor")
+                        || flow.source_function.contains("cache_envelope")
+                        || flow.source_function.contains("fingerprint")
+                        || flow.source_function.contains("toolchain");
+                    if is_internal {
+                        continue;
+                    }
+                    
+                    // Skip if already reported (by intra-procedural or another inter-procedural flow)
+                    if reported_functions.contains(&flow.sink_function) {
+                        continue;
+                    }
+                    
+                    // Skip if sanitized
+                    if flow.sanitized {
+                        continue;
+                    }
+                    
+                    // Get the sink function for span info
+                    let sink_func = package.functions.iter()
+                        .find(|f| f.name == flow.sink_function);
+                    
+                    let span = sink_func.map(|f| f.span.clone()).unwrap_or_default();
+                    let signature = sink_func.map(|f| f.signature.clone()).unwrap_or_default();
+                    
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: Severity::High,
+                        message: format!(
+                            "Inter-procedural path traversal: untrusted input from `{}` \
+                            flows through {} to filesystem operation in `{}`. \
+                            User-controlled paths can enable access to files outside \
+                            intended directories.",
+                            flow.source_function,
+                            if flow.call_chain.len() > 2 {
+                                format!("{} function calls", flow.call_chain.len() - 1)
+                            } else {
+                                "helper function".to_string()
+                            },
+                            flow.sink_function
+                        ),
+                        function: flow.sink_function.clone(),
+                        function_signature: signature,
+                        evidence: vec![flow.describe()],
+                        span,
+                    });
+                    
+                    // Track this sink function to avoid duplicates from other flows
+                    reported_functions.insert(flow.sink_function.clone());
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
@@ -12537,6 +13154,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(SliceFromRawPartsRule::new())); // RUSTCOLA083
     engine.register_rule(Box::new(TlsVerificationDisabledRule::new())); // RUSTCOLA084
     engine.register_rule(Box::new(AwsS3UnscopedAccessRule::new())); // RUSTCOLA085
+    engine.register_rule(Box::new(PathTraversalRule::new())); // RUSTCOLA086
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

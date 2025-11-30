@@ -395,8 +395,9 @@ impl FunctionSummary {
             };
         }
         
-        // Step 2: Identify if this function contains sinks
-        let has_sink = Self::contains_sink(function);
+        // Step 2: Identify if this function contains sinks and determine sink type
+        let has_command_sink = Self::contains_command_sink(function);
+        let has_filesystem_sink = Self::contains_filesystem_sink(function);
         
         // Step 3: Analyze parameter flows
         // Check if function propagates parameters to return value
@@ -412,11 +413,19 @@ impl FunctionSummary {
         let has_sanitization = Self::contains_sanitization(function);
         
         // Build propagation rules based on patterns
-        if has_sink {
-            // If function has a sink, parameters likely flow to it
+        if has_command_sink {
+            // If function has a command sink, parameters likely flow to it
             summary.propagation_rules.push(TaintPropagation::ParamToSink {
                 param: 0,
                 sink_type: "command_execution".to_string(),
+            });
+        }
+        
+        if has_filesystem_sink {
+            // If function has a filesystem sink, parameters likely flow to it
+            summary.propagation_rules.push(TaintPropagation::ParamToSink {
+                param: 0,
+                sink_type: "filesystem".to_string(),
             });
         }
         
@@ -497,6 +506,11 @@ impl FunctionSummary {
     
     /// Check if function contains a taint sink
     fn contains_sink(function: &MirFunction) -> bool {
+        Self::contains_command_sink(function) || Self::contains_filesystem_sink(function)
+    }
+    
+    /// Check if function contains a command execution sink
+    fn contains_command_sink(function: &MirFunction) -> bool {
         function.body.iter().any(|line| {
             // Only match DIRECT calls to sinks, not indirect via helper functions
             // Look for Command::new or Command::spawn, not just "spawn"
@@ -504,6 +518,39 @@ impl FunctionSummary {
                 || line.contains("std::process::Command")
                 || (line.contains("Command::spawn") && line.contains("->"))
                 || (line.contains("Command::exec") && line.contains("->"))
+        })
+    }
+    
+    /// Check if function contains a filesystem sink (for path traversal detection)
+    fn contains_filesystem_sink(function: &MirFunction) -> bool {
+        function.body.iter().any(|line| {
+            // File read operations
+            line.contains("fs::read_to_string") 
+                || line.contains("std::fs::read_to_string")
+                || line.contains("fs::read(")
+                || line.contains("std::fs::read(")
+                // File write operations
+                || line.contains("fs::write(")
+                || line.contains("std::fs::write(")
+                // File open operations
+                || line.contains("File::open(")
+                || line.contains("File::create(")
+                || line.contains("std::fs::File::open")
+                || line.contains("std::fs::File::create")
+                || line.contains("OpenOptions")
+                // File removal operations
+                || line.contains("fs::remove_file")
+                || line.contains("fs::remove_dir")
+                || line.contains("std::fs::remove_file")
+                || line.contains("std::fs::remove_dir")
+                // Copy/rename operations
+                || line.contains("fs::copy(")
+                || line.contains("fs::rename(")
+                || line.contains("std::fs::copy")
+                || line.contains("std::fs::rename")
+                // Directory operations
+                || line.contains("fs::create_dir")
+                || line.contains("std::fs::create_dir")
         })
     }
     
@@ -915,9 +962,44 @@ impl InterProceduralAnalysis {
             }
             
             // Explore callers of this function (functions that call current_func)
+            // Key insight: the caller receives tainted data by calling current_func
+            // If the caller has a filesystem sink, the taint may reach it
             for caller in &node.callers {
                 let mut new_path = path.clone();
                 new_path.push(caller.clone());
+                
+                // Check if the CALLER itself has a filesystem sink
+                // This handles the pattern: caller() { let x = source_fn(); sink(x); }
+                if let Some(caller_node) = self.call_graph.nodes.get(caller) {
+                    if let Some(caller_summary) = &caller_node.summary {
+                        // Check if caller has a filesystem sink in its propagation rules
+                        // OR if it has any ParamToSink (which was set when analyzing the function)
+                        let has_filesystem_sink = caller_summary.propagation_rules.iter()
+                            .any(|r| matches!(r, TaintPropagation::ParamToSink { sink_type, .. } if sink_type == "filesystem"));
+                        
+                        let has_any_sink = caller_summary.propagation_rules.iter()
+                            .any(|r| matches!(r, TaintPropagation::ParamToSink { .. }));
+                        
+                        if has_filesystem_sink || has_any_sink {
+                            // Caller has a sink and receives tainted data from current_func
+                            let sink_type = caller_summary.propagation_rules.iter()
+                                .find_map(|r| match r {
+                                    TaintPropagation::ParamToSink { sink_type, .. } => Some(sink_type.clone()),
+                                    _ => None,
+                                })
+                                .unwrap_or_else(|| "unknown".to_string());
+                            
+                            flows.push(TaintPath {
+                                source_function: path[0].clone(),
+                                sink_function: caller.clone(),
+                                call_chain: new_path.clone(),
+                                source_type: Self::extract_source_type(taint),
+                                sink_type,
+                                sanitized: effective_sanitized,
+                            });
+                        }
+                    }
+                }
                 
                 // Recursively explore from the caller
                 flows.extend(self.find_paths_from_source(

@@ -14629,6 +14629,218 @@ impl Rule for InsecureYamlDeserializationRule {
     }
 }
 
+/// RUSTCOLA090: Unbounded read_to_end Detection
+///
+/// Detects when read_to_end() or read_to_string() is called on untrusted
+/// sources (network streams, stdin, files from user paths) without size limits.
+/// This can cause memory exhaustion DoS when attackers send large payloads.
+///
+/// **Sources:** TcpStream, UnixStream, stdin, File from env/args path
+/// **Sinks:** read_to_end(), read_to_string()
+/// **Safe patterns:** .take(N), size checks before read, chunked reading
+struct UnboundedReadRule {
+    metadata: RuleMetadata,
+}
+
+impl UnboundedReadRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA090".to_string(),
+                name: "unbounded-read-to-end".to_string(),
+                short_description: "Unbounded read_to_end on untrusted source".to_string(),
+                full_description: "read_to_end() or read_to_string() is called on an \
+                    untrusted source (network stream, stdin, user-controlled file) without \
+                    size limits. Attackers can send arbitrarily large payloads to exhaust \
+                    server memory, causing denial of service. Use .take(max_size) to limit \
+                    bytes read, check file size with metadata() before reading, or use \
+                    chunked reading with explicit limits.".to_string(),
+                help_uri: Some("https://owasp.org/www-community/attacks/Buffer_overflow_attack".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Untrusted stream sources
+    const UNTRUSTED_SOURCES: &'static [&'static str] = &[
+        // Network streams
+        "TcpStream::connect",
+        "TcpListener::accept",
+        "UnixStream::connect",
+        "UdpSocket::",
+        // Stdin
+        "io::stdin",
+        "stdin()",
+        // User-controlled file paths
+        "env::var",
+        "env::args",
+    ];
+
+    /// Dangerous unbounded read operations
+    const UNBOUNDED_SINKS: &'static [&'static str] = &[
+        "read_to_end",
+        "read_to_string",
+    ];
+
+    /// Safe patterns that limit read size
+    const SAFE_PATTERNS: &'static [&'static str] = &[
+        ".take(",          // Limits bytes read
+        "take(",           // Alternative form
+        "metadata(",       // Size check before read
+        ".len()",          // Size comparison
+        "len() >",
+        "len() <",
+        "MAX_SIZE",        // Constant limit
+        "max_size",
+        "limit",
+        "chunk",
+        "fill_buf",        // Chunked reading
+    ];
+
+    /// Check if function has an untrusted source
+    fn has_untrusted_source(&self, function: &MirFunction) -> bool {
+        for line in &function.body {
+            for source in Self::UNTRUSTED_SOURCES {
+                if line.contains(source) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Check if function has a safe limiting pattern
+    fn has_safe_limit(&self, function: &MirFunction) -> bool {
+        for line in &function.body {
+            for pattern in Self::SAFE_PATTERNS {
+                if line.to_lowercase().contains(&pattern.to_lowercase()) {
+                    return true;
+                }
+            }
+        }
+        
+        // Also check function name for safety indicators
+        let fn_name_lower = function.name.to_lowercase();
+        if fn_name_lower.contains("safe") || 
+           fn_name_lower.contains("limit") ||
+           fn_name_lower.contains("bound") ||
+           fn_name_lower.contains("chunk") ||
+           fn_name_lower.contains("take") ||
+           fn_name_lower.contains("fixed") {
+            return true;
+        }
+        
+        false
+    }
+
+    /// Check if source is trusted (hardcoded file path)
+    fn has_trusted_source_only(&self, function: &MirFunction) -> bool {
+        let body_str = function.body.join("\n");
+        
+        // If we have File::open with a hardcoded path (string literal in const)
+        // and NO env::var or env::args, it's trusted
+        let has_file_open = body_str.contains("File::open");
+        let has_env_var = body_str.contains("env::var") || body_str.contains("env::args");
+        let has_network = body_str.contains("TcpStream") || 
+                         body_str.contains("UnixStream") ||
+                         body_str.contains("TcpListener");
+        let has_stdin = body_str.contains("stdin");
+        
+        // If only file operations with no untrusted path sources
+        if has_file_open && !has_env_var && !has_network && !has_stdin {
+            // Check for hardcoded paths (string literals)
+            if body_str.contains("const ") || body_str.contains(r#""/etc/"#) || 
+               body_str.contains(r#""/app/"#) || body_str.contains(r#""/usr/"#) {
+                return true;
+            }
+        }
+        
+        false
+    }
+
+    /// Find unbounded read operations
+    fn find_unbounded_reads(&self, function: &MirFunction) -> Vec<String> {
+        let mut evidence = Vec::new();
+        
+        for line in &function.body {
+            for sink in Self::UNBOUNDED_SINKS {
+                if line.contains(sink) {
+                    evidence.push(line.trim().to_string());
+                }
+            }
+        }
+        
+        evidence
+    }
+}
+
+impl Rule for UnboundedReadRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Skip test functions
+            if function.name.contains("test") {
+                continue;
+            }
+            
+            // Must have an untrusted source
+            if !self.has_untrusted_source(function) {
+                continue;
+            }
+            
+            // Skip if using safe limiting patterns
+            if self.has_safe_limit(function) {
+                continue;
+            }
+            
+            // Skip if only trusted (hardcoded) sources
+            if self.has_trusted_source_only(function) {
+                continue;
+            }
+            
+            // Find unbounded read operations
+            let unbounded_reads = self.find_unbounded_reads(function);
+            
+            if !unbounded_reads.is_empty() {
+                // Determine severity based on source type
+                let body_str = function.body.join("\n");
+                let severity = if body_str.contains("TcpStream") || 
+                                 body_str.contains("TcpListener") ||
+                                 body_str.contains("UnixStream") {
+                    Severity::High // Network sources are higher risk
+                } else {
+                    Severity::Medium
+                };
+                
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity,
+                    message: format!(
+                        "Unbounded read in `{}`. read_to_end()/read_to_string() is called \
+                        on an untrusted source without size limits. Attackers can exhaust \
+                        server memory with large payloads. Use .take(max_bytes) to limit \
+                        the read size.",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence: unbounded_reads.into_iter().take(3).collect(),
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        findings
+    }
+}
+
 
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
@@ -14709,6 +14921,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(SqlInjectionRule::new())); // RUSTCOLA087
     engine.register_rule(Box::new(SsrfRule::new())); // RUSTCOLA088
     engine.register_rule(Box::new(InsecureYamlDeserializationRule::new())); // RUSTCOLA089
+    engine.register_rule(Box::new(UnboundedReadRule::new())); // RUSTCOLA090
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

@@ -64,5 +64,6 @@ members = [
     "examples/sql-injection",
     "examples/ssrf",
     "examples/yaml-deserialization",
+    "examples/unbounded-read",
 ]
 resolver = "2"

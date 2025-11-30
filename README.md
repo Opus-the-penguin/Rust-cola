@@ -10,7 +10,7 @@ Rust-cola is a static application security testing tool for Rust code. It employ
   - **Tier 1 (MIR Heuristics):** 83 rules using pattern matching on compiler-generated MIR
   - **Tier 2 (Source Analysis):** 2 rules using AST inspection for comments and attributes  
   - **Tier 3 (Semantic Analysis):** HIR integration for type-aware rules (type sizes, Send/Sync detection)
-- **85 Built-in Security Rules** covering:
+- **86 Built-in Security Rules** covering:
 	- Memory safety issues: `Box::into_raw` leaks, unchecked `transmute`, `Vec::set_len` misuse, premature `MaybeUninit::assume_init`, deprecated zero-initialization functions
 	- Unsafe code patterns: unsafe blocks, untrusted environment variable reads, command execution with user-influenced input
 	- Cryptography: weak hash algorithms (MD5, SHA-1, RIPEMD, CRC), weak ciphers (DES, RC4, Blowfish), hard-coded cryptographic keys, predictable random seeds

@@ -1,0 +1,46 @@
+// MIR for `main` 0 nll
+
+| Free Region Mapping
+| '?0 | Global | ['?0, '?1]
+| '?1 | Local | ['?1]
+|
+| Inferred Region Values
+| '?0 | U0 | {bb0[0..=1], bb1[0..=2], bb2[0..=2], bb3[0], '?0, '?1}
+| '?1 | U0 | {bb0[0..=1], bb1[0..=2], bb2[0..=2], bb3[0], '?1}
+|
+| Inference Constraints
+| '?0 live at {bb0[0..=1], bb1[0..=2], bb2[0..=2], bb3[0]}
+| '?1 live at {bb0[0..=1], bb1[0..=2], bb2[0..=2], bb3[0]}
+|
+fn main() -> () {
+    let mut _0: ();                      // return place in scope 0 at examples/unchecked-index/src/main.rs:247:10: 247:10
+    let _1: ();                          // in scope 0 at examples/unchecked-index/src/main.rs:249:5: 249:27
+    let _2: ();                          // in scope 0 at examples/unchecked-index/src/main.rs:250:5: 250:22
+
+    bb0: {
+        StorageLive(_1);                 // scope 0 at examples/unchecked-index/src/main.rs:249:5: 249:27
+        _1 = safe_hardcoded_index() -> [return: bb1, unwind: bb3]; // scope 0 at examples/unchecked-index/src/main.rs:249:5: 249:27
+                                         // mir::ConstOperand
+                                         // + span: examples/unchecked-index/src/main.rs:249:5: 249:25
+                                         // + const_: Const { ty: fn() {safe_hardcoded_index}, val: Value(safe_hardcoded_index) }
+    }
+
+    bb1: {
+        StorageDead(_1);                 // scope 0 at examples/unchecked-index/src/main.rs:249:27: 249:28
+        StorageLive(_2);                 // scope 0 at examples/unchecked-index/src/main.rs:250:5: 250:22
+        _2 = safe_get_method() -> [return: bb2, unwind: bb3]; // scope 0 at examples/unchecked-index/src/main.rs:250:5: 250:22
+                                         // mir::ConstOperand
+                                         // + span: examples/unchecked-index/src/main.rs:250:5: 250:20
+                                         // + const_: Const { ty: fn() {safe_get_method}, val: Value(safe_get_method) }
+    }
+
+    bb2: {
+        StorageDead(_2);                 // scope 0 at examples/unchecked-index/src/main.rs:250:22: 250:23
+        _0 = const ();                   // scope 0 at examples/unchecked-index/src/main.rs:247:11: 251:2
+        return;                          // scope 0 at examples/unchecked-index/src/main.rs:251:2: 251:2
+    }
+
+    bb3 (cleanup): {
+        resume;                          // scope 0 at examples/unchecked-index/src/main.rs:247:1: 251:2
+    }
+}

@@ -1,0 +1,226 @@
+// MIR for `safe_allowlist_table` after AbortUnwindingCalls
+
+fn safe_allowlist_table() -> String {
+    let mut _0: std::string::String;
+    let _1: std::string::String;
+    let mut _2: std::result::Result<std::string::String, std::env::VarError>;
+    let mut _4: &str;
+    let _5: &str;
+    let mut _6: &str;
+    let _7: &str;
+    let mut _9: bool;
+    let mut _10: &[&str];
+    let mut _11: &[&str; 3];
+    let mut _12: &&str;
+    let _13: &&str;
+    let _14: &str;
+    let mut _15: &std::string::String;
+    let _16: &str;
+    let mut _17: &std::string::String;
+    let _18: &std::string::String;
+    let mut _19: std::string::String;
+    let mut _20: std::fmt::Arguments<'_>;
+    let mut _22: &&str;
+    let mut _24: core::fmt::rt::Argument<'_>;
+    let mut _25: &&str;
+    let mut _26: &[&str; 2];
+    let _27: &[&str; 2];
+    let _28: [&str; 2];
+    let mut _29: &[core::fmt::rt::Argument<'_>; 1];
+    let _30: &[core::fmt::rt::Argument<'_>; 1];
+    let mut _32: &&str;
+    scope 1 {
+        debug table => _1;
+        let _3: [&str; 3];
+        scope 2 {
+            debug allowed_tables => _3;
+            let _8: &str;
+            scope 3 {
+                debug safe_table => _8;
+                let _21: (&&str,);
+                scope 4 {
+                    debug args => _21;
+                    let _23: [core::fmt::rt::Argument<'_>; 1];
+                    scope 5 {
+                        debug args => _23;
+                        let mut _31: &[&str; 2];
+                    }
+                }
+            }
+        }
+    }
+
+    bb0: {
+        StorageLive(_1);
+        StorageLive(_2);
+        _2 = var::<&str>(const "TABLE") -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        _1 = Result::<String, VarError>::unwrap_or_default(move _2) -> [return: bb2, unwind: bb16];
+    }
+
+    bb2: {
+        StorageDead(_2);
+        StorageLive(_3);
+        StorageLive(_4);
+        StorageLive(_5);
+        _5 = const "products";
+        _4 = &(*_5);
+        StorageLive(_6);
+        StorageLive(_7);
+        _7 = const "orders";
+        _6 = &(*_7);
+        _3 = [const "users", move _4, move _6];
+        StorageDead(_6);
+        StorageDead(_4);
+        StorageDead(_7);
+        StorageDead(_5);
+        StorageLive(_8);
+        StorageLive(_9);
+        StorageLive(_10);
+        StorageLive(_11);
+        _11 = &_3;
+        _10 = move _11 as &[&str] (PointerCoercion(Unsize, Implicit));
+        StorageDead(_11);
+        StorageLive(_12);
+        StorageLive(_13);
+        StorageLive(_14);
+        StorageLive(_15);
+        _15 = &_1;
+        _14 = String::as_str(move _15) -> [return: bb3, unwind: bb15];
+    }
+
+    bb3: {
+        StorageDead(_15);
+        _13 = &_14;
+        _12 = &(*_13);
+        _9 = core::slice::<impl [&str]>::contains(move _10, move _12) -> [return: bb4, unwind: bb15];
+    }
+
+    bb4: {
+        switchInt(move _9) -> [0: bb7, otherwise: bb5];
+    }
+
+    bb5: {
+        StorageDead(_14);
+        StorageDead(_13);
+        StorageDead(_12);
+        StorageDead(_10);
+        StorageLive(_16);
+        StorageLive(_17);
+        StorageLive(_18);
+        _18 = &_1;
+        _17 = &(*_18);
+        _16 = <String as Deref>::deref(move _17) -> [return: bb6, unwind: bb15];
+    }
+
+    bb6: {
+        _8 = &(*_16);
+        StorageDead(_18);
+        StorageDead(_17);
+        StorageDead(_16);
+        goto -> bb8;
+    }
+
+    bb7: {
+        StorageDead(_14);
+        StorageDead(_13);
+        StorageDead(_12);
+        StorageDead(_10);
+        _8 = const "users";
+        goto -> bb8;
+    }
+
+    bb8: {
+        StorageDead(_9);
+        StorageLive(_19);
+        StorageLive(_20);
+        StorageLive(_21);
+        StorageLive(_22);
+        _22 = &_8;
+        _21 = (move _22,);
+        StorageDead(_22);
+        StorageLive(_23);
+        StorageLive(_24);
+        StorageLive(_25);
+        _32 = deref_copy (_21.0: &&str);
+        _25 = &(*_32);
+        _24 = core::fmt::rt::Argument::<'_>::new_display::<&str>(move _25) -> [return: bb9, unwind: bb15];
+    }
+
+    bb9: {
+        StorageDead(_25);
+        _23 = [move _24];
+        StorageDead(_24);
+        StorageLive(_26);
+        StorageLive(_27);
+        _31 = const safe_allowlist_table::promoted[0];
+        _27 = &(*_31);
+        _26 = &(*_27);
+        StorageLive(_29);
+        StorageLive(_30);
+        _30 = &_23;
+        _29 = &(*_30);
+        _20 = core::fmt::rt::<impl Arguments<'_>>::new_v1::<2, 1>(move _26, move _29) -> [return: bb10, unwind: bb15];
+    }
+
+    bb10: {
+        StorageDead(_30);
+        StorageDead(_29);
+        StorageDead(_27);
+        StorageDead(_26);
+        _19 = format(move _20) -> [return: bb11, unwind: bb15];
+    }
+
+    bb11: {
+        StorageDead(_23);
+        StorageDead(_21);
+        StorageDead(_20);
+        _0 = must_use::<String>(move _19) -> [return: bb12, unwind: bb14];
+    }
+
+    bb12: {
+        StorageDead(_19);
+        StorageDead(_8);
+        StorageDead(_3);
+        drop(_1) -> [return: bb13, unwind: bb17];
+    }
+
+    bb13: {
+        StorageDead(_1);
+        return;
+    }
+
+    bb14 (cleanup): {
+        goto -> bb15;
+    }
+
+    bb15 (cleanup): {
+        drop(_1) -> [return: bb17, unwind terminate(cleanup)];
+    }
+
+    bb16 (cleanup): {
+        goto -> bb17;
+    }
+
+    bb17 (cleanup): {
+        resume;
+    }
+}
+
+alloc73 (size: 6, align: 1) {
+    6f 72 64 65 72 73                               │ orders
+}
+
+alloc72 (size: 8, align: 1) {
+    70 72 6f 64 75 63 74 73                         │ products
+}
+
+alloc71 (size: 5, align: 1) {
+    75 73 65 72 73                                  │ users
+}
+
+alloc13 (size: 5, align: 1) {
+    54 41 42 4c 45                                  │ TABLE
+}

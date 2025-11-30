@@ -1,0 +1,32 @@
+// MIR for `get_user_input` before PostAnalysisNormalize
+
+fn get_user_input() -> String {
+    let mut _0: std::string::String;
+    let mut _1: std::result::Result<std::string::String, std::env::VarError>;
+
+    bb0: {
+        StorageLive(_1);
+        _1 = var::<&str>(const "USER_INPUT") -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        _0 = Result::<String, VarError>::unwrap_or_default(move _1) -> [return: bb2, unwind: bb3];
+    }
+
+    bb2: {
+        StorageDead(_1);
+        return;
+    }
+
+    bb3 (cleanup): {
+        drop(_1) -> [return: bb4, unwind terminate(cleanup)];
+    }
+
+    bb4 (cleanup): {
+        resume;
+    }
+}
+
+alloc41 (size: 10, align: 1) {
+    55 53 45 52 5f 49 4e 50 55 54                   │ USER_INPUT
+}

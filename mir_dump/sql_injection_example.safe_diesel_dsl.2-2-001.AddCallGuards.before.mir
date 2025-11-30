@@ -1,0 +1,64 @@
+// MIR for `safe_diesel_dsl` before AddCallGuards
+
+fn safe_diesel_dsl() -> String {
+    let mut _0: std::string::String;
+    let _1: std::string::String;
+    let mut _2: std::result::Result<std::string::String, std::env::VarError>;
+    let mut _3: &str;
+    let _4: &str;
+    scope 1 {
+        debug _user_id => _1;
+    }
+
+    bb0: {
+        StorageLive(_1);
+        StorageLive(_2);
+        _2 = var::<&str>(const "USER_ID") -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        _1 = Result::<String, VarError>::unwrap_or_default(move _2) -> [return: bb2, unwind: bb6];
+    }
+
+    bb2: {
+        StorageDead(_2);
+        StorageLive(_3);
+        StorageLive(_4);
+        _4 = const "Diesel DSL query - parameterized internally";
+        _3 = &(*_4);
+        _0 = <str as ToString>::to_string(move _3) -> [return: bb3, unwind: bb5];
+    }
+
+    bb3: {
+        StorageDead(_3);
+        drop(_1) -> [return: bb4, unwind continue];
+    }
+
+    bb4: {
+        StorageDead(_1);
+        StorageDead(_4);
+        return;
+    }
+
+    bb5 (cleanup): {
+        drop(_1) -> [return: bb7, unwind terminate(cleanup)];
+    }
+
+    bb6 (cleanup): {
+        drop(_2) -> [return: bb7, unwind terminate(cleanup)];
+    }
+
+    bb7 (cleanup): {
+        resume;
+    }
+}
+
+alloc70 (size: 43, align: 1) {
+    0x00 │ 44 69 65 73 65 6c 20 44 53 4c 20 71 75 65 72 79 │ Diesel DSL query
+    0x10 │ 20 2d 20 70 61 72 61 6d 65 74 65 72 69 7a 65 64 │  - parameterized
+    0x20 │ 20 69 6e 74 65 72 6e 61 6c 6c 79                │  internally
+}
+
+alloc1 (size: 7, align: 1) {
+    55 53 45 52 5f 49 44                            │ USER_ID
+}

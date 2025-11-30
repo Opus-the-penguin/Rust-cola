@@ -1,0 +1,27 @@
+// MIR for `bad_multiple_inputs::promoted[0]` before PostAnalysisNormalize
+
+const bad_multiple_inputs::promoted[0]: &[&str; 3] = {
+    let mut _0: &[&str; 3];
+    let mut _1: [&str; 3];
+
+    bb0: {
+        _1 = [const "SELECT * FROM users WHERE username = '", const "' AND password = '", const "'"];
+        _0 = &_1;
+        return;
+    }
+}
+
+alloc18 (size: 18, align: 1) {
+    0x00 │ 27 20 41 4e 44 20 70 61 73 73 77 6f 72 64 20 3d │ ' AND password =
+    0x10 │ 20 27                                           │  '
+}
+
+alloc6 (size: 1, align: 1) {
+    27                                              │ '
+}
+
+alloc5 (size: 38, align: 1) {
+    0x00 │ 53 45 4c 45 43 54 20 2a 20 46 52 4f 4d 20 75 73 │ SELECT * FROM us
+    0x10 │ 65 72 73 20 57 48 45 52 45 20 75 73 65 72 6e 61 │ ers WHERE userna
+    0x20 │ 6d 65 20 3d 20 27                               │ me = '
+}

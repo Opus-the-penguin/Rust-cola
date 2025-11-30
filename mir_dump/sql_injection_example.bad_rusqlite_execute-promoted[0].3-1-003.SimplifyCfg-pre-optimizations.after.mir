@@ -1,0 +1,18 @@
+// MIR for `bad_rusqlite_execute::promoted[0]` after SimplifyCfg-pre-optimizations
+
+const bad_rusqlite_execute::promoted[0]: &[&str; 1] = {
+    let mut _0: &[&str; 1];
+    let mut _1: [&str; 1];
+
+    bb0: {
+        _1 = [const "UPDATE users SET last_login = NOW() WHERE id = "];
+        _0 = &_1;
+        return;
+    }
+}
+
+alloc52 (size: 47, align: 1) {
+    0x00 │ 55 50 44 41 54 45 20 75 73 65 72 73 20 53 45 54 │ UPDATE users SET
+    0x10 │ 20 6c 61 73 74 5f 6c 6f 67 69 6e 20 3d 20 4e 4f │  last_login = NO
+    0x20 │ 57 28 29 20 57 48 45 52 45 20 69 64 20 3d 20    │ W() WHERE id = 
+}

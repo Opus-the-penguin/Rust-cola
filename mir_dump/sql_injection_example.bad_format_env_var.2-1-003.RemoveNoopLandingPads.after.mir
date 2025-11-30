@@ -1,0 +1,131 @@
+// MIR for `bad_format_env_var` after RemoveNoopLandingPads
+
+fn bad_format_env_var() -> String {
+    let mut _0: std::string::String;
+    let _1: std::string::String;
+    let mut _2: std::result::Result<std::string::String, std::env::VarError>;
+    let mut _4: std::string::String;
+    let mut _5: std::fmt::Arguments<'_>;
+    let mut _7: &std::string::String;
+    let mut _9: core::fmt::rt::Argument<'_>;
+    let mut _10: &std::string::String;
+    let mut _11: &[&str; 1];
+    let _12: &[&str; 1];
+    let _13: [&str; 1];
+    let mut _14: &[core::fmt::rt::Argument<'_>; 1];
+    let _15: &[core::fmt::rt::Argument<'_>; 1];
+    scope 1 {
+        debug user_id => _1;
+        let _3: std::string::String;
+        let _6: (&std::string::String,);
+        scope 2 {
+            debug query => _3;
+        }
+        scope 3 {
+            debug args => _6;
+            let _8: [core::fmt::rt::Argument<'_>; 1];
+            scope 4 {
+                debug args => _8;
+                let mut _16: &[&str; 1];
+            }
+        }
+    }
+
+    bb0: {
+        StorageLive(_1);
+        StorageLive(_2);
+        _2 = var::<&str>(const "USER_ID") -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        _1 = Result::<String, VarError>::unwrap_or_default(move _2) -> [return: bb2, unwind: bb11];
+    }
+
+    bb2: {
+        StorageDead(_2);
+        nop;
+        StorageLive(_3);
+        StorageLive(_4);
+        StorageLive(_5);
+        StorageLive(_6);
+        StorageLive(_7);
+        _7 = &_1;
+        _6 = (move _7,);
+        StorageDead(_7);
+        nop;
+        StorageLive(_8);
+        StorageLive(_9);
+        StorageLive(_10);
+        _10 = &(*(_6.0: &std::string::String));
+        _9 = core::fmt::rt::Argument::<'_>::new_display::<String>(move _10) -> [return: bb3, unwind: bb10];
+    }
+
+    bb3: {
+        StorageDead(_10);
+        _8 = [move _9];
+        StorageDead(_9);
+        nop;
+        StorageLive(_11);
+        StorageLive(_12);
+        _16 = const bad_format_env_var::promoted[0];
+        _12 = &(*_16);
+        _11 = &(*_12);
+        StorageLive(_14);
+        StorageLive(_15);
+        _15 = &_8;
+        _14 = &(*_15);
+        _5 = core::fmt::rt::<impl Arguments<'_>>::new_v1::<1, 1>(move _11, move _14) -> [return: bb4, unwind: bb10];
+    }
+
+    bb4: {
+        StorageDead(_15);
+        StorageDead(_14);
+        StorageDead(_12);
+        StorageDead(_11);
+        _4 = format(move _5) -> [return: bb5, unwind: bb10];
+    }
+
+    bb5: {
+        StorageDead(_8);
+        StorageDead(_6);
+        StorageDead(_5);
+        _3 = must_use::<String>(move _4) -> [return: bb6, unwind: bb9];
+    }
+
+    bb6: {
+        StorageDead(_4);
+        nop;
+        _0 = move _3;
+        drop(_3) -> [return: bb7, unwind: bb10];
+    }
+
+    bb7: {
+        StorageDead(_3);
+        drop(_1) -> [return: bb8, unwind continue];
+    }
+
+    bb8: {
+        StorageDead(_1);
+        return;
+    }
+
+    bb9 (cleanup): {
+        drop(_4) -> [return: bb10, unwind terminate(cleanup)];
+    }
+
+    bb10 (cleanup): {
+        drop(_1) -> [return: bb12, unwind terminate(cleanup)];
+    }
+
+    bb11 (cleanup): {
+        drop(_2) -> [return: bb12, unwind terminate(cleanup)];
+    }
+
+    bb12 (cleanup): {
+        resume;
+    }
+}
+
+alloc1 (size: 7, align: 1) {
+    55 53 45 52 5f 49 44                            │ USER_ID
+}

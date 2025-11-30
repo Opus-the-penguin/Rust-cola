@@ -1,0 +1,20 @@
+// MIR for `vulnerable_direct_index::promoted[0]` after ElaborateBoxDerefs
+
+const vulnerable_direct_index::promoted[0]: &[&str; 2] = {
+    let mut _0: &[&str; 2];
+    let mut _1: [&str; 2];
+
+    bb0: {
+        _1 = [const "Value: ", const "\n"];
+        _0 = &_1;
+        return;
+    }
+}
+
+alloc2 (size: 1, align: 1) {
+    0a                                              │ .
+}
+
+alloc1 (size: 7, align: 1) {
+    56 61 6c 75 65 3a 20                            │ Value: 
+}

@@ -1,0 +1,20 @@
+// MIR for `vulnerable_env_index::promoted[0]` before ElaborateBoxDerefs
+
+const vulnerable_env_index::promoted[0]: &[&str; 2] = {
+    let mut _0: &[&str; 2];
+    let mut _1: [&str; 2];
+
+    bb0: {
+        _1 = [const "Data: ", const "\n"];
+        _0 = &_1;
+        return;
+    }
+}
+
+alloc6 (size: 6, align: 1) {
+    44 61 74 61 3a 20                               │ Data: 
+}
+
+alloc2 (size: 1, align: 1) {
+    0a                                              │ .
+}

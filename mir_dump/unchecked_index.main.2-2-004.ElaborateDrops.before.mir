@@ -1,0 +1,24 @@
+// MIR for `main` before ElaborateDrops
+
+fn main() -> () {
+    let mut _0: ();
+    let _1: ();
+    let _2: ();
+
+    bb0: {
+        StorageLive(_1);
+        _1 = safe_hardcoded_index() -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        StorageDead(_1);
+        StorageLive(_2);
+        _2 = safe_get_method() -> [return: bb2, unwind continue];
+    }
+
+    bb2: {
+        StorageDead(_2);
+        _0 = const ();
+        return;
+    }
+}

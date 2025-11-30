@@ -1,0 +1,232 @@
+// MIR for `safe_loop_length` before LowerIntrinsics
+
+fn safe_loop_length() -> () {
+    let mut _0: ();
+    let _1: std::vec::Vec<i32>;
+    let mut _2: std::boxed::Box<[i32]>;
+    let mut _3: std::boxed::Box<[i32; 5]>;
+    let mut _4: usize;
+    let mut _5: usize;
+    let mut _6: *mut u8;
+    let mut _7: std::boxed::Box<[i32; 5]>;
+    let mut _8: std::ops::Range<usize>;
+    let mut _9: std::ops::Range<usize>;
+    let mut _10: usize;
+    let mut _11: &std::vec::Vec<i32>;
+    let mut _13: ();
+    let _14: ();
+    let mut _15: std::option::Option<usize>;
+    let mut _16: &mut std::ops::Range<usize>;
+    let mut _17: &mut std::ops::Range<usize>;
+    let mut _18: isize;
+    let mut _19: !;
+    let _21: ();
+    let _22: ();
+    let mut _23: std::fmt::Arguments<'_>;
+    let mut _25: &i32;
+    let _26: &i32;
+    let mut _27: &std::vec::Vec<i32>;
+    let mut _28: usize;
+    let mut _30: core::fmt::rt::Argument<'_>;
+    let mut _31: &i32;
+    let mut _32: &[&str; 2];
+    let _33: &[&str; 2];
+    let _34: [&str; 2];
+    let mut _35: &[core::fmt::rt::Argument<'_>; 1];
+    let _36: &[core::fmt::rt::Argument<'_>; 1];
+    let mut _38: &i32;
+    let mut _39: *const [i32; 5];
+    scope 1 {
+        debug data => _1;
+        let mut _12: std::ops::Range<usize>;
+        scope 2 {
+            debug iter => _12;
+            let _20: usize;
+            scope 3 {
+                debug i => _20;
+                let _24: (&i32,);
+                scope 4 {
+                    debug args => _24;
+                    let _29: [core::fmt::rt::Argument<'_>; 1];
+                    scope 5 {
+                        debug args => _29;
+                        let mut _37: &[&str; 2];
+                    }
+                }
+            }
+        }
+    }
+
+    bb0: {
+        StorageLive(_1);
+        StorageLive(_2);
+        StorageLive(_3);
+        _4 = SizeOf([i32; 5]);
+        _5 = AlignOf([i32; 5]);
+        _6 = alloc::alloc::exchange_malloc(move _4, move _5) -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        StorageLive(_7);
+        _7 = ShallowInitBox(move _6, [i32; 5]);
+        _39 = copy ((_7.0: std::ptr::Unique<[i32; 5]>).0: std::ptr::NonNull<[i32; 5]>) as *const [i32; 5] (Transmute);
+        (*_39) = [const 1_i32, const 2_i32, const 3_i32, const 4_i32, const 5_i32];
+        _3 = move _7;
+        _2 = move _3 as std::boxed::Box<[i32]> (PointerCoercion(Unsize, Implicit));
+        goto -> bb2;
+    }
+
+    bb2: {
+        goto -> bb3;
+    }
+
+    bb3: {
+        StorageDead(_7);
+        StorageDead(_3);
+        _1 = slice::<impl [i32]>::into_vec::<std::alloc::Global>(move _2) -> [return: bb4, unwind: bb18];
+    }
+
+    bb4: {
+        StorageDead(_2);
+        StorageLive(_8);
+        StorageLive(_9);
+        StorageLive(_10);
+        StorageLive(_11);
+        _11 = &_1;
+        _10 = Vec::<i32>::len(move _11) -> [return: bb5, unwind: bb17];
+    }
+
+    bb5: {
+        StorageDead(_11);
+        _9 = std::ops::Range::<usize> { start: const 0_usize, end: move _10 };
+        StorageDead(_10);
+        _8 = <std::ops::Range<usize> as IntoIterator>::into_iter(move _9) -> [return: bb6, unwind: bb17];
+    }
+
+    bb6: {
+        StorageDead(_9);
+        PlaceMention(_8);
+        StorageLive(_12);
+        _12 = move _8;
+        goto -> bb7;
+    }
+
+    bb7: {
+        StorageLive(_14);
+        StorageLive(_15);
+        StorageLive(_16);
+        StorageLive(_17);
+        _17 = &mut _12;
+        _16 = &mut (*_17);
+        _15 = <std::ops::Range<usize> as Iterator>::next(move _16) -> [return: bb8, unwind: bb17];
+    }
+
+    bb8: {
+        StorageDead(_16);
+        PlaceMention(_15);
+        _18 = discriminant(_15);
+        switchInt(move _18) -> [0: bb11, 1: bb10, otherwise: bb9];
+    }
+
+    bb9: {
+        unreachable;
+    }
+
+    bb10: {
+        StorageLive(_20);
+        _20 = copy ((_15 as Some).0: usize);
+        StorageLive(_21);
+        StorageLive(_22);
+        StorageLive(_23);
+        StorageLive(_24);
+        StorageLive(_25);
+        StorageLive(_26);
+        StorageLive(_27);
+        _27 = &_1;
+        StorageLive(_28);
+        _28 = copy _20;
+        _26 = <Vec<i32> as Index<usize>>::index(move _27, move _28) -> [return: bb12, unwind: bb17];
+    }
+
+    bb11: {
+        _0 = const ();
+        StorageDead(_17);
+        StorageDead(_15);
+        StorageDead(_14);
+        StorageDead(_12);
+        StorageDead(_8);
+        drop(_1) -> [return: bb16, unwind: bb19];
+    }
+
+    bb12: {
+        StorageDead(_28);
+        StorageDead(_27);
+        _25 = &(*_26);
+        _24 = (move _25,);
+        StorageDead(_25);
+        StorageLive(_29);
+        StorageLive(_30);
+        StorageLive(_31);
+        _38 = deref_copy (_24.0: &i32);
+        _31 = &(*_38);
+        _30 = core::fmt::rt::Argument::<'_>::new_display::<i32>(move _31) -> [return: bb13, unwind: bb17];
+    }
+
+    bb13: {
+        StorageDead(_31);
+        _29 = [move _30];
+        StorageDead(_30);
+        StorageLive(_32);
+        StorageLive(_33);
+        _37 = const safe_loop_length::promoted[0];
+        _33 = &(*_37);
+        _32 = &(*_33);
+        StorageLive(_35);
+        StorageLive(_36);
+        _36 = &_29;
+        _35 = &(*_36);
+        _23 = core::fmt::rt::<impl Arguments<'_>>::new_v1::<2, 1>(move _32, move _35) -> [return: bb14, unwind: bb17];
+    }
+
+    bb14: {
+        StorageDead(_36);
+        StorageDead(_35);
+        StorageDead(_33);
+        StorageDead(_32);
+        _22 = _print(move _23) -> [return: bb15, unwind: bb17];
+    }
+
+    bb15: {
+        StorageDead(_23);
+        StorageDead(_29);
+        StorageDead(_26);
+        StorageDead(_24);
+        StorageDead(_22);
+        _21 = const ();
+        StorageDead(_21);
+        _14 = const ();
+        StorageDead(_20);
+        StorageDead(_17);
+        StorageDead(_15);
+        StorageDead(_14);
+        _13 = const ();
+        goto -> bb7;
+    }
+
+    bb16: {
+        StorageDead(_1);
+        return;
+    }
+
+    bb17 (cleanup): {
+        drop(_1) -> [return: bb19, unwind terminate(cleanup)];
+    }
+
+    bb18 (cleanup): {
+        goto -> bb19;
+    }
+
+    bb19 (cleanup): {
+        resume;
+    }
+}

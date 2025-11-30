@@ -1,0 +1,8 @@
+digraph RegionInferenceContext {
+    r0[label="\'?0 (\'static)"][shape="box"];
+    r1[label="\'?1"][shape="box"];
+    r2[label="\'?2"][shape="box"];
+    r3[label="\'?3 (ex<\'_>)"][shape="box"];
+    r1 -> r3[label="All(...)"];
+    r3 -> r1[label="All(...)"];
+}

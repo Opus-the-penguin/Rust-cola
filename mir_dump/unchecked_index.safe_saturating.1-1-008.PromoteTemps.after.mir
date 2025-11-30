@@ -1,0 +1,292 @@
+// MIR for `safe_saturating` after PromoteTemps
+
+| User Type Annotations
+| 0: user_ty: Canonical { value: TypeOf(DefId(3:6197 ~ alloc[f823]::slice::{impl#0}::into_vec), UserArgs { args: [^c_0, ^c_1], user_self_ty: Some(UserSelfTy { impl_def_id: DefId(3:6157 ~ alloc[f823]::slice::{impl#0}), self_ty: [^c_2] }) }), max_universe: U0, variables: [Ty { ui: U0, sub_root: 0 }, Ty { ui: U0, sub_root: 1 }, Ty { ui: U0, sub_root: 2 }] }, span: /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:50:9: 50:24, inferred_ty: fn(std::boxed::Box<[i32]>) -> std::vec::Vec<i32> {std::slice::<impl [i32]>::into_vec::<std::alloc::Global>}
+| 1: user_ty: Canonical { value: Ty(usize), max_universe: U0, variables: [] }, span: examples/unchecked-index/src/main.rs:184:18: 184:23, inferred_ty: usize
+| 2: user_ty: Canonical { value: Ty(usize), max_universe: U0, variables: [] }, span: examples/unchecked-index/src/main.rs:184:18: 184:23, inferred_ty: usize
+| 3: user_ty: Canonical { value: TypeOf(DefId(2:11991 ~ core[b59f]::fmt::rt::{impl#0}::new_display), UserArgs { args: ['^c_0, ^c_1], user_self_ty: Some(UserSelfTy { impl_def_id: DefId(2:11990 ~ core[b59f]::fmt::rt::{impl#0}), self_ty: core::fmt::rt::Argument<'^c_2> }) }), max_universe: U0, variables: [Region(U0), Ty { ui: U0, sub_root: 1 }, Region(U0)] }, span: examples/unchecked-index/src/main.rs:188:15: 188:17, inferred_ty: for<'a> fn(&'a i32) -> core::fmt::rt::Argument<'a> {core::fmt::rt::Argument::<'_>::new_display::<i32>}
+| 4: user_ty: Canonical { value: TypeOf(DefId(2:12020 ~ core[b59f]::fmt::rt::{impl#1}::new_v1), UserArgs { args: ['^c_0, ^c_BoundConst { var: 1 }, ^c_BoundConst { var: 2 }], user_self_ty: Some(UserSelfTy { impl_def_id: DefId(2:12014 ~ core[b59f]::fmt::rt::{impl#1}), self_ty: std::fmt::Arguments<'^c_3> }) }), max_universe: U0, variables: [Region(U0), Const(U0), Const(U0), Region(U0)] }, span: /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61, inferred_ty: fn(&[&'static str; 2], &[core::fmt::rt::Argument<'_>; 1]) -> std::fmt::Arguments<'_> {core::fmt::rt::<impl std::fmt::Arguments<'_>>::new_v1::<2, 1>}
+|
+fn safe_saturating() -> () {
+    let mut _0: ();
+    let _1: std::vec::Vec<i32>;
+    let mut _2: std::boxed::Box<[i32]>;
+    let mut _3: std::boxed::Box<[i32; 5]>;
+    let mut _4: usize;
+    let mut _5: usize;
+    let mut _6: *mut u8;
+    let mut _7: std::boxed::Box<[i32; 5]>;
+    let _9: usize;
+    let mut _10: std::result::Result<usize, std::io::Error>;
+    let mut _11: &std::io::Stdin;
+    let _12: std::io::Stdin;
+    let mut _13: &mut std::string::String;
+    let mut _14: &mut std::string::String;
+    let mut _16: std::result::Result<usize, std::num::ParseIntError>;
+    let mut _17: &str;
+    let _18: &str;
+    let mut _19: &str;
+    let _20: &str;
+    let mut _21: &std::string::String;
+    let mut _23: usize;
+    let mut _24: usize;
+    let mut _25: usize;
+    let mut _26: &std::vec::Vec<i32>;
+    let _27: ();
+    let _28: ();
+    let mut _29: std::fmt::Arguments<'_>;
+    let mut _31: &i32;
+    let _32: &i32;
+    let mut _33: &std::vec::Vec<i32>;
+    let mut _34: usize;
+    let mut _36: core::fmt::rt::Argument<'_>;
+    let mut _37: &i32;
+    let mut _38: &[&str; 2];
+    let _39: &[&str; 2];
+    let _40: [&str; 2];
+    let mut _41: &[core::fmt::rt::Argument<'_>; 1];
+    let _42: &[core::fmt::rt::Argument<'_>; 1];
+    scope 1 {
+        debug data => _1;
+        let mut _8: std::string::String;
+        scope 2 {
+            debug input => _8;
+            let _15: usize as UserTypeProjection { base: UserType(1), projs: [] };
+            scope 3 {
+                debug raw_idx => _15;
+                let _22: usize;
+                scope 4 {
+                    debug idx => _22;
+                    let _30: (&i32,);
+                    scope 5 {
+                        debug args => _30;
+                        let _35: [core::fmt::rt::Argument<'_>; 1];
+                        scope 6 {
+                            debug args => _35;
+                            let mut _43: &[&str; 2];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    bb0: {
+        StorageLive(_1);
+        StorageLive(_2);
+        StorageLive(_3);
+        _4 = SizeOf([i32; 5]);
+        _5 = AlignOf([i32; 5]);
+        _6 = alloc::alloc::exchange_malloc(move _4, move _5) -> [return: bb1, unwind: bb26];
+    }
+
+    bb1: {
+        StorageLive(_7);
+        _7 = ShallowInitBox(move _6, [i32; 5]);
+        (*_7) = [const 1_i32, const 2_i32, const 3_i32, const 4_i32, const 5_i32];
+        _3 = move _7;
+        _2 = move _3 as std::boxed::Box<[i32]> (PointerCoercion(Unsize, Implicit));
+        drop(_3) -> [return: bb2, unwind: bb24];
+    }
+
+    bb2: {
+        drop(_7) -> [return: bb3, unwind: bb25];
+    }
+
+    bb3: {
+        StorageDead(_7);
+        StorageDead(_3);
+        _1 = slice::<impl [i32]>::into_vec::<std::alloc::Global>(move _2) -> [return: bb4, unwind: bb25];
+    }
+
+    bb4: {
+        StorageDead(_2);
+        FakeRead(ForLet(None), _1);
+        StorageLive(_8);
+        _8 = String::new() -> [return: bb5, unwind: bb23];
+    }
+
+    bb5: {
+        FakeRead(ForLet(None), _8);
+        StorageLive(_9);
+        StorageLive(_10);
+        StorageLive(_11);
+        StorageLive(_12);
+        _12 = stdin() -> [return: bb6, unwind: bb22];
+    }
+
+    bb6: {
+        _11 = &_12;
+        StorageLive(_13);
+        StorageLive(_14);
+        _14 = &mut _8;
+        _13 = &mut (*_14);
+        _10 = Stdin::read_line(move _11, move _13) -> [return: bb7, unwind: bb22];
+    }
+
+    bb7: {
+        StorageDead(_13);
+        StorageDead(_11);
+        _9 = Result::<usize, std::io::Error>::unwrap(move _10) -> [return: bb8, unwind: bb21];
+    }
+
+    bb8: {
+        StorageDead(_10);
+        StorageDead(_14);
+        StorageDead(_12);
+        StorageDead(_9);
+        StorageLive(_15);
+        StorageLive(_16);
+        StorageLive(_17);
+        StorageLive(_18);
+        StorageLive(_19);
+        StorageLive(_20);
+        StorageLive(_21);
+        _21 = &_8;
+        _20 = <String as Deref>::deref(move _21) -> [return: bb9, unwind: bb22];
+    }
+
+    bb9: {
+        _19 = &(*_20);
+        StorageDead(_21);
+        _18 = core::str::<impl str>::trim(move _19) -> [return: bb10, unwind: bb22];
+    }
+
+    bb10: {
+        _17 = &(*_18);
+        StorageDead(_19);
+        _16 = core::str::<impl str>::parse::<usize>(move _17) -> [return: bb11, unwind: bb22];
+    }
+
+    bb11: {
+        StorageDead(_17);
+        _15 = Result::<usize, ParseIntError>::unwrap(move _16) -> [return: bb12, unwind: bb22];
+    }
+
+    bb12: {
+        StorageDead(_16);
+        FakeRead(ForLet(None), _15);
+        AscribeUserType(_15, o, UserTypeProjection { base: UserType(2), projs: [] });
+        StorageDead(_20);
+        StorageDead(_18);
+        StorageLive(_22);
+        StorageLive(_23);
+        _23 = copy _15;
+        StorageLive(_24);
+        StorageLive(_25);
+        StorageLive(_26);
+        _26 = &_1;
+        _25 = Vec::<i32>::len(move _26) -> [return: bb13, unwind: bb22];
+    }
+
+    bb13: {
+        StorageDead(_26);
+        _24 = Sub(move _25, const 1_usize);
+        StorageDead(_25);
+        _22 = <usize as Ord>::min(move _23, move _24) -> [return: bb14, unwind: bb22];
+    }
+
+    bb14: {
+        StorageDead(_24);
+        StorageDead(_23);
+        FakeRead(ForLet(None), _22);
+        StorageLive(_27);
+        StorageLive(_28);
+        StorageLive(_29);
+        StorageLive(_30);
+        StorageLive(_31);
+        StorageLive(_32);
+        StorageLive(_33);
+        _33 = &_1;
+        StorageLive(_34);
+        _34 = copy _22;
+        _32 = <Vec<i32> as Index<usize>>::index(move _33, move _34) -> [return: bb15, unwind: bb22];
+    }
+
+    bb15: {
+        StorageDead(_34);
+        StorageDead(_33);
+        _31 = &(*_32);
+        _30 = (move _31,);
+        StorageDead(_31);
+        FakeRead(ForLet(None), _30);
+        StorageLive(_35);
+        StorageLive(_36);
+        StorageLive(_37);
+        _37 = &(*(_30.0: &i32));
+        _36 = core::fmt::rt::Argument::<'_>::new_display::<i32>(move _37) -> [return: bb16, unwind: bb22];
+    }
+
+    bb16: {
+        StorageDead(_37);
+        _35 = [move _36];
+        StorageDead(_36);
+        FakeRead(ForLet(None), _35);
+        StorageLive(_38);
+        StorageLive(_39);
+        _43 = const safe_saturating::promoted[0];
+        _39 = &(*_43);
+        _38 = &(*_39);
+        StorageLive(_41);
+        StorageLive(_42);
+        _42 = &_35;
+        _41 = &(*_42);
+        _29 = core::fmt::rt::<impl Arguments<'_>>::new_v1::<2, 1>(move _38, move _41) -> [return: bb17, unwind: bb22];
+    }
+
+    bb17: {
+        StorageDead(_42);
+        StorageDead(_41);
+        StorageDead(_39);
+        StorageDead(_38);
+        _28 = _print(move _29) -> [return: bb18, unwind: bb22];
+    }
+
+    bb18: {
+        StorageDead(_29);
+        StorageDead(_35);
+        StorageDead(_32);
+        StorageDead(_30);
+        StorageDead(_28);
+        _27 = const ();
+        StorageDead(_27);
+        _0 = const ();
+        StorageDead(_22);
+        StorageDead(_15);
+        drop(_8) -> [return: bb19, unwind: bb23];
+    }
+
+    bb19: {
+        StorageDead(_8);
+        drop(_1) -> [return: bb20, unwind: bb26];
+    }
+
+    bb20: {
+        StorageDead(_1);
+        return;
+    }
+
+    bb21 (cleanup): {
+        drop(_10) -> [return: bb22, unwind terminate(cleanup)];
+    }
+
+    bb22 (cleanup): {
+        drop(_8) -> [return: bb23, unwind terminate(cleanup)];
+    }
+
+    bb23 (cleanup): {
+        drop(_1) -> [return: bb26, unwind terminate(cleanup)];
+    }
+
+    bb24 (cleanup): {
+        drop(_7) -> [return: bb25, unwind terminate(cleanup)];
+    }
+
+    bb25 (cleanup): {
+        drop(_2) -> [return: bb26, unwind terminate(cleanup)];
+    }
+
+    bb26 (cleanup): {
+        resume;
+    }
+}

@@ -1,0 +1,18 @@
+// MIR for `main::promoted[0]` before SimplifyCfg-post-analysis
+
+const main::promoted[0]: &[&str; 1] = {
+    let mut _0: &[&str; 1];
+    let mut _1: [&str; 1];
+
+    bb0: {
+        _1 = [const "Run with: cargo cola --clear-cache\n"];
+        _0 = &_1;
+        return;
+    }
+}
+
+alloc92 (size: 35, align: 1) {
+    0x00 │ 52 75 6e 20 77 69 74 68 3a 20 63 61 72 67 6f 20 │ Run with: cargo 
+    0x10 │ 63 6f 6c 61 20 2d 2d 63 6c 65 61 72 2d 63 61 63 │ cola --clear-cac
+    0x20 │ 68 65 0a                                        │ he.
+}

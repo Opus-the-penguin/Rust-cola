@@ -1,0 +1,583 @@
+// MIR for `bad_stdin_query` 0 nll
+
+| Free Region Mapping
+| '?0 | Global | ['?0, '?1]
+| '?1 | Local | ['?1]
+|
+| Inferred Region Values
+| '?0 | U0 | {bb0[0..=1], bb1[0..=2], bb2[0..=8], bb3[0..=6], bb4[0..=2], bb5[0..=3], bb6[0..=1], bb7[0], bb8[0..=4], bb9[0..=4], bb10[0..=1], bb11[0..=1], bb12[0..=8], bb13[0..=2], bb14[0..=16], bb15[0..=13], bb16[0..=4], bb17[0..=3], bb18[0..=5], bb19[0..=1], bb20[0..=2], bb21[0..=2], bb22[0..=1], bb23[0..=1], bb24[0..=3], bb25[0..=2], bb26[0], bb27[0], bb28[0], bb29[0], bb30[0], bb31[0], bb32[0], bb33[0], bb34[0], bb35[0], '?0, '?1}
+| '?1 | U0 | {bb0[0..=1], bb1[0..=2], bb2[0..=8], bb3[0..=6], bb4[0..=2], bb5[0..=3], bb6[0..=1], bb7[0], bb8[0..=4], bb9[0..=4], bb10[0..=1], bb11[0..=1], bb12[0..=8], bb13[0..=2], bb14[0..=16], bb15[0..=13], bb16[0..=4], bb17[0..=3], bb18[0..=5], bb19[0..=1], bb20[0..=2], bb21[0..=2], bb22[0..=1], bb23[0..=1], bb24[0..=3], bb25[0..=2], bb26[0], bb27[0], bb28[0], bb29[0], bb30[0], bb31[0], bb32[0], bb33[0], bb34[0], bb35[0], '?1}
+| '?2 | U0 | {bb0[0..=1], bb1[0..=2], bb2[0..=8], bb3[0..=6], bb4[0..=2], bb5[0..=3], bb6[0..=1], bb7[0], bb8[0..=4], bb9[0..=4], bb10[0..=1], bb11[0..=1], bb12[0..=8], bb13[0..=2], bb14[0..=16], bb15[0..=13], bb16[0..=4], bb17[0..=3], bb18[0..=5], bb19[0..=1], bb20[0..=2], bb21[0..=2], bb22[0..=1], bb23[0..=1], bb24[0..=3], bb25[0..=2], bb26[0], bb27[0], bb28[0], bb29[0], bb30[0], bb31[0], bb32[0], bb33[0], bb34[0], bb35[0], '?0, '?1}
+| '?3 | U0 | {bb0[0..=1], bb1[0..=2], bb2[0..=8], bb3[0..=6], bb4[0..=2], bb5[0..=3], bb6[0..=1], bb7[0], bb8[0..=4], bb9[0..=4], bb10[0..=1], bb11[0..=1], bb12[0..=8], bb13[0..=2], bb14[0..=16], bb15[0..=13], bb16[0..=4], bb17[0..=3], bb18[0..=5], bb19[0..=1], bb20[0..=2], bb21[0..=2], bb22[0..=1], bb23[0..=1], bb24[0..=3], bb25[0..=2], bb26[0], bb27[0], bb28[0], bb29[0], bb30[0], bb31[0], bb32[0], bb33[0], bb34[0], bb35[0], '?0, '?1}
+| '?4 | U0 | {bb0[0..=1], bb1[0..=2], bb2[0..=8], bb3[0..=6], bb4[0..=2], bb5[0..=3], bb6[0..=1], bb7[0], bb8[0..=4], bb9[0..=4], bb10[0..=1], bb11[0..=1], bb12[0..=8], bb13[0..=2], bb14[0..=16], bb15[0..=13], bb16[0..=4], bb17[0..=3], bb18[0..=5], bb19[0..=1], bb20[0..=2], bb21[0..=2], bb22[0..=1], bb23[0..=1], bb24[0..=3], bb25[0..=2], bb26[0], bb27[0], bb28[0], bb29[0], bb30[0], bb31[0], bb32[0], bb33[0], bb34[0], bb35[0], '?0, '?1}
+| '?5 | U0 | {bb15[6..=13], bb16[0..=4]}
+| '?6 | U0 | {bb15[6..=13], bb16[0..=4]}
+| '?7 | U0 | {bb0[0..=1], bb1[0..=2], bb2[0..=8], bb3[0..=6], bb4[0..=2], bb5[0..=3], bb6[0..=1], bb7[0], bb8[0..=4], bb9[0..=4], bb10[0..=1], bb11[0..=1], bb12[0..=8], bb13[0..=2], bb14[0..=16], bb15[0..=13], bb16[0..=4], bb17[0..=3], bb18[0..=5], bb19[0..=1], bb20[0..=2], bb21[0..=2], bb22[0..=1], bb23[0..=1], bb24[0..=3], bb25[0..=2], bb26[0], bb27[0], bb28[0], bb29[0], bb30[0], bb31[0], bb32[0], bb33[0], bb34[0], bb35[0], '?0, '?1}
+| '?8 | U0 | {bb0[0..=1], bb1[0..=2], bb2[0..=8], bb3[0..=6], bb4[0..=2], bb5[0..=3], bb6[0..=1], bb7[0], bb8[0..=4], bb9[0..=4], bb10[0..=1], bb11[0..=1], bb12[0..=8], bb13[0..=2], bb14[0..=16], bb15[0..=13], bb16[0..=4], bb17[0..=3], bb18[0..=5], bb19[0..=1], bb20[0..=2], bb21[0..=2], bb22[0..=1], bb23[0..=1], bb24[0..=3], bb25[0..=2], bb26[0], bb27[0], bb28[0], bb29[0], bb30[0], bb31[0], bb32[0], bb33[0], bb34[0], bb35[0], '?0, '?1}
+| '?9 | U0 | {bb2[7..=8]}
+| '?10 | U0 | {bb3[0..=6]}
+| '?11 | U0 | {bb3[4..=6]}
+| '?12 | U0 | {bb3[5..=6]}
+| '?13 | U0 | {bb3[0..=6], bb4[0..=2], bb5[0..=3], bb7[0], bb8[0..=4], bb9[0..=4], bb10[0..=1], bb11[0..=1], bb22[0..=1], bb23[0..=1], bb29[0], bb30[0], bb31[0], bb32[0], bb33[0]}
+| '?14 | U0 | {bb12[7..=8], bb13[0..=2], bb14[0..=16], bb15[0..=13], bb16[0..=4]}
+| '?15 | U0 | {bb13[0..=2], bb14[0..=16], bb15[0..=13], bb16[0..=4]}
+| '?16 | U0 | {bb14[8..=16], bb15[0..=13], bb16[0..=4]}
+| '?17 | U0 | {bb14[15..=16], bb15[0..=13], bb16[0..=4]}
+| '?18 | U0 | {bb14[15..=16], bb15[0..=13], bb16[0..=4]}
+| '?19 | U0 | {bb14[15..=16], bb15[0..=13], bb16[0..=4]}
+| '?20 | U0 | {bb14[16]}
+| '?21 | U0 | {bb14[16], bb15[0..=13], bb16[0..=4]}
+| '?22 | U0 | {bb15[1..=13], bb16[0..=4]}
+| '?23 | U0 | {bb15[6..=13], bb16[0..=4]}
+| '?24 | U0 | {bb0[0..=1], bb1[0..=2], bb2[0..=8], bb3[0..=6], bb4[0..=2], bb5[0..=3], bb6[0..=1], bb7[0], bb8[0..=4], bb9[0..=4], bb10[0..=1], bb11[0..=1], bb12[0..=8], bb13[0..=2], bb14[0..=16], bb15[0..=13], bb16[0..=4], bb17[0..=3], bb18[0..=5], bb19[0..=1], bb20[0..=2], bb21[0..=2], bb22[0..=1], bb23[0..=1], bb24[0..=3], bb25[0..=2], bb26[0], bb27[0], bb28[0], bb29[0], bb30[0], bb31[0], bb32[0], bb33[0], bb34[0], bb35[0], '?0, '?1}
+| '?25 | U0 | {bb15[7..=13], bb16[0..=4]}
+| '?26 | U0 | {bb15[8..=13], bb16[0..=4]}
+| '?27 | U0 | {bb15[11..=13], bb16[0..=4]}
+| '?28 | U0 | {bb15[12..=13], bb16[0..=4]}
+| '?29 | U0 | {bb15[13], bb16[0..=4]}
+| '?30 | U0 | {bb3[1..=6]}
+| '?31 | U0 | {bb3[0..=6], bb4[0..=2], bb5[0..=3], bb7[0], bb8[0..=4], bb9[0..=4], bb10[0..=1], bb11[0..=1], bb22[0..=1], bb23[0..=1], bb29[0], bb30[0], bb31[0], bb32[0], bb33[0]}
+| '?32 | U0 | {bb3[0..=6], bb4[0..=2], bb5[0..=3], bb7[0], bb8[0..=4], bb9[0..=4], bb10[0..=1], bb11[0..=1], bb22[0..=1], bb23[0..=1], bb29[0], bb30[0], bb31[0], bb32[0], bb33[0]}
+| '?33 | U0 | {bb2[8]}
+| '?34 | U0 | {bb3[6]}
+| '?35 | U0 | {bb3[5..=6]}
+| '?36 | U0 | {bb14[0..=16], bb15[0..=13], bb16[0..=4]}
+| '?37 | U0 | {bb13[1..=2], bb14[0..=16], bb15[0..=13], bb16[0..=4]}
+| '?38 | U0 | {bb13[0..=2], bb14[0..=16], bb15[0..=13], bb16[0..=4]}
+| '?39 | U0 | {bb12[8], bb13[0..=2], bb14[0..=16], bb15[0..=13], bb16[0..=4]}
+| '?40 | U0 | {bb16[0..=4]}
+| '?41 | U0 | {bb14[10..=16], bb15[0..=13], bb16[0..=4]}
+| '?42 | U0 | {bb14[10..=16], bb15[0..=13], bb16[0..=4]}
+| '?43 | U0 | {bb14[9..=16], bb15[0..=13], bb16[0..=4]}
+| '?44 | U0 | {bb14[9..=16], bb15[0..=13], bb16[0..=4]}
+| '?45 | U0 | {bb15[2..=13], bb16[0..=4]}
+| '?46 | U0 | {bb15[0..=13], bb16[0..=4]}
+| '?47 | U0 | {bb14[16], bb15[0..=13], bb16[0..=4]}
+| '?48 | U0 | {bb14[16], bb15[0..=13], bb16[0..=4]}
+| '?49 | U0 | {bb15[9..=13], bb16[0..=4]}
+| '?50 | U0 | {bb0[0..=1], bb1[0..=2], bb2[0..=8], bb3[0..=6], bb4[0..=2], bb5[0..=3], bb6[0..=1], bb7[0], bb8[0..=4], bb9[0..=4], bb10[0..=1], bb11[0..=1], bb12[0..=8], bb13[0..=2], bb14[0..=16], bb15[0..=13], bb16[0..=4], bb17[0..=3], bb18[0..=5], bb19[0..=1], bb20[0..=2], bb21[0..=2], bb22[0..=1], bb23[0..=1], bb24[0..=3], bb25[0..=2], bb26[0], bb27[0], bb28[0], bb29[0], bb30[0], bb31[0], bb32[0], bb33[0], bb34[0], bb35[0], '?0, '?1}
+| '?51 | U0 | {bb15[8..=13], bb16[0..=4]}
+| '?52 | U0 | {bb0[0..=1], bb1[0..=2], bb2[0..=8], bb3[0..=6], bb4[0..=2], bb5[0..=3], bb6[0..=1], bb7[0], bb8[0..=4], bb9[0..=4], bb10[0..=1], bb11[0..=1], bb12[0..=8], bb13[0..=2], bb14[0..=16], bb15[0..=13], bb16[0..=4], bb17[0..=3], bb18[0..=5], bb19[0..=1], bb20[0..=2], bb21[0..=2], bb22[0..=1], bb23[0..=1], bb24[0..=3], bb25[0..=2], bb26[0], bb27[0], bb28[0], bb29[0], bb30[0], bb31[0], bb32[0], bb33[0], bb34[0], bb35[0], '?0, '?1}
+| '?53 | U0 | {}
+| '?54 | U0 | {bb15[13], bb16[0..=4]}
+| '?55 | U0 | {bb15[13], bb16[0..=4]}
+| '?56 | U0 | {bb15[12..=13], bb16[0..=4]}
+| '?57 | U0 | {bb15[12..=13], bb16[0..=4]}
+| '?58 | U0 | {bb15[7..=13], bb16[0..=4]}
+| '?59 | U0 | {bb0[0..=1], bb1[0..=2], bb2[0..=8], bb3[0..=6], bb4[0..=2], bb5[0..=3], bb6[0..=1], bb7[0], bb8[0..=4], bb9[0..=4], bb10[0..=1], bb11[0..=1], bb12[0..=8], bb13[0..=2], bb14[0..=16], bb15[0..=13], bb16[0..=4], bb17[0..=3], bb18[0..=5], bb19[0..=1], bb20[0..=2], bb21[0..=2], bb22[0..=1], bb23[0..=1], bb24[0..=3], bb25[0..=2], bb26[0], bb27[0], bb28[0], bb29[0], bb30[0], bb31[0], bb32[0], bb33[0], bb34[0], bb35[0], '?0, '?1}
+| '?60 | U0 | {bb14[16]}
+| '?61 | U0 | {bb14[16], bb15[0..=13], bb16[0..=4]}
+| '?62 | U0 | {bb15[13], bb16[0..=4]}
+| '?63 | U0 | {bb14[16]}
+| '?64 | U0 | {bb14[16]}
+| '?65 | U0 | {bb15[13], bb16[0..=4]}
+| '?66 | U0 | {bb15[13], bb16[0..=4]}
+| '?67 | U0 | {bb2[8]}
+| '?68 | U0 | {bb3[6]}
+| '?69 | U0 | {bb3[6]}
+| '?70 | U0 | {bb12[8], bb13[0..=2], bb14[0..=16], bb15[0..=13], bb16[0..=4]}
+| '?71 | U0 | {bb13[2], bb14[0..=16], bb15[0..=13], bb16[0..=4]}
+| '?72 | U0 | {bb14[16], bb15[0..=13], bb16[0..=4]}
+| '?73 | U0 | {bb16[4]}
+|
+| Inference Constraints
+| '?0 live at {bb0[0..=1], bb1[0..=2], bb2[0..=8], bb3[0..=6], bb4[0..=2], bb5[0..=3], bb6[0..=1], bb7[0], bb8[0..=4], bb9[0..=4], bb10[0..=1], bb11[0..=1], bb12[0..=8], bb13[0..=2], bb14[0..=16], bb15[0..=13], bb16[0..=4], bb17[0..=3], bb18[0..=5], bb19[0..=1], bb20[0..=2], bb21[0..=2], bb22[0..=1], bb23[0..=1], bb24[0..=3], bb25[0..=2], bb26[0], bb27[0], bb28[0], bb29[0], bb30[0], bb31[0], bb32[0], bb33[0], bb34[0], bb35[0]}
+| '?1 live at {bb0[0..=1], bb1[0..=2], bb2[0..=8], bb3[0..=6], bb4[0..=2], bb5[0..=3], bb6[0..=1], bb7[0], bb8[0..=4], bb9[0..=4], bb10[0..=1], bb11[0..=1], bb12[0..=8], bb13[0..=2], bb14[0..=16], bb15[0..=13], bb16[0..=4], bb17[0..=3], bb18[0..=5], bb19[0..=1], bb20[0..=2], bb21[0..=2], bb22[0..=1], bb23[0..=1], bb24[0..=3], bb25[0..=2], bb26[0], bb27[0], bb28[0], bb29[0], bb30[0], bb31[0], bb32[0], bb33[0], bb34[0], bb35[0]}
+| '?3 live at {bb15[6]}
+| '?4 live at {bb15[6]}
+| '?9 live at {bb2[7]}
+| '?10 live at {bb3[0]}
+| '?11 live at {bb3[4]}
+| '?12 live at {bb3[5]}
+| '?13 live at {bb3[6]}
+| '?14 live at {bb12[7]}
+| '?15 live at {bb13[0]}
+| '?16 live at {bb14[8]}
+| '?17 live at {bb14[15]}
+| '?18 live at {bb14[15]}
+| '?19 live at {bb14[15]}
+| '?20 live at {bb14[16]}
+| '?21 live at {bb14[16]}
+| '?22 live at {bb15[1]}
+| '?23 live at {bb15[6]}
+| '?24 live at {bb15[6]}
+| '?25 live at {bb15[7]}
+| '?26 live at {bb15[8]}
+| '?27 live at {bb15[11]}
+| '?28 live at {bb15[12]}
+| '?29 live at {bb15[13]}
+| '?30 live at {bb3[1..=6]}
+| '?31 live at {bb3[1..=6]}
+| '?32 live at {bb3[0..=6], bb4[0..=2], bb5[0..=3], bb7[0], bb8[0..=4], bb9[0..=4], bb10[0..=1], bb11[0..=1], bb22[0..=1], bb23[0..=1], bb29[0], bb30[0], bb31[0], bb32[0], bb33[0]}
+| '?33 live at {bb2[8]}
+| '?34 live at {bb3[6]}
+| '?35 live at {bb3[5]}
+| '?36 live at {bb14[0..=8]}
+| '?37 live at {bb13[1..=2]}
+| '?38 live at {bb13[0]}
+| '?39 live at {bb12[8]}
+| '?40 live at {bb16[0..=4]}
+| '?41 live at {bb14[10..=15]}
+| '?42 live at {bb14[10..=15]}
+| '?43 live at {bb14[9]}
+| '?44 live at {bb14[9]}
+| '?45 live at {bb15[2..=11]}
+| '?46 live at {bb15[0..=1]}
+| '?47 live at {bb14[16]}
+| '?48 live at {bb14[16]}
+| '?49 live at {bb15[9..=13]}
+| '?50 live at {bb15[9..=13]}
+| '?51 live at {bb15[8]}
+| '?52 live at {bb15[8]}
+| '?54 live at {bb15[13]}
+| '?55 live at {bb15[13]}
+| '?56 live at {bb15[12]}
+| '?57 live at {bb15[12]}
+| '?58 live at {bb15[7]}
+| '?59 live at {bb15[7]}
+| '?67 live at {bb2[8]}
+| '?68 live at {bb3[6]}
+| '?69 live at {bb3[6]}
+| '?70 live at {bb12[8]}
+| '?71 live at {bb13[2]}
+| '?72 live at {bb14[16]}
+| '?73 live at {bb16[4]}
+| '?0: '?29 due to BoringNoLocation at Single(bb15[13]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73 (#53)
+| '?0: '?32 due to Boring at Single(bb2[8]) (examples/sql-injection/src/main.rs:51:5: 51:17 (#0)
+| '?2: '?8 due to Boring at Single(bb15[6]) (examples/sql-injection/src/main.rs:55:25: 55:72 (#0)
+| '?3: '?2 due to Boring at Single(bb15[6]) (examples/sql-injection/src/main.rs:55:25: 55:72 (#0)
+| '?4: '?2 due to Boring at Single(bb15[6]) (examples/sql-injection/src/main.rs:55:25: 55:72 (#0)
+| '?5: '?6 due to Boring at Single(bb15[6]) (examples/sql-injection/src/main.rs:55:25: 55:72 (#0)
+| '?6: '?23 due to Boring at Single(bb15[6]) (examples/sql-injection/src/main.rs:55:25: 55:72 (#0)
+| '?7: '?24 due to Boring at Single(bb15[6]) (examples/sql-injection/src/main.rs:55:25: 55:72 (#0)
+| '?8: '?7 due to Boring at Single(bb15[6]) (examples/sql-injection/src/main.rs:55:25: 55:72 (#0)
+| '?9: '?33 due to Boring at Single(bb2[7]) (examples/sql-injection/src/main.rs:51:5: 51:10 (#0)
+| '?10: '?30 due to Boring at Single(bb3[0]) (examples/sql-injection/src/main.rs:51:5: 51:17 (#0)
+| '?11: '?35 due to Boring at Single(bb3[4]) (examples/sql-injection/src/main.rs:51:28: 51:44 (#0)
+| '?12: '?34 due to Boring at Single(bb3[5]) (examples/sql-injection/src/main.rs:51:28: 51:44 (#0)
+| '?13: '?31 due to CallArgument(Some(FnDef(DefId(1:4015 ~ std[e902]::io::BufRead::read_line), [std::io::StdinLock<'{erased}>]))) at Single(bb3[6]) (examples/sql-injection/src/main.rs:51:5: 51:45 (#0)
+| '?13: '?68 due to BoringNoLocation at Single(bb3[6]) (examples/sql-injection/src/main.rs:51:5: 51:45 (#0)
+| '?14: '?39 due to Boring at Single(bb12[7]) (examples/sql-injection/src/main.rs:52:23: 52:34 (#0)
+| '?15: '?37 due to Boring at Single(bb13[0]) (examples/sql-injection/src/main.rs:52:23: 52:34 (#0)
+| '?16: '?43 due to Boring at Single(bb14[8]) (examples/sql-injection/src/main.rs:55:74: 55:85 (#53)
+| '?17: '?47 due to Boring at Single(bb14[15]) (examples/sql-injection/src/main.rs:55:74: 55:85 (#53)
+| '?18: '?17 due to Boring at Single(bb14[15]) (examples/sql-injection/src/main.rs:55:74: 55:85 (#53)
+| '?19: '?48 due to Boring at Single(bb14[15]) (examples/sql-injection/src/main.rs:55:74: 55:85 (#53)
+| '?20: '?60 due to TypeAnnotation(GenericArg) at Single(bb14[16]) (examples/sql-injection/src/main.rs:55:67: 55:69 (#53)
+| '?21: '?61 due to TypeAnnotation(GenericArg) at Single(bb14[16]) (examples/sql-injection/src/main.rs:55:67: 55:69 (#53)
+| '?21: '?72 due to BoringNoLocation at Single(bb14[16]) (examples/sql-injection/src/main.rs:55:67: 55:69 (#53)
+| '?22: '?45 due to Assignment at Single(bb15[1]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73 (#53)
+| '?23: '?6 due to Boring at Single(bb15[6]) (examples/sql-injection/src/main.rs:55:25: 55:72 (#0)
+| '?23: '?58 due to Boring at Single(bb15[6]) (examples/sql-injection/src/main.rs:55:25: 55:72 (#0)
+| '?24: '?7 due to Boring at Single(bb15[6]) (examples/sql-injection/src/main.rs:55:25: 55:72 (#0)
+| '?24: '?59 due to Boring at Single(bb15[6]) (examples/sql-injection/src/main.rs:55:25: 55:72 (#0)
+| '?25: '?51 due to Boring at Single(bb15[7]) (examples/sql-injection/src/main.rs:55:25: 55:72 (#0)
+| '?26: '?49 due to Boring at Single(bb15[8]) (examples/sql-injection/src/main.rs:55:25: 55:72 (#0)
+| '?27: '?56 due to Boring at Single(bb15[11]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73 (#53)
+| '?28: '?54 due to Boring at Single(bb15[12]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73 (#53)
+| '?29: '?40 due to Boring at Single(bb15[13]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73 (#53)
+| '?29: '?62 due to TypeAnnotation(GenericArg) at Single(bb15[13]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73 (#53)
+| '?30: '?68 due to CallArgument(Some(FnDef(DefId(1:4015 ~ std[e902]::io::BufRead::read_line), [std::io::StdinLock<'{erased}>]))) at Single(bb3[6]) (examples/sql-injection/src/main.rs:51:5: 51:45 (#0)
+| '?31: '?13 due to CallArgument(Some(FnDef(DefId(1:4015 ~ std[e902]::io::BufRead::read_line), [std::io::StdinLock<'{erased}>]))) at Single(bb3[6]) (examples/sql-injection/src/main.rs:51:5: 51:45 (#0)
+| '?31: '?32 due to Boring at Single(bb3[0]) (examples/sql-injection/src/main.rs:51:5: 51:17 (#0)
+| '?32: '?31 due to Boring at Single(bb3[0]) (examples/sql-injection/src/main.rs:51:5: 51:17 (#0)
+| '?33: '?67 due to CallArgument(Some(FnDef(DefId(1:3652 ~ std[e902]::io::stdio::{impl#3}::lock), []))) at Single(bb2[8]) (examples/sql-injection/src/main.rs:51:5: 51:17 (#0)
+| '?34: '?69 due to CallArgument(Some(FnDef(DefId(1:4015 ~ std[e902]::io::BufRead::read_line), [std::io::StdinLock<'{erased}>]))) at Single(bb3[6]) (examples/sql-injection/src/main.rs:51:5: 51:45 (#0)
+| '?35: '?12 due to Boring at Single(bb3[5]) (examples/sql-injection/src/main.rs:51:28: 51:44 (#0)
+| '?36: '?44 due to Boring at Single(bb14[8]) (examples/sql-injection/src/main.rs:55:74: 55:85 (#53)
+| '?37: '?71 due to CallArgument(Some(FnDef(DefId(2:15336 ~ core[b59f]::str::{impl#0}::trim), []))) at Single(bb13[2]) (examples/sql-injection/src/main.rs:52:23: 52:41 (#0)
+| '?38: '?15 due to Boring at Single(bb13[0]) (examples/sql-injection/src/main.rs:52:23: 52:34 (#0)
+| '?39: '?70 due to Boring at Single(bb12[8]) (examples/sql-injection/src/main.rs:52:23: 52:41 (#0)
+| '?40: '?73 due to CallArgument(Some(FnDef(DefId(3:5471 ~ alloc[f823]::fmt::format), []))) at Single(bb16[4]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:13: 108:74 (#9)
+| '?41: '?18 due to Boring at Single(bb14[15]) (examples/sql-injection/src/main.rs:55:74: 55:85 (#53)
+| '?42: '?19 due to Boring at Single(bb14[15]) (examples/sql-injection/src/main.rs:55:74: 55:85 (#53)
+| '?43: '?41 due to Assignment at Single(bb14[9]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73 (#53)
+| '?44: '?42 due to Assignment at Single(bb14[9]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73 (#53)
+| '?45: '?57 due to Boring at Single(bb15[11]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73 (#53)
+| '?46: '?22 due to Boring at Single(bb15[1]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73 (#53)
+| '?47: '?72 due to CallArgument(Some(FnDef(DefId(2:11991 ~ core[b59f]::fmt::rt::{impl#0}::new_display), ['{erased}, &'{erased} str]))) at Single(bb14[16]) (examples/sql-injection/src/main.rs:55:67: 55:69 (#53)
+| '?48: '?21 due to CallArgument(Some(FnDef(DefId(2:11991 ~ core[b59f]::fmt::rt::{impl#0}::new_display), ['{erased}, &'{erased} str]))) at Single(bb14[16]) (examples/sql-injection/src/main.rs:55:67: 55:69 (#53)
+| '?49: '?29 due to CallArgument(Some(FnDef(DefId(2:12020 ~ core[b59f]::fmt::rt::{impl#1}::new_v1), ['{erased}, 2_usize, 1_usize]))) at Single(bb15[13]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73 (#53)
+| '?50: '?0 due to CallArgument(Some(FnDef(DefId(2:12020 ~ core[b59f]::fmt::rt::{impl#1}::new_v1), ['{erased}, 2_usize, 1_usize]))) at Single(bb15[13]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73 (#53)
+| '?51: '?26 due to Boring at Single(bb15[8]) (examples/sql-injection/src/main.rs:55:25: 55:72 (#0)
+| '?52: '?50 due to Boring at Single(bb15[8]) (examples/sql-injection/src/main.rs:55:25: 55:72 (#0)
+| '?54: '?29 due to CallArgument(Some(FnDef(DefId(2:12020 ~ core[b59f]::fmt::rt::{impl#1}::new_v1), ['{erased}, 2_usize, 1_usize]))) at Single(bb15[13]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73 (#53)
+| '?55: '?29 due to CallArgument(Some(FnDef(DefId(2:12020 ~ core[b59f]::fmt::rt::{impl#1}::new_v1), ['{erased}, 2_usize, 1_usize]))) at Single(bb15[13]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73 (#53)
+| '?56: '?28 due to Boring at Single(bb15[12]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73 (#53)
+| '?57: '?55 due to Boring at Single(bb15[12]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73 (#53)
+| '?58: '?25 due to Boring at Single(bb15[7]) (examples/sql-injection/src/main.rs:55:25: 55:72 (#0)
+| '?59: '?52 due to Boring at Single(bb15[7]) (examples/sql-injection/src/main.rs:55:25: 55:72 (#0)
+| '?60: '?20 due to TypeAnnotation(GenericArg) at Single(bb14[16]) (examples/sql-injection/src/main.rs:55:67: 55:69 (#53)
+| '?60: '?64 due to BoringNoLocation at All(examples/sql-injection/src/main.rs:55:67: 55:69) (examples/sql-injection/src/main.rs:55:67: 55:69 (#53)
+| '?61: '?21 due to TypeAnnotation(GenericArg) at Single(bb14[16]) (examples/sql-injection/src/main.rs:55:67: 55:69 (#53)
+| '?62: '?29 due to TypeAnnotation(GenericArg) at Single(bb15[13]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73 (#53)
+| '?62: '?66 due to BoringNoLocation at All(/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73 (#53)
+| '?63: '?64 due to BoringNoLocation at All(examples/sql-injection/src/main.rs:55:67: 55:69) (examples/sql-injection/src/main.rs:55:67: 55:69 (#53)
+| '?64: '?60 due to BoringNoLocation at All(examples/sql-injection/src/main.rs:55:67: 55:69) (examples/sql-injection/src/main.rs:55:67: 55:69 (#53)
+| '?64: '?63 due to BoringNoLocation at All(examples/sql-injection/src/main.rs:55:67: 55:69) (examples/sql-injection/src/main.rs:55:67: 55:69 (#53)
+| '?65: '?66 due to BoringNoLocation at All(/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73 (#53)
+| '?66: '?62 due to BoringNoLocation at All(/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73 (#53)
+| '?66: '?65 due to BoringNoLocation at All(/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73 (#53)
+| '?70: '?38 due to Boring at Single(bb12[8]) (examples/sql-injection/src/main.rs:52:23: 52:41 (#0)
+| '?71: '?36 due to Assignment at Single(bb13[2]) (examples/sql-injection/src/main.rs:52:23: 52:41 (#0)
+| '?72: '?46 due to Boring at Single(bb14[16]) (examples/sql-injection/src/main.rs:55:67: 55:69 (#53)
+|
+| Borrows
+| bw0: issued at bb2[7] in '?9
+| bw1: issued at bb3[0] in '?10
+| bw2: issued at bb3[4] in '?11
+| bw3: issued at bb3[5] in '?12
+| bw4: issued at bb12[7] in '?14
+| bw5: issued at bb14[8] in '?16
+| bw6: issued at bb15[11] in '?27
+|
+| User Type Annotations
+| 0: user_ty: Canonical { value: TypeOf(DefId(2:11991 ~ core[b59f]::fmt::rt::{impl#0}::new_display), UserArgs { args: ['^c_0, ^c_1], user_self_ty: Some(UserSelfTy { impl_def_id: DefId(2:11990 ~ core[b59f]::fmt::rt::{impl#0}), self_ty: core::fmt::rt::Argument<'^c_2> }) }), max_universe: U0, variables: [Region(U0), Ty { ui: U0, sub_root: 1 }, Region(U0)] }, span: examples/sql-injection/src/main.rs:55:67: 55:69, inferred_ty: for<'a> fn(&'a &str) -> core::fmt::rt::Argument<'a> {core::fmt::rt::Argument::<'_>::new_display::<&str>}
+| 1: user_ty: Canonical { value: TypeOf(DefId(2:12020 ~ core[b59f]::fmt::rt::{impl#1}::new_v1), UserArgs { args: ['^c_0, ^c_BoundConst { var: 1 }, ^c_BoundConst { var: 2 }], user_self_ty: Some(UserSelfTy { impl_def_id: DefId(2:12014 ~ core[b59f]::fmt::rt::{impl#1}), self_ty: std::fmt::Arguments<'^c_3> }) }), max_universe: U0, variables: [Region(U0), Const(U0), Const(U0), Region(U0)] }, span: /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73, inferred_ty: fn(&[&'static str; 2], &[core::fmt::rt::Argument<'_>; 1]) -> std::fmt::Arguments<'_> {core::fmt::rt::<impl std::fmt::Arguments<'_>>::new_v1::<2, 1>}
+|
+fn bad_stdin_query() -> Result<String, std::io::Error> {
+    let mut _0: std::result::Result<std::string::String, std::io::Error>; // return place in scope 0 at examples/sql-injection/src/main.rs:48:29: 48:47
+    let _1: std::io::Stdin;              // in scope 0 at examples/sql-injection/src/main.rs:49:9: 49:14
+    let _3: usize;                       // in scope 0 at examples/sql-injection/src/main.rs:51:5: 51:46
+    let mut _4: std::ops::ControlFlow<std::result::Result<std::convert::Infallible, std::io::Error>, usize>; // in scope 0 at examples/sql-injection/src/main.rs:51:5: 51:46
+    let mut _5: std::result::Result<usize, std::io::Error>; // in scope 0 at examples/sql-injection/src/main.rs:51:5: 51:45
+    let mut _6: &mut std::io::StdinLock<'_>; // in scope 0 at examples/sql-injection/src/main.rs:51:5: 51:17
+    let mut _7: std::io::StdinLock<'_>;  // in scope 0 at examples/sql-injection/src/main.rs:51:5: 51:17
+    let mut _8: &std::io::Stdin;         // in scope 0 at examples/sql-injection/src/main.rs:51:5: 51:10
+    let mut _9: &mut std::string::String; // in scope 0 at examples/sql-injection/src/main.rs:51:28: 51:44
+    let mut _10: &mut std::string::String; // in scope 0 at examples/sql-injection/src/main.rs:51:28: 51:44
+    let mut _11: isize;                  // in scope 0 at examples/sql-injection/src/main.rs:51:45: 51:46
+    let mut _13: !;                      // in scope 0 at examples/sql-injection/src/main.rs:51:45: 51:46
+    let mut _14: std::result::Result<std::convert::Infallible, std::io::Error>; // in scope 0 at examples/sql-injection/src/main.rs:51:45: 51:46
+    let mut _17: &str;                   // in scope 0 at examples/sql-injection/src/main.rs:52:23: 52:34
+    let _18: &str;                       // in scope 0 at examples/sql-injection/src/main.rs:52:23: 52:41
+    let mut _19: &std::string::String;   // in scope 0 at examples/sql-injection/src/main.rs:52:23: 52:34
+    let mut _21: std::string::String;    // in scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:107:36: 109:10
+    let mut _22: std::fmt::Arguments<'_>; // in scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73
+    let mut _24: &&str;                  // in scope 0 at examples/sql-injection/src/main.rs:55:74: 55:85
+    let mut _26: core::fmt::rt::Argument<'_>; // in scope 0 at examples/sql-injection/src/main.rs:55:67: 55:69
+    let mut _27: &&str;                  // in scope 0 at examples/sql-injection/src/main.rs:55:74: 55:85
+    let mut _28: &[&str; 2];             // in scope 0 at examples/sql-injection/src/main.rs:55:25: 55:72
+    let _29: &[&str; 2];                 // in scope 0 at examples/sql-injection/src/main.rs:55:25: 55:72
+    let _30: [&str; 2];                  // in scope 0 at examples/sql-injection/src/main.rs:55:25: 55:72
+    let mut _31: &[core::fmt::rt::Argument<'_>; 1]; // in scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73
+    let _32: &[core::fmt::rt::Argument<'_>; 1]; // in scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73
+    let mut _33: std::string::String;    // in scope 0 at examples/sql-injection/src/main.rs:56:8: 56:13
+    scope 1 {
+        debug stdin => _1;               // in scope 1 at examples/sql-injection/src/main.rs:49:9: 49:14
+        let mut _2: std::string::String; // in scope 1 at examples/sql-injection/src/main.rs:50:9: 50:24
+        scope 2 {
+            debug search_term => _2;     // in scope 2 at examples/sql-injection/src/main.rs:50:9: 50:24
+            let _12: std::result::Result<std::convert::Infallible, std::io::Error>; // in scope 2 at examples/sql-injection/src/main.rs:51:45: 51:46
+            let _15: usize;              // in scope 2 at examples/sql-injection/src/main.rs:51:5: 51:46
+            let _16: &str;               // in scope 2 at examples/sql-injection/src/main.rs:52:9: 52:20
+            scope 3 {
+                debug residual => _12;   // in scope 3 at examples/sql-injection/src/main.rs:51:45: 51:46
+                scope 4 {
+                }
+            }
+            scope 5 {
+                debug val => _15;        // in scope 5 at examples/sql-injection/src/main.rs:51:5: 51:46
+                scope 6 {
+                }
+            }
+            scope 7 {
+                debug search_term => _16; // in scope 7 at examples/sql-injection/src/main.rs:52:9: 52:20
+                let _20: std::string::String; // in scope 7 at examples/sql-injection/src/main.rs:55:9: 55:14
+                let _23: (&&str,);       // in scope 7 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73
+                scope 8 {
+                    debug query => _20;  // in scope 8 at examples/sql-injection/src/main.rs:55:9: 55:14
+                }
+                scope 9 {
+                    debug args => _23;   // in scope 9 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73
+                    let _25: [core::fmt::rt::Argument<'_>; 1]; // in scope 9 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73
+                    scope 10 {
+                        debug args => _25; // in scope 10 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73
+                        let mut _34: &[&str; 2]; // in scope 10 at examples/sql-injection/src/main.rs:55:25: 55:72
+                    }
+                }
+            }
+        }
+    }
+
+    bb0: {
+        StorageLive(_1);                 // scope 0 at examples/sql-injection/src/main.rs:49:9: 49:14
+        _1 = stdin() -> [return: bb1, unwind: bb35]; // scope 0 at examples/sql-injection/src/main.rs:49:17: 49:28
+                                         // mir::ConstOperand
+                                         // + span: examples/sql-injection/src/main.rs:49:17: 49:26
+                                         // + const_: Const { ty: fn() -> Stdin {stdin}, val: Value(stdin) }
+    }
+
+    bb1: {
+        FakeRead(ForLet(None), _1);      // scope 0 at examples/sql-injection/src/main.rs:49:9: 49:14
+        StorageLive(_2);                 // scope 1 at examples/sql-injection/src/main.rs:50:9: 50:24
+        _2 = String::new() -> [return: bb2, unwind: bb35]; // scope 1 at examples/sql-injection/src/main.rs:50:27: 50:40
+                                         // mir::ConstOperand
+                                         // + span: examples/sql-injection/src/main.rs:50:27: 50:38
+                                         // + const_: Const { ty: fn() -> String {String::new}, val: Value(String::new) }
+    }
+
+    bb2: {
+        FakeRead(ForLet(None), _2);      // scope 1 at examples/sql-injection/src/main.rs:50:9: 50:24
+        StorageLive(_3);                 // scope 2 at examples/sql-injection/src/main.rs:51:5: 51:46
+        StorageLive(_4);                 // scope 2 at examples/sql-injection/src/main.rs:51:5: 51:46
+        StorageLive(_5);                 // scope 2 at examples/sql-injection/src/main.rs:51:5: 51:45
+        StorageLive(_6);                 // scope 2 at examples/sql-injection/src/main.rs:51:5: 51:17
+        StorageLive(_7);                 // scope 2 at examples/sql-injection/src/main.rs:51:5: 51:17
+        StorageLive(_8);                 // scope 2 at examples/sql-injection/src/main.rs:51:5: 51:10
+        _8 = &_1;                        // scope 2 at examples/sql-injection/src/main.rs:51:5: 51:10
+        _7 = Stdin::lock(move _8) -> [return: bb3, unwind: bb34]; // scope 2 at examples/sql-injection/src/main.rs:51:5: 51:17
+                                         // mir::ConstOperand
+                                         // + span: examples/sql-injection/src/main.rs:51:11: 51:15
+                                         // + const_: Const { ty: for<'a> fn(&'a Stdin) -> StdinLock<'static> {Stdin::lock}, val: Value(Stdin::lock) }
+    }
+
+    bb3: {
+        _6 = &mut _7;                    // scope 2 at examples/sql-injection/src/main.rs:51:5: 51:17
+        StorageDead(_8);                 // scope 2 at examples/sql-injection/src/main.rs:51:16: 51:17
+        StorageLive(_9);                 // scope 2 at examples/sql-injection/src/main.rs:51:28: 51:44
+        StorageLive(_10);                // scope 2 at examples/sql-injection/src/main.rs:51:28: 51:44
+        _10 = &mut _2;                   // scope 2 at examples/sql-injection/src/main.rs:51:28: 51:44
+        _9 = &mut (*_10);                // scope 2 at examples/sql-injection/src/main.rs:51:28: 51:44
+        _5 = <StdinLock<'_> as BufRead>::read_line(move _6, move _9) -> [return: bb4, unwind: bb33]; // scope 2 at examples/sql-injection/src/main.rs:51:5: 51:45
+                                         // mir::ConstOperand
+                                         // + span: examples/sql-injection/src/main.rs:51:18: 51:27
+                                         // + const_: Const { ty: for<'a, 'b> fn(&'a mut StdinLock<'_>, &'b mut String) -> Result<usize, std::io::Error> {<StdinLock<'_> as BufRead>::read_line}, val: Value(<StdinLock<'_> as BufRead>::read_line) }
+    }
+
+    bb4: {
+        StorageDead(_9);                 // scope 2 at examples/sql-injection/src/main.rs:51:44: 51:45
+        StorageDead(_6);                 // scope 2 at examples/sql-injection/src/main.rs:51:44: 51:45
+        _4 = <Result<usize, std::io::Error> as Try>::branch(move _5) -> [return: bb5, unwind: bb32]; // scope 2 at examples/sql-injection/src/main.rs:51:5: 51:46
+                                         // mir::ConstOperand
+                                         // + span: examples/sql-injection/src/main.rs:51:5: 51:46
+                                         // + const_: Const { ty: fn(Result<usize, std::io::Error>) -> ControlFlow<<Result<usize, std::io::Error> as Try>::Residual, <Result<usize, std::io::Error> as Try>::Output> {<Result<usize, std::io::Error> as Try>::branch}, val: Value(<Result<usize, std::io::Error> as Try>::branch) }
+    }
+
+    bb5: {
+        StorageDead(_5);                 // scope 2 at examples/sql-injection/src/main.rs:51:45: 51:46
+        PlaceMention(_4);                // scope 2 at examples/sql-injection/src/main.rs:51:5: 51:46
+        _11 = discriminant(_4);          // scope 2 at examples/sql-injection/src/main.rs:51:5: 51:46
+        switchInt(move _11) -> [0: bb8, 1: bb7, otherwise: bb6]; // scope 2 at examples/sql-injection/src/main.rs:51:5: 51:46
+    }
+
+    bb6: {
+        FakeRead(ForMatchedPlace(None), _4); // scope 2 at examples/sql-injection/src/main.rs:51:5: 51:46
+        unreachable;                     // scope 2 at examples/sql-injection/src/main.rs:51:5: 51:46
+    }
+
+    bb7: {
+        falseEdge -> [real: bb9, imaginary: bb8]; // scope 2 at examples/sql-injection/src/main.rs:51:45: 51:46
+    }
+
+    bb8: {
+        StorageLive(_15);                // scope 2 at examples/sql-injection/src/main.rs:51:5: 51:46
+        _15 = copy ((_4 as Continue).0: usize); // scope 2 at examples/sql-injection/src/main.rs:51:5: 51:46
+        _3 = copy _15;                   // scope 6 at examples/sql-injection/src/main.rs:51:5: 51:46
+        StorageDead(_15);                // scope 2 at examples/sql-injection/src/main.rs:51:45: 51:46
+        drop(_4) -> [return: bb11, unwind: bb33]; // scope 2 at examples/sql-injection/src/main.rs:51:46: 51:47
+    }
+
+    bb9: {
+        StorageLive(_12);                // scope 2 at examples/sql-injection/src/main.rs:51:45: 51:46
+        _12 = move ((_4 as Break).0: std::result::Result<std::convert::Infallible, std::io::Error>); // scope 2 at examples/sql-injection/src/main.rs:51:45: 51:46
+        StorageLive(_14);                // scope 4 at examples/sql-injection/src/main.rs:51:45: 51:46
+        _14 = move _12;                  // scope 4 at examples/sql-injection/src/main.rs:51:45: 51:46
+        _0 = <Result<String, std::io::Error> as FromResidual<Result<Infallible, std::io::Error>>>::from_residual(move _14) -> [return: bb10, unwind: bb29]; // scope 4 at examples/sql-injection/src/main.rs:51:5: 51:46
+                                         // mir::ConstOperand
+                                         // + span: examples/sql-injection/src/main.rs:51:45: 51:46
+                                         // + const_: Const { ty: fn(Result<Infallible, std::io::Error>) -> Result<String, std::io::Error> {<Result<String, std::io::Error> as FromResidual<Result<Infallible, std::io::Error>>>::from_residual}, val: Value(<Result<String, std::io::Error> as FromResidual<Result<Infallible, std::io::Error>>>::from_residual) }
+    }
+
+    bb10: {
+        StorageDead(_14);                // scope 4 at examples/sql-injection/src/main.rs:51:45: 51:46
+        drop(_12) -> [return: bb22, unwind: bb31]; // scope 2 at examples/sql-injection/src/main.rs:51:45: 51:46
+    }
+
+    bb11: {
+        StorageDead(_10);                // scope 2 at examples/sql-injection/src/main.rs:51:46: 51:47
+        drop(_7) -> [return: bb12, unwind: bb34]; // scope 2 at examples/sql-injection/src/main.rs:51:46: 51:47
+    }
+
+    bb12: {
+        StorageDead(_7);                 // scope 2 at examples/sql-injection/src/main.rs:51:46: 51:47
+        StorageDead(_4);                 // scope 2 at examples/sql-injection/src/main.rs:51:46: 51:47
+        StorageDead(_3);                 // scope 2 at examples/sql-injection/src/main.rs:51:46: 51:47
+        StorageLive(_16);                // scope 2 at examples/sql-injection/src/main.rs:52:9: 52:20
+        StorageLive(_17);                // scope 2 at examples/sql-injection/src/main.rs:52:23: 52:34
+        StorageLive(_18);                // scope 2 at examples/sql-injection/src/main.rs:52:23: 52:41
+        StorageLive(_19);                // scope 2 at examples/sql-injection/src/main.rs:52:23: 52:34
+        _19 = &_2;                       // scope 2 at examples/sql-injection/src/main.rs:52:23: 52:34
+        _18 = <String as Deref>::deref(move _19) -> [return: bb13, unwind: bb34]; // scope 2 at examples/sql-injection/src/main.rs:52:23: 52:41
+                                         // mir::ConstOperand
+                                         // + span: examples/sql-injection/src/main.rs:52:23: 52:41
+                                         // + const_: Const { ty: for<'a> fn(&'a String) -> &'a <String as Deref>::Target {<String as Deref>::deref}, val: Value(<String as Deref>::deref) }
+    }
+
+    bb13: {
+        _17 = &(*_18);                   // scope 2 at examples/sql-injection/src/main.rs:52:23: 52:34
+        StorageDead(_19);                // scope 2 at examples/sql-injection/src/main.rs:52:33: 52:34
+        _16 = core::str::<impl str>::trim(move _17) -> [return: bb14, unwind: bb34]; // scope 2 at examples/sql-injection/src/main.rs:52:23: 52:41
+                                         // mir::ConstOperand
+                                         // + span: examples/sql-injection/src/main.rs:52:35: 52:39
+                                         // + const_: Const { ty: for<'a> fn(&'a str) -> &'a str {core::str::<impl str>::trim}, val: Value(core::str::<impl str>::trim) }
+    }
+
+    bb14: {
+        StorageDead(_17);                // scope 2 at examples/sql-injection/src/main.rs:52:40: 52:41
+        FakeRead(ForLet(None), _16);     // scope 2 at examples/sql-injection/src/main.rs:52:9: 52:20
+        StorageDead(_18);                // scope 2 at examples/sql-injection/src/main.rs:52:41: 52:42
+        StorageLive(_20);                // scope 7 at examples/sql-injection/src/main.rs:55:9: 55:14
+        StorageLive(_21);                // scope 7 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:107:36: 109:10
+        StorageLive(_22);                // scope 7 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73
+        StorageLive(_23);                // scope 7 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73
+        StorageLive(_24);                // scope 7 at examples/sql-injection/src/main.rs:55:74: 55:85
+        _24 = &_16;                      // scope 7 at examples/sql-injection/src/main.rs:55:74: 55:85
+        _23 = (move _24,);               // scope 7 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73
+        StorageDead(_24);                // scope 7 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:72: 108:73
+        FakeRead(ForLet(None), _23);     // scope 7 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73
+        StorageLive(_25);                // scope 9 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73
+        StorageLive(_26);                // scope 9 at examples/sql-injection/src/main.rs:55:67: 55:69
+        StorageLive(_27);                // scope 9 at examples/sql-injection/src/main.rs:55:74: 55:85
+        _27 = &(*(_23.0: &&str));        // scope 9 at examples/sql-injection/src/main.rs:55:74: 55:85
+        _26 = core::fmt::rt::Argument::<'_>::new_display::<&str>(move _27) -> [return: bb15, unwind: bb34]; // scope 9 at examples/sql-injection/src/main.rs:55:67: 55:69
+                                         // mir::ConstOperand
+                                         // + span: examples/sql-injection/src/main.rs:55:67: 55:69
+                                         // + user_ty: UserType(0)
+                                         // + const_: Const { ty: for<'a> fn(&'a &str) -> core::fmt::rt::Argument<'a> {core::fmt::rt::Argument::<'_>::new_display::<&str>}, val: Value(core::fmt::rt::Argument::<'_>::new_display::<&str>) }
+    }
+
+    bb15: {
+        StorageDead(_27);                // scope 9 at examples/sql-injection/src/main.rs:55:68: 55:69
+        _25 = [move _26];                // scope 9 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73
+        StorageDead(_26);                // scope 9 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:72: 108:73
+        FakeRead(ForLet(None), _25);     // scope 9 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73
+        StorageLive(_28);                // scope 10 at examples/sql-injection/src/main.rs:55:25: 55:72
+        StorageLive(_29);                // scope 10 at examples/sql-injection/src/main.rs:55:25: 55:72
+        _34 = const bad_stdin_query::promoted[0]; // scope 10 at examples/sql-injection/src/main.rs:55:25: 55:72
+                                         // mir::ConstOperand
+                                         // + span: examples/sql-injection/src/main.rs:55:25: 55:72
+                                         // + const_: Const { ty: &[&str; 2], val: Unevaluated(bad_stdin_query, [], Some(promoted[0])) }
+        _29 = &(*_34);                   // scope 10 at examples/sql-injection/src/main.rs:55:25: 55:72
+        _28 = &(*_29);                   // scope 10 at examples/sql-injection/src/main.rs:55:25: 55:72
+        StorageLive(_31);                // scope 10 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73
+        StorageLive(_32);                // scope 10 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73
+        _32 = &_25;                      // scope 10 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73
+        _31 = &(*_32);                   // scope 10 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73
+        _22 = core::fmt::rt::<impl Arguments<'_>>::new_v1::<2, 1>(move _28, move _31) -> [return: bb16, unwind: bb34]; // scope 10 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73
+                                         // mir::ConstOperand
+                                         // + span: /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73
+                                         // + user_ty: UserType(1)
+                                         // + const_: Const { ty: fn(&[&'static str; 2], &[core::fmt::rt::Argument<'_>; 1]) -> Arguments<'_> {core::fmt::rt::<impl Arguments<'_>>::new_v1::<2, 1>}, val: Value(core::fmt::rt::<impl Arguments<'_>>::new_v1::<2, 1>) }
+    }
+
+    bb16: {
+        StorageDead(_32);                // scope 10 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:72: 108:73
+        StorageDead(_31);                // scope 10 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:72: 108:73
+        StorageDead(_29);                // scope 10 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:72: 108:73
+        StorageDead(_28);                // scope 10 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:72: 108:73
+        _21 = format(move _22) -> [return: bb17, unwind: bb34]; // scope 7 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:13: 108:74
+                                         // mir::ConstOperand
+                                         // + span: /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:13: 108:32
+                                         // + const_: Const { ty: for<'a> fn(Arguments<'a>) -> String {format}, val: Value(format) }
+    }
+
+    bb17: {
+        StorageDead(_25);                // scope 7 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:73: 108:74
+        StorageDead(_23);                // scope 7 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:73: 108:74
+        StorageDead(_22);                // scope 7 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:73: 108:74
+        _20 = must_use::<String>(move _21) -> [return: bb18, unwind: bb28]; // scope 7 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:107:9: 109:11
+                                         // mir::ConstOperand
+                                         // + span: /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:107:9: 107:35
+                                         // + const_: Const { ty: fn(String) -> String {must_use::<String>}, val: Value(must_use::<String>) }
+    }
+
+    bb18: {
+        StorageDead(_21);                // scope 7 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:109:10: 109:11
+        FakeRead(ForLet(None), _20);     // scope 7 at examples/sql-injection/src/main.rs:55:9: 55:14
+        StorageLive(_33);                // scope 8 at examples/sql-injection/src/main.rs:56:8: 56:13
+        _33 = move _20;                  // scope 8 at examples/sql-injection/src/main.rs:56:8: 56:13
+        _0 = Result::<String, std::io::Error>::Ok(move _33); // scope 8 at examples/sql-injection/src/main.rs:56:5: 56:14
+        drop(_33) -> [return: bb19, unwind: bb27]; // scope 8 at examples/sql-injection/src/main.rs:56:13: 56:14
+    }
+
+    bb19: {
+        StorageDead(_33);                // scope 8 at examples/sql-injection/src/main.rs:56:13: 56:14
+        drop(_20) -> [return: bb20, unwind: bb34]; // scope 7 at examples/sql-injection/src/main.rs:57:1: 57:2
+    }
+
+    bb20: {
+        StorageDead(_20);                // scope 7 at examples/sql-injection/src/main.rs:57:1: 57:2
+        StorageDead(_16);                // scope 2 at examples/sql-injection/src/main.rs:57:1: 57:2
+        drop(_2) -> [return: bb21, unwind: bb35]; // scope 1 at examples/sql-injection/src/main.rs:57:1: 57:2
+    }
+
+    bb21: {
+        StorageDead(_2);                 // scope 1 at examples/sql-injection/src/main.rs:57:1: 57:2
+        StorageDead(_1);                 // scope 0 at examples/sql-injection/src/main.rs:57:1: 57:2
+        goto -> bb26;                    // scope 0 at examples/sql-injection/src/main.rs:57:2: 57:2
+    }
+
+    bb22: {
+        StorageDead(_12);                // scope 2 at examples/sql-injection/src/main.rs:51:45: 51:46
+        drop(_4) -> [return: bb23, unwind: bb33]; // scope 2 at examples/sql-injection/src/main.rs:51:46: 51:47
+    }
+
+    bb23: {
+        StorageDead(_10);                // scope 2 at examples/sql-injection/src/main.rs:51:46: 51:47
+        drop(_7) -> [return: bb24, unwind: bb34]; // scope 2 at examples/sql-injection/src/main.rs:51:46: 51:47
+    }
+
+    bb24: {
+        StorageDead(_7);                 // scope 2 at examples/sql-injection/src/main.rs:51:46: 51:47
+        StorageDead(_4);                 // scope 2 at examples/sql-injection/src/main.rs:51:46: 51:47
+        StorageDead(_3);                 // scope 2 at examples/sql-injection/src/main.rs:51:46: 51:47
+        drop(_2) -> [return: bb25, unwind: bb35]; // scope 1 at examples/sql-injection/src/main.rs:57:1: 57:2
+    }
+
+    bb25: {
+        StorageDead(_2);                 // scope 1 at examples/sql-injection/src/main.rs:57:1: 57:2
+        StorageDead(_1);                 // scope 0 at examples/sql-injection/src/main.rs:57:1: 57:2
+        goto -> bb26;                    // scope 0 at examples/sql-injection/src/main.rs:57:2: 57:2
+    }
+
+    bb26: {
+        return;                          // scope 0 at examples/sql-injection/src/main.rs:57:2: 57:2
+    }
+
+    bb27 (cleanup): {
+        drop(_20) -> [return: bb34, unwind terminate(cleanup)]; // scope 7 at examples/sql-injection/src/main.rs:57:1: 57:2
+    }
+
+    bb28 (cleanup): {
+        drop(_21) -> [return: bb34, unwind terminate(cleanup)]; // scope 7 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:109:10: 109:11
+    }
+
+    bb29 (cleanup): {
+        drop(_14) -> [return: bb30, unwind terminate(cleanup)]; // scope 4 at examples/sql-injection/src/main.rs:51:45: 51:46
+    }
+
+    bb30 (cleanup): {
+        drop(_12) -> [return: bb31, unwind terminate(cleanup)]; // scope 2 at examples/sql-injection/src/main.rs:51:45: 51:46
+    }
+
+    bb31 (cleanup): {
+        drop(_4) -> [return: bb33, unwind terminate(cleanup)]; // scope 2 at examples/sql-injection/src/main.rs:51:46: 51:47
+    }
+
+    bb32 (cleanup): {
+        drop(_5) -> [return: bb33, unwind terminate(cleanup)]; // scope 2 at examples/sql-injection/src/main.rs:51:45: 51:46
+    }
+
+    bb33 (cleanup): {
+        drop(_7) -> [return: bb34, unwind terminate(cleanup)]; // scope 2 at examples/sql-injection/src/main.rs:51:46: 51:47
+    }
+
+    bb34 (cleanup): {
+        drop(_2) -> [return: bb35, unwind terminate(cleanup)]; // scope 1 at examples/sql-injection/src/main.rs:57:1: 57:2
+    }
+
+    bb35 (cleanup): {
+        resume;                          // scope 0 at examples/sql-injection/src/main.rs:48:1: 57:2
+    }
+}

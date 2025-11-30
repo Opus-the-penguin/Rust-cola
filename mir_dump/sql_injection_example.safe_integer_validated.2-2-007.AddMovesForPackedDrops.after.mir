@@ -1,0 +1,150 @@
+// MIR for `safe_integer_validated` after AddMovesForPackedDrops
+
+fn safe_integer_validated() -> String {
+    let mut _0: std::string::String;
+    let _1: std::string::String;
+    let mut _2: std::result::Result<std::string::String, std::env::VarError>;
+    let mut _4: std::result::Result<i32, std::num::ParseIntError>;
+    let mut _5: &str;
+    let _6: &str;
+    let mut _7: &std::string::String;
+    let mut _8: std::string::String;
+    let mut _9: std::fmt::Arguments<'_>;
+    let mut _11: &i32;
+    let mut _13: core::fmt::rt::Argument<'_>;
+    let mut _14: &i32;
+    let mut _15: &[&str; 1];
+    let _16: &[&str; 1];
+    let _17: [&str; 1];
+    let mut _18: &[core::fmt::rt::Argument<'_>; 1];
+    let _19: &[core::fmt::rt::Argument<'_>; 1];
+    let mut _21: &i32;
+    scope 1 {
+        debug user_id_str => _1;
+        let _3: i32;
+        scope 2 {
+            debug user_id => _3;
+            let _10: (&i32,);
+            scope 3 {
+                debug args => _10;
+                let _12: [core::fmt::rt::Argument<'_>; 1];
+                scope 4 {
+                    debug args => _12;
+                    let mut _20: &[&str; 1];
+                }
+            }
+        }
+    }
+
+    bb0: {
+        StorageLive(_1);
+        StorageLive(_2);
+        _2 = var::<&str>(const "USER_ID") -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        _1 = Result::<String, VarError>::unwrap_or_default(move _2) -> [return: bb2, unwind: bb13];
+    }
+
+    bb2: {
+        StorageDead(_2);
+        StorageLive(_3);
+        StorageLive(_4);
+        StorageLive(_5);
+        StorageLive(_6);
+        StorageLive(_7);
+        _7 = &_1;
+        _6 = <String as Deref>::deref(move _7) -> [return: bb3, unwind: bb12];
+    }
+
+    bb3: {
+        _5 = &(*_6);
+        StorageDead(_7);
+        _4 = core::str::<impl str>::parse::<i32>(move _5) -> [return: bb4, unwind: bb12];
+    }
+
+    bb4: {
+        StorageDead(_5);
+        _3 = Result::<i32, ParseIntError>::unwrap_or(move _4, const 0_i32) -> [return: bb5, unwind: bb12];
+    }
+
+    bb5: {
+        StorageDead(_4);
+        StorageDead(_6);
+        StorageLive(_8);
+        StorageLive(_9);
+        StorageLive(_10);
+        StorageLive(_11);
+        _11 = &_3;
+        _10 = (move _11,);
+        StorageDead(_11);
+        StorageLive(_12);
+        StorageLive(_13);
+        StorageLive(_14);
+        _21 = deref_copy (_10.0: &i32);
+        _14 = &(*_21);
+        _13 = core::fmt::rt::Argument::<'_>::new_display::<i32>(move _14) -> [return: bb6, unwind: bb12];
+    }
+
+    bb6: {
+        StorageDead(_14);
+        _12 = [move _13];
+        StorageDead(_13);
+        StorageLive(_15);
+        StorageLive(_16);
+        _20 = const safe_integer_validated::promoted[0];
+        _16 = &(*_20);
+        _15 = &(*_16);
+        StorageLive(_18);
+        StorageLive(_19);
+        _19 = &_12;
+        _18 = &(*_19);
+        _9 = core::fmt::rt::<impl Arguments<'_>>::new_v1::<1, 1>(move _15, move _18) -> [return: bb7, unwind: bb12];
+    }
+
+    bb7: {
+        StorageDead(_19);
+        StorageDead(_18);
+        StorageDead(_16);
+        StorageDead(_15);
+        _8 = format(move _9) -> [return: bb8, unwind: bb12];
+    }
+
+    bb8: {
+        StorageDead(_12);
+        StorageDead(_10);
+        StorageDead(_9);
+        _0 = must_use::<String>(move _8) -> [return: bb9, unwind: bb11];
+    }
+
+    bb9: {
+        StorageDead(_8);
+        StorageDead(_3);
+        drop(_1) -> [return: bb10, unwind: bb14];
+    }
+
+    bb10: {
+        StorageDead(_1);
+        return;
+    }
+
+    bb11 (cleanup): {
+        goto -> bb12;
+    }
+
+    bb12 (cleanup): {
+        drop(_1) -> [return: bb14, unwind terminate(cleanup)];
+    }
+
+    bb13 (cleanup): {
+        goto -> bb14;
+    }
+
+    bb14 (cleanup): {
+        resume;
+    }
+}
+
+alloc1 (size: 7, align: 1) {
+    55 53 45 52 5f 49 44                            │ USER_ID
+}

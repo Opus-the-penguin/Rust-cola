@@ -1,0 +1,231 @@
+// MIR for `vulnerable_computed_index` before Subtyper
+
+fn vulnerable_computed_index() -> () {
+    let mut _0: ();
+    let _1: std::vec::Vec<u8>;
+    let _3: usize;
+    let mut _4: std::result::Result<usize, std::io::Error>;
+    let mut _5: &std::io::Stdin;
+    let _6: std::io::Stdin;
+    let mut _7: &mut std::string::String;
+    let mut _8: &mut std::string::String;
+    let mut _10: std::result::Result<usize, std::num::ParseIntError>;
+    let mut _11: &str;
+    let _12: &str;
+    let mut _13: &str;
+    let _14: &str;
+    let mut _15: &std::string::String;
+    let mut _17: usize;
+    let mut _19: &u8;
+    let mut _20: &std::vec::Vec<u8>;
+    let mut _21: usize;
+    let _22: ();
+    let _23: ();
+    let mut _24: std::fmt::Arguments<'_>;
+    let mut _26: &u8;
+    let mut _28: core::fmt::rt::Argument<'_>;
+    let mut _29: &u8;
+    let mut _30: &[&str; 2];
+    let _31: &[&str; 2];
+    let _32: [&str; 2];
+    let mut _33: &[core::fmt::rt::Argument<'_>; 1];
+    let _34: &[core::fmt::rt::Argument<'_>; 1];
+    let mut _36: &u8;
+    scope 1 {
+        debug buffer => _1;
+        let mut _2: std::string::String;
+        scope 2 {
+            debug line => _2;
+            let _9: usize;
+            scope 3 {
+                debug user_offset => _9;
+                let _16: usize;
+                scope 4 {
+                    debug computed => _16;
+                    let _18: u8;
+                    scope 5 {
+                        debug byte => _18;
+                        let _25: (&u8,);
+                        scope 6 {
+                            debug args => _25;
+                            let _27: [core::fmt::rt::Argument<'_>; 1];
+                            scope 7 {
+                                debug args => _27;
+                                let mut _35: &[&str; 2];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    bb0: {
+        StorageLive(_1);
+        _1 = from_elem::<u8>(const 0_u8, const 1024_usize) -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        StorageLive(_2);
+        _2 = String::new() -> [return: bb2, unwind: bb18];
+    }
+
+    bb2: {
+        StorageLive(_3);
+        StorageLive(_4);
+        StorageLive(_5);
+        StorageLive(_6);
+        _6 = stdin() -> [return: bb3, unwind: bb17];
+    }
+
+    bb3: {
+        _5 = &_6;
+        StorageLive(_7);
+        StorageLive(_8);
+        _8 = &mut _2;
+        _7 = &mut (*_8);
+        _4 = Stdin::read_line(move _5, move _7) -> [return: bb4, unwind: bb17];
+    }
+
+    bb4: {
+        StorageDead(_7);
+        StorageDead(_5);
+        _3 = Result::<usize, std::io::Error>::unwrap(move _4) -> [return: bb5, unwind: bb16];
+    }
+
+    bb5: {
+        StorageDead(_4);
+        StorageDead(_8);
+        StorageDead(_6);
+        StorageDead(_3);
+        StorageLive(_9);
+        StorageLive(_10);
+        StorageLive(_11);
+        StorageLive(_12);
+        StorageLive(_13);
+        StorageLive(_14);
+        StorageLive(_15);
+        _15 = &_2;
+        _14 = <String as Deref>::deref(move _15) -> [return: bb6, unwind: bb17];
+    }
+
+    bb6: {
+        _13 = &(*_14);
+        StorageDead(_15);
+        _12 = core::str::<impl str>::trim(move _13) -> [return: bb7, unwind: bb17];
+    }
+
+    bb7: {
+        _11 = &(*_12);
+        StorageDead(_13);
+        _10 = core::str::<impl str>::parse::<usize>(move _11) -> [return: bb8, unwind: bb17];
+    }
+
+    bb8: {
+        StorageDead(_11);
+        _9 = Result::<usize, ParseIntError>::unwrap(move _10) -> [return: bb9, unwind: bb17];
+    }
+
+    bb9: {
+        StorageDead(_10);
+        StorageDead(_14);
+        StorageDead(_12);
+        StorageLive(_16);
+        StorageLive(_17);
+        _17 = copy _9;
+        _16 = Mul(move _17, const 4_usize);
+        StorageDead(_17);
+        StorageLive(_18);
+        StorageLive(_19);
+        StorageLive(_20);
+        _20 = &_1;
+        StorageLive(_21);
+        _21 = copy _16;
+        _19 = <Vec<u8> as Index<usize>>::index(move _20, move _21) -> [return: bb10, unwind: bb17];
+    }
+
+    bb10: {
+        _18 = copy (*_19);
+        StorageDead(_21);
+        StorageDead(_20);
+        StorageDead(_19);
+        StorageLive(_22);
+        StorageLive(_23);
+        StorageLive(_24);
+        StorageLive(_25);
+        StorageLive(_26);
+        _26 = &_18;
+        _25 = (move _26,);
+        StorageDead(_26);
+        StorageLive(_27);
+        StorageLive(_28);
+        StorageLive(_29);
+        _36 = deref_copy (_25.0: &u8);
+        _29 = &(*_36);
+        _28 = core::fmt::rt::Argument::<'_>::new_display::<u8>(move _29) -> [return: bb11, unwind: bb17];
+    }
+
+    bb11: {
+        StorageDead(_29);
+        _27 = [move _28];
+        StorageDead(_28);
+        StorageLive(_30);
+        StorageLive(_31);
+        _35 = const vulnerable_computed_index::promoted[0];
+        _31 = &(*_35);
+        _30 = &(*_31);
+        StorageLive(_33);
+        StorageLive(_34);
+        _34 = &_27;
+        _33 = &(*_34);
+        _24 = core::fmt::rt::<impl Arguments<'_>>::new_v1::<2, 1>(move _30, move _33) -> [return: bb12, unwind: bb17];
+    }
+
+    bb12: {
+        StorageDead(_34);
+        StorageDead(_33);
+        StorageDead(_31);
+        StorageDead(_30);
+        _23 = _print(move _24) -> [return: bb13, unwind: bb17];
+    }
+
+    bb13: {
+        StorageDead(_24);
+        StorageDead(_27);
+        StorageDead(_25);
+        StorageDead(_23);
+        _22 = const ();
+        StorageDead(_22);
+        _0 = const ();
+        StorageDead(_18);
+        StorageDead(_16);
+        StorageDead(_9);
+        drop(_2) -> [return: bb14, unwind: bb18];
+    }
+
+    bb14: {
+        StorageDead(_2);
+        drop(_1) -> [return: bb15, unwind continue];
+    }
+
+    bb15: {
+        StorageDead(_1);
+        return;
+    }
+
+    bb16 (cleanup): {
+        drop(_4) -> [return: bb17, unwind terminate(cleanup)];
+    }
+
+    bb17 (cleanup): {
+        drop(_2) -> [return: bb18, unwind terminate(cleanup)];
+    }
+
+    bb18 (cleanup): {
+        drop(_1) -> [return: bb19, unwind terminate(cleanup)];
+    }
+
+    bb19 (cleanup): {
+        resume;
+    }
+}

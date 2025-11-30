@@ -1,0 +1,91 @@
+// MIR for `safe_named_params` after AddMovesForPackedDrops
+
+fn safe_named_params() -> (String, String) {
+    let mut _0: (std::string::String, std::string::String);
+    let _1: std::string::String;
+    let mut _2: std::result::Result<std::string::String, std::env::VarError>;
+    let mut _4: &str;
+    let _5: &str;
+    let mut _6: std::string::String;
+    let mut _7: std::string::String;
+    scope 1 {
+        debug username => _1;
+        let _3: std::string::String;
+        scope 2 {
+            debug query => _3;
+        }
+    }
+
+    bb0: {
+        StorageLive(_1);
+        StorageLive(_2);
+        _2 = var::<&str>(const "USERNAME") -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        _1 = Result::<String, VarError>::unwrap_or_default(move _2) -> [return: bb2, unwind: bb9];
+    }
+
+    bb2: {
+        StorageDead(_2);
+        StorageLive(_3);
+        StorageLive(_4);
+        StorageLive(_5);
+        _5 = const "SELECT * FROM users WHERE username = :username";
+        _4 = &(*_5);
+        _3 = <str as ToString>::to_string(move _4) -> [return: bb3, unwind: bb8];
+    }
+
+    bb3: {
+        StorageDead(_4);
+        StorageDead(_5);
+        StorageLive(_6);
+        _6 = move _3;
+        StorageLive(_7);
+        _7 = move _1;
+        _0 = (move _6, move _7);
+        goto -> bb4;
+    }
+
+    bb4: {
+        StorageDead(_7);
+        goto -> bb5;
+    }
+
+    bb5: {
+        StorageDead(_6);
+        goto -> bb6;
+    }
+
+    bb6: {
+        StorageDead(_3);
+        goto -> bb7;
+    }
+
+    bb7: {
+        StorageDead(_1);
+        return;
+    }
+
+    bb8 (cleanup): {
+        drop(_1) -> [return: bb10, unwind terminate(cleanup)];
+    }
+
+    bb9 (cleanup): {
+        goto -> bb10;
+    }
+
+    bb10 (cleanup): {
+        resume;
+    }
+}
+
+alloc66 (size: 46, align: 1) {
+    0x00 │ 53 45 4c 45 43 54 20 2a 20 46 52 4f 4d 20 75 73 │ SELECT * FROM us
+    0x10 │ 65 72 73 20 57 48 45 52 45 20 75 73 65 72 6e 61 │ ers WHERE userna
+    0x20 │ 6d 65 20 3d 20 3a 75 73 65 72 6e 61 6d 65       │ me = :username
+}
+
+alloc16 (size: 8, align: 1) {
+    55 53 45 52 4e 41 4d 45                         │ USERNAME
+}

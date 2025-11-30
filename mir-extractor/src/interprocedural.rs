@@ -398,6 +398,7 @@ impl FunctionSummary {
         // Step 2: Identify if this function contains sinks and determine sink type
         let has_command_sink = Self::contains_command_sink(function);
         let has_filesystem_sink = Self::contains_filesystem_sink(function);
+        let has_http_sink = Self::contains_http_sink(function);
         
         // Step 3: Analyze parameter flows
         // Check if function propagates parameters to return value
@@ -426,6 +427,14 @@ impl FunctionSummary {
             summary.propagation_rules.push(TaintPropagation::ParamToSink {
                 param: 0,
                 sink_type: "filesystem".to_string(),
+            });
+        }
+        
+        if has_http_sink {
+            // If function has an HTTP sink, parameters likely flow to it (SSRF)
+            summary.propagation_rules.push(TaintPropagation::ParamToSink {
+                param: 0,
+                sink_type: "http".to_string(),
             });
         }
         
@@ -506,7 +515,7 @@ impl FunctionSummary {
     
     /// Check if function contains a taint sink
     fn contains_sink(function: &MirFunction) -> bool {
-        Self::contains_command_sink(function) || Self::contains_filesystem_sink(function)
+        Self::contains_command_sink(function) || Self::contains_filesystem_sink(function) || Self::contains_http_sink(function)
     }
     
     /// Check if function contains a command execution sink
@@ -551,6 +560,39 @@ impl FunctionSummary {
                 // Directory operations
                 || line.contains("fs::create_dir")
                 || line.contains("std::fs::create_dir")
+        })
+    }
+    
+    /// Check if function contains an HTTP client sink (for SSRF detection)
+    fn contains_http_sink(function: &MirFunction) -> bool {
+        function.body.iter().any(|line| {
+            // reqwest patterns
+            line.contains("reqwest::blocking::get")
+                || line.contains("reqwest::get")
+                || line.contains("blocking::get")
+                || line.contains("Client>::get")
+                || line.contains("Client>::post")
+                || line.contains("Client>::put")
+                || line.contains("Client>::delete")
+                || line.contains("Client>::patch")
+                || line.contains("Client>::head")
+                || line.contains("RequestBuilder>::send")
+                // ureq patterns
+                || line.contains("ureq::get")
+                || line.contains("ureq::post")
+                || line.contains("ureq::put")
+                || line.contains("ureq::delete")
+                || line.contains("Agent>::get")
+                || line.contains("Agent>::post")
+                || line.contains("Request>::call")
+                // hyper patterns
+                || line.contains("hyper::Client")
+                || line.contains("hyper::Request")
+                // Generic HTTP patterns
+                || line.contains("get::<&String>")
+                || line.contains("get::<&str>")
+                || line.contains("post::<&String>")
+                || line.contains("post::<&str>")
         })
     }
     

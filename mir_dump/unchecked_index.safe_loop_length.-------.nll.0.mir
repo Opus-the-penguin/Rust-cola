@@ -1,0 +1,461 @@
+// MIR for `safe_loop_length` 0 nll
+
+| Free Region Mapping
+| '?0 | Global | ['?0, '?1]
+| '?1 | Local | ['?1]
+|
+| Inferred Region Values
+| '?0 | U0 | {bb0[0..=5], bb1[0..=5], bb2[0], bb3[0..=2], bb4[0..=7], bb5[0..=3], bb6[0..=4], bb7[0], bb8[0..=6], bb9[0..=3], bb10[0..=1], bb11[0], bb12[0..=12], bb13[0..=6], bb14[0..=10], bb15[0..=13], bb16[0..=4], bb17[0..=13], bb18[0..=1], bb19[0], bb20[0], bb21[0], bb22[0], '?0, '?1}
+| '?1 | U0 | {bb0[0..=5], bb1[0..=5], bb2[0], bb3[0..=2], bb4[0..=7], bb5[0..=3], bb6[0..=4], bb7[0], bb8[0..=6], bb9[0..=3], bb10[0..=1], bb11[0], bb12[0..=12], bb13[0..=6], bb14[0..=10], bb15[0..=13], bb16[0..=4], bb17[0..=13], bb18[0..=1], bb19[0], bb20[0], bb21[0], bb22[0], '?1}
+| '?2 | U0 | {bb0[0..=5], bb1[0..=5], bb2[0], bb3[0..=2], bb4[0..=7], bb5[0..=3], bb6[0..=4], bb7[0], bb8[0..=6], bb9[0..=3], bb10[0..=1], bb11[0], bb12[0..=12], bb13[0..=6], bb14[0..=10], bb15[0..=13], bb16[0..=4], bb17[0..=13], bb18[0..=1], bb19[0], bb20[0], bb21[0], bb22[0], '?0, '?1}
+| '?3 | U0 | {bb0[0..=5], bb1[0..=5], bb2[0], bb3[0..=2], bb4[0..=7], bb5[0..=3], bb6[0..=4], bb7[0], bb8[0..=6], bb9[0..=3], bb10[0..=1], bb11[0], bb12[0..=12], bb13[0..=6], bb14[0..=10], bb15[0..=13], bb16[0..=4], bb17[0..=13], bb18[0..=1], bb19[0], bb20[0], bb21[0], bb22[0], '?0, '?1}
+| '?4 | U0 | {bb0[0..=5], bb1[0..=5], bb2[0], bb3[0..=2], bb4[0..=7], bb5[0..=3], bb6[0..=4], bb7[0], bb8[0..=6], bb9[0..=3], bb10[0..=1], bb11[0], bb12[0..=12], bb13[0..=6], bb14[0..=10], bb15[0..=13], bb16[0..=4], bb17[0..=13], bb18[0..=1], bb19[0], bb20[0], bb21[0], bb22[0], '?0, '?1}
+| '?5 | U0 | {bb15[6..=13], bb16[0..=4]}
+| '?6 | U0 | {bb15[6..=13], bb16[0..=4]}
+| '?7 | U0 | {bb0[0..=5], bb1[0..=5], bb2[0], bb3[0..=2], bb4[0..=7], bb5[0..=3], bb6[0..=4], bb7[0], bb8[0..=6], bb9[0..=3], bb10[0..=1], bb11[0], bb12[0..=12], bb13[0..=6], bb14[0..=10], bb15[0..=13], bb16[0..=4], bb17[0..=13], bb18[0..=1], bb19[0], bb20[0], bb21[0], bb22[0], '?0, '?1}
+| '?8 | U0 | {bb0[0..=5], bb1[0..=5], bb2[0], bb3[0..=2], bb4[0..=7], bb5[0..=3], bb6[0..=4], bb7[0], bb8[0..=6], bb9[0..=3], bb10[0..=1], bb11[0], bb12[0..=12], bb13[0..=6], bb14[0..=10], bb15[0..=13], bb16[0..=4], bb17[0..=13], bb18[0..=1], bb19[0], bb20[0], bb21[0], bb22[0], '?0, '?1}
+| '?9 | U0 | {bb4[6..=7]}
+| '?10 | U0 | {bb8[4..=6]}
+| '?11 | U0 | {bb8[5..=6]}
+| '?12 | U0 | {bb12[9..=12], bb14[0..=10], bb15[0..=13], bb16[0..=4]}
+| '?13 | U0 | {bb14[2..=10], bb15[0..=13], bb16[0..=4]}
+| '?14 | U0 | {bb14[9..=10], bb15[0..=13], bb16[0..=4]}
+| '?15 | U0 | {bb14[9..=10], bb15[0..=13], bb16[0..=4]}
+| '?16 | U0 | {bb14[10]}
+| '?17 | U0 | {bb15[1..=13], bb16[0..=4]}
+| '?18 | U0 | {bb15[6..=13], bb16[0..=4]}
+| '?19 | U0 | {bb0[0..=5], bb1[0..=5], bb2[0], bb3[0..=2], bb4[0..=7], bb5[0..=3], bb6[0..=4], bb7[0], bb8[0..=6], bb9[0..=3], bb10[0..=1], bb11[0], bb12[0..=12], bb13[0..=6], bb14[0..=10], bb15[0..=13], bb16[0..=4], bb17[0..=13], bb18[0..=1], bb19[0], bb20[0], bb21[0], bb22[0], '?0, '?1}
+| '?20 | U0 | {bb15[7..=13], bb16[0..=4]}
+| '?21 | U0 | {bb15[8..=13], bb16[0..=4]}
+| '?22 | U0 | {bb15[11..=13], bb16[0..=4]}
+| '?23 | U0 | {bb15[12..=13], bb16[0..=4]}
+| '?24 | U0 | {bb15[13], bb16[0..=4]}
+| '?25 | U0 | {bb4[7]}
+| '?26 | U0 | {bb8[6]}
+| '?27 | U0 | {bb8[5..=6]}
+| '?28 | U0 | {bb16[0..=4]}
+| '?29 | U0 | {bb14[4..=10], bb15[0..=13], bb16[0..=4]}
+| '?30 | U0 | {bb14[3..=10], bb15[0..=13], bb16[0..=4]}
+| '?31 | U0 | {bb14[0..=10], bb15[0..=13], bb16[0..=4]}
+| '?32 | U0 | {bb12[10..=12], bb14[0..=10], bb15[0..=13], bb16[0..=4]}
+| '?33 | U0 | {bb15[2..=13], bb16[0..=4]}
+| '?34 | U0 | {bb15[0..=13], bb16[0..=4]}
+| '?35 | U0 | {bb14[10], bb15[0..=13], bb16[0..=4]}
+| '?36 | U0 | {bb15[9..=13], bb16[0..=4]}
+| '?37 | U0 | {bb0[0..=5], bb1[0..=5], bb2[0], bb3[0..=2], bb4[0..=7], bb5[0..=3], bb6[0..=4], bb7[0], bb8[0..=6], bb9[0..=3], bb10[0..=1], bb11[0], bb12[0..=12], bb13[0..=6], bb14[0..=10], bb15[0..=13], bb16[0..=4], bb17[0..=13], bb18[0..=1], bb19[0], bb20[0], bb21[0], bb22[0], '?0, '?1}
+| '?38 | U0 | {bb15[8..=13], bb16[0..=4]}
+| '?39 | U0 | {bb0[0..=5], bb1[0..=5], bb2[0], bb3[0..=2], bb4[0..=7], bb5[0..=3], bb6[0..=4], bb7[0], bb8[0..=6], bb9[0..=3], bb10[0..=1], bb11[0], bb12[0..=12], bb13[0..=6], bb14[0..=10], bb15[0..=13], bb16[0..=4], bb17[0..=13], bb18[0..=1], bb19[0], bb20[0], bb21[0], bb22[0], '?0, '?1}
+| '?40 | U0 | {}
+| '?41 | U0 | {bb15[13], bb16[0..=4]}
+| '?42 | U0 | {bb15[13], bb16[0..=4]}
+| '?43 | U0 | {bb15[12..=13], bb16[0..=4]}
+| '?44 | U0 | {bb15[12..=13], bb16[0..=4]}
+| '?45 | U0 | {bb15[7..=13], bb16[0..=4]}
+| '?46 | U0 | {bb0[0..=5], bb1[0..=5], bb2[0], bb3[0..=2], bb4[0..=7], bb5[0..=3], bb6[0..=4], bb7[0], bb8[0..=6], bb9[0..=3], bb10[0..=1], bb11[0], bb12[0..=12], bb13[0..=6], bb14[0..=10], bb15[0..=13], bb16[0..=4], bb17[0..=13], bb18[0..=1], bb19[0], bb20[0], bb21[0], bb22[0], '?0, '?1}
+| '?47 | U0 | {bb14[10]}
+| '?48 | U0 | {bb15[13], bb16[0..=4]}
+| '?49 | U0 | {bb14[10]}
+| '?50 | U0 | {bb14[10]}
+| '?51 | U0 | {bb15[13], bb16[0..=4]}
+| '?52 | U0 | {bb15[13], bb16[0..=4]}
+| '?53 | U0 | {bb4[7]}
+| '?54 | U0 | {bb8[6]}
+| '?55 | U0 | {bb12[12], bb14[0..=10], bb15[0..=13], bb16[0..=4]}
+| '?56 | U0 | {bb14[10], bb15[0..=13], bb16[0..=4]}
+| '?57 | U0 | {bb16[4]}
+|
+| Inference Constraints
+| '?0 live at {bb0[0..=5], bb1[0..=5], bb2[0], bb3[0..=2], bb4[0..=7], bb5[0..=3], bb6[0..=4], bb7[0], bb8[0..=6], bb9[0..=3], bb10[0..=1], bb11[0], bb12[0..=12], bb13[0..=6], bb14[0..=10], bb15[0..=13], bb16[0..=4], bb17[0..=13], bb18[0..=1], bb19[0], bb20[0], bb21[0], bb22[0]}
+| '?1 live at {bb0[0..=5], bb1[0..=5], bb2[0], bb3[0..=2], bb4[0..=7], bb5[0..=3], bb6[0..=4], bb7[0], bb8[0..=6], bb9[0..=3], bb10[0..=1], bb11[0], bb12[0..=12], bb13[0..=6], bb14[0..=10], bb15[0..=13], bb16[0..=4], bb17[0..=13], bb18[0..=1], bb19[0], bb20[0], bb21[0], bb22[0]}
+| '?3 live at {bb15[6]}
+| '?4 live at {bb15[6]}
+| '?9 live at {bb4[6]}
+| '?10 live at {bb8[4]}
+| '?11 live at {bb8[5]}
+| '?12 live at {bb12[9]}
+| '?13 live at {bb14[2]}
+| '?14 live at {bb14[9]}
+| '?15 live at {bb14[9]}
+| '?16 live at {bb14[10]}
+| '?17 live at {bb15[1]}
+| '?18 live at {bb15[6]}
+| '?19 live at {bb15[6]}
+| '?20 live at {bb15[7]}
+| '?21 live at {bb15[8]}
+| '?22 live at {bb15[11]}
+| '?23 live at {bb15[12]}
+| '?24 live at {bb15[13]}
+| '?25 live at {bb4[7]}
+| '?26 live at {bb8[6]}
+| '?27 live at {bb8[5]}
+| '?28 live at {bb16[0..=4]}
+| '?29 live at {bb14[4..=9]}
+| '?30 live at {bb14[3]}
+| '?31 live at {bb14[0..=2]}
+| '?32 live at {bb12[10..=12]}
+| '?33 live at {bb15[2..=11]}
+| '?34 live at {bb15[0..=1]}
+| '?35 live at {bb14[10]}
+| '?36 live at {bb15[9..=13]}
+| '?37 live at {bb15[9..=13]}
+| '?38 live at {bb15[8]}
+| '?39 live at {bb15[8]}
+| '?41 live at {bb15[13]}
+| '?42 live at {bb15[13]}
+| '?43 live at {bb15[12]}
+| '?44 live at {bb15[12]}
+| '?45 live at {bb15[7]}
+| '?46 live at {bb15[7]}
+| '?53 live at {bb4[7]}
+| '?54 live at {bb8[6]}
+| '?55 live at {bb12[12]}
+| '?56 live at {bb14[10]}
+| '?57 live at {bb16[4]}
+| '?0: '?24 due to BoringNoLocation at Single(bb15[13]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61 (#97)
+| '?2: '?8 due to Boring at Single(bb15[6]) (examples/unchecked-index/src/main.rs:206:18: 206:22 (#0)
+| '?3: '?2 due to Boring at Single(bb15[6]) (examples/unchecked-index/src/main.rs:206:18: 206:22 (#0)
+| '?4: '?2 due to Boring at Single(bb15[6]) (examples/unchecked-index/src/main.rs:206:18: 206:22 (#0)
+| '?5: '?6 due to Boring at Single(bb15[6]) (examples/unchecked-index/src/main.rs:206:18: 206:22 (#0)
+| '?6: '?18 due to Boring at Single(bb15[6]) (examples/unchecked-index/src/main.rs:206:18: 206:22 (#0)
+| '?7: '?19 due to Boring at Single(bb15[6]) (examples/unchecked-index/src/main.rs:206:18: 206:22 (#0)
+| '?8: '?7 due to Boring at Single(bb15[6]) (examples/unchecked-index/src/main.rs:206:18: 206:22 (#0)
+| '?9: '?25 due to Boring at Single(bb4[6]) (examples/unchecked-index/src/main.rs:205:17: 205:21 (#0)
+| '?10: '?27 due to Boring at Single(bb8[4]) (examples/unchecked-index/src/main.rs:205:14: 205:27 (#94)
+| '?11: '?26 due to Boring at Single(bb8[5]) (examples/unchecked-index/src/main.rs:205:14: 205:27 (#94)
+| '?12: '?32 due to Boring at Single(bb12[9]) (examples/unchecked-index/src/main.rs:206:24: 206:28 (#0)
+| '?13: '?30 due to Boring at Single(bb14[2]) (examples/unchecked-index/src/main.rs:206:24: 206:31 (#97)
+| '?14: '?35 due to Boring at Single(bb14[9]) (examples/unchecked-index/src/main.rs:206:24: 206:31 (#97)
+| '?15: '?14 due to Boring at Single(bb14[9]) (examples/unchecked-index/src/main.rs:206:24: 206:31 (#97)
+| '?16: '?47 due to TypeAnnotation(GenericArg) at Single(bb14[10]) (examples/unchecked-index/src/main.rs:206:19: 206:21 (#97)
+| '?17: '?33 due to Assignment at Single(bb15[1]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61 (#97)
+| '?18: '?6 due to Boring at Single(bb15[6]) (examples/unchecked-index/src/main.rs:206:18: 206:22 (#0)
+| '?18: '?45 due to Boring at Single(bb15[6]) (examples/unchecked-index/src/main.rs:206:18: 206:22 (#0)
+| '?19: '?7 due to Boring at Single(bb15[6]) (examples/unchecked-index/src/main.rs:206:18: 206:22 (#0)
+| '?19: '?46 due to Boring at Single(bb15[6]) (examples/unchecked-index/src/main.rs:206:18: 206:22 (#0)
+| '?20: '?38 due to Boring at Single(bb15[7]) (examples/unchecked-index/src/main.rs:206:18: 206:22 (#0)
+| '?21: '?36 due to Boring at Single(bb15[8]) (examples/unchecked-index/src/main.rs:206:18: 206:22 (#0)
+| '?22: '?43 due to Boring at Single(bb15[11]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61 (#97)
+| '?23: '?41 due to Boring at Single(bb15[12]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61 (#97)
+| '?24: '?28 due to Boring at Single(bb15[13]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61 (#97)
+| '?24: '?48 due to TypeAnnotation(GenericArg) at Single(bb15[13]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61 (#97)
+| '?25: '?53 due to CallArgument(Some(FnDef(DefId(3:8203 ~ alloc[f823]::vec::{impl#1}::len), [i32, std::alloc::Global]))) at Single(bb4[7]) (examples/unchecked-index/src/main.rs:205:17: 205:27 (#0)
+| '?26: '?54 due to CallArgument(Some(FnDef(DefId(2:9459 ~ core[b59f]::iter::traits::iterator::Iterator::next), [std::ops::Range<usize>]))) at Single(bb8[6]) (examples/unchecked-index/src/main.rs:205:14: 205:27 (#94)
+| '?27: '?11 due to Boring at Single(bb8[5]) (examples/unchecked-index/src/main.rs:205:14: 205:27 (#94)
+| '?28: '?57 due to CallArgument(Some(FnDef(DefId(1:3790 ~ std[e902]::io::stdio::_print), []))) at Single(bb16[4]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:9: 143:62 (#50)
+| '?29: '?15 due to Boring at Single(bb14[9]) (examples/unchecked-index/src/main.rs:206:24: 206:31 (#97)
+| '?30: '?29 due to Assignment at Single(bb14[3]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61 (#97)
+| '?31: '?13 due to Boring at Single(bb14[2]) (examples/unchecked-index/src/main.rs:206:24: 206:31 (#97)
+| '?32: '?55 due to Boring at Single(bb12[12]) (examples/unchecked-index/src/main.rs:206:28: 206:31 (#0)
+| '?33: '?44 due to Boring at Single(bb15[11]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61 (#97)
+| '?34: '?17 due to Boring at Single(bb15[1]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61 (#97)
+| '?35: '?56 due to CallArgument(Some(FnDef(DefId(2:11991 ~ core[b59f]::fmt::rt::{impl#0}::new_display), ['{erased}, i32]))) at Single(bb14[10]) (examples/unchecked-index/src/main.rs:206:19: 206:21 (#97)
+| '?36: '?24 due to CallArgument(Some(FnDef(DefId(2:12020 ~ core[b59f]::fmt::rt::{impl#1}::new_v1), ['{erased}, 2_usize, 1_usize]))) at Single(bb15[13]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61 (#97)
+| '?37: '?0 due to CallArgument(Some(FnDef(DefId(2:12020 ~ core[b59f]::fmt::rt::{impl#1}::new_v1), ['{erased}, 2_usize, 1_usize]))) at Single(bb15[13]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61 (#97)
+| '?38: '?21 due to Boring at Single(bb15[8]) (examples/unchecked-index/src/main.rs:206:18: 206:22 (#0)
+| '?39: '?37 due to Boring at Single(bb15[8]) (examples/unchecked-index/src/main.rs:206:18: 206:22 (#0)
+| '?41: '?24 due to CallArgument(Some(FnDef(DefId(2:12020 ~ core[b59f]::fmt::rt::{impl#1}::new_v1), ['{erased}, 2_usize, 1_usize]))) at Single(bb15[13]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61 (#97)
+| '?42: '?24 due to CallArgument(Some(FnDef(DefId(2:12020 ~ core[b59f]::fmt::rt::{impl#1}::new_v1), ['{erased}, 2_usize, 1_usize]))) at Single(bb15[13]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61 (#97)
+| '?43: '?23 due to Boring at Single(bb15[12]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61 (#97)
+| '?44: '?42 due to Boring at Single(bb15[12]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61 (#97)
+| '?45: '?20 due to Boring at Single(bb15[7]) (examples/unchecked-index/src/main.rs:206:18: 206:22 (#0)
+| '?46: '?39 due to Boring at Single(bb15[7]) (examples/unchecked-index/src/main.rs:206:18: 206:22 (#0)
+| '?47: '?16 due to TypeAnnotation(GenericArg) at Single(bb14[10]) (examples/unchecked-index/src/main.rs:206:19: 206:21 (#97)
+| '?47: '?50 due to BoringNoLocation at All(examples/unchecked-index/src/main.rs:206:19: 206:21) (examples/unchecked-index/src/main.rs:206:19: 206:21 (#97)
+| '?48: '?24 due to TypeAnnotation(GenericArg) at Single(bb15[13]) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61 (#97)
+| '?48: '?52 due to BoringNoLocation at All(/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61 (#97)
+| '?49: '?50 due to BoringNoLocation at All(examples/unchecked-index/src/main.rs:206:19: 206:21) (examples/unchecked-index/src/main.rs:206:19: 206:21 (#97)
+| '?50: '?47 due to BoringNoLocation at All(examples/unchecked-index/src/main.rs:206:19: 206:21) (examples/unchecked-index/src/main.rs:206:19: 206:21 (#97)
+| '?50: '?49 due to BoringNoLocation at All(examples/unchecked-index/src/main.rs:206:19: 206:21) (examples/unchecked-index/src/main.rs:206:19: 206:21 (#97)
+| '?51: '?52 due to BoringNoLocation at All(/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61 (#97)
+| '?52: '?48 due to BoringNoLocation at All(/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61 (#97)
+| '?52: '?51 due to BoringNoLocation at All(/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61) (/Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61 (#97)
+| '?55: '?31 due to Boring at Single(bb12[12]) (examples/unchecked-index/src/main.rs:206:28: 206:31 (#0)
+| '?56: '?34 due to Boring at Single(bb14[10]) (examples/unchecked-index/src/main.rs:206:19: 206:21 (#97)
+|
+| Borrows
+| bw0: issued at bb4[6] in '?9
+| bw1: issued at bb8[4] in '?10
+| bw2: issued at bb8[5] in '?11
+| bw3: issued at bb12[9] in '?12
+| bw4: issued at bb15[11] in '?22
+|
+| User Type Annotations
+| 0: user_ty: Canonical { value: TypeOf(DefId(3:6197 ~ alloc[f823]::slice::{impl#0}::into_vec), UserArgs { args: [^c_0, ^c_1], user_self_ty: Some(UserSelfTy { impl_def_id: DefId(3:6157 ~ alloc[f823]::slice::{impl#0}), self_ty: [^c_2] }) }), max_universe: U0, variables: [Ty { ui: U0, sub_root: 0 }, Ty { ui: U0, sub_root: 1 }, Ty { ui: U0, sub_root: 2 }] }, span: /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:50:9: 50:24, inferred_ty: fn(std::boxed::Box<[i32]>) -> std::vec::Vec<i32> {std::slice::<impl [i32]>::into_vec::<std::alloc::Global>}
+| 1: user_ty: Canonical { value: TypeOf(DefId(2:11991 ~ core[b59f]::fmt::rt::{impl#0}::new_display), UserArgs { args: ['^c_0, ^c_1], user_self_ty: Some(UserSelfTy { impl_def_id: DefId(2:11990 ~ core[b59f]::fmt::rt::{impl#0}), self_ty: core::fmt::rt::Argument<'^c_2> }) }), max_universe: U0, variables: [Region(U0), Ty { ui: U0, sub_root: 1 }, Region(U0)] }, span: examples/unchecked-index/src/main.rs:206:19: 206:21, inferred_ty: for<'a> fn(&'a i32) -> core::fmt::rt::Argument<'a> {core::fmt::rt::Argument::<'_>::new_display::<i32>}
+| 2: user_ty: Canonical { value: TypeOf(DefId(2:12020 ~ core[b59f]::fmt::rt::{impl#1}::new_v1), UserArgs { args: ['^c_0, ^c_BoundConst { var: 1 }, ^c_BoundConst { var: 2 }], user_self_ty: Some(UserSelfTy { impl_def_id: DefId(2:12014 ~ core[b59f]::fmt::rt::{impl#1}), self_ty: std::fmt::Arguments<'^c_3> }) }), max_universe: U0, variables: [Region(U0), Const(U0), Const(U0), Region(U0)] }, span: /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61, inferred_ty: fn(&[&'static str; 2], &[core::fmt::rt::Argument<'_>; 1]) -> std::fmt::Arguments<'_> {core::fmt::rt::<impl std::fmt::Arguments<'_>>::new_v1::<2, 1>}
+|
+fn safe_loop_length() -> () {
+    let mut _0: ();                      // return place in scope 0 at examples/unchecked-index/src/main.rs:201:22: 201:22
+    let _1: std::vec::Vec<i32>;          // in scope 0 at examples/unchecked-index/src/main.rs:202:9: 202:13
+    let mut _2: std::boxed::Box<[i32]>;  // in scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:53:13: 53:46
+    let mut _3: std::boxed::Box<[i32; 5]>; // in scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:53:13: 53:46
+    let mut _4: usize;                   // in scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:53:13: 53:46
+    let mut _5: usize;                   // in scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:53:13: 53:46
+    let mut _6: *mut u8;                 // in scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:53:13: 53:46
+    let mut _7: std::boxed::Box<[i32; 5]>; // in scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:53:13: 53:46
+    let mut _8: std::ops::Range<usize>;  // in scope 0 at examples/unchecked-index/src/main.rs:205:14: 205:27
+    let mut _9: std::ops::Range<usize>;  // in scope 0 at examples/unchecked-index/src/main.rs:205:14: 205:27
+    let mut _10: usize;                  // in scope 0 at examples/unchecked-index/src/main.rs:205:17: 205:27
+    let mut _11: &std::vec::Vec<i32>;    // in scope 0 at examples/unchecked-index/src/main.rs:205:17: 205:21
+    let mut _13: ();                     // in scope 0 at examples/unchecked-index/src/main.rs:201:1: 208:2
+    let _14: ();                         // in scope 0 at examples/unchecked-index/src/main.rs:205:14: 205:27
+    let mut _15: std::option::Option<usize>; // in scope 0 at examples/unchecked-index/src/main.rs:205:14: 205:27
+    let mut _16: &mut std::ops::Range<usize>; // in scope 0 at examples/unchecked-index/src/main.rs:205:14: 205:27
+    let mut _17: &mut std::ops::Range<usize>; // in scope 0 at examples/unchecked-index/src/main.rs:205:14: 205:27
+    let mut _18: isize;                  // in scope 0 at examples/unchecked-index/src/main.rs:205:5: 207:6
+    let mut _19: !;                      // in scope 0 at examples/unchecked-index/src/main.rs:205:5: 207:6
+    let _21: ();                         // in scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:142:23: 144:6
+    let _22: ();                         // in scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:9: 143:62
+    let mut _23: std::fmt::Arguments<'_>; // in scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61
+    let mut _25: &i32;                   // in scope 0 at examples/unchecked-index/src/main.rs:206:24: 206:31
+    let _26: &i32;                       // in scope 0 at examples/unchecked-index/src/main.rs:206:28: 206:31
+    let mut _27: &std::vec::Vec<i32>;    // in scope 0 at examples/unchecked-index/src/main.rs:206:24: 206:28
+    let mut _28: usize;                  // in scope 0 at examples/unchecked-index/src/main.rs:206:29: 206:30
+    let mut _30: core::fmt::rt::Argument<'_>; // in scope 0 at examples/unchecked-index/src/main.rs:206:19: 206:21
+    let mut _31: &i32;                   // in scope 0 at examples/unchecked-index/src/main.rs:206:24: 206:31
+    let mut _32: &[&str; 2];             // in scope 0 at examples/unchecked-index/src/main.rs:206:18: 206:22
+    let _33: &[&str; 2];                 // in scope 0 at examples/unchecked-index/src/main.rs:206:18: 206:22
+    let _34: [&str; 2];                  // in scope 0 at examples/unchecked-index/src/main.rs:206:18: 206:22
+    let mut _35: &[core::fmt::rt::Argument<'_>; 1]; // in scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61
+    let _36: &[core::fmt::rt::Argument<'_>; 1]; // in scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61
+    scope 1 {
+        debug data => _1;                // in scope 1 at examples/unchecked-index/src/main.rs:202:9: 202:13
+        let mut _12: std::ops::Range<usize>; // in scope 1 at examples/unchecked-index/src/main.rs:205:14: 205:27
+        scope 2 {
+            debug iter => _12;           // in scope 2 at examples/unchecked-index/src/main.rs:205:14: 205:27
+            let _20: usize;              // in scope 2 at examples/unchecked-index/src/main.rs:205:9: 205:10
+            scope 3 {
+                debug i => _20;          // in scope 3 at examples/unchecked-index/src/main.rs:205:9: 205:10
+                let _24: (&i32,);        // in scope 3 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61
+                scope 4 {
+                    debug args => _24;   // in scope 4 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61
+                    let _29: [core::fmt::rt::Argument<'_>; 1]; // in scope 4 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61
+                    scope 5 {
+                        debug args => _29; // in scope 5 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61
+                        let mut _37: &[&str; 2]; // in scope 5 at examples/unchecked-index/src/main.rs:206:18: 206:22
+                    }
+                }
+            }
+        }
+    }
+
+    bb0: {
+        StorageLive(_1);                 // scope 0 at examples/unchecked-index/src/main.rs:202:9: 202:13
+        StorageLive(_2);                 // scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:53:13: 53:46
+        StorageLive(_3);                 // scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:53:13: 53:46
+        _4 = SizeOf([i32; 5]);           // scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:53:13: 53:46
+        _5 = AlignOf([i32; 5]);          // scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:53:13: 53:46
+        _6 = alloc::alloc::exchange_malloc(move _4, move _5) -> [return: bb1, unwind: bb22]; // scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:53:13: 53:46
+                                         // mir::ConstOperand
+                                         // + span: /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:53:13: 53:46
+                                         // + const_: Const { ty: unsafe fn(usize, usize) -> *mut u8 {alloc::alloc::exchange_malloc}, val: Value(alloc::alloc::exchange_malloc) }
+    }
+
+    bb1: {
+        StorageLive(_7);                 // scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:53:13: 53:46
+        _7 = ShallowInitBox(move _6, [i32; 5]); // scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:53:13: 53:46
+        (*_7) = [const 1_i32, const 2_i32, const 3_i32, const 4_i32, const 5_i32]; // scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:53:36: 53:45
+        _3 = move _7;                    // scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:53:13: 53:46
+        _2 = move _3 as std::boxed::Box<[i32]> (PointerCoercion(Unsize, Implicit)); // scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:53:13: 53:46
+        drop(_3) -> [return: bb2, unwind: bb20]; // scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:53:45: 53:46
+    }
+
+    bb2: {
+        drop(_7) -> [return: bb3, unwind: bb21]; // scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:53:45: 53:46
+    }
+
+    bb3: {
+        StorageDead(_7);                 // scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:53:45: 53:46
+        StorageDead(_3);                 // scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:53:45: 53:46
+        _1 = slice::<impl [i32]>::into_vec::<std::alloc::Global>(move _2) -> [return: bb4, unwind: bb21]; // scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:50:9: 54:10
+                                         // mir::ConstOperand
+                                         // + span: /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:50:9: 50:24
+                                         // + user_ty: UserType(0)
+                                         // + const_: Const { ty: fn(Box<[i32]>) -> Vec<i32> {slice::<impl [i32]>::into_vec::<std::alloc::Global>}, val: Value(slice::<impl [i32]>::into_vec::<std::alloc::Global>) }
+    }
+
+    bb4: {
+        StorageDead(_2);                 // scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:54:9: 54:10
+        FakeRead(ForLet(None), _1);      // scope 0 at examples/unchecked-index/src/main.rs:202:9: 202:13
+        StorageLive(_8);                 // scope 1 at examples/unchecked-index/src/main.rs:205:14: 205:27
+        StorageLive(_9);                 // scope 1 at examples/unchecked-index/src/main.rs:205:14: 205:27
+        StorageLive(_10);                // scope 1 at examples/unchecked-index/src/main.rs:205:17: 205:27
+        StorageLive(_11);                // scope 1 at examples/unchecked-index/src/main.rs:205:17: 205:21
+        _11 = &_1;                       // scope 1 at examples/unchecked-index/src/main.rs:205:17: 205:21
+        _10 = Vec::<i32>::len(move _11) -> [return: bb5, unwind: bb19]; // scope 1 at examples/unchecked-index/src/main.rs:205:17: 205:27
+                                         // mir::ConstOperand
+                                         // + span: examples/unchecked-index/src/main.rs:205:22: 205:25
+                                         // + const_: Const { ty: for<'a> fn(&'a Vec<i32>) -> usize {Vec::<i32>::len}, val: Value(Vec::<i32>::len) }
+    }
+
+    bb5: {
+        StorageDead(_11);                // scope 1 at examples/unchecked-index/src/main.rs:205:26: 205:27
+        _9 = std::ops::Range::<usize> { start: const 0_usize, end: move _10 }; // scope 1 at examples/unchecked-index/src/main.rs:205:14: 205:27
+        StorageDead(_10);                // scope 1 at examples/unchecked-index/src/main.rs:205:26: 205:27
+        _8 = <std::ops::Range<usize> as IntoIterator>::into_iter(move _9) -> [return: bb6, unwind: bb19]; // scope 1 at examples/unchecked-index/src/main.rs:205:14: 205:27
+                                         // mir::ConstOperand
+                                         // + span: examples/unchecked-index/src/main.rs:205:14: 205:27
+                                         // + const_: Const { ty: fn(std::ops::Range<usize>) -> <std::ops::Range<usize> as IntoIterator>::IntoIter {<std::ops::Range<usize> as IntoIterator>::into_iter}, val: Value(<std::ops::Range<usize> as IntoIterator>::into_iter) }
+    }
+
+    bb6: {
+        StorageDead(_9);                 // scope 1 at examples/unchecked-index/src/main.rs:205:26: 205:27
+        PlaceMention(_8);                // scope 1 at examples/unchecked-index/src/main.rs:205:14: 205:27
+        StorageLive(_12);                // scope 1 at examples/unchecked-index/src/main.rs:205:14: 205:27
+        _12 = move _8;                   // scope 1 at examples/unchecked-index/src/main.rs:205:14: 205:27
+        goto -> bb7;                     // scope 2 at examples/unchecked-index/src/main.rs:205:5: 207:6
+    }
+
+    bb7: {
+        falseUnwind -> [real: bb8, unwind: bb19]; // scope 2 at examples/unchecked-index/src/main.rs:205:5: 207:6
+    }
+
+    bb8: {
+        StorageLive(_14);                // scope 2 at examples/unchecked-index/src/main.rs:205:14: 205:27
+        StorageLive(_15);                // scope 2 at examples/unchecked-index/src/main.rs:205:14: 205:27
+        StorageLive(_16);                // scope 2 at examples/unchecked-index/src/main.rs:205:14: 205:27
+        StorageLive(_17);                // scope 2 at examples/unchecked-index/src/main.rs:205:14: 205:27
+        _17 = &mut _12;                  // scope 2 at examples/unchecked-index/src/main.rs:205:14: 205:27
+        _16 = &mut (*_17);               // scope 2 at examples/unchecked-index/src/main.rs:205:14: 205:27
+        _15 = <std::ops::Range<usize> as Iterator>::next(move _16) -> [return: bb9, unwind: bb19]; // scope 2 at examples/unchecked-index/src/main.rs:205:14: 205:27
+                                         // mir::ConstOperand
+                                         // + span: examples/unchecked-index/src/main.rs:205:14: 205:27
+                                         // + const_: Const { ty: for<'a> fn(&'a mut std::ops::Range<usize>) -> Option<<std::ops::Range<usize> as Iterator>::Item> {<std::ops::Range<usize> as Iterator>::next}, val: Value(<std::ops::Range<usize> as Iterator>::next) }
+    }
+
+    bb9: {
+        StorageDead(_16);                // scope 2 at examples/unchecked-index/src/main.rs:205:26: 205:27
+        PlaceMention(_15);               // scope 2 at examples/unchecked-index/src/main.rs:205:14: 205:27
+        _18 = discriminant(_15);         // scope 2 at examples/unchecked-index/src/main.rs:205:14: 205:27
+        switchInt(move _18) -> [0: bb11, 1: bb12, otherwise: bb10]; // scope 2 at examples/unchecked-index/src/main.rs:205:14: 205:27
+    }
+
+    bb10: {
+        FakeRead(ForMatchedPlace(None), _15); // scope 2 at examples/unchecked-index/src/main.rs:205:14: 205:27
+        unreachable;                     // scope 2 at examples/unchecked-index/src/main.rs:205:14: 205:27
+    }
+
+    bb11: {
+        falseEdge -> [real: bb13, imaginary: bb12]; // scope 2 at examples/unchecked-index/src/main.rs:205:5: 207:6
+    }
+
+    bb12: {
+        StorageLive(_20);                // scope 2 at examples/unchecked-index/src/main.rs:205:9: 205:10
+        _20 = copy ((_15 as Some).0: usize); // scope 2 at examples/unchecked-index/src/main.rs:205:9: 205:10
+        StorageLive(_21);                // scope 3 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:142:23: 144:6
+        StorageLive(_22);                // scope 3 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:9: 143:62
+        StorageLive(_23);                // scope 3 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61
+        StorageLive(_24);                // scope 3 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61
+        StorageLive(_25);                // scope 3 at examples/unchecked-index/src/main.rs:206:24: 206:31
+        StorageLive(_26);                // scope 3 at examples/unchecked-index/src/main.rs:206:28: 206:31
+        StorageLive(_27);                // scope 3 at examples/unchecked-index/src/main.rs:206:24: 206:28
+        _27 = &_1;                       // scope 3 at examples/unchecked-index/src/main.rs:206:24: 206:28
+        StorageLive(_28);                // scope 3 at examples/unchecked-index/src/main.rs:206:29: 206:30
+        _28 = copy _20;                  // scope 3 at examples/unchecked-index/src/main.rs:206:29: 206:30
+        _26 = <Vec<i32> as Index<usize>>::index(move _27, move _28) -> [return: bb14, unwind: bb19]; // scope 3 at examples/unchecked-index/src/main.rs:206:28: 206:31
+                                         // mir::ConstOperand
+                                         // + span: examples/unchecked-index/src/main.rs:206:28: 206:31
+                                         // + const_: Const { ty: for<'a> fn(&'a Vec<i32>, usize) -> &'a <Vec<i32> as Index<usize>>::Output {<Vec<i32> as Index<usize>>::index}, val: Value(<Vec<i32> as Index<usize>>::index) }
+    }
+
+    bb13: {
+        _0 = const ();                   // scope 2 at examples/unchecked-index/src/main.rs:205:5: 207:6
+        StorageDead(_17);                // scope 2 at examples/unchecked-index/src/main.rs:207:5: 207:6
+        StorageDead(_15);                // scope 2 at examples/unchecked-index/src/main.rs:207:5: 207:6
+        StorageDead(_14);                // scope 2 at examples/unchecked-index/src/main.rs:207:5: 207:6
+        StorageDead(_12);                // scope 1 at examples/unchecked-index/src/main.rs:207:5: 207:6
+        StorageDead(_8);                 // scope 1 at examples/unchecked-index/src/main.rs:207:5: 207:6
+        drop(_1) -> [return: bb18, unwind: bb22]; // scope 0 at examples/unchecked-index/src/main.rs:208:1: 208:2
+    }
+
+    bb14: {
+        StorageDead(_28);                // scope 3 at examples/unchecked-index/src/main.rs:206:30: 206:31
+        StorageDead(_27);                // scope 3 at examples/unchecked-index/src/main.rs:206:30: 206:31
+        _25 = &(*_26);                   // scope 3 at examples/unchecked-index/src/main.rs:206:24: 206:31
+        _24 = (move _25,);               // scope 3 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61
+        StorageDead(_25);                // scope 3 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:60: 143:61
+        FakeRead(ForLet(None), _24);     // scope 3 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61
+        StorageLive(_29);                // scope 4 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61
+        StorageLive(_30);                // scope 4 at examples/unchecked-index/src/main.rs:206:19: 206:21
+        StorageLive(_31);                // scope 4 at examples/unchecked-index/src/main.rs:206:24: 206:31
+        _31 = &(*(_24.0: &i32));         // scope 4 at examples/unchecked-index/src/main.rs:206:24: 206:31
+        _30 = core::fmt::rt::Argument::<'_>::new_display::<i32>(move _31) -> [return: bb15, unwind: bb19]; // scope 4 at examples/unchecked-index/src/main.rs:206:19: 206:21
+                                         // mir::ConstOperand
+                                         // + span: examples/unchecked-index/src/main.rs:206:19: 206:21
+                                         // + user_ty: UserType(1)
+                                         // + const_: Const { ty: for<'a> fn(&'a i32) -> core::fmt::rt::Argument<'a> {core::fmt::rt::Argument::<'_>::new_display::<i32>}, val: Value(core::fmt::rt::Argument::<'_>::new_display::<i32>) }
+    }
+
+    bb15: {
+        StorageDead(_31);                // scope 4 at examples/unchecked-index/src/main.rs:206:20: 206:21
+        _29 = [move _30];                // scope 4 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61
+        StorageDead(_30);                // scope 4 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:60: 143:61
+        FakeRead(ForLet(None), _29);     // scope 4 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61
+        StorageLive(_32);                // scope 5 at examples/unchecked-index/src/main.rs:206:18: 206:22
+        StorageLive(_33);                // scope 5 at examples/unchecked-index/src/main.rs:206:18: 206:22
+        _37 = const safe_loop_length::promoted[0]; // scope 5 at examples/unchecked-index/src/main.rs:206:18: 206:22
+                                         // mir::ConstOperand
+                                         // + span: examples/unchecked-index/src/main.rs:206:18: 206:22
+                                         // + const_: Const { ty: &[&str; 2], val: Unevaluated(safe_loop_length, [], Some(promoted[0])) }
+        _33 = &(*_37);                   // scope 5 at examples/unchecked-index/src/main.rs:206:18: 206:22
+        _32 = &(*_33);                   // scope 5 at examples/unchecked-index/src/main.rs:206:18: 206:22
+        StorageLive(_35);                // scope 5 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61
+        StorageLive(_36);                // scope 5 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61
+        _36 = &_29;                      // scope 5 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61
+        _35 = &(*_36);                   // scope 5 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61
+        _23 = core::fmt::rt::<impl Arguments<'_>>::new_v1::<2, 1>(move _32, move _35) -> [return: bb16, unwind: bb19]; // scope 5 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61
+                                         // mir::ConstOperand
+                                         // + span: /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:28: 143:61
+                                         // + user_ty: UserType(2)
+                                         // + const_: Const { ty: fn(&[&'static str; 2], &[core::fmt::rt::Argument<'_>; 1]) -> Arguments<'_> {core::fmt::rt::<impl Arguments<'_>>::new_v1::<2, 1>}, val: Value(core::fmt::rt::<impl Arguments<'_>>::new_v1::<2, 1>) }
+    }
+
+    bb16: {
+        StorageDead(_36);                // scope 5 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:60: 143:61
+        StorageDead(_35);                // scope 5 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:60: 143:61
+        StorageDead(_33);                // scope 5 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:60: 143:61
+        StorageDead(_32);                // scope 5 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:60: 143:61
+        _22 = _print(move _23) -> [return: bb17, unwind: bb19]; // scope 3 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:9: 143:62
+                                         // mir::ConstOperand
+                                         // + span: /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:9: 143:27
+                                         // + const_: Const { ty: for<'a> fn(Arguments<'a>) {_print}, val: Value(_print) }
+    }
+
+    bb17: {
+        StorageDead(_23);                // scope 3 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:61: 143:62
+        StorageDead(_29);                // scope 3 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:62: 143:63
+        StorageDead(_26);                // scope 3 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:62: 143:63
+        StorageDead(_24);                // scope 3 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:62: 143:63
+        StorageDead(_22);                // scope 3 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:143:62: 143:63
+        _21 = const ();                  // scope 3 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:142:23: 144:6
+        StorageDead(_21);                // scope 3 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/macros.rs:144:5: 144:6
+        _14 = const ();                  // scope 3 at examples/unchecked-index/src/main.rs:205:28: 207:6
+        StorageDead(_20);                // scope 2 at examples/unchecked-index/src/main.rs:207:5: 207:6
+        StorageDead(_17);                // scope 2 at examples/unchecked-index/src/main.rs:207:5: 207:6
+        StorageDead(_15);                // scope 2 at examples/unchecked-index/src/main.rs:207:5: 207:6
+        StorageDead(_14);                // scope 2 at examples/unchecked-index/src/main.rs:207:5: 207:6
+        _13 = const ();                  // scope 2 at examples/unchecked-index/src/main.rs:205:5: 207:6
+        goto -> bb7;                     // scope 2 at examples/unchecked-index/src/main.rs:205:5: 207:6
+    }
+
+    bb18: {
+        StorageDead(_1);                 // scope 0 at examples/unchecked-index/src/main.rs:208:1: 208:2
+        return;                          // scope 0 at examples/unchecked-index/src/main.rs:208:2: 208:2
+    }
+
+    bb19 (cleanup): {
+        drop(_1) -> [return: bb22, unwind terminate(cleanup)]; // scope 0 at examples/unchecked-index/src/main.rs:208:1: 208:2
+    }
+
+    bb20 (cleanup): {
+        drop(_7) -> [return: bb21, unwind terminate(cleanup)]; // scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:53:45: 53:46
+    }
+
+    bb21 (cleanup): {
+        drop(_2) -> [return: bb22, unwind terminate(cleanup)]; // scope 0 at /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:54:9: 54:10
+    }
+
+    bb22 (cleanup): {
+        resume;                          // scope 0 at examples/unchecked-index/src/main.rs:201:1: 208:2
+    }
+}

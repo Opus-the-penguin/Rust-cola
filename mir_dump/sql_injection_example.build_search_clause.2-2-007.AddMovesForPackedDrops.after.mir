@@ -1,0 +1,103 @@
+// MIR for `build_search_clause` after AddMovesForPackedDrops
+
+fn build_search_clause() -> String {
+    let mut _0: std::string::String;
+    let _1: std::string::String;
+    let mut _2: std::string::String;
+    let mut _3: std::fmt::Arguments<'_>;
+    let mut _5: &std::string::String;
+    let mut _7: core::fmt::rt::Argument<'_>;
+    let mut _8: &std::string::String;
+    let mut _9: &[&str; 2];
+    let _10: &[&str; 2];
+    let _11: [&str; 2];
+    let mut _12: &[core::fmt::rt::Argument<'_>; 1];
+    let _13: &[core::fmt::rt::Argument<'_>; 1];
+    let mut _15: &std::string::String;
+    scope 1 {
+        debug term => _1;
+        let _4: (&std::string::String,);
+        scope 2 {
+            debug args => _4;
+            let _6: [core::fmt::rt::Argument<'_>; 1];
+            scope 3 {
+                debug args => _6;
+                let mut _14: &[&str; 2];
+            }
+        }
+    }
+
+    bb0: {
+        StorageLive(_1);
+        _1 = get_search_term() -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        StorageLive(_2);
+        StorageLive(_3);
+        StorageLive(_4);
+        StorageLive(_5);
+        _5 = &_1;
+        _4 = (move _5,);
+        StorageDead(_5);
+        StorageLive(_6);
+        StorageLive(_7);
+        StorageLive(_8);
+        _15 = deref_copy (_4.0: &std::string::String);
+        _8 = &(*_15);
+        _7 = core::fmt::rt::Argument::<'_>::new_display::<String>(move _8) -> [return: bb2, unwind: bb8];
+    }
+
+    bb2: {
+        StorageDead(_8);
+        _6 = [move _7];
+        StorageDead(_7);
+        StorageLive(_9);
+        StorageLive(_10);
+        _14 = const build_search_clause::promoted[0];
+        _10 = &(*_14);
+        _9 = &(*_10);
+        StorageLive(_12);
+        StorageLive(_13);
+        _13 = &_6;
+        _12 = &(*_13);
+        _3 = core::fmt::rt::<impl Arguments<'_>>::new_v1::<2, 1>(move _9, move _12) -> [return: bb3, unwind: bb8];
+    }
+
+    bb3: {
+        StorageDead(_13);
+        StorageDead(_12);
+        StorageDead(_10);
+        StorageDead(_9);
+        _2 = format(move _3) -> [return: bb4, unwind: bb8];
+    }
+
+    bb4: {
+        StorageDead(_6);
+        StorageDead(_4);
+        StorageDead(_3);
+        _0 = must_use::<String>(move _2) -> [return: bb5, unwind: bb7];
+    }
+
+    bb5: {
+        StorageDead(_2);
+        drop(_1) -> [return: bb6, unwind: bb9];
+    }
+
+    bb6: {
+        StorageDead(_1);
+        return;
+    }
+
+    bb7 (cleanup): {
+        goto -> bb8;
+    }
+
+    bb8 (cleanup): {
+        drop(_1) -> [return: bb9, unwind terminate(cleanup)];
+    }
+
+    bb9 (cleanup): {
+        resume;
+    }
+}

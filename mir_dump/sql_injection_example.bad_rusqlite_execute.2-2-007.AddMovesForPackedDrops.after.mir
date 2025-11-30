@@ -1,0 +1,97 @@
+// MIR for `bad_rusqlite_execute` after AddMovesForPackedDrops
+
+fn bad_rusqlite_execute(_1: &str) -> String {
+    debug user_id => _1;
+    let mut _0: std::string::String;
+    let _2: std::string::String;
+    let mut _3: std::string::String;
+    let mut _4: std::fmt::Arguments<'_>;
+    let _5: (&&str,);
+    let mut _6: &&str;
+    let mut _8: core::fmt::rt::Argument<'_>;
+    let mut _9: &&str;
+    let mut _10: &[&str; 1];
+    let _11: &[&str; 1];
+    let _12: [&str; 1];
+    let mut _13: &[core::fmt::rt::Argument<'_>; 1];
+    let _14: &[core::fmt::rt::Argument<'_>; 1];
+    let mut _16: &&str;
+    scope 1 {
+        debug query => _2;
+    }
+    scope 2 {
+        debug args => _5;
+        let _7: [core::fmt::rt::Argument<'_>; 1];
+        scope 3 {
+            debug args => _7;
+            let mut _15: &[&str; 1];
+        }
+    }
+
+    bb0: {
+        StorageLive(_2);
+        StorageLive(_3);
+        StorageLive(_4);
+        StorageLive(_5);
+        StorageLive(_6);
+        _6 = &_1;
+        _5 = (move _6,);
+        StorageDead(_6);
+        StorageLive(_7);
+        StorageLive(_8);
+        StorageLive(_9);
+        _16 = deref_copy (_5.0: &&str);
+        _9 = &(*_16);
+        _8 = core::fmt::rt::Argument::<'_>::new_display::<&str>(move _9) -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        StorageDead(_9);
+        _7 = [move _8];
+        StorageDead(_8);
+        StorageLive(_10);
+        StorageLive(_11);
+        _15 = const bad_rusqlite_execute::promoted[0];
+        _11 = &(*_15);
+        _10 = &(*_11);
+        StorageLive(_13);
+        StorageLive(_14);
+        _14 = &_7;
+        _13 = &(*_14);
+        _4 = core::fmt::rt::<impl Arguments<'_>>::new_v1::<1, 1>(move _10, move _13) -> [return: bb2, unwind continue];
+    }
+
+    bb2: {
+        StorageDead(_14);
+        StorageDead(_13);
+        StorageDead(_11);
+        StorageDead(_10);
+        _3 = format(move _4) -> [return: bb3, unwind continue];
+    }
+
+    bb3: {
+        StorageDead(_7);
+        StorageDead(_5);
+        StorageDead(_4);
+        _2 = must_use::<String>(move _3) -> [return: bb4, unwind: bb6];
+    }
+
+    bb4: {
+        StorageDead(_3);
+        _0 = move _2;
+        goto -> bb5;
+    }
+
+    bb5: {
+        StorageDead(_2);
+        return;
+    }
+
+    bb6 (cleanup): {
+        goto -> bb7;
+    }
+
+    bb7 (cleanup): {
+        resume;
+    }
+}

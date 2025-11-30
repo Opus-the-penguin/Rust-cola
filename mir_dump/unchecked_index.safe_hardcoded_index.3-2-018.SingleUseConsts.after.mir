@@ -1,0 +1,314 @@
+// MIR for `safe_hardcoded_index` after SingleUseConsts
+
+fn safe_hardcoded_index() -> () {
+    let mut _0: ();
+    let _1: std::vec::Vec<i32>;
+    let mut _2: std::boxed::Box<[i32]>;
+    let mut _3: *mut u8;
+    let mut _4: std::boxed::Box<[i32; 5]>;
+    let mut _6: &i32;
+    let _7: ();
+    let mut _8: std::fmt::Arguments<'_>;
+    let mut _9: &i32;
+    let mut _11: core::fmt::rt::Argument<'_>;
+    let _12: &[core::fmt::rt::Argument<'_>; 1];
+    let mut _14: *const [i32; 5];
+    scope 1 {
+        debug data => _1;
+        let _5: i32;
+        scope 2 {
+            debug value => _5;
+            let _40: &i32;
+            scope 3 {
+                debug ((args: (&i32,)).0: &i32) => _40;
+                let _10: [core::fmt::rt::Argument<'_>; 1];
+                scope 4 {
+                    debug args => _10;
+                    let mut _13: &[&str; 2];
+                    scope 52 (inlined core::fmt::rt::<impl Arguments<'_>>::new_v1::<2, 1>) {
+                        let mut _38: &[&str];
+                        let mut _39: &[core::fmt::rt::Argument<'_>];
+                    }
+                }
+                scope 47 (inlined core::fmt::rt::Argument::<'_>::new_display::<i32>) {
+                    let mut _32: core::fmt::rt::ArgumentType<'_>;
+                    let mut _33: std::ptr::NonNull<()>;
+                    let mut _34: for<'a, 'b> unsafe fn(std::ptr::NonNull<()>, &'a mut std::fmt::Formatter<'b>) -> std::result::Result<(), std::fmt::Error>;
+                    let _35: for<'a, 'b, 'c> fn(&'a i32, &'b mut std::fmt::Formatter<'c>) -> std::result::Result<(), std::fmt::Error>;
+                    scope 48 {
+                    }
+                    scope 49 (inlined NonNull::<i32>::from_ref) {
+                        let mut _36: *const i32;
+                    }
+                    scope 50 (inlined NonNull::<i32>::cast::<()>) {
+                        let mut _37: *const ();
+                        scope 51 (inlined NonNull::<i32>::as_ptr) {
+                        }
+                    }
+                }
+            }
+        }
+        scope 26 (inlined #[track_caller] <Vec<i32> as Index<usize>>::index) {
+            scope 27 (inlined <Vec<i32> as Deref>::deref) {
+                scope 28 (inlined Vec::<i32>::as_slice) {
+                    let mut _25: *const i32;
+                    let mut _26: usize;
+                    scope 29 (inlined Vec::<i32>::as_ptr) {
+                        scope 30 (inlined alloc::raw_vec::RawVec::<i32>::ptr) {
+                            scope 31 (inlined alloc::raw_vec::RawVecInner::ptr::<i32>) {
+                                scope 32 (inlined alloc::raw_vec::RawVecInner::non_null::<i32>) {
+                                    let mut _27: std::ptr::NonNull<u8>;
+                                    scope 33 (inlined Unique::<u8>::cast::<i32>) {
+                                        scope 34 (inlined NonNull::<u8>::cast::<i32>) {
+                                            scope 35 (inlined NonNull::<u8>::as_ptr) {
+                                            }
+                                        }
+                                    }
+                                    scope 36 (inlined Unique::<i32>::as_non_null_ptr) {
+                                    }
+                                }
+                                scope 37 (inlined NonNull::<i32>::as_ptr) {
+                                }
+                            }
+                        }
+                    }
+                    scope 38 (inlined #[track_caller] std::slice::from_raw_parts::<'_, i32>) {
+                        let _28: ();
+                        let mut _29: *mut ();
+                        let _30: *const [i32];
+                        scope 39 (inlined core::ub_checks::check_language_ub) {
+                            scope 40 (inlined core::ub_checks::check_language_ub::runtime) {
+                            }
+                        }
+                        scope 41 (inlined std::mem::size_of::<i32>) {
+                        }
+                        scope 42 (inlined std::mem::align_of::<i32>) {
+                        }
+                        scope 43 (inlined slice_from_raw_parts::<i32>) {
+                            scope 44 (inlined std::ptr::from_raw_parts::<[i32], i32>) {
+                            }
+                        }
+                    }
+                }
+            }
+            scope 45 (inlined #[track_caller] core::slice::index::<impl Index<usize> for [i32]>::index) {
+                scope 46 (inlined #[track_caller] <usize as SliceIndex<[i32]>>::index) {
+                    let mut _31: bool;
+                }
+            }
+        }
+    }
+    scope 5 (inlined alloc::alloc::exchange_malloc) {
+        let mut _15: std::result::Result<std::ptr::NonNull<[u8]>, std::alloc::AllocError>;
+        let mut _16: isize;
+        let mut _18: !;
+        scope 6 {
+            let _17: std::ptr::NonNull<[u8]>;
+            scope 7 {
+                scope 10 (inlined NonNull::<[u8]>::as_mut_ptr) {
+                    scope 11 (inlined NonNull::<[u8]>::as_non_null_ptr) {
+                        scope 12 (inlined NonNull::<[u8]>::cast::<u8>) {
+                            let mut _20: *mut [u8];
+                            scope 13 (inlined NonNull::<[u8]>::as_ptr) {
+                            }
+                        }
+                    }
+                    scope 14 (inlined NonNull::<u8>::as_ptr) {
+                    }
+                }
+            }
+            scope 9 (inlined <std::alloc::Global as Allocator>::allocate) {
+            }
+        }
+        scope 8 (inlined #[track_caller] Layout::from_size_align_unchecked) {
+            let _19: ();
+        }
+    }
+    scope 15 (inlined slice::<impl [i32]>::into_vec::<std::alloc::Global>) {
+        let _21: usize;
+        let mut _22: *mut i32;
+        let mut _23: *const [i32];
+        scope 16 {
+            scope 17 {
+            }
+            scope 18 (inlined Box::<[i32]>::into_raw_with_allocator) {
+                scope 19 {
+                    let _24: *mut [i32];
+                    scope 20 {
+                        scope 21 {
+                        }
+                        scope 24 (inlined <ManuallyDrop<Box<[i32]>> as Deref>::deref) {
+                        }
+                        scope 25 (inlined #[track_caller] std::ptr::read::<std::alloc::Global>) {
+                        }
+                    }
+                    scope 23 (inlined <ManuallyDrop<Box<[i32]>> as DerefMut>::deref_mut) {
+                    }
+                }
+                scope 22 (inlined ManuallyDrop::<Box<[i32]>>::new) {
+                }
+            }
+        }
+    }
+
+    bb0: {
+        StorageLive(_1);
+        StorageLive(_2);
+        StorageLive(_16);
+        StorageLive(_17);
+        switchInt(const false) -> [0: bb9, otherwise: bb8];
+    }
+
+    bb1: {
+        StorageDead(_8);
+        StorageDead(_10);
+        StorageDead(_40);
+        StorageDead(_5);
+        drop(_1) -> [return: bb2, unwind: bb4];
+    }
+
+    bb2: {
+        StorageDead(_1);
+        return;
+    }
+
+    bb3 (cleanup): {
+        drop(_1) -> [return: bb4, unwind terminate(cleanup)];
+    }
+
+    bb4 (cleanup): {
+        resume;
+    }
+
+    bb5: {
+        unreachable;
+    }
+
+    bb6: {
+        _18 = handle_alloc_error(const Layout {{ size: 20_usize, align: std::ptr::Alignment(std::ptr::alignment::AlignmentEnum::_Align1Shl2) }}) -> unwind continue;
+    }
+
+    bb7: {
+        _17 = copy ((_15 as Ok).0: std::ptr::NonNull<[u8]>);
+        StorageLive(_20);
+        _20 = copy _17 as *mut [u8] (Transmute);
+        _3 = copy _20 as *mut u8 (PtrToPtr);
+        StorageDead(_20);
+        StorageDead(_15);
+        StorageDead(_17);
+        StorageDead(_16);
+        _4 = ShallowInitBox(copy _3, [i32; 5]);
+        _14 = copy ((_4.0: std::ptr::Unique<[i32; 5]>).0: std::ptr::NonNull<[i32; 5]>) as *const [i32; 5] (Transmute);
+        (*_14) = [const 1_i32, const 2_i32, const 3_i32, const 4_i32, const 5_i32];
+        _2 = copy _4 as std::boxed::Box<[i32]> (PointerCoercion(Unsize, Implicit));
+        StorageLive(_21);
+        StorageLive(_24);
+        _23 = copy ((_2.0: std::ptr::Unique<[i32]>).0: std::ptr::NonNull<[i32]>) as *const [i32] (Transmute);
+        _21 = PtrMetadata(copy _23);
+        _24 = &raw mut (*_23);
+        StorageLive(_22);
+        _22 = copy _24 as *mut i32 (PtrToPtr);
+        _1 = Vec::<i32>::from_raw_parts_in(move _22, copy _21, move _21, const std::alloc::Global) -> [return: bb11, unwind: bb4];
+    }
+
+    bb8: {
+        _19 = Layout::from_size_align_unchecked::precondition_check(const 20_usize, const 4_usize) -> [return: bb9, unwind unreachable];
+    }
+
+    bb9: {
+        StorageLive(_15);
+        _15 = std::alloc::Global::alloc_impl(const alloc::alloc::exchange_malloc::promoted[0], const Layout {{ size: 20_usize, align: std::ptr::Alignment(std::ptr::alignment::AlignmentEnum::_Align1Shl2) }}, const false) -> [return: bb10, unwind continue];
+    }
+
+    bb10: {
+        _16 = discriminant(_15);
+        switchInt(move _16) -> [0: bb7, 1: bb6, otherwise: bb5];
+    }
+
+    bb11: {
+        StorageDead(_22);
+        StorageDead(_24);
+        StorageDead(_21);
+        StorageDead(_2);
+        StorageLive(_5);
+        StorageLive(_6);
+        StorageLive(_27);
+        StorageLive(_25);
+        _27 = copy ((((_1.0: alloc::raw_vec::RawVec<i32>).0: alloc::raw_vec::RawVecInner).0: std::ptr::Unique<u8>).0: std::ptr::NonNull<u8>);
+        _25 = copy _27 as *const i32 (Transmute);
+        _26 = copy (_1.1: usize);
+        switchInt(const false) -> [0: bb14, otherwise: bb12];
+    }
+
+    bb12: {
+        StorageLive(_29);
+        _29 = copy _27 as *mut () (Transmute);
+        _28 = std::slice::from_raw_parts::precondition_check(move _29, const 4_usize, const 4_usize, copy _26) -> [return: bb13, unwind unreachable];
+    }
+
+    bb13: {
+        StorageDead(_29);
+        goto -> bb14;
+    }
+
+    bb14: {
+        _30 = *const [i32] from (copy _25, copy _26);
+        StorageDead(_25);
+        StorageDead(_27);
+        StorageLive(_31);
+        _31 = Lt(const 2_usize, copy _26);
+        assert(move _31, "index out of bounds: the length is {} but the index is {}", copy _26, const 2_usize) -> [success: bb15, unwind: bb3];
+    }
+
+    bb15: {
+        _6 = &(*_30)[2 of 3];
+        StorageDead(_31);
+        _5 = copy (*_6);
+        StorageDead(_6);
+        StorageLive(_8);
+        StorageLive(_40);
+        _9 = &_5;
+        _40 = copy _9;
+        StorageLive(_10);
+        StorageLive(_11);
+        StorageLive(_35);
+        StorageLive(_36);
+        StorageLive(_32);
+        StorageLive(_33);
+        _36 = &raw const (*_9);
+        StorageLive(_37);
+        _37 = copy _36 as *const () (PtrToPtr);
+        _33 = NonNull::<()> { pointer: copy _37 };
+        StorageDead(_37);
+        StorageLive(_34);
+        _35 = <i32 as std::fmt::Display>::fmt as for<'a, 'b, 'c> fn(&'a i32, &'b mut std::fmt::Formatter<'c>) -> std::result::Result<(), std::fmt::Error> (PointerCoercion(ReifyFnPointer, Implicit));
+        _34 = copy _35 as for<'a, 'b> unsafe fn(std::ptr::NonNull<()>, &'a mut std::fmt::Formatter<'b>) -> std::result::Result<(), std::fmt::Error> (Transmute);
+        _32 = core::fmt::rt::ArgumentType::<'_>::Placeholder { value: move _33, formatter: copy _34, _lifetime: const PhantomData::<&()> };
+        StorageDead(_34);
+        StorageDead(_33);
+        _11 = core::fmt::rt::Argument::<'_> { ty: move _32 };
+        StorageDead(_32);
+        StorageDead(_36);
+        StorageDead(_35);
+        _10 = [move _11];
+        StorageDead(_11);
+        nop;
+        _12 = &_10;
+        StorageLive(_38);
+        _38 = const safe_hardcoded_index::promoted[0] as &[&str] (PointerCoercion(Unsize, Implicit));
+        StorageLive(_39);
+        _39 = copy _12 as &[core::fmt::rt::Argument<'_>] (PointerCoercion(Unsize, Implicit));
+        _8 = Arguments::<'_> { pieces: copy _38, fmt: const Option::<&[core::fmt::rt::Placeholder]>::None, args: copy _39 };
+        StorageDead(_39);
+        StorageDead(_38);
+        _7 = _print(move _8) -> [return: bb1, unwind: bb3];
+    }
+}
+
+alloc136 (size: 16, align: 8) {
+    04 00 00 00 00 00 00 00 14 00 00 00 00 00 00 00 │ ................
+}
+
+alloc54 (size: 16, align: 8) {
+    00 00 00 00 00 00 00 00 __ __ __ __ __ __ __ __ │ ........░░░░░░░░
+}

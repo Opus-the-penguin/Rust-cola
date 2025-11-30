@@ -1,0 +1,32 @@
+// MIR for `get_search_term` before AbortUnwindingCalls
+
+fn get_search_term() -> String {
+    let mut _0: std::string::String;
+    let mut _1: std::result::Result<std::string::String, std::env::VarError>;
+
+    bb0: {
+        StorageLive(_1);
+        _1 = var::<&str>(const "SEARCH") -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        _0 = Result::<String, VarError>::unwrap_or_default(move _1) -> [return: bb2, unwind: bb3];
+    }
+
+    bb2: {
+        StorageDead(_1);
+        return;
+    }
+
+    bb3 (cleanup): {
+        goto -> bb4;
+    }
+
+    bb4 (cleanup): {
+        resume;
+    }
+}
+
+alloc45 (size: 6, align: 1) {
+    53 45 41 52 43 48                               │ SEARCH
+}

@@ -1,0 +1,188 @@
+// MIR for `safe_prepared_statement` before AddMovesForPackedDrops
+
+fn safe_prepared_statement() -> (String, Vec<String>) {
+    let mut _0: (std::string::String, std::vec::Vec<std::string::String>);
+    let _1: std::vec::Vec<std::string::String>;
+    let mut _2: std::boxed::Box<[std::string::String]>;
+    let mut _3: std::boxed::Box<[std::string::String; 2]>;
+    let mut _4: usize;
+    let mut _5: usize;
+    let mut _6: *mut u8;
+    let mut _7: std::boxed::Box<[std::string::String; 2]>;
+    let mut _8: std::string::String;
+    let mut _9: std::result::Result<std::string::String, std::env::VarError>;
+    let mut _10: std::string::String;
+    let mut _11: std::result::Result<std::string::String, std::env::VarError>;
+    let mut _13: &str;
+    let _14: &str;
+    let mut _15: std::string::String;
+    let mut _16: std::vec::Vec<std::string::String>;
+    let mut _17: &mut std::boxed::Box<[std::string::String; 2]>;
+    let mut _18: ();
+    let mut _19: *const [std::string::String; 2];
+    scope 1 {
+        debug params => _1;
+        let _12: std::string::String;
+        scope 2 {
+            debug query => _12;
+        }
+    }
+
+    bb0: {
+        StorageLive(_1);
+        StorageLive(_2);
+        StorageLive(_3);
+        _4 = SizeOf([std::string::String; 2]);
+        _5 = AlignOf([std::string::String; 2]);
+        _6 = alloc::alloc::exchange_malloc(move _4, move _5) -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        StorageLive(_7);
+        _7 = ShallowInitBox(move _6, [std::string::String; 2]);
+        StorageLive(_8);
+        StorageLive(_9);
+        _9 = var::<&str>(const "PARAM1") -> [return: bb2, unwind: bb21];
+    }
+
+    bb2: {
+        _8 = Result::<String, VarError>::unwrap_or_default(move _9) -> [return: bb3, unwind: bb20];
+    }
+
+    bb3: {
+        StorageDead(_9);
+        StorageLive(_10);
+        StorageLive(_11);
+        _11 = var::<&str>(const "PARAM2") -> [return: bb4, unwind: bb19];
+    }
+
+    bb4: {
+        _10 = Result::<String, VarError>::unwrap_or_default(move _11) -> [return: bb5, unwind: bb18];
+    }
+
+    bb5: {
+        StorageDead(_11);
+        (*_7) = [move _8, move _10];
+        goto -> bb6;
+    }
+
+    bb6: {
+        StorageDead(_10);
+        goto -> bb7;
+    }
+
+    bb7: {
+        StorageDead(_8);
+        _3 = move _7;
+        _2 = move _3 as std::boxed::Box<[std::string::String]> (PointerCoercion(Unsize, Implicit));
+        goto -> bb8;
+    }
+
+    bb8: {
+        goto -> bb9;
+    }
+
+    bb9: {
+        StorageDead(_7);
+        StorageDead(_3);
+        _1 = slice::<impl [String]>::into_vec::<std::alloc::Global>(move _2) -> [return: bb10, unwind: bb17];
+    }
+
+    bb10: {
+        StorageDead(_2);
+        StorageLive(_12);
+        StorageLive(_13);
+        StorageLive(_14);
+        _14 = const "SELECT * FROM data WHERE field1 = ? AND field2 = ?";
+        _13 = &(*_14);
+        _12 = <str as ToString>::to_string(move _13) -> [return: bb11, unwind: bb16];
+    }
+
+    bb11: {
+        StorageDead(_13);
+        StorageDead(_14);
+        StorageLive(_15);
+        _15 = move _12;
+        StorageLive(_16);
+        _16 = move _1;
+        _0 = (move _15, move _16);
+        goto -> bb12;
+    }
+
+    bb12: {
+        StorageDead(_16);
+        goto -> bb13;
+    }
+
+    bb13: {
+        StorageDead(_15);
+        goto -> bb14;
+    }
+
+    bb14: {
+        StorageDead(_12);
+        goto -> bb15;
+    }
+
+    bb15: {
+        StorageDead(_1);
+        return;
+    }
+
+    bb16 (cleanup): {
+        drop(_1) -> [return: bb22, unwind terminate(cleanup)];
+    }
+
+    bb17 (cleanup): {
+        goto -> bb22;
+    }
+
+    bb18 (cleanup): {
+        goto -> bb19;
+    }
+
+    bb19 (cleanup): {
+        drop(_8) -> [return: bb21, unwind terminate(cleanup)];
+    }
+
+    bb20 (cleanup): {
+        goto -> bb21;
+    }
+
+    bb21 (cleanup): {
+        goto -> bb25;
+    }
+
+    bb22 (cleanup): {
+        resume;
+    }
+
+    bb23 (cleanup): {
+        _17 = &mut _7;
+        _18 = <Box<[String; 2]> as Drop>::drop(move _17) -> [return: bb22, unwind terminate(cleanup)];
+    }
+
+    bb24 (cleanup): {
+        goto -> bb23;
+    }
+
+    bb25 (cleanup): {
+        _19 = copy ((_7.0: std::ptr::Unique<[std::string::String; 2]>).0: std::ptr::NonNull<[std::string::String; 2]>) as *const [std::string::String; 2] (Transmute);
+        goto -> bb24;
+    }
+}
+
+alloc90 (size: 50, align: 1) {
+    0x00 │ 53 45 4c 45 43 54 20 2a 20 46 52 4f 4d 20 64 61 │ SELECT * FROM da
+    0x10 │ 74 61 20 57 48 45 52 45 20 66 69 65 6c 64 31 20 │ ta WHERE field1 
+    0x20 │ 3d 20 3f 20 41 4e 44 20 66 69 65 6c 64 32 20 3d │ = ? AND field2 =
+    0x30 │ 20 3f                                           │  ?
+}
+
+alloc89 (size: 6, align: 1) {
+    50 41 52 41 4d 32                               │ PARAM2
+}
+
+alloc88 (size: 6, align: 1) {
+    50 41 52 41 4d 31                               │ PARAM1
+}

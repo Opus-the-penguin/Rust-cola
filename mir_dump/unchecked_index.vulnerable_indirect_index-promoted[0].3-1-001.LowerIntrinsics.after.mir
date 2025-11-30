@@ -1,0 +1,18 @@
+// MIR for `vulnerable_indirect_index::promoted[0]` after LowerIntrinsics
+
+const vulnerable_indirect_index::promoted[0]: &[&str; 2] = {
+    let mut _0: &[&str; 2];
+    let mut _1: [&str; 2];
+
+    bb0: {
+        _1 = [const "", const "\n"];
+        _0 = &_1;
+        return;
+    }
+}
+
+alloc13 (size: 0, align: 1) {}
+
+alloc2 (size: 1, align: 1) {
+    0a                                              │ .
+}

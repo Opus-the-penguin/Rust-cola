@@ -1,0 +1,147 @@
+// MIR for `safe_named_params` 0 nll
+
+| Free Region Mapping
+| '?0 | Global | ['?0, '?1]
+| '?1 | Local | ['?1]
+|
+| Inferred Region Values
+| '?0 | U0 | {bb0[0..=2], bb1[0], bb2[0..=7], bb3[0..=8], bb4[0..=1], bb5[0..=1], bb6[0..=1], bb7[0..=1], bb8[0], bb9[0], bb10[0], bb11[0], bb12[0], '?0, '?1}
+| '?1 | U0 | {bb0[0..=2], bb1[0], bb2[0..=7], bb3[0..=8], bb4[0..=1], bb5[0..=1], bb6[0..=1], bb7[0..=1], bb8[0], bb9[0], bb10[0], bb11[0], bb12[0], '?1}
+| '?2 | U0 | {bb0[2]}
+| '?3 | U0 | {bb0[2]}
+| '?4 | U0 | {bb2[5..=7]}
+| '?5 | U0 | {bb2[6..=7]}
+| '?6 | U0 | {bb2[7]}
+| '?7 | U0 | {bb2[6..=7]}
+| '?8 | U0 | {bb2[7]}
+|
+| Inference Constraints
+| '?0 live at {bb0[0..=2], bb1[0], bb2[0..=7], bb3[0..=8], bb4[0..=1], bb5[0..=1], bb6[0..=1], bb7[0..=1], bb8[0], bb9[0], bb10[0], bb11[0], bb12[0]}
+| '?1 live at {bb0[0..=2], bb1[0], bb2[0..=7], bb3[0..=8], bb4[0..=1], bb5[0..=1], bb6[0..=1], bb7[0..=1], bb8[0], bb9[0], bb10[0], bb11[0], bb12[0]}
+| '?2 live at {bb0[2]}
+| '?3 live at {bb0[2]}
+| '?4 live at {bb2[5]}
+| '?5 live at {bb2[6]}
+| '?6 live at {bb2[7]}
+| '?7 live at {bb2[6]}
+| '?8 live at {bb2[7]}
+| '?3: '?2 due to CallArgument(Some(FnDef(DefId(1:1987 ~ std[e902]::env::var), [&'{erased} str]))) at Single(bb0[2]) (examples/sql-injection/src/main.rs:201:20: 201:40 (#0)
+| '?4: '?7 due to Boring at Single(bb2[5]) (examples/sql-injection/src/main.rs:203:17: 203:65 (#0)
+| '?5: '?6 due to Boring at Single(bb2[6]) (examples/sql-injection/src/main.rs:203:17: 203:65 (#0)
+| '?6: '?8 due to CallArgument(Some(FnDef(DefId(3:6626 ~ alloc[f823]::string::ToString::to_string), [str]))) at Single(bb2[7]) (examples/sql-injection/src/main.rs:203:17: 203:77 (#0)
+| '?7: '?5 due to Boring at Single(bb2[6]) (examples/sql-injection/src/main.rs:203:17: 203:65 (#0)
+|
+fn safe_named_params() -> (String, String) {
+    let mut _0: (std::string::String, std::string::String); // return place in scope 0 at examples/sql-injection/src/main.rs:200:31: 200:47
+    let _1: std::string::String;         // in scope 0 at examples/sql-injection/src/main.rs:201:9: 201:17
+    let mut _2: std::result::Result<std::string::String, std::env::VarError>; // in scope 0 at examples/sql-injection/src/main.rs:201:20: 201:40
+    let mut _4: &str;                    // in scope 0 at examples/sql-injection/src/main.rs:203:17: 203:65
+    let _5: &str;                        // in scope 0 at examples/sql-injection/src/main.rs:203:17: 203:65
+    let mut _6: std::string::String;     // in scope 0 at examples/sql-injection/src/main.rs:205:6: 205:11
+    let mut _7: std::string::String;     // in scope 0 at examples/sql-injection/src/main.rs:205:13: 205:21
+    scope 1 {
+        debug username => _1;            // in scope 1 at examples/sql-injection/src/main.rs:201:9: 201:17
+        let _3: std::string::String;     // in scope 1 at examples/sql-injection/src/main.rs:203:9: 203:14
+        scope 2 {
+            debug query => _3;           // in scope 2 at examples/sql-injection/src/main.rs:203:9: 203:14
+        }
+    }
+
+    bb0: {
+        StorageLive(_1);                 // scope 0 at examples/sql-injection/src/main.rs:201:9: 201:17
+        StorageLive(_2);                 // scope 0 at examples/sql-injection/src/main.rs:201:20: 201:40
+        _2 = var::<&str>(const "USERNAME") -> [return: bb1, unwind: bb12]; // scope 0 at examples/sql-injection/src/main.rs:201:20: 201:40
+                                         // mir::ConstOperand
+                                         // + span: examples/sql-injection/src/main.rs:201:20: 201:28
+                                         // + const_: Const { ty: fn(&str) -> Result<String, VarError> {var::<&str>}, val: Value(var::<&str>) }
+                                         // mir::ConstOperand
+                                         // + span: examples/sql-injection/src/main.rs:201:29: 201:39
+                                         // + const_: Const { ty: &str, val: Value("USERNAME") }
+    }
+
+    bb1: {
+        _1 = Result::<String, VarError>::unwrap_or_default(move _2) -> [return: bb2, unwind: bb11]; // scope 0 at examples/sql-injection/src/main.rs:201:20: 201:60
+                                         // mir::ConstOperand
+                                         // + span: examples/sql-injection/src/main.rs:201:41: 201:58
+                                         // + const_: Const { ty: fn(Result<String, VarError>) -> String {Result::<String, VarError>::unwrap_or_default}, val: Value(Result::<String, VarError>::unwrap_or_default) }
+    }
+
+    bb2: {
+        StorageDead(_2);                 // scope 0 at examples/sql-injection/src/main.rs:201:59: 201:60
+        FakeRead(ForLet(None), _1);      // scope 0 at examples/sql-injection/src/main.rs:201:9: 201:17
+        StorageLive(_3);                 // scope 1 at examples/sql-injection/src/main.rs:203:9: 203:14
+        StorageLive(_4);                 // scope 1 at examples/sql-injection/src/main.rs:203:17: 203:65
+        StorageLive(_5);                 // scope 1 at examples/sql-injection/src/main.rs:203:17: 203:65
+        _5 = const "SELECT * FROM users WHERE username = :username"; // scope 1 at examples/sql-injection/src/main.rs:203:17: 203:65
+                                         // mir::ConstOperand
+                                         // + span: examples/sql-injection/src/main.rs:203:17: 203:65
+                                         // + const_: Const { ty: &str, val: Value("SELECT * FROM users WHERE username = :username") }
+        _4 = &(*_5);                     // scope 1 at examples/sql-injection/src/main.rs:203:17: 203:65
+        _3 = <str as ToString>::to_string(move _4) -> [return: bb3, unwind: bb10]; // scope 1 at examples/sql-injection/src/main.rs:203:17: 203:77
+                                         // mir::ConstOperand
+                                         // + span: examples/sql-injection/src/main.rs:203:66: 203:75
+                                         // + const_: Const { ty: for<'a> fn(&'a str) -> String {<str as ToString>::to_string}, val: Value(<str as ToString>::to_string) }
+    }
+
+    bb3: {
+        StorageDead(_4);                 // scope 1 at examples/sql-injection/src/main.rs:203:76: 203:77
+        FakeRead(ForLet(None), _3);      // scope 1 at examples/sql-injection/src/main.rs:203:9: 203:14
+        StorageDead(_5);                 // scope 1 at examples/sql-injection/src/main.rs:203:77: 203:78
+        StorageLive(_6);                 // scope 2 at examples/sql-injection/src/main.rs:205:6: 205:11
+        _6 = move _3;                    // scope 2 at examples/sql-injection/src/main.rs:205:6: 205:11
+        StorageLive(_7);                 // scope 2 at examples/sql-injection/src/main.rs:205:13: 205:21
+        _7 = move _1;                    // scope 2 at examples/sql-injection/src/main.rs:205:13: 205:21
+        _0 = (move _6, move _7);         // scope 2 at examples/sql-injection/src/main.rs:205:5: 205:22
+        drop(_7) -> [return: bb4, unwind: bb8]; // scope 2 at examples/sql-injection/src/main.rs:205:21: 205:22
+    }
+
+    bb4: {
+        StorageDead(_7);                 // scope 2 at examples/sql-injection/src/main.rs:205:21: 205:22
+        drop(_6) -> [return: bb5, unwind: bb9]; // scope 2 at examples/sql-injection/src/main.rs:205:21: 205:22
+    }
+
+    bb5: {
+        StorageDead(_6);                 // scope 2 at examples/sql-injection/src/main.rs:205:21: 205:22
+        drop(_3) -> [return: bb6, unwind: bb10]; // scope 1 at examples/sql-injection/src/main.rs:206:1: 206:2
+    }
+
+    bb6: {
+        StorageDead(_3);                 // scope 1 at examples/sql-injection/src/main.rs:206:1: 206:2
+        drop(_1) -> [return: bb7, unwind: bb12]; // scope 0 at examples/sql-injection/src/main.rs:206:1: 206:2
+    }
+
+    bb7: {
+        StorageDead(_1);                 // scope 0 at examples/sql-injection/src/main.rs:206:1: 206:2
+        return;                          // scope 0 at examples/sql-injection/src/main.rs:206:2: 206:2
+    }
+
+    bb8 (cleanup): {
+        drop(_6) -> [return: bb9, unwind terminate(cleanup)]; // scope 2 at examples/sql-injection/src/main.rs:205:21: 205:22
+    }
+
+    bb9 (cleanup): {
+        drop(_3) -> [return: bb10, unwind terminate(cleanup)]; // scope 1 at examples/sql-injection/src/main.rs:206:1: 206:2
+    }
+
+    bb10 (cleanup): {
+        drop(_1) -> [return: bb12, unwind terminate(cleanup)]; // scope 0 at examples/sql-injection/src/main.rs:206:1: 206:2
+    }
+
+    bb11 (cleanup): {
+        drop(_2) -> [return: bb12, unwind terminate(cleanup)]; // scope 0 at examples/sql-injection/src/main.rs:201:59: 201:60
+    }
+
+    bb12 (cleanup): {
+        resume;                          // scope 0 at examples/sql-injection/src/main.rs:200:1: 206:2
+    }
+}
+
+alloc66 (size: 46, align: 1) {
+    0x00 │ 53 45 4c 45 43 54 20 2a 20 46 52 4f 4d 20 75 73 │ SELECT * FROM us
+    0x10 │ 65 72 73 20 57 48 45 52 45 20 75 73 65 72 6e 61 │ ers WHERE userna
+    0x20 │ 6d 65 20 3d 20 3a 75 73 65 72 6e 61 6d 65       │ me = :username
+}
+
+alloc16 (size: 8, align: 1) {
+    55 53 45 52 4e 41 4d 45                         │ USERNAME
+}

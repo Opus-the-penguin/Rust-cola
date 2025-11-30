@@ -1,0 +1,13 @@
+// MIR for `std::ops::FnMut::call_mut` after Derefer
+
+fn call_mut(_1: &mut fn(char) -> bool {char::methods::<impl char>::is_whitespace}, _2: (char,)) -> <fn(char) -> bool {char::methods::<impl char>::is_whitespace} as FnOnce<(char,)>>::Output {
+    let mut _0: <fn(char) -> bool {std::char::methods::<impl char>::is_whitespace} as std::ops::FnOnce<(char,)>>::Output;
+
+    bb0: {
+        _0 = move (*_1)(move (_2.0: char)) -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        return;
+    }
+}

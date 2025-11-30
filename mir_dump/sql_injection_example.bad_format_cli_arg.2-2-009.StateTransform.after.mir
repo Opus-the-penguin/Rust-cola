@@ -1,0 +1,176 @@
+// MIR for `bad_format_cli_arg` after StateTransform
+
+fn bad_format_cli_arg() -> String {
+    let mut _0: std::string::String;
+    let _1: std::vec::Vec<std::string::String>;
+    let mut _2: std::env::Args;
+    let mut _4: std::option::Option<std::string::String>;
+    let mut _5: std::option::Option<&std::string::String>;
+    let mut _6: &[std::string::String];
+    let _7: &[std::string::String];
+    let mut _8: &std::vec::Vec<std::string::String>;
+    let mut _10: std::string::String;
+    let mut _11: std::fmt::Arguments<'_>;
+    let mut _13: &std::string::String;
+    let mut _15: core::fmt::rt::Argument<'_>;
+    let mut _16: &std::string::String;
+    let mut _17: &[&str; 2];
+    let _18: &[&str; 2];
+    let _19: [&str; 2];
+    let mut _20: &[core::fmt::rt::Argument<'_>; 1];
+    let _21: &[core::fmt::rt::Argument<'_>; 1];
+    let mut _23: &std::string::String;
+    scope 1 {
+        debug args => _1;
+        let _3: std::string::String;
+        scope 2 {
+            debug username => _3;
+            let _9: std::string::String;
+            let _12: (&std::string::String,);
+            scope 3 {
+                debug query => _9;
+            }
+            scope 4 {
+                debug args => _12;
+                let _14: [core::fmt::rt::Argument<'_>; 1];
+                scope 5 {
+                    debug args => _14;
+                    let mut _22: &[&str; 2];
+                }
+            }
+        }
+    }
+
+    bb0: {
+        StorageLive(_1);
+        StorageLive(_2);
+        _2 = args() -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        _1 = <Args as Iterator>::collect::<Vec<String>>(move _2) -> [return: bb2, unwind: bb18];
+    }
+
+    bb2: {
+        StorageDead(_2);
+        StorageLive(_3);
+        StorageLive(_4);
+        StorageLive(_5);
+        StorageLive(_6);
+        StorageLive(_7);
+        StorageLive(_8);
+        _8 = &_1;
+        _7 = <Vec<String> as Deref>::deref(move _8) -> [return: bb3, unwind: bb17];
+    }
+
+    bb3: {
+        _6 = &(*_7);
+        StorageDead(_8);
+        _5 = core::slice::<impl [String]>::get::<usize>(move _6, const 1_usize) -> [return: bb4, unwind: bb17];
+    }
+
+    bb4: {
+        StorageDead(_6);
+        _4 = Option::<&String>::cloned(move _5) -> [return: bb5, unwind: bb17];
+    }
+
+    bb5: {
+        StorageDead(_5);
+        _3 = Option::<String>::unwrap_or_default(move _4) -> [return: bb6, unwind: bb16];
+    }
+
+    bb6: {
+        StorageDead(_4);
+        StorageDead(_7);
+        StorageLive(_9);
+        StorageLive(_10);
+        StorageLive(_11);
+        StorageLive(_12);
+        StorageLive(_13);
+        _13 = &_3;
+        _12 = (move _13,);
+        StorageDead(_13);
+        StorageLive(_14);
+        StorageLive(_15);
+        StorageLive(_16);
+        _23 = deref_copy (_12.0: &std::string::String);
+        _16 = &(*_23);
+        _15 = core::fmt::rt::Argument::<'_>::new_display::<String>(move _16) -> [return: bb7, unwind: bb15];
+    }
+
+    bb7: {
+        StorageDead(_16);
+        _14 = [move _15];
+        StorageDead(_15);
+        StorageLive(_17);
+        StorageLive(_18);
+        _22 = const bad_format_cli_arg::promoted[0];
+        _18 = &(*_22);
+        _17 = &(*_18);
+        StorageLive(_20);
+        StorageLive(_21);
+        _21 = &_14;
+        _20 = &(*_21);
+        _11 = core::fmt::rt::<impl Arguments<'_>>::new_v1::<2, 1>(move _17, move _20) -> [return: bb8, unwind: bb15];
+    }
+
+    bb8: {
+        StorageDead(_21);
+        StorageDead(_20);
+        StorageDead(_18);
+        StorageDead(_17);
+        _10 = format(move _11) -> [return: bb9, unwind: bb15];
+    }
+
+    bb9: {
+        StorageDead(_14);
+        StorageDead(_12);
+        StorageDead(_11);
+        _9 = must_use::<String>(move _10) -> [return: bb10, unwind: bb14];
+    }
+
+    bb10: {
+        StorageDead(_10);
+        _0 = move _9;
+        goto -> bb11;
+    }
+
+    bb11: {
+        StorageDead(_9);
+        drop(_3) -> [return: bb12, unwind: bb17];
+    }
+
+    bb12: {
+        StorageDead(_3);
+        drop(_1) -> [return: bb13, unwind: bb19];
+    }
+
+    bb13: {
+        StorageDead(_1);
+        return;
+    }
+
+    bb14 (cleanup): {
+        goto -> bb15;
+    }
+
+    bb15 (cleanup): {
+        drop(_3) -> [return: bb17, unwind terminate(cleanup)];
+    }
+
+    bb16 (cleanup): {
+        goto -> bb17;
+    }
+
+    bb17 (cleanup): {
+        drop(_1) -> [return: bb19, unwind terminate(cleanup)];
+    }
+
+    bb18 (cleanup): {
+        goto -> bb19;
+    }
+
+    bb19 (cleanup): {
+        resume;
+    }
+}

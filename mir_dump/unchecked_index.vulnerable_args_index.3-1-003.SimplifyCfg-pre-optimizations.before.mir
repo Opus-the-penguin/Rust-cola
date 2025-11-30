@@ -1,0 +1,171 @@
+// MIR for `vulnerable_args_index` before SimplifyCfg-pre-optimizations
+
+fn vulnerable_args_index() -> () {
+    let mut _0: ();
+    let _1: [i32; 5];
+    let mut _3: std::env::Args;
+    let mut _5: std::result::Result<usize, std::num::ParseIntError>;
+    let mut _6: &str;
+    let _7: &str;
+    let mut _8: &std::string::String;
+    let _9: &std::string::String;
+    let mut _10: &std::vec::Vec<std::string::String>;
+    let _11: ();
+    let _12: ();
+    let mut _13: std::fmt::Arguments<'_>;
+    let mut _15: &i32;
+    let _16: usize;
+    let mut _17: bool;
+    let mut _19: core::fmt::rt::Argument<'_>;
+    let mut _20: &i32;
+    let mut _21: &[&str; 2];
+    let _22: &[&str; 2];
+    let _23: [&str; 2];
+    let mut _24: &[core::fmt::rt::Argument<'_>; 1];
+    let _25: &[core::fmt::rt::Argument<'_>; 1];
+    let mut _27: &i32;
+    scope 1 {
+        debug data => _1;
+        let _2: std::vec::Vec<std::string::String>;
+        scope 2 {
+            debug args => _2;
+            let _4: usize;
+            scope 3 {
+                debug idx => _4;
+                let _14: (&i32,);
+                scope 4 {
+                    debug args => _14;
+                    let _18: [core::fmt::rt::Argument<'_>; 1];
+                    scope 5 {
+                        debug args => _18;
+                        let mut _26: &[&str; 2];
+                    }
+                }
+            }
+        }
+    }
+
+    bb0: {
+        StorageLive(_1);
+        _1 = [const 100_i32, const 200_i32, const 300_i32, const 400_i32, const 500_i32];
+        StorageLive(_2);
+        StorageLive(_3);
+        _3 = args() -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        _2 = <Args as Iterator>::collect::<Vec<String>>(move _3) -> [return: bb2, unwind: bb13];
+    }
+
+    bb2: {
+        StorageDead(_3);
+        StorageLive(_4);
+        StorageLive(_5);
+        StorageLive(_6);
+        StorageLive(_7);
+        StorageLive(_8);
+        StorageLive(_9);
+        StorageLive(_10);
+        _10 = &_2;
+        _9 = <Vec<String> as Index<usize>>::index(move _10, const 1_usize) -> [return: bb3, unwind: bb12];
+    }
+
+    bb3: {
+        _8 = &(*_9);
+        _7 = <String as Deref>::deref(move _8) -> [return: bb4, unwind: bb12];
+    }
+
+    bb4: {
+        _6 = &(*_7);
+        StorageDead(_10);
+        StorageDead(_8);
+        _5 = core::str::<impl str>::parse::<usize>(move _6) -> [return: bb5, unwind: bb12];
+    }
+
+    bb5: {
+        StorageDead(_6);
+        _4 = Result::<usize, ParseIntError>::unwrap(move _5) -> [return: bb6, unwind: bb12];
+    }
+
+    bb6: {
+        StorageDead(_5);
+        StorageDead(_9);
+        StorageDead(_7);
+        StorageLive(_11);
+        StorageLive(_12);
+        StorageLive(_13);
+        StorageLive(_14);
+        StorageLive(_15);
+        StorageLive(_16);
+        _16 = copy _4;
+        _17 = Lt(copy _16, const 5_usize);
+        assert(move _17, "index out of bounds: the length is {} but the index is {}", const 5_usize, copy _16) -> [success: bb7, unwind: bb12];
+    }
+
+    bb7: {
+        _15 = &_1[_16];
+        _14 = (move _15,);
+        StorageDead(_15);
+        StorageLive(_18);
+        StorageLive(_19);
+        StorageLive(_20);
+        _27 = deref_copy (_14.0: &i32);
+        _20 = &(*_27);
+        _19 = core::fmt::rt::Argument::<'_>::new_display::<i32>(move _20) -> [return: bb8, unwind: bb12];
+    }
+
+    bb8: {
+        StorageDead(_20);
+        _18 = [move _19];
+        StorageDead(_19);
+        StorageLive(_21);
+        StorageLive(_22);
+        _26 = const vulnerable_args_index::promoted[0];
+        _22 = &(*_26);
+        _21 = &(*_22);
+        StorageLive(_24);
+        StorageLive(_25);
+        _25 = &_18;
+        _24 = &(*_25);
+        _13 = core::fmt::rt::<impl Arguments<'_>>::new_v1::<2, 1>(move _21, move _24) -> [return: bb9, unwind: bb12];
+    }
+
+    bb9: {
+        StorageDead(_25);
+        StorageDead(_24);
+        StorageDead(_22);
+        StorageDead(_21);
+        _12 = _print(move _13) -> [return: bb10, unwind: bb12];
+    }
+
+    bb10: {
+        StorageDead(_13);
+        StorageDead(_18);
+        StorageDead(_16);
+        StorageDead(_14);
+        StorageDead(_12);
+        _11 = const ();
+        StorageDead(_11);
+        _0 = const ();
+        StorageDead(_4);
+        drop(_2) -> [return: bb11, unwind: bb14];
+    }
+
+    bb11: {
+        StorageDead(_2);
+        StorageDead(_1);
+        return;
+    }
+
+    bb12 (cleanup): {
+        drop(_2) -> [return: bb14, unwind terminate(cleanup)];
+    }
+
+    bb13 (cleanup): {
+        goto -> bb14;
+    }
+
+    bb14 (cleanup): {
+        resume;
+    }
+}

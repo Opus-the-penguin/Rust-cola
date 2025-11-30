@@ -1,0 +1,18 @@
+// MIR for `main::promoted[1]` after RemovePlaceMention
+
+const main::promoted[1]: &[&str; 1] = {
+    let mut _0: &[&str; 1];
+    let mut _1: [&str; 1];
+
+    bb0: {
+        _1 = [const "SQL Injection test cases for RUSTCOLA087\n"];
+        _0 = &_1;
+        return;
+    }
+}
+
+alloc91 (size: 41, align: 1) {
+    0x00 │ 53 51 4c 20 49 6e 6a 65 63 74 69 6f 6e 20 74 65 │ SQL Injection te
+    0x10 │ 73 74 20 63 61 73 65 73 20 66 6f 72 20 52 55 53 │ st cases for RUS
+    0x20 │ 54 43 4f 4c 41 30 38 37 0a                      │ TCOLA087.
+}

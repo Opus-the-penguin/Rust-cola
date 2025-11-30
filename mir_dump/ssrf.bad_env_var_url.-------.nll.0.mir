@@ -1,0 +1,454 @@
+// MIR for `bad_env_var_url` 0 nll
+
+| Free Region Mapping
+| '?0 | Global | ['?0, '?1]
+| '?1 | Local | ['?1]
+|
+| Inferred Region Values
+| '?0 | U0 | {bb0[0..=3], bb1[0], bb2[0..=3], bb3[0..=1], bb4[0], bb5[0..=3], bb6[0..=4], bb7[0..=1], bb8[0..=2], bb9[0..=6], bb10[0..=1], bb11[0..=3], bb12[0..=1], bb13[0], bb14[0..=3], bb15[0..=4], bb16[0..=1], bb17[0..=2], bb18[0..=6], bb19[0..=1], bb20[0..=3], bb21[0..=1], bb22[0], bb23[0..=3], bb24[0..=4], bb25[0..=1], bb26[0..=2], bb27[0..=1], bb28[0..=1], bb29[0..=1], bb30[0..=1], bb31[0..=2], bb32[0..=1], bb33[0..=1], bb34[0..=1], bb35[0..=1], bb36[0..=2], bb37[0..=1], bb38[0..=1], bb39[0..=1], bb40[0], bb41[0], bb42[0], bb43[0], bb44[0], bb45[0], bb46[0], bb47[0], bb48[0], bb49[0], bb50[0], bb51[0], bb52[0], bb53[0], bb54[0], bb55[0], bb56[0], bb57[0], bb58[0], '?0, '?1}
+| '?1 | U0 | {bb0[0..=3], bb1[0], bb2[0..=3], bb3[0..=1], bb4[0], bb5[0..=3], bb6[0..=4], bb7[0..=1], bb8[0..=2], bb9[0..=6], bb10[0..=1], bb11[0..=3], bb12[0..=1], bb13[0], bb14[0..=3], bb15[0..=4], bb16[0..=1], bb17[0..=2], bb18[0..=6], bb19[0..=1], bb20[0..=3], bb21[0..=1], bb22[0], bb23[0..=3], bb24[0..=4], bb25[0..=1], bb26[0..=2], bb27[0..=1], bb28[0..=1], bb29[0..=1], bb30[0..=1], bb31[0..=2], bb32[0..=1], bb33[0..=1], bb34[0..=1], bb35[0..=1], bb36[0..=2], bb37[0..=1], bb38[0..=1], bb39[0..=1], bb40[0], bb41[0], bb42[0], bb43[0], bb44[0], bb45[0], bb46[0], bb47[0], bb48[0], bb49[0], bb50[0], bb51[0], bb52[0], bb53[0], bb54[0], bb55[0], bb56[0], bb57[0], bb58[0], '?1}
+| '?2 | U0 | {bb0[3]}
+| '?3 | U0 | {bb0[3]}
+| '?4 | U0 | {bb0[0..=3], bb1[0], bb2[0..=3], bb3[0..=1], bb4[0], bb5[0..=3], bb6[0..=4], bb7[0..=1], bb8[0..=2], bb9[0..=6], bb10[0..=1], bb11[0..=3], bb12[0..=1], bb13[0], bb14[0..=3], bb15[0..=4], bb16[0..=1], bb17[0..=2], bb18[0..=6], bb19[0..=1], bb20[0..=3], bb21[0..=1], bb22[0], bb23[0..=3], bb24[0..=4], bb25[0..=1], bb26[0..=2], bb27[0..=1], bb28[0..=1], bb29[0..=1], bb30[0..=1], bb31[0..=2], bb32[0..=1], bb33[0..=1], bb34[0..=1], bb35[0..=1], bb36[0..=2], bb37[0..=1], bb38[0..=1], bb39[0..=1], bb40[0], bb41[0], bb42[0], bb43[0], bb44[0], bb45[0], bb46[0], bb47[0], bb48[0], bb49[0], bb50[0], bb51[0], bb52[0], bb53[0], bb54[0], bb55[0], bb56[0], bb57[0], bb58[0], '?0, '?1}
+| '?5 | U0 | {bb9[5..=6]}
+| '?6 | U0 | {bb9[6]}
+| '?7 | U0 | {bb0[0..=3], bb1[0], bb2[0..=3], bb3[0..=1], bb4[0], bb5[0..=3], bb6[0..=4], bb7[0..=1], bb8[0..=2], bb9[0..=6], bb10[0..=1], bb11[0..=3], bb12[0..=1], bb13[0], bb14[0..=3], bb15[0..=4], bb16[0..=1], bb17[0..=2], bb18[0..=6], bb19[0..=1], bb20[0..=3], bb21[0..=1], bb22[0], bb23[0..=3], bb24[0..=4], bb25[0..=1], bb26[0..=2], bb27[0..=1], bb28[0..=1], bb29[0..=1], bb30[0..=1], bb31[0..=2], bb32[0..=1], bb33[0..=1], bb34[0..=1], bb35[0..=1], bb36[0..=2], bb37[0..=1], bb38[0..=1], bb39[0..=1], bb40[0], bb41[0], bb42[0], bb43[0], bb44[0], bb45[0], bb46[0], bb47[0], bb48[0], bb49[0], bb50[0], bb51[0], bb52[0], bb53[0], bb54[0], bb55[0], bb56[0], bb57[0], bb58[0], '?0, '?1}
+| '?8 | U0 | {bb0[0..=3], bb1[0], bb2[0..=3], bb3[0..=1], bb4[0], bb5[0..=3], bb6[0..=4], bb7[0..=1], bb8[0..=2], bb9[0..=6], bb10[0..=1], bb11[0..=3], bb12[0..=1], bb13[0], bb14[0..=3], bb15[0..=4], bb16[0..=1], bb17[0..=2], bb18[0..=6], bb19[0..=1], bb20[0..=3], bb21[0..=1], bb22[0], bb23[0..=3], bb24[0..=4], bb25[0..=1], bb26[0..=2], bb27[0..=1], bb28[0..=1], bb29[0..=1], bb30[0..=1], bb31[0..=2], bb32[0..=1], bb33[0..=1], bb34[0..=1], bb35[0..=1], bb36[0..=2], bb37[0..=1], bb38[0..=1], bb39[0..=1], bb40[0], bb41[0], bb42[0], bb43[0], bb44[0], bb45[0], bb46[0], bb47[0], bb48[0], bb49[0], bb50[0], bb51[0], bb52[0], bb53[0], bb54[0], bb55[0], bb56[0], bb57[0], bb58[0], '?0, '?1}
+| '?9 | U0 | {bb0[0..=3], bb1[0], bb2[0..=3], bb3[0..=1], bb4[0], bb5[0..=3], bb6[0..=4], bb7[0..=1], bb8[0..=2], bb9[0..=6], bb10[0..=1], bb11[0..=3], bb12[0..=1], bb13[0], bb14[0..=3], bb15[0..=4], bb16[0..=1], bb17[0..=2], bb18[0..=6], bb19[0..=1], bb20[0..=3], bb21[0..=1], bb22[0], bb23[0..=3], bb24[0..=4], bb25[0..=1], bb26[0..=2], bb27[0..=1], bb28[0..=1], bb29[0..=1], bb30[0..=1], bb31[0..=2], bb32[0..=1], bb33[0..=1], bb34[0..=1], bb35[0..=1], bb36[0..=2], bb37[0..=1], bb38[0..=1], bb39[0..=1], bb40[0], bb41[0], bb42[0], bb43[0], bb44[0], bb45[0], bb46[0], bb47[0], bb48[0], bb49[0], bb50[0], bb51[0], bb52[0], bb53[0], bb54[0], bb55[0], bb56[0], bb57[0], bb58[0], '?0, '?1}
+| '?10 | U0 | {bb0[0..=3], bb1[0], bb2[0..=3], bb3[0..=1], bb4[0], bb5[0..=3], bb6[0..=4], bb7[0..=1], bb8[0..=2], bb9[0..=6], bb10[0..=1], bb11[0..=3], bb12[0..=1], bb13[0], bb14[0..=3], bb15[0..=4], bb16[0..=1], bb17[0..=2], bb18[0..=6], bb19[0..=1], bb20[0..=3], bb21[0..=1], bb22[0], bb23[0..=3], bb24[0..=4], bb25[0..=1], bb26[0..=2], bb27[0..=1], bb28[0..=1], bb29[0..=1], bb30[0..=1], bb31[0..=2], bb32[0..=1], bb33[0..=1], bb34[0..=1], bb35[0..=1], bb36[0..=2], bb37[0..=1], bb38[0..=1], bb39[0..=1], bb40[0], bb41[0], bb42[0], bb43[0], bb44[0], bb45[0], bb46[0], bb47[0], bb48[0], bb49[0], bb50[0], bb51[0], bb52[0], bb53[0], bb54[0], bb55[0], bb56[0], bb57[0], bb58[0], '?0, '?1}
+| '?11 | U0 | {bb9[6]}
+|
+| Inference Constraints
+| '?0 live at {bb0[0..=3], bb1[0], bb2[0..=3], bb3[0..=1], bb4[0], bb5[0..=3], bb6[0..=4], bb7[0..=1], bb8[0..=2], bb9[0..=6], bb10[0..=1], bb11[0..=3], bb12[0..=1], bb13[0], bb14[0..=3], bb15[0..=4], bb16[0..=1], bb17[0..=2], bb18[0..=6], bb19[0..=1], bb20[0..=3], bb21[0..=1], bb22[0], bb23[0..=3], bb24[0..=4], bb25[0..=1], bb26[0..=2], bb27[0..=1], bb28[0..=1], bb29[0..=1], bb30[0..=1], bb31[0..=2], bb32[0..=1], bb33[0..=1], bb34[0..=1], bb35[0..=1], bb36[0..=2], bb37[0..=1], bb38[0..=1], bb39[0..=1], bb40[0], bb41[0], bb42[0], bb43[0], bb44[0], bb45[0], bb46[0], bb47[0], bb48[0], bb49[0], bb50[0], bb51[0], bb52[0], bb53[0], bb54[0], bb55[0], bb56[0], bb57[0], bb58[0]}
+| '?1 live at {bb0[0..=3], bb1[0], bb2[0..=3], bb3[0..=1], bb4[0], bb5[0..=3], bb6[0..=4], bb7[0..=1], bb8[0..=2], bb9[0..=6], bb10[0..=1], bb11[0..=3], bb12[0..=1], bb13[0], bb14[0..=3], bb15[0..=4], bb16[0..=1], bb17[0..=2], bb18[0..=6], bb19[0..=1], bb20[0..=3], bb21[0..=1], bb22[0], bb23[0..=3], bb24[0..=4], bb25[0..=1], bb26[0..=2], bb27[0..=1], bb28[0..=1], bb29[0..=1], bb30[0..=1], bb31[0..=2], bb32[0..=1], bb33[0..=1], bb34[0..=1], bb35[0..=1], bb36[0..=2], bb37[0..=1], bb38[0..=1], bb39[0..=1], bb40[0], bb41[0], bb42[0], bb43[0], bb44[0], bb45[0], bb46[0], bb47[0], bb48[0], bb49[0], bb50[0], bb51[0], bb52[0], bb53[0], bb54[0], bb55[0], bb56[0], bb57[0], bb58[0]}
+| '?2 live at {bb0[3]}
+| '?3 live at {bb0[3]}
+| '?4 live at {bb6[4]}
+| '?5 live at {bb9[5]}
+| '?6 live at {bb9[6]}
+| '?7 live at {bb15[4]}
+| '?8 live at {bb24[4]}
+| '?9 live at {bb26[1]}
+| '?11 live at {bb9[6]}
+| '?0: '?10 due to BoringNoLocation at All(examples/ssrf/src/main.rs:19:25: 19:67) (examples/ssrf/src/main.rs:19:25: 19:67 (#0)
+| '?3: '?2 due to CallArgument(Some(FnDef(DefId(1:1987 ~ std[e902]::env::var), [&'{erased} str]))) at Single(bb0[3]) (examples/ssrf/src/main.rs:20:15: 20:37 (#0)
+| '?4: '?10 due to Return(Normal) at Single(bb6[4]) (examples/ssrf/src/main.rs:20:15: 20:38 (#66)
+| '?5: '?11 due to Boring at Single(bb9[5]) (examples/ssrf/src/main.rs:21:43: 21:47 (#0)
+| '?7: '?10 due to Return(Normal) at Single(bb15[4]) (examples/ssrf/src/main.rs:21:20: 21:49 (#68)
+| '?8: '?10 due to Return(Normal) at Single(bb24[4]) (examples/ssrf/src/main.rs:22:8: 22:24 (#70)
+| '?9: '?10 due to Return(Normal) at Single(bb26[1]) (examples/ssrf/src/main.rs:22:5: 22:25 (#0)
+| '?10: '?0 due to BoringNoLocation at All(examples/ssrf/src/main.rs:19:25: 19:67) (examples/ssrf/src/main.rs:19:25: 19:67 (#0)
+| '?11: '?6 due to CallArgument(Some(FnDef(DefId(20:1217 ~ reqwest[a32f]::blocking::get), [&'{erased} std::string::String]))) at Single(bb9[6]) (examples/ssrf/src/main.rs:21:20: 21:48 (#0)
+|
+| Borrows
+| bw0: issued at bb9[5] in '?5
+|
+fn bad_env_var_url() -> Result<String, Box<dyn std::error::Error>> {
+    let mut _0: std::result::Result<std::string::String, std::boxed::Box<dyn std::error::Error>>; // return place in scope 0 at examples/ssrf/src/main.rs:19:25: 19:67
+    let _1: std::string::String;         // in scope 0 at examples/ssrf/src/main.rs:20:9: 20:12
+    let mut _2: std::ops::ControlFlow<std::result::Result<std::convert::Infallible, std::env::VarError>, std::string::String>; // in scope 0 at examples/ssrf/src/main.rs:20:15: 20:38
+    let mut _3: std::result::Result<std::string::String, std::env::VarError>; // in scope 0 at examples/ssrf/src/main.rs:20:15: 20:37
+    let mut _4: isize;                   // in scope 0 at examples/ssrf/src/main.rs:20:37: 20:38
+    let _5: std::result::Result<std::convert::Infallible, std::env::VarError>; // in scope 0 at examples/ssrf/src/main.rs:20:37: 20:38
+    let mut _6: !;                       // in scope 0 at examples/ssrf/src/main.rs:20:37: 20:38
+    let mut _7: std::result::Result<std::convert::Infallible, std::env::VarError>; // in scope 0 at examples/ssrf/src/main.rs:20:37: 20:38
+    let _8: std::string::String;         // in scope 0 at examples/ssrf/src/main.rs:20:15: 20:38
+    let mut _10: std::ops::ControlFlow<std::result::Result<std::convert::Infallible, reqwest::Error>, reqwest::blocking::Response>; // in scope 0 at examples/ssrf/src/main.rs:21:20: 21:49
+    let mut _11: std::result::Result<reqwest::blocking::Response, reqwest::Error>; // in scope 0 at examples/ssrf/src/main.rs:21:20: 21:48
+    let mut _12: &std::string::String;   // in scope 0 at examples/ssrf/src/main.rs:21:43: 21:47
+    let mut _13: isize;                  // in scope 0 at examples/ssrf/src/main.rs:21:48: 21:49
+    let mut _15: !;                      // in scope 0 at examples/ssrf/src/main.rs:21:48: 21:49
+    let mut _16: std::result::Result<std::convert::Infallible, reqwest::Error>; // in scope 0 at examples/ssrf/src/main.rs:21:48: 21:49
+    let mut _18: std::string::String;    // in scope 0 at examples/ssrf/src/main.rs:22:8: 22:24
+    let mut _19: std::ops::ControlFlow<std::result::Result<std::convert::Infallible, reqwest::Error>, std::string::String>; // in scope 0 at examples/ssrf/src/main.rs:22:8: 22:24
+    let mut _20: std::result::Result<std::string::String, reqwest::Error>; // in scope 0 at examples/ssrf/src/main.rs:22:8: 22:23
+    let mut _21: reqwest::blocking::Response; // in scope 0 at examples/ssrf/src/main.rs:22:8: 22:16
+    let mut _22: isize;                  // in scope 0 at examples/ssrf/src/main.rs:22:23: 22:24
+    let mut _24: !;                      // in scope 0 at examples/ssrf/src/main.rs:22:23: 22:24
+    let mut _25: std::result::Result<std::convert::Infallible, reqwest::Error>; // in scope 0 at examples/ssrf/src/main.rs:22:23: 22:24
+    scope 1 {
+        debug url => _1;                 // in scope 1 at examples/ssrf/src/main.rs:20:9: 20:12
+        let _9: reqwest::blocking::Response; // in scope 1 at examples/ssrf/src/main.rs:21:9: 21:17
+        let _14: std::result::Result<std::convert::Infallible, reqwest::Error>; // in scope 1 at examples/ssrf/src/main.rs:21:48: 21:49
+        let _17: reqwest::blocking::Response; // in scope 1 at examples/ssrf/src/main.rs:21:20: 21:49
+        scope 6 {
+            debug response => _9;        // in scope 6 at examples/ssrf/src/main.rs:21:9: 21:17
+            let _23: std::result::Result<std::convert::Infallible, reqwest::Error>; // in scope 6 at examples/ssrf/src/main.rs:22:23: 22:24
+            let _26: std::string::String; // in scope 6 at examples/ssrf/src/main.rs:22:8: 22:24
+            scope 11 {
+                debug residual => _23;   // in scope 11 at examples/ssrf/src/main.rs:22:23: 22:24
+                scope 12 {
+                }
+            }
+            scope 13 {
+                debug val => _26;        // in scope 13 at examples/ssrf/src/main.rs:22:8: 22:24
+                scope 14 {
+                }
+            }
+        }
+        scope 7 {
+            debug residual => _14;       // in scope 7 at examples/ssrf/src/main.rs:21:48: 21:49
+            scope 8 {
+            }
+        }
+        scope 9 {
+            debug val => _17;            // in scope 9 at examples/ssrf/src/main.rs:21:20: 21:49
+            scope 10 {
+            }
+        }
+    }
+    scope 2 {
+        debug residual => _5;            // in scope 2 at examples/ssrf/src/main.rs:20:37: 20:38
+        scope 3 {
+        }
+    }
+    scope 4 {
+        debug val => _8;                 // in scope 4 at examples/ssrf/src/main.rs:20:15: 20:38
+        scope 5 {
+        }
+    }
+
+    bb0: {
+        StorageLive(_1);                 // scope 0 at examples/ssrf/src/main.rs:20:9: 20:12
+        StorageLive(_2);                 // scope 0 at examples/ssrf/src/main.rs:20:15: 20:38
+        StorageLive(_3);                 // scope 0 at examples/ssrf/src/main.rs:20:15: 20:37
+        _3 = var::<&str>(const "TARGET_URL") -> [return: bb1, unwind: bb58]; // scope 0 at examples/ssrf/src/main.rs:20:15: 20:37
+                                         // mir::ConstOperand
+                                         // + span: examples/ssrf/src/main.rs:20:15: 20:23
+                                         // + const_: Const { ty: fn(&str) -> Result<String, VarError> {var::<&str>}, val: Value(var::<&str>) }
+                                         // mir::ConstOperand
+                                         // + span: examples/ssrf/src/main.rs:20:24: 20:36
+                                         // + const_: Const { ty: &str, val: Value("TARGET_URL") }
+    }
+
+    bb1: {
+        _2 = <Result<String, VarError> as Try>::branch(move _3) -> [return: bb2, unwind: bb57]; // scope 0 at examples/ssrf/src/main.rs:20:15: 20:38
+                                         // mir::ConstOperand
+                                         // + span: examples/ssrf/src/main.rs:20:15: 20:38
+                                         // + const_: Const { ty: fn(Result<String, VarError>) -> ControlFlow<<Result<String, VarError> as Try>::Residual, <Result<String, VarError> as Try>::Output> {<Result<String, VarError> as Try>::branch}, val: Value(<Result<String, VarError> as Try>::branch) }
+    }
+
+    bb2: {
+        StorageDead(_3);                 // scope 0 at examples/ssrf/src/main.rs:20:37: 20:38
+        PlaceMention(_2);                // scope 0 at examples/ssrf/src/main.rs:20:15: 20:38
+        _4 = discriminant(_2);           // scope 0 at examples/ssrf/src/main.rs:20:15: 20:38
+        switchInt(move _4) -> [0: bb5, 1: bb4, otherwise: bb3]; // scope 0 at examples/ssrf/src/main.rs:20:15: 20:38
+    }
+
+    bb3: {
+        FakeRead(ForMatchedPlace(None), _2); // scope 0 at examples/ssrf/src/main.rs:20:15: 20:38
+        unreachable;                     // scope 0 at examples/ssrf/src/main.rs:20:15: 20:38
+    }
+
+    bb4: {
+        falseEdge -> [real: bb6, imaginary: bb5]; // scope 0 at examples/ssrf/src/main.rs:20:37: 20:38
+    }
+
+    bb5: {
+        StorageLive(_8);                 // scope 0 at examples/ssrf/src/main.rs:20:15: 20:38
+        _8 = move ((_2 as Continue).0: std::string::String); // scope 0 at examples/ssrf/src/main.rs:20:15: 20:38
+        _1 = move _8;                    // scope 5 at examples/ssrf/src/main.rs:20:15: 20:38
+        drop(_8) -> [return: bb8, unwind: bb56]; // scope 0 at examples/ssrf/src/main.rs:20:37: 20:38
+    }
+
+    bb6: {
+        StorageLive(_5);                 // scope 0 at examples/ssrf/src/main.rs:20:37: 20:38
+        _5 = move ((_2 as Break).0: std::result::Result<std::convert::Infallible, std::env::VarError>); // scope 0 at examples/ssrf/src/main.rs:20:37: 20:38
+        StorageLive(_7);                 // scope 3 at examples/ssrf/src/main.rs:20:37: 20:38
+        _7 = move _5;                    // scope 3 at examples/ssrf/src/main.rs:20:37: 20:38
+        _0 = <Result<String, Box<dyn std::error::Error>> as FromResidual<Result<Infallible, VarError>>>::from_residual(move _7) -> [return: bb7, unwind: bb54]; // scope 3 at examples/ssrf/src/main.rs:20:15: 20:38
+                                         // mir::ConstOperand
+                                         // + span: examples/ssrf/src/main.rs:20:37: 20:38
+                                         // + const_: Const { ty: fn(Result<Infallible, VarError>) -> Result<String, Box<dyn std::error::Error>> {<Result<String, Box<dyn std::error::Error>> as FromResidual<Result<Infallible, VarError>>>::from_residual}, val: Value(<Result<String, Box<dyn std::error::Error>> as FromResidual<Result<Infallible, VarError>>>::from_residual) }
+    }
+
+    bb7: {
+        StorageDead(_7);                 // scope 3 at examples/ssrf/src/main.rs:20:37: 20:38
+        drop(_5) -> [return: bb37, unwind: bb56]; // scope 0 at examples/ssrf/src/main.rs:20:37: 20:38
+    }
+
+    bb8: {
+        StorageDead(_8);                 // scope 0 at examples/ssrf/src/main.rs:20:37: 20:38
+        FakeRead(ForLet(None), _1);      // scope 0 at examples/ssrf/src/main.rs:20:9: 20:12
+        drop(_2) -> [return: bb9, unwind: bb53]; // scope 0 at examples/ssrf/src/main.rs:20:38: 20:39
+    }
+
+    bb9: {
+        StorageDead(_2);                 // scope 0 at examples/ssrf/src/main.rs:20:38: 20:39
+        StorageLive(_9);                 // scope 1 at examples/ssrf/src/main.rs:21:9: 21:17
+        StorageLive(_10);                // scope 1 at examples/ssrf/src/main.rs:21:20: 21:49
+        StorageLive(_11);                // scope 1 at examples/ssrf/src/main.rs:21:20: 21:48
+        StorageLive(_12);                // scope 1 at examples/ssrf/src/main.rs:21:43: 21:47
+        _12 = &_1;                       // scope 1 at examples/ssrf/src/main.rs:21:43: 21:47
+        _11 = reqwest::blocking::get::<&String>(move _12) -> [return: bb10, unwind: bb53]; // scope 1 at examples/ssrf/src/main.rs:21:20: 21:48
+                                         // mir::ConstOperand
+                                         // + span: examples/ssrf/src/main.rs:21:20: 21:42
+                                         // + const_: Const { ty: fn(&String) -> Result<reqwest::blocking::Response, reqwest::Error> {reqwest::blocking::get::<&String>}, val: Value(reqwest::blocking::get::<&String>) }
+    }
+
+    bb10: {
+        StorageDead(_12);                // scope 1 at examples/ssrf/src/main.rs:21:47: 21:48
+        _10 = <Result<reqwest::blocking::Response, reqwest::Error> as Try>::branch(move _11) -> [return: bb11, unwind: bb52]; // scope 1 at examples/ssrf/src/main.rs:21:20: 21:49
+                                         // mir::ConstOperand
+                                         // + span: examples/ssrf/src/main.rs:21:20: 21:49
+                                         // + const_: Const { ty: fn(Result<reqwest::blocking::Response, reqwest::Error>) -> ControlFlow<<Result<reqwest::blocking::Response, reqwest::Error> as Try>::Residual, <Result<reqwest::blocking::Response, reqwest::Error> as Try>::Output> {<Result<reqwest::blocking::Response, reqwest::Error> as Try>::branch}, val: Value(<Result<reqwest::blocking::Response, reqwest::Error> as Try>::branch) }
+    }
+
+    bb11: {
+        StorageDead(_11);                // scope 1 at examples/ssrf/src/main.rs:21:48: 21:49
+        PlaceMention(_10);               // scope 1 at examples/ssrf/src/main.rs:21:20: 21:49
+        _13 = discriminant(_10);         // scope 1 at examples/ssrf/src/main.rs:21:20: 21:49
+        switchInt(move _13) -> [0: bb14, 1: bb13, otherwise: bb12]; // scope 1 at examples/ssrf/src/main.rs:21:20: 21:49
+    }
+
+    bb12: {
+        FakeRead(ForMatchedPlace(None), _10); // scope 1 at examples/ssrf/src/main.rs:21:20: 21:49
+        unreachable;                     // scope 1 at examples/ssrf/src/main.rs:21:20: 21:49
+    }
+
+    bb13: {
+        falseEdge -> [real: bb15, imaginary: bb14]; // scope 1 at examples/ssrf/src/main.rs:21:48: 21:49
+    }
+
+    bb14: {
+        StorageLive(_17);                // scope 1 at examples/ssrf/src/main.rs:21:20: 21:49
+        _17 = move ((_10 as Continue).0: reqwest::blocking::Response); // scope 1 at examples/ssrf/src/main.rs:21:20: 21:49
+        _9 = move _17;                   // scope 10 at examples/ssrf/src/main.rs:21:20: 21:49
+        drop(_17) -> [return: bb17, unwind: bb51]; // scope 1 at examples/ssrf/src/main.rs:21:48: 21:49
+    }
+
+    bb15: {
+        StorageLive(_14);                // scope 1 at examples/ssrf/src/main.rs:21:48: 21:49
+        _14 = move ((_10 as Break).0: std::result::Result<std::convert::Infallible, reqwest::Error>); // scope 1 at examples/ssrf/src/main.rs:21:48: 21:49
+        StorageLive(_16);                // scope 8 at examples/ssrf/src/main.rs:21:48: 21:49
+        _16 = move _14;                  // scope 8 at examples/ssrf/src/main.rs:21:48: 21:49
+        _0 = <Result<String, Box<dyn std::error::Error>> as FromResidual<Result<Infallible, reqwest::Error>>>::from_residual(move _16) -> [return: bb16, unwind: bb49]; // scope 8 at examples/ssrf/src/main.rs:21:20: 21:49
+                                         // mir::ConstOperand
+                                         // + span: examples/ssrf/src/main.rs:21:48: 21:49
+                                         // + const_: Const { ty: fn(Result<Infallible, reqwest::Error>) -> Result<String, Box<dyn std::error::Error>> {<Result<String, Box<dyn std::error::Error>> as FromResidual<Result<Infallible, reqwest::Error>>>::from_residual}, val: Value(<Result<String, Box<dyn std::error::Error>> as FromResidual<Result<Infallible, reqwest::Error>>>::from_residual) }
+    }
+
+    bb16: {
+        StorageDead(_16);                // scope 8 at examples/ssrf/src/main.rs:21:48: 21:49
+        drop(_14) -> [return: bb35, unwind: bb51]; // scope 1 at examples/ssrf/src/main.rs:21:48: 21:49
+    }
+
+    bb17: {
+        StorageDead(_17);                // scope 1 at examples/ssrf/src/main.rs:21:48: 21:49
+        FakeRead(ForLet(None), _9);      // scope 1 at examples/ssrf/src/main.rs:21:9: 21:17
+        drop(_10) -> [return: bb18, unwind: bb48]; // scope 1 at examples/ssrf/src/main.rs:21:49: 21:50
+    }
+
+    bb18: {
+        StorageDead(_10);                // scope 1 at examples/ssrf/src/main.rs:21:49: 21:50
+        StorageLive(_18);                // scope 6 at examples/ssrf/src/main.rs:22:8: 22:24
+        StorageLive(_19);                // scope 6 at examples/ssrf/src/main.rs:22:8: 22:24
+        StorageLive(_20);                // scope 6 at examples/ssrf/src/main.rs:22:8: 22:23
+        StorageLive(_21);                // scope 6 at examples/ssrf/src/main.rs:22:8: 22:16
+        _21 = move _9;                   // scope 6 at examples/ssrf/src/main.rs:22:8: 22:16
+        _20 = reqwest::blocking::Response::text(move _21) -> [return: bb19, unwind: bb47]; // scope 6 at examples/ssrf/src/main.rs:22:8: 22:23
+                                         // mir::ConstOperand
+                                         // + span: examples/ssrf/src/main.rs:22:17: 22:21
+                                         // + const_: Const { ty: fn(reqwest::blocking::Response) -> Result<String, reqwest::Error> {reqwest::blocking::Response::text}, val: Value(reqwest::blocking::Response::text) }
+    }
+
+    bb19: {
+        StorageDead(_21);                // scope 6 at examples/ssrf/src/main.rs:22:22: 22:23
+        _19 = <Result<String, reqwest::Error> as Try>::branch(move _20) -> [return: bb20, unwind: bb46]; // scope 6 at examples/ssrf/src/main.rs:22:8: 22:24
+                                         // mir::ConstOperand
+                                         // + span: examples/ssrf/src/main.rs:22:8: 22:24
+                                         // + const_: Const { ty: fn(Result<String, reqwest::Error>) -> ControlFlow<<Result<String, reqwest::Error> as Try>::Residual, <Result<String, reqwest::Error> as Try>::Output> {<Result<String, reqwest::Error> as Try>::branch}, val: Value(<Result<String, reqwest::Error> as Try>::branch) }
+    }
+
+    bb20: {
+        StorageDead(_20);                // scope 6 at examples/ssrf/src/main.rs:22:23: 22:24
+        PlaceMention(_19);               // scope 6 at examples/ssrf/src/main.rs:22:8: 22:24
+        _22 = discriminant(_19);         // scope 6 at examples/ssrf/src/main.rs:22:8: 22:24
+        switchInt(move _22) -> [0: bb23, 1: bb22, otherwise: bb21]; // scope 6 at examples/ssrf/src/main.rs:22:8: 22:24
+    }
+
+    bb21: {
+        FakeRead(ForMatchedPlace(None), _19); // scope 6 at examples/ssrf/src/main.rs:22:8: 22:24
+        unreachable;                     // scope 6 at examples/ssrf/src/main.rs:22:8: 22:24
+    }
+
+    bb22: {
+        falseEdge -> [real: bb24, imaginary: bb23]; // scope 6 at examples/ssrf/src/main.rs:22:23: 22:24
+    }
+
+    bb23: {
+        StorageLive(_26);                // scope 6 at examples/ssrf/src/main.rs:22:8: 22:24
+        _26 = move ((_19 as Continue).0: std::string::String); // scope 6 at examples/ssrf/src/main.rs:22:8: 22:24
+        _18 = move _26;                  // scope 14 at examples/ssrf/src/main.rs:22:8: 22:24
+        drop(_26) -> [return: bb26, unwind: bb43]; // scope 6 at examples/ssrf/src/main.rs:22:23: 22:24
+    }
+
+    bb24: {
+        StorageLive(_23);                // scope 6 at examples/ssrf/src/main.rs:22:23: 22:24
+        _23 = move ((_19 as Break).0: std::result::Result<std::convert::Infallible, reqwest::Error>); // scope 6 at examples/ssrf/src/main.rs:22:23: 22:24
+        StorageLive(_25);                // scope 12 at examples/ssrf/src/main.rs:22:23: 22:24
+        _25 = move _23;                  // scope 12 at examples/ssrf/src/main.rs:22:23: 22:24
+        _0 = <Result<String, Box<dyn std::error::Error>> as FromResidual<Result<Infallible, reqwest::Error>>>::from_residual(move _25) -> [return: bb25, unwind: bb41]; // scope 12 at examples/ssrf/src/main.rs:22:8: 22:24
+                                         // mir::ConstOperand
+                                         // + span: examples/ssrf/src/main.rs:22:23: 22:24
+                                         // + const_: Const { ty: fn(Result<Infallible, reqwest::Error>) -> Result<String, Box<dyn std::error::Error>> {<Result<String, Box<dyn std::error::Error>> as FromResidual<Result<Infallible, reqwest::Error>>>::from_residual}, val: Value(<Result<String, Box<dyn std::error::Error>> as FromResidual<Result<Infallible, reqwest::Error>>>::from_residual) }
+    }
+
+    bb25: {
+        StorageDead(_25);                // scope 12 at examples/ssrf/src/main.rs:22:23: 22:24
+        drop(_23) -> [return: bb31, unwind: bb43]; // scope 6 at examples/ssrf/src/main.rs:22:23: 22:24
+    }
+
+    bb26: {
+        StorageDead(_26);                // scope 6 at examples/ssrf/src/main.rs:22:23: 22:24
+        _0 = Result::<String, Box<dyn std::error::Error>>::Ok(move _18); // scope 6 at examples/ssrf/src/main.rs:22:5: 22:25
+        drop(_18) -> [return: bb27, unwind: bb43]; // scope 6 at examples/ssrf/src/main.rs:22:24: 22:25
+    }
+
+    bb27: {
+        StorageDead(_18);                // scope 6 at examples/ssrf/src/main.rs:22:24: 22:25
+        drop(_9) -> [return: bb28, unwind: bb44]; // scope 1 at examples/ssrf/src/main.rs:23:1: 23:2
+    }
+
+    bb28: {
+        StorageDead(_9);                 // scope 1 at examples/ssrf/src/main.rs:23:1: 23:2
+        drop(_1) -> [return: bb29, unwind: bb45]; // scope 0 at examples/ssrf/src/main.rs:23:1: 23:2
+    }
+
+    bb29: {
+        StorageDead(_1);                 // scope 0 at examples/ssrf/src/main.rs:23:1: 23:2
+        drop(_19) -> [return: bb30, unwind: bb58]; // scope 0 at examples/ssrf/src/main.rs:23:1: 23:2
+    }
+
+    bb30: {
+        StorageDead(_19);                // scope 0 at examples/ssrf/src/main.rs:23:1: 23:2
+        goto -> bb40;                    // scope 0 at examples/ssrf/src/main.rs:23:2: 23:2
+    }
+
+    bb31: {
+        StorageDead(_23);                // scope 6 at examples/ssrf/src/main.rs:22:23: 22:24
+        StorageDead(_18);                // scope 6 at examples/ssrf/src/main.rs:22:24: 22:25
+        drop(_9) -> [return: bb32, unwind: bb44]; // scope 1 at examples/ssrf/src/main.rs:23:1: 23:2
+    }
+
+    bb32: {
+        StorageDead(_9);                 // scope 1 at examples/ssrf/src/main.rs:23:1: 23:2
+        drop(_1) -> [return: bb33, unwind: bb45]; // scope 0 at examples/ssrf/src/main.rs:23:1: 23:2
+    }
+
+    bb33: {
+        StorageDead(_1);                 // scope 0 at examples/ssrf/src/main.rs:23:1: 23:2
+        drop(_19) -> [return: bb34, unwind: bb58]; // scope 0 at examples/ssrf/src/main.rs:23:1: 23:2
+    }
+
+    bb34: {
+        StorageDead(_19);                // scope 0 at examples/ssrf/src/main.rs:23:1: 23:2
+        goto -> bb40;                    // scope 0 at no-location
+    }
+
+    bb35: {
+        StorageDead(_14);                // scope 1 at examples/ssrf/src/main.rs:21:48: 21:49
+        drop(_10) -> [return: bb36, unwind: bb53]; // scope 1 at examples/ssrf/src/main.rs:21:49: 21:50
+    }
+
+    bb36: {
+        StorageDead(_10);                // scope 1 at examples/ssrf/src/main.rs:21:49: 21:50
+        StorageDead(_9);                 // scope 1 at examples/ssrf/src/main.rs:23:1: 23:2
+        drop(_1) -> [return: bb39, unwind: bb58]; // scope 0 at examples/ssrf/src/main.rs:23:1: 23:2
+    }
+
+    bb37: {
+        StorageDead(_5);                 // scope 0 at examples/ssrf/src/main.rs:20:37: 20:38
+        drop(_2) -> [return: bb38, unwind: bb58]; // scope 0 at examples/ssrf/src/main.rs:20:38: 20:39
+    }
+
+    bb38: {
+        StorageDead(_2);                 // scope 0 at examples/ssrf/src/main.rs:20:38: 20:39
+        goto -> bb39;                    // scope 0 at no-location
+    }
+
+    bb39: {
+        StorageDead(_1);                 // scope 0 at examples/ssrf/src/main.rs:23:1: 23:2
+        goto -> bb40;                    // scope 0 at no-location
+    }
+
+    bb40: {
+        return;                          // scope 0 at examples/ssrf/src/main.rs:23:2: 23:2
+    }
+
+    bb41 (cleanup): {
+        drop(_25) -> [return: bb42, unwind terminate(cleanup)]; // scope 12 at examples/ssrf/src/main.rs:22:23: 22:24
+    }
+
+    bb42 (cleanup): {
+        drop(_23) -> [return: bb43, unwind terminate(cleanup)]; // scope 6 at examples/ssrf/src/main.rs:22:23: 22:24
+    }
+
+    bb43 (cleanup): {
+        drop(_9) -> [return: bb44, unwind terminate(cleanup)]; // scope 1 at examples/ssrf/src/main.rs:23:1: 23:2
+    }
+
+    bb44 (cleanup): {
+        drop(_1) -> [return: bb45, unwind terminate(cleanup)]; // scope 0 at examples/ssrf/src/main.rs:23:1: 23:2
+    }
+
+    bb45 (cleanup): {
+        drop(_19) -> [return: bb58, unwind terminate(cleanup)]; // scope 0 at examples/ssrf/src/main.rs:23:1: 23:2
+    }
+
+    bb46 (cleanup): {
+        drop(_20) -> [return: bb48, unwind terminate(cleanup)]; // scope 6 at examples/ssrf/src/main.rs:22:23: 22:24
+    }
+
+    bb47 (cleanup): {
+        drop(_21) -> [return: bb48, unwind terminate(cleanup)]; // scope 6 at examples/ssrf/src/main.rs:22:22: 22:23
+    }
+
+    bb48 (cleanup): {
+        drop(_9) -> [return: bb53, unwind terminate(cleanup)]; // scope 1 at examples/ssrf/src/main.rs:23:1: 23:2
+    }
+
+    bb49 (cleanup): {
+        drop(_16) -> [return: bb50, unwind terminate(cleanup)]; // scope 8 at examples/ssrf/src/main.rs:21:48: 21:49
+    }
+
+    bb50 (cleanup): {
+        drop(_14) -> [return: bb51, unwind terminate(cleanup)]; // scope 1 at examples/ssrf/src/main.rs:21:48: 21:49
+    }
+
+    bb51 (cleanup): {
+        drop(_10) -> [return: bb53, unwind terminate(cleanup)]; // scope 1 at examples/ssrf/src/main.rs:21:49: 21:50
+    }
+
+    bb52 (cleanup): {
+        drop(_11) -> [return: bb53, unwind terminate(cleanup)]; // scope 1 at examples/ssrf/src/main.rs:21:48: 21:49
+    }
+
+    bb53 (cleanup): {
+        drop(_1) -> [return: bb58, unwind terminate(cleanup)]; // scope 0 at examples/ssrf/src/main.rs:23:1: 23:2
+    }
+
+    bb54 (cleanup): {
+        drop(_7) -> [return: bb55, unwind terminate(cleanup)]; // scope 3 at examples/ssrf/src/main.rs:20:37: 20:38
+    }
+
+    bb55 (cleanup): {
+        drop(_5) -> [return: bb56, unwind terminate(cleanup)]; // scope 0 at examples/ssrf/src/main.rs:20:37: 20:38
+    }
+
+    bb56 (cleanup): {
+        drop(_2) -> [return: bb58, unwind terminate(cleanup)]; // scope 0 at examples/ssrf/src/main.rs:20:38: 20:39
+    }
+
+    bb57 (cleanup): {
+        drop(_3) -> [return: bb58, unwind terminate(cleanup)]; // scope 0 at examples/ssrf/src/main.rs:20:37: 20:38
+    }
+
+    bb58 (cleanup): {
+        resume;                          // scope 0 at examples/ssrf/src/main.rs:19:1: 23:2
+    }
+}
+
+alloc3 (size: 10, align: 1) {
+    54 41 52 47 45 54 5f 55 52 4c                   │ TARGET_URL
+}

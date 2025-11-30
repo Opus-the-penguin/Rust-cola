@@ -1,0 +1,20 @@
+// MIR for `build_search_clause::promoted[0]` before AbortUnwindingCalls
+
+const build_search_clause::promoted[0]: &[&str; 2] = {
+    let mut _0: &[&str; 2];
+    let mut _1: [&str; 2];
+
+    bb0: {
+        _1 = [const "name LIKE '%", const "%'"];
+        _0 = &_1;
+        return;
+    }
+}
+
+alloc46 (size: 12, align: 1) {
+    6e 61 6d 65 20 4c 49 4b 45 20 27 25             │ name LIKE '%
+}
+
+alloc10 (size: 2, align: 1) {
+    25 27                                           │ %'
+}

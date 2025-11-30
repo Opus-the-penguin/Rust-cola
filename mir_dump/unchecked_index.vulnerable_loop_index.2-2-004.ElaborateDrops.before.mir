@@ -1,0 +1,325 @@
+// MIR for `vulnerable_loop_index` before ElaborateDrops
+
+fn vulnerable_loop_index() -> () {
+    let mut _0: ();
+    let _1: std::vec::Vec<i32>;
+    let mut _2: std::boxed::Box<[i32]>;
+    let mut _3: std::boxed::Box<[i32; 5]>;
+    let mut _4: usize;
+    let mut _5: usize;
+    let mut _6: *mut u8;
+    let mut _7: std::boxed::Box<[i32; 5]>;
+    let _9: usize;
+    let mut _10: std::result::Result<usize, std::io::Error>;
+    let mut _11: &std::io::Stdin;
+    let _12: std::io::Stdin;
+    let mut _13: &mut std::string::String;
+    let mut _14: &mut std::string::String;
+    let mut _16: std::result::Result<usize, std::num::ParseIntError>;
+    let mut _17: &str;
+    let _18: &str;
+    let mut _19: &str;
+    let _20: &str;
+    let mut _21: &std::string::String;
+    let mut _22: std::ops::Range<usize>;
+    let mut _23: std::ops::Range<usize>;
+    let mut _24: usize;
+    let mut _26: ();
+    let _27: ();
+    let mut _28: std::option::Option<usize>;
+    let mut _29: &mut std::ops::Range<usize>;
+    let mut _30: &mut std::ops::Range<usize>;
+    let mut _31: isize;
+    let mut _32: !;
+    let _34: ();
+    let _35: ();
+    let mut _36: std::fmt::Arguments<'_>;
+    let mut _38: &i32;
+    let _39: &i32;
+    let mut _40: &std::vec::Vec<i32>;
+    let mut _41: usize;
+    let mut _43: core::fmt::rt::Argument<'_>;
+    let mut _44: &i32;
+    let mut _45: &[&str; 2];
+    let _46: &[&str; 2];
+    let _47: [&str; 2];
+    let mut _48: &[core::fmt::rt::Argument<'_>; 1];
+    let _49: &[core::fmt::rt::Argument<'_>; 1];
+    let mut _51: &i32;
+    scope 1 {
+        debug data => _1;
+        let mut _8: std::string::String;
+        scope 2 {
+            debug input => _8;
+            let _15: usize;
+            scope 3 {
+                debug count => _15;
+                let mut _25: std::ops::Range<usize>;
+                scope 4 {
+                    debug iter => _25;
+                    let _33: usize;
+                    scope 5 {
+                        debug i => _33;
+                        let _37: (&i32,);
+                        scope 6 {
+                            debug args => _37;
+                            let _42: [core::fmt::rt::Argument<'_>; 1];
+                            scope 7 {
+                                debug args => _42;
+                                let mut _50: &[&str; 2];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    bb0: {
+        StorageLive(_1);
+        StorageLive(_2);
+        StorageLive(_3);
+        _4 = SizeOf([i32; 5]);
+        _5 = AlignOf([i32; 5]);
+        _6 = alloc::alloc::exchange_malloc(move _4, move _5) -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        StorageLive(_7);
+        _7 = ShallowInitBox(move _6, [i32; 5]);
+        (*_7) = [const 1_i32, const 2_i32, const 3_i32, const 4_i32, const 5_i32];
+        _3 = move _7;
+        _2 = move _3 as std::boxed::Box<[i32]> (PointerCoercion(Unsize, Implicit));
+        drop(_3) -> [return: bb2, unwind: bb28];
+    }
+
+    bb2: {
+        drop(_7) -> [return: bb3, unwind: bb29];
+    }
+
+    bb3: {
+        StorageDead(_7);
+        StorageDead(_3);
+        _1 = slice::<impl [i32]>::into_vec::<std::alloc::Global>(move _2) -> [return: bb4, unwind: bb29];
+    }
+
+    bb4: {
+        StorageDead(_2);
+        StorageLive(_8);
+        _8 = String::new() -> [return: bb5, unwind: bb27];
+    }
+
+    bb5: {
+        StorageLive(_9);
+        StorageLive(_10);
+        StorageLive(_11);
+        StorageLive(_12);
+        _12 = stdin() -> [return: bb6, unwind: bb26];
+    }
+
+    bb6: {
+        _11 = &_12;
+        StorageLive(_13);
+        StorageLive(_14);
+        _14 = &mut _8;
+        _13 = &mut (*_14);
+        _10 = Stdin::read_line(move _11, move _13) -> [return: bb7, unwind: bb26];
+    }
+
+    bb7: {
+        StorageDead(_13);
+        StorageDead(_11);
+        _9 = Result::<usize, std::io::Error>::unwrap(move _10) -> [return: bb8, unwind: bb25];
+    }
+
+    bb8: {
+        StorageDead(_10);
+        StorageDead(_14);
+        StorageDead(_12);
+        StorageDead(_9);
+        StorageLive(_15);
+        StorageLive(_16);
+        StorageLive(_17);
+        StorageLive(_18);
+        StorageLive(_19);
+        StorageLive(_20);
+        StorageLive(_21);
+        _21 = &_8;
+        _20 = <String as Deref>::deref(move _21) -> [return: bb9, unwind: bb26];
+    }
+
+    bb9: {
+        _19 = &(*_20);
+        StorageDead(_21);
+        _18 = core::str::<impl str>::trim(move _19) -> [return: bb10, unwind: bb26];
+    }
+
+    bb10: {
+        _17 = &(*_18);
+        StorageDead(_19);
+        _16 = core::str::<impl str>::parse::<usize>(move _17) -> [return: bb11, unwind: bb26];
+    }
+
+    bb11: {
+        StorageDead(_17);
+        _15 = Result::<usize, ParseIntError>::unwrap(move _16) -> [return: bb12, unwind: bb26];
+    }
+
+    bb12: {
+        StorageDead(_16);
+        StorageDead(_20);
+        StorageDead(_18);
+        StorageLive(_22);
+        StorageLive(_23);
+        StorageLive(_24);
+        _24 = copy _15;
+        _23 = std::ops::Range::<usize> { start: const 0_usize, end: move _24 };
+        StorageDead(_24);
+        _22 = <std::ops::Range<usize> as IntoIterator>::into_iter(move _23) -> [return: bb13, unwind: bb26];
+    }
+
+    bb13: {
+        StorageDead(_23);
+        PlaceMention(_22);
+        StorageLive(_25);
+        _25 = move _22;
+        goto -> bb14;
+    }
+
+    bb14: {
+        StorageLive(_27);
+        StorageLive(_28);
+        StorageLive(_29);
+        StorageLive(_30);
+        _30 = &mut _25;
+        _29 = &mut (*_30);
+        _28 = <std::ops::Range<usize> as Iterator>::next(move _29) -> [return: bb15, unwind: bb26];
+    }
+
+    bb15: {
+        StorageDead(_29);
+        PlaceMention(_28);
+        _31 = discriminant(_28);
+        switchInt(move _31) -> [0: bb18, 1: bb17, otherwise: bb16];
+    }
+
+    bb16: {
+        unreachable;
+    }
+
+    bb17: {
+        StorageLive(_33);
+        _33 = copy ((_28 as Some).0: usize);
+        StorageLive(_34);
+        StorageLive(_35);
+        StorageLive(_36);
+        StorageLive(_37);
+        StorageLive(_38);
+        StorageLive(_39);
+        StorageLive(_40);
+        _40 = &_1;
+        StorageLive(_41);
+        _41 = copy _33;
+        _39 = <Vec<i32> as Index<usize>>::index(move _40, move _41) -> [return: bb19, unwind: bb26];
+    }
+
+    bb18: {
+        _0 = const ();
+        StorageDead(_30);
+        StorageDead(_28);
+        StorageDead(_27);
+        StorageDead(_25);
+        StorageDead(_22);
+        StorageDead(_15);
+        drop(_8) -> [return: bb23, unwind: bb27];
+    }
+
+    bb19: {
+        StorageDead(_41);
+        StorageDead(_40);
+        _38 = &(*_39);
+        _37 = (move _38,);
+        StorageDead(_38);
+        StorageLive(_42);
+        StorageLive(_43);
+        StorageLive(_44);
+        _51 = deref_copy (_37.0: &i32);
+        _44 = &(*_51);
+        _43 = core::fmt::rt::Argument::<'_>::new_display::<i32>(move _44) -> [return: bb20, unwind: bb26];
+    }
+
+    bb20: {
+        StorageDead(_44);
+        _42 = [move _43];
+        StorageDead(_43);
+        StorageLive(_45);
+        StorageLive(_46);
+        _50 = const vulnerable_loop_index::promoted[0];
+        _46 = &(*_50);
+        _45 = &(*_46);
+        StorageLive(_48);
+        StorageLive(_49);
+        _49 = &_42;
+        _48 = &(*_49);
+        _36 = core::fmt::rt::<impl Arguments<'_>>::new_v1::<2, 1>(move _45, move _48) -> [return: bb21, unwind: bb26];
+    }
+
+    bb21: {
+        StorageDead(_49);
+        StorageDead(_48);
+        StorageDead(_46);
+        StorageDead(_45);
+        _35 = _print(move _36) -> [return: bb22, unwind: bb26];
+    }
+
+    bb22: {
+        StorageDead(_36);
+        StorageDead(_42);
+        StorageDead(_39);
+        StorageDead(_37);
+        StorageDead(_35);
+        _34 = const ();
+        StorageDead(_34);
+        _27 = const ();
+        StorageDead(_33);
+        StorageDead(_30);
+        StorageDead(_28);
+        StorageDead(_27);
+        _26 = const ();
+        goto -> bb14;
+    }
+
+    bb23: {
+        StorageDead(_8);
+        drop(_1) -> [return: bb24, unwind continue];
+    }
+
+    bb24: {
+        StorageDead(_1);
+        return;
+    }
+
+    bb25 (cleanup): {
+        drop(_10) -> [return: bb26, unwind terminate(cleanup)];
+    }
+
+    bb26 (cleanup): {
+        drop(_8) -> [return: bb27, unwind terminate(cleanup)];
+    }
+
+    bb27 (cleanup): {
+        drop(_1) -> [return: bb30, unwind terminate(cleanup)];
+    }
+
+    bb28 (cleanup): {
+        drop(_7) -> [return: bb29, unwind terminate(cleanup)];
+    }
+
+    bb29 (cleanup): {
+        drop(_2) -> [return: bb30, unwind terminate(cleanup)];
+    }
+
+    bb30 (cleanup): {
+        resume;
+    }
+}

@@ -1,0 +1,211 @@
+// MIR for `safe_escaped_string` 0 renumber
+
+| User Type Annotations
+| 0: user_ty: Canonical { value: TypeOf(DefId(2:11991 ~ core[b59f]::fmt::rt::{impl#0}::new_display), UserArgs { args: ['^c_0, ^c_1], user_self_ty: Some(UserSelfTy { impl_def_id: DefId(2:11990 ~ core[b59f]::fmt::rt::{impl#0}), self_ty: core::fmt::rt::Argument<'^c_2> }) }), max_universe: U0, variables: [Region(U0), Ty { ui: U0, sub_root: 1 }, Region(U0)] }, span: examples/sql-injection/src/main.rs:268:51: 268:53, inferred_ty: for<'a> fn(&'a std::string::String) -> core::fmt::rt::Argument<'a> {core::fmt::rt::Argument::<'_>::new_display::<std::string::String>}
+| 1: user_ty: Canonical { value: TypeOf(DefId(2:12020 ~ core[b59f]::fmt::rt::{impl#1}::new_v1), UserArgs { args: ['^c_0, ^c_BoundConst { var: 1 }, ^c_BoundConst { var: 2 }], user_self_ty: Some(UserSelfTy { impl_def_id: DefId(2:12014 ~ core[b59f]::fmt::rt::{impl#1}), self_ty: std::fmt::Arguments<'^c_3> }) }), max_universe: U0, variables: [Region(U0), Const(U0), Const(U0), Region(U0)] }, span: /Users/peteralbert/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/macros.rs:108:33: 108:73, inferred_ty: fn(&[&'static str; 2], &[core::fmt::rt::Argument<'_>; 1]) -> std::fmt::Arguments<'_> {core::fmt::rt::<impl std::fmt::Arguments<'_>>::new_v1::<2, 1>}
+|
+fn safe_escaped_string() -> String {
+    let mut _0: std::string::String;
+    let _1: std::string::String;
+    let mut _2: std::result::Result<std::string::String, std::env::VarError>;
+    let mut _4: &str;
+    let _5: &str;
+    let mut _6: &std::string::String;
+    let _7: std::string::String;
+    let mut _8: &str;
+    let _9: &str;
+    let mut _10: &std::string::String;
+    let mut _11: &str;
+    let _12: &str;
+    let mut _13: &str;
+    let _14: &str;
+    let mut _15: std::string::String;
+    let mut _16: std::fmt::Arguments<'_>;
+    let mut _18: &std::string::String;
+    let mut _20: core::fmt::rt::Argument<'_>;
+    let mut _21: &std::string::String;
+    let mut _22: &[&str; 2];
+    let _23: &[&str; 2];
+    let _24: [&str; 2];
+    let mut _25: &[core::fmt::rt::Argument<'_>; 1];
+    let _26: &[core::fmt::rt::Argument<'_>; 1];
+    scope 1 {
+        debug search => _1;
+        let _3: std::string::String;
+        scope 2 {
+            debug escaped => _3;
+            let _17: (&std::string::String,);
+            scope 3 {
+                debug args => _17;
+                let _19: [core::fmt::rt::Argument<'_>; 1];
+                scope 4 {
+                    debug args => _19;
+                    let mut _27: &[&str; 2];
+                }
+            }
+        }
+    }
+
+    bb0: {
+        StorageLive(_1);
+        StorageLive(_2);
+        _2 = var::<&str>(const "SEARCH") -> [return: bb1, unwind: bb19];
+    }
+
+    bb1: {
+        _1 = Result::<String, VarError>::unwrap_or_default(move _2) -> [return: bb2, unwind: bb18];
+    }
+
+    bb2: {
+        StorageDead(_2);
+        FakeRead(ForLet(None), _1);
+        StorageLive(_3);
+        StorageLive(_4);
+        StorageLive(_5);
+        StorageLive(_6);
+        StorageLive(_7);
+        StorageLive(_8);
+        StorageLive(_9);
+        StorageLive(_10);
+        _10 = &_1;
+        _9 = <String as Deref>::deref(move _10) -> [return: bb3, unwind: bb17];
+    }
+
+    bb3: {
+        _8 = &(*_9);
+        StorageDead(_10);
+        StorageLive(_11);
+        StorageLive(_12);
+        _12 = const "''";
+        _11 = &(*_12);
+        _7 = str::<impl str>::replace::<char>(move _8, const '\'', move _11) -> [return: bb4, unwind: bb17];
+    }
+
+    bb4: {
+        _6 = &_7;
+        _5 = <String as Deref>::deref(move _6) -> [return: bb5, unwind: bb16];
+    }
+
+    bb5: {
+        _4 = &(*_5);
+        StorageDead(_11);
+        StorageDead(_8);
+        StorageDead(_6);
+        StorageLive(_13);
+        StorageLive(_14);
+        _14 = const "\\\\";
+        _13 = &(*_14);
+        _3 = str::<impl str>::replace::<char>(move _4, const '\\', move _13) -> [return: bb6, unwind: bb16];
+    }
+
+    bb6: {
+        StorageDead(_13);
+        StorageDead(_4);
+        FakeRead(ForLet(None), _3);
+        StorageDead(_14);
+        drop(_7) -> [return: bb7, unwind: bb15];
+    }
+
+    bb7: {
+        StorageDead(_12);
+        StorageDead(_9);
+        StorageDead(_7);
+        StorageDead(_5);
+        StorageLive(_15);
+        StorageLive(_16);
+        StorageLive(_17);
+        StorageLive(_18);
+        _18 = &_3;
+        _17 = (move _18,);
+        StorageDead(_18);
+        FakeRead(ForLet(None), _17);
+        StorageLive(_19);
+        StorageLive(_20);
+        StorageLive(_21);
+        _21 = &(*(_17.0: &std::string::String));
+        _20 = core::fmt::rt::Argument::<'_>::new_display::<String>(move _21) -> [return: bb8, unwind: bb15];
+    }
+
+    bb8: {
+        StorageDead(_21);
+        _19 = [move _20];
+        StorageDead(_20);
+        FakeRead(ForLet(None), _19);
+        StorageLive(_22);
+        StorageLive(_23);
+        _27 = const safe_escaped_string::promoted[0];
+        _23 = &(*_27);
+        _22 = &(*_23);
+        StorageLive(_25);
+        StorageLive(_26);
+        _26 = &_19;
+        _25 = &(*_26);
+        _16 = core::fmt::rt::<impl Arguments<'_>>::new_v1::<2, 1>(move _22, move _25) -> [return: bb9, unwind: bb15];
+    }
+
+    bb9: {
+        StorageDead(_26);
+        StorageDead(_25);
+        StorageDead(_23);
+        StorageDead(_22);
+        _15 = format(move _16) -> [return: bb10, unwind: bb15];
+    }
+
+    bb10: {
+        StorageDead(_19);
+        StorageDead(_17);
+        StorageDead(_16);
+        _0 = must_use::<String>(move _15) -> [return: bb11, unwind: bb14];
+    }
+
+    bb11: {
+        StorageDead(_15);
+        drop(_3) -> [return: bb12, unwind: bb17];
+    }
+
+    bb12: {
+        StorageDead(_3);
+        drop(_1) -> [return: bb13, unwind: bb19];
+    }
+
+    bb13: {
+        StorageDead(_1);
+        return;
+    }
+
+    bb14 (cleanup): {
+        drop(_15) -> [return: bb15, unwind terminate(cleanup)];
+    }
+
+    bb15 (cleanup): {
+        drop(_3) -> [return: bb17, unwind terminate(cleanup)];
+    }
+
+    bb16 (cleanup): {
+        drop(_7) -> [return: bb17, unwind terminate(cleanup)];
+    }
+
+    bb17 (cleanup): {
+        drop(_1) -> [return: bb19, unwind terminate(cleanup)];
+    }
+
+    bb18 (cleanup): {
+        drop(_2) -> [return: bb19, unwind terminate(cleanup)];
+    }
+
+    bb19 (cleanup): {
+        resume;
+    }
+}
+
+alloc84 (size: 2, align: 1) {
+    5c 5c                                           │ \\
+}
+
+alloc83 (size: 2, align: 1) {
+    27 27                                           │ ''
+}
+
+alloc45 (size: 6, align: 1) {
+    53 45 41 52 43 48                               │ SEARCH
+}

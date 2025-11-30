@@ -14269,6 +14269,366 @@ impl Rule for SqlInjectionRule {
     }
 }
 
+/// RUSTCOLA089: Insecure YAML Deserialization
+///
+/// Detects when user-controlled input flows to serde_yaml deserialization
+/// functions without proper validation. YAML deserialization of untrusted
+/// data can cause:
+/// - Billion laughs attacks (exponential entity expansion via anchors)
+/// - Denial of service through deeply nested structures
+/// - Unexpected type coercion attacks
+/// - Resource exhaustion
+///
+/// **Sources:** env::var, env::args, stdin, file contents
+/// **Sinks:** serde_yaml::from_str, from_slice, from_reader
+/// **Sanitizers:** Anchor/alias filtering, size limits, depth limits, schema validation
+struct InsecureYamlDeserializationRule {
+    metadata: RuleMetadata,
+}
+
+impl InsecureYamlDeserializationRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA089".to_string(),
+                name: "insecure-yaml-deserialization".to_string(),
+                short_description: "Untrusted input used in YAML deserialization".to_string(),
+                full_description: "User-controlled input is passed to serde_yaml \
+                    deserialization functions without validation. Attackers can craft \
+                    malicious YAML using anchors/aliases for exponential expansion \
+                    (billion laughs), deeply nested structures, or unexpected type \
+                    coercion to cause denial of service or unexpected behavior. \
+                    Validate YAML input before deserialization by rejecting anchors, \
+                    enforcing size limits, or using JSON instead.".to_string(),
+                help_uri: Some("https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/16-Testing_for_HTTP_Incoming_Requests".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// YAML deserialization sinks - MIR patterns
+    const YAML_SINKS: &'static [&'static str] = &[
+        "serde_yaml::from_str",
+        "serde_yaml::from_slice",
+        "serde_yaml::from_reader",
+        "from_str::<",  // Generic form
+        "from_slice::<",
+        "from_reader::<",
+        // MIR patterns (function instantiations)
+        "serde_yaml::from_str::",
+        "serde_yaml::from_slice::",
+        "serde_yaml::from_reader::",
+    ];
+
+    /// Untrusted sources
+    const UNTRUSTED_SOURCES: &'static [&'static str] = &[
+        "env::var",
+        "env::var_os",
+        "env::args",
+        "stdin",
+        "read_to_string",
+        "read_to_end",
+        "BufRead::read_line",
+        "fs::read_to_string",
+        "fs::read",
+    ];
+
+    /// Sanitization patterns that make YAML parsing safer
+    const SANITIZERS: &'static [&'static str] = &[
+        // Anchor/alias rejection
+        r#"contains("&")"#,
+        r#"contains("*")"#,
+        r#"contains("<<:")"#,
+        "contains(&",
+        "contains(*",
+        // Size limits
+        ".len()",
+        "len() >",
+        "len() <",
+        // JSON as alternative (safer)
+        "serde_json::from_str",
+        "serde_json::from_slice",
+        // Depth checks  
+        "matches",
+        "count()",
+        // Sanitization
+        ".replace(",
+        // Validation keywords
+        "validate",
+        "sanitize",
+        "allowlist",
+        "allowed",
+    ];
+
+    /// Track tainted variables from untrusted sources
+    fn track_untrusted_vars<'a>(&self, function: &'a MirFunction) -> HashSet<String> {
+        let mut tainted: HashSet<String> = HashSet::new();
+        
+        for line in &function.body {
+            // Source detection - env::var, stdin, args, file reads
+            for source in Self::UNTRUSTED_SOURCES {
+                if line.contains(source) {
+                    // Extract assigned variable
+                    if let Some(var) = self.extract_assigned_var(line) {
+                        tainted.insert(var);
+                    }
+                }
+            }
+            
+            // Taint propagation through assignments
+            if line.contains(" = ") {
+                if let Some((dest, src_part)) = line.split_once(" = ") {
+                    let dest_var = dest.trim().to_string();
+                    
+                    // Check if source references any tainted variable
+                    for tvar in tainted.clone() {
+                        if self.contains_var(src_part, &tvar) {
+                            tainted.insert(dest_var.clone());
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Track through Result unwrapping
+            if line.contains("((_") && line.contains("as Continue).0)") {
+                if let Some(var) = self.extract_assigned_var(line) {
+                    // Check if any tainted var is in the source
+                    let any_tainted = tainted.iter().any(|t| line.contains(&format!("_{}", t.trim_start_matches('_'))));
+                    if any_tainted || tainted.iter().any(|t| line.contains(t)) {
+                        tainted.insert(var);
+                    }
+                }
+            }
+            
+            // Track through reference creation (&(*_X))
+            if line.contains("&(*_") || line.contains("&_") {
+                if let Some(var) = self.extract_assigned_var(line) {
+                    for tvar in tainted.clone() {
+                        if line.contains(&tvar) {
+                            tainted.insert(var.clone());
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        tainted
+    }
+
+    fn extract_assigned_var(&self, line: &str) -> Option<String> {
+        let line = line.trim();
+        if let Some(eq_pos) = line.find(" = ") {
+            let lhs = line[..eq_pos].trim();
+            // Handle patterns like "_5" or "(*_5)"
+            if lhs.starts_with('_') && lhs.chars().skip(1).all(|c| c.is_ascii_digit()) {
+                return Some(lhs.to_string());
+            }
+            if lhs.starts_with("(*_") {
+                if let Some(end) = lhs.find(')') {
+                    return Some(lhs[2..end].to_string());
+                }
+            }
+        }
+        None
+    }
+
+    fn contains_var(&self, text: &str, var: &str) -> bool {
+        // Direct match
+        if text.contains(var) {
+            return true;
+        }
+        
+        // Match patterns like move _X, _X.0, &_X, (*_X)
+        let var_num = var.trim_start_matches('_');
+        if text.contains(&format!("move _{}", var_num)) ||
+           text.contains(&format!("_{}.0", var_num)) ||
+           text.contains(&format!("_{}.1", var_num)) ||
+           text.contains(&format!("&_{}", var_num)) ||
+           text.contains(&format!("(*_{})", var_num)) ||
+           text.contains(&format!("((_{})", var_num)) ||
+           text.contains(&format!("_{} as", var_num)) {
+            return true;
+        }
+        
+        false
+    }
+
+    /// Find YAML deserialization operations using tainted data
+    fn find_unsafe_yaml_operations(&self, function: &MirFunction, tainted: &HashSet<String>) -> Vec<String> {
+        let mut evidence = Vec::new();
+        
+        // Check for sanitization patterns
+        let mut has_sanitization = false;
+        for line in &function.body {
+            for sanitizer in Self::SANITIZERS {
+                if line.contains(sanitizer) {
+                    has_sanitization = true;
+                    break;
+                }
+            }
+            if has_sanitization {
+                break;
+            }
+        }
+        
+        // Also check function name for validation patterns
+        let fn_name_lower = function.name.to_lowercase();
+        if fn_name_lower.contains("safe") || fn_name_lower.contains("valid") || 
+           fn_name_lower.contains("sanitiz") || fn_name_lower.contains("check") {
+            has_sanitization = true;
+        }
+        
+        if has_sanitization {
+            return evidence;
+        }
+        
+        // Look for YAML sinks with tainted arguments
+        for line in &function.body {
+            for sink in Self::YAML_SINKS {
+                if line.contains(sink) {
+                    // Check if any tainted variable is used in this line
+                    for tvar in tainted {
+                        if self.contains_var(line, tvar) {
+                            evidence.push(line.trim().to_string());
+                            break;
+                        }
+                    }
+                    
+                    // Also flag if we have both a source and sink in the function
+                    // even if taint tracking lost the connection
+                    if !tainted.is_empty() {
+                        // Check if line references any variable
+                        if line.contains("move _") || line.contains("&_") {
+                            let already_added = evidence.iter().any(|e| e == line.trim());
+                            if !already_added {
+                                evidence.push(line.trim().to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        evidence
+    }
+}
+
+impl Rule for InsecureYamlDeserializationRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Skip test functions
+            if function.name.contains("test") {
+                continue;
+            }
+            
+            // Track tainted variables from untrusted sources
+            let tainted = self.track_untrusted_vars(function);
+            
+            if tainted.is_empty() {
+                continue;
+            }
+            
+            // Find YAML deserialization operations using tainted data
+            let unsafe_ops = self.find_unsafe_yaml_operations(function, &tainted);
+            
+            if !unsafe_ops.is_empty() {
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: Severity::Medium,
+                    message: format!(
+                        "Insecure YAML deserialization in `{}`. User-controlled input is \
+                        passed to serde_yaml without validation. Malicious YAML can use \
+                        anchors/aliases for billion laughs attacks or deeply nested \
+                        structures for DoS. Validate input or use JSON instead.",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence: unsafe_ops.into_iter().take(3).collect(),
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        // Phase 2: Inter-procedural analysis
+        if let Ok(mut inter_analysis) = interprocedural::InterProceduralAnalysis::new(package) {
+            if inter_analysis.analyze(package).is_ok() {
+                let flows = inter_analysis.detect_inter_procedural_flows();
+                
+                let mut reported_functions: std::collections::HashSet<String> = findings
+                    .iter()
+                    .map(|f| f.function.clone())
+                    .collect();
+                
+                for flow in flows {
+                    // Consider yaml sinks
+                    if flow.sink_type != "yaml" {
+                        continue;
+                    }
+                    
+                    // Skip internal functions
+                    let is_internal = flow.sink_function.contains("mir_extractor")
+                        || flow.sink_function.contains("__")
+                        || flow.source_function.contains("mir_extractor");
+                    if is_internal {
+                        continue;
+                    }
+                    
+                    if reported_functions.contains(&flow.sink_function) {
+                        continue;
+                    }
+                    
+                    if flow.sanitized {
+                        continue;
+                    }
+                    
+                    let sink_func = package.functions.iter()
+                        .find(|f| f.name == flow.sink_function);
+                    
+                    let span = sink_func.map(|f| f.span.clone()).unwrap_or_default();
+                    let signature = sink_func.map(|f| f.signature.clone()).unwrap_or_default();
+                    
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: Severity::Medium,
+                        message: format!(
+                            "Inter-procedural YAML injection: untrusted input from `{}` \
+                            flows through {} to YAML deserialization in `{}`. Validate \
+                            input or use JSON instead.",
+                            flow.source_function,
+                            if flow.call_chain.len() > 2 {
+                                format!("{} function calls", flow.call_chain.len() - 1)
+                            } else {
+                                "helper function".to_string()
+                            },
+                            flow.sink_function
+                        ),
+                        function: flow.sink_function.clone(),
+                        function_signature: signature,
+                        evidence: vec![flow.describe()],
+                        span,
+                    });
+                    
+                    reported_functions.insert(flow.sink_function.clone());
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 
 fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
@@ -14348,6 +14708,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(PathTraversalRule::new())); // RUSTCOLA086
     engine.register_rule(Box::new(SqlInjectionRule::new())); // RUSTCOLA087
     engine.register_rule(Box::new(SsrfRule::new())); // RUSTCOLA088
+    engine.register_rule(Box::new(InsecureYamlDeserializationRule::new())); // RUSTCOLA089
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

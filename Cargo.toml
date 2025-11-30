@@ -63,5 +63,6 @@ members = [
     "examples/path-traversal",
     "examples/sql-injection",
     "examples/ssrf",
+    "examples/yaml-deserialization",
 ]
 resolver = "2"

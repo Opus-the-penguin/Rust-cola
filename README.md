@@ -2,22 +2,22 @@
 
 Rust-cola is a static application security testing tool for Rust code. It employs a three-tier hybrid analysis approach combining MIR heuristics, source-level inspection, and semantic analysis via rustc HIR integration.
 
-> **Recent Achievement (Nov 2025):** Added RUSTCOLA088 (Server-Side Request Forgery detection) with 92% recall/100% precision via MIR dataflow tracking of untrusted URLs to HTTP client sinks. Added RUSTCOLA087 (SQL injection detection) with 100% recall/precision. Improved RUSTCOLA086 (path traversal detection) to 100% recall with inter-procedural analysis support. Added RUSTCOLA085 (AWS S3 unscoped access), RUSTCOLA084 (TLS verification disabled), RUSTCOLA083-080 for memory safety rules plus MIR dataflow rules (RUSTCOLA075-079) for cleartext logging, log injection, division by untrusted input, MaybeUninit misuse, and regex injection. Total: 84 security rules.
+> **Recent Achievement (Nov 2025):** Added RUSTCOLA089 (Insecure YAML Deserialization) detecting billion laughs attacks via serde_yaml. Added RUSTCOLA088 (Server-Side Request Forgery detection) with 100% recall/precision via MIR dataflow + inter-procedural analysis. Added RUSTCOLA087 (SQL injection detection) with 100% recall/precision. Improved RUSTCOLA086 (path traversal detection) to 100% recall with inter-procedural analysis support. Added RUSTCOLA085 (AWS S3 unscoped access), RUSTCOLA084 (TLS verification disabled), RUSTCOLA083-080 for memory safety rules plus MIR dataflow rules (RUSTCOLA075-079) for cleartext logging, log injection, division by untrusted input, MaybeUninit misuse, and regex injection. Total: 85 security rules.
 
 ## Features
 
 - **Three-Tier Analysis Architecture:**
-  - **Tier 1 (MIR Heuristics):** 82 rules using pattern matching on compiler-generated MIR
+  - **Tier 1 (MIR Heuristics):** 83 rules using pattern matching on compiler-generated MIR
   - **Tier 2 (Source Analysis):** 2 rules using AST inspection for comments and attributes  
   - **Tier 3 (Semantic Analysis):** HIR integration for type-aware rules (type sizes, Send/Sync detection)
-- **84 Built-in Security Rules** covering:
+- **85 Built-in Security Rules** covering:
 	- Memory safety issues: `Box::into_raw` leaks, unchecked `transmute`, `Vec::set_len` misuse, premature `MaybeUninit::assume_init`, deprecated zero-initialization functions
 	- Unsafe code patterns: unsafe blocks, untrusted environment variable reads, command execution with user-influenced input
 	- Cryptography: weak hash algorithms (MD5, SHA-1, RIPEMD, CRC), weak ciphers (DES, RC4, Blowfish), hard-coded cryptographic keys, predictable random seeds
-	- Network security: HTTP URLs, disabled TLS certificate validation
+	- Network security: HTTP URLs, disabled TLS certificate validation, SSRF detection
 	- Concurrency: unsafe `Send`/`Sync` implementations, mutex guard issues, panic in destructors
 	- FFI: allocator mismatches, dangling CString pointers, blocking calls in async contexts
-	- Input validation: SQL injection, path traversal, untrusted input to commands and file operations
+	- Input validation: SQL injection, path traversal, YAML deserialization attacks, untrusted input to commands and file operations
 	- Code hygiene: commented-out code, overscoped allow attributes
 - Generates findings in JSON format and SARIF format for CI/CD integration
 - Supports custom rule extensions via YAML rulepacks

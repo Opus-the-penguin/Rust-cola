@@ -10759,6 +10759,49 @@ impl RegexInjectionRule {
         ]
     }
 
+    /// Check if there's a validation guard pattern in the MIR body
+    /// Returns true if a validation function is called on any tainted variable followed by a switchInt
+    fn has_validation_guard(body: &[String], untrusted_vars: &HashSet<String>) -> bool {
+        let validation_funcs = ["validate", "sanitize", "is_valid", "check_pattern"];
+        
+        // Track if a validation was called on a tainted variable
+        let mut validation_result_var: Option<String> = None;
+        
+        for line in body {
+            let trimmed = line.trim();
+            
+            // Check for validation function calls
+            for validator in &validation_funcs {
+                if trimmed.to_lowercase().contains(validator) {
+                    // Check if any tainted variable is used as argument
+                    for var in untrusted_vars {
+                        if Self::contains_var(trimmed, var) {
+                            // Extract the result variable
+                            if let Some(eq_pos) = trimmed.find(" = ") {
+                                let lhs = trimmed[..eq_pos].trim();
+                                if let Some(result_var) = lhs.split(|c: char| !c.is_alphanumeric() && c != '_')
+                                    .find(|s| s.starts_with('_'))
+                                {
+                                    validation_result_var = Some(result_var.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Check if there's a switchInt using the validation result
+            if let Some(ref result_var) = validation_result_var {
+                if trimmed.contains("switchInt") && Self::contains_var(trimmed, result_var) {
+                    // Found switchInt on validation result - this is a validation guard
+                    return true;
+                }
+            }
+        }
+        
+        false
+    }
+
     /// Check if a MIR line contains a specific variable with proper word boundaries
     /// e.g., "_1" should not match "_11" or "_10"
     fn contains_var(line: &str, var: &str) -> bool {
@@ -10785,6 +10828,30 @@ impl RegexInjectionRule {
         let source_patterns = Self::input_source_patterns();
         let sanitizer_patterns = Self::sanitizer_patterns();
         
+        // First, build a map of references: _X -> _Y means _X is a reference to _Y
+        let mut ref_aliases: HashMap<String, String> = HashMap::new();
+        for line in body {
+            let trimmed = line.trim();
+            // Pattern: _9 = &mut _2 or _9 = &_2
+            if let Some(eq_pos) = trimmed.find(" = &") {
+                let lhs = trimmed[..eq_pos].trim();
+                let rhs = &trimmed[eq_pos + 3..].trim();
+                
+                // Extract variable from rhs (might be &mut _2 or &_2)
+                let rhs_clean = rhs.trim_start_matches("mut ");
+                
+                if let Some(lhs_var) = lhs.split(|c: char| !c.is_alphanumeric() && c != '_')
+                    .find(|s| s.starts_with('_'))
+                {
+                    if let Some(rhs_var) = rhs_clean.split(|c: char| !c.is_alphanumeric() && c != '_')
+                        .find(|s| s.starts_with('_'))
+                    {
+                        ref_aliases.insert(lhs_var.to_string(), rhs_var.to_string());
+                    }
+                }
+            }
+        }
+        
         for line in body {
             let trimmed = line.trim();
             
@@ -10799,6 +10866,29 @@ impl RegexInjectionRule {
                         .find(|s| s.starts_with('_'))
                     {
                         untrusted_vars.insert(var.to_string());
+                    }
+                }
+                
+                // Special case: read_line writes to its second argument, not return value
+                // Pattern: read_line(move _N, copy _M) - _M receives the data
+                if trimmed.contains("read_line(") {
+                    // Extract the second argument (the buffer that receives data)
+                    if let Some(start) = trimmed.find("read_line(") {
+                        let after = &trimmed[start..];
+                        // Look for copy _N or move _N as the second argument
+                        if let Some(copy_pos) = after.rfind("copy _") {
+                            let var_start = &after[copy_pos + 5..]; // skip "copy "
+                            if let Some(end) = var_start.find(|c: char| !c.is_alphanumeric() && c != '_') {
+                                let var = &var_start[..end];
+                                if var.starts_with('_') {
+                                    untrusted_vars.insert(var.to_string());
+                                    // Also taint the aliased variable if this is a reference
+                                    if let Some(aliased) = ref_aliases.get(var) {
+                                        untrusted_vars.insert(aliased.clone());
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -10848,6 +10938,47 @@ impl RegexInjectionRule {
         untrusted_vars
     }
 
+    /// Propagate taint through assignments in function body
+    fn propagate_taint_in_body(body: &[String], untrusted_vars: &mut HashSet<String>) {
+        let sanitizer_patterns = Self::sanitizer_patterns();
+        
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for line in body {
+                let trimmed = line.trim();
+                
+                if trimmed.contains(" = ") {
+                    if let Some(eq_pos) = trimmed.find(" = ") {
+                        let target = trimmed[..eq_pos].trim();
+                        let source = trimmed[eq_pos + 3..].trim();
+                        
+                        let uses_untrusted = untrusted_vars.iter().any(|v| {
+                            Self::contains_var(source, v)
+                        });
+                        
+                        if uses_untrusted {
+                            let has_sanitizer = sanitizer_patterns
+                                .iter()
+                                .any(|p| source.to_lowercase().contains(&p.to_lowercase()));
+                            
+                            if !has_sanitizer {
+                                if let Some(target_var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                                    .find(|s| s.starts_with('_'))
+                                {
+                                    if !untrusted_vars.contains(target_var) {
+                                        untrusted_vars.insert(target_var.to_string());
+                                        changed = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Find regex sinks using untrusted variables
     fn find_regex_injections(body: &[String], untrusted_vars: &HashSet<String>) -> Vec<String> {
         let mut evidence = Vec::new();
@@ -10881,6 +11012,41 @@ impl Rule for RegexInjectionRule {
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
         let mut findings = Vec::new();
+        
+        // First pass: Collect parent functions that pass untrusted input to closure combinators
+        // like and_then, map, filter, etc.
+        let mut tainted_closures: HashSet<String> = HashSet::new();
+        
+        for function in &package.functions {
+            // Skip closures in first pass
+            if function.name.contains("{closure") {
+                continue;
+            }
+            
+            let untrusted_vars = Self::track_untrusted_vars(&function.body);
+            if untrusted_vars.is_empty() {
+                continue;
+            }
+            
+            // Check if untrusted data flows to closure combinators
+            let combinator_patterns = ["and_then", "map(", "filter(", "filter_map(", "unwrap_or_else("];
+            for line in &function.body {
+                let trimmed = line.trim();
+                for pattern in &combinator_patterns {
+                    if trimmed.contains(pattern) {
+                        // Check if an untrusted variable is used
+                        for var in &untrusted_vars {
+                            if Self::contains_var(trimmed, var) {
+                                // Mark any closure belonging to this function as tainted
+                                // The closure naming convention is: parent_function::{closure#N}
+                                tainted_closures.insert(function.name.clone());
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         for function in &package.functions {
             // Skip internal functions
@@ -10888,10 +11054,49 @@ impl Rule for RegexInjectionRule {
                 continue;
             }
 
-            // Track untrusted input variables
-            let untrusted_vars = Self::track_untrusted_vars(&function.body);
+            // For closures, check if their parent function has tainted data
+            let is_closure = function.name.contains("{closure");
+            let mut untrusted_vars = if is_closure {
+                // Extract parent function name
+                let parent_name = function.name.split("::{closure").next().unwrap_or("");
+                if tainted_closures.contains(parent_name) {
+                    // The closure receives tainted input - mark parameter _2 as tainted
+                    // (in MIR, closure parameters start at _1 for self, _2 for first arg)
+                    let mut vars = HashSet::new();
+                    // Find parameter variable from "debug p => _N" pattern
+                    for line in &function.body {
+                        let trimmed = line.trim();
+                        if trimmed.starts_with("debug ") && trimmed.contains(" => _") {
+                            if let Some(var) = trimmed.split(" => _").nth(1) {
+                                let var = var.trim_end_matches(';');
+                                vars.insert(format!("_{}", var));
+                            }
+                        }
+                    }
+                    // If no explicit debug parameter, assume _2
+                    if vars.is_empty() {
+                        vars.insert("_2".to_string());
+                    }
+                    vars
+                } else {
+                    HashSet::new()
+                }
+            } else {
+                Self::track_untrusted_vars(&function.body)
+            };
+            
+            // Propagate taint for closures
+            if is_closure && !untrusted_vars.is_empty() {
+                Self::propagate_taint_in_body(&function.body, &mut untrusted_vars);
+            }
             
             if untrusted_vars.is_empty() {
+                continue;
+            }
+
+            // Check if there's a validation guard that protects against regex injection
+            if Self::has_validation_guard(&function.body, &untrusted_vars) {
+                // The untrusted input is validated before use - skip
                 continue;
             }
 
@@ -10899,6 +11104,13 @@ impl Rule for RegexInjectionRule {
             let injections = Self::find_regex_injections(&function.body, &untrusted_vars);
             
             if !injections.is_empty() {
+                // For closures, report the parent function name for clarity
+                let report_name = if is_closure {
+                    function.name.split("::{closure").next().unwrap_or(&function.name).to_string()
+                } else {
+                    function.name.clone()
+                };
+                
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
@@ -10908,7 +11120,7 @@ impl Rule for RegexInjectionRule {
                         Attackers may craft patterns causing ReDoS (catastrophic backtracking) \
                         or unexpected matches. Use regex::escape() for literal matching or \
                         validate patterns against an allowlist.",
-                        function.name
+                        report_name
                     ),
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),

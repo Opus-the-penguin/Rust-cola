@@ -9580,9 +9580,33 @@ impl CleartextLoggingRule {
     /// Check if an env var name is sensitive
     fn is_sensitive_env_var(env_var_context: &str) -> bool {
         let upper = env_var_context.to_uppercase();
-        Self::sensitive_env_var_patterns()
+        
+        // First check for sensitive patterns
+        let has_sensitive_pattern = Self::sensitive_env_var_patterns()
             .iter()
-            .any(|pattern| upper.contains(pattern))
+            .any(|pattern| upper.contains(pattern));
+        
+        if !has_sensitive_pattern {
+            return false;
+        }
+        
+        // Exclude non-sensitive config values that happen to contain sensitive keywords
+        // e.g., SECRET_PORT, SECRET_HOST - these are config values, not secrets
+        let non_sensitive_suffixes = ["_PORT", "_HOST", "_URL", "_PATH", "_DIR", "_TIMEOUT", 
+                                       "_COUNT", "_SIZE", "_LIMIT", "_VERSION", "_MODE",
+                                       "_ADDR", "_ADDRESS", "_ENDPOINT", "_LEVEL"];
+        
+        for suffix in non_sensitive_suffixes {
+            if upper.ends_with(suffix) {
+                return false;
+            }
+        }
+        
+        // Also exclude if the pattern is part of a suffix description
+        // e.g., LOG_SECRET_LEVEL (where SECRET is describing what's being logged)
+        // but keep things like SECRET_VALUE, SECRET_KEY
+        
+        true
     }
 
     /// Extract the env var name from a line if present
@@ -9695,6 +9719,66 @@ impl CleartextLoggingRule {
         }
         None
     }
+    
+    /// Build a map of variable aliases (which variables point to which others)
+    fn build_alias_map(body: &[String]) -> HashMap<String, HashSet<String>> {
+        let mut aliases: HashMap<String, HashSet<String>> = HashMap::new();
+        
+        for line in body {
+            let trimmed = line.trim();
+            if !trimmed.contains(" = ") {
+                continue;
+            }
+            
+            if let Some(eq_pos) = trimmed.find(" = ") {
+                let lhs = trimmed[..eq_pos].trim();
+                let rhs = trimmed[eq_pos + 3..].trim();
+                
+                // Extract target variable
+                let target = Self::extract_mir_local(lhs);
+                if target.is_none() {
+                    continue;
+                }
+                let target = target.unwrap();
+                
+                // Find source variables on RHS
+                // Patterns: &_N, copy _N, move _N, deref_copy (_N.0: ...), etc.
+                for word in rhs.split(|c: char| !c.is_alphanumeric() && c != '_') {
+                    if word.starts_with('_') && word.len() > 1 && word[1..].chars().all(|c| c.is_ascii_digit()) {
+                        aliases.entry(target.clone()).or_default().insert(word.to_string());
+                    }
+                }
+            }
+        }
+        
+        // Transitively expand aliases
+        let mut changed = true;
+        let max_iterations = 10;
+        let mut iteration = 0;
+        while changed && iteration < max_iterations {
+            changed = false;
+            iteration += 1;
+            
+            let current: Vec<_> = aliases.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            for (target, sources) in current {
+                let mut new_sources = sources.clone();
+                for source in &sources {
+                    if let Some(transitive) = aliases.get(source) {
+                        for t in transitive {
+                            if new_sources.insert(t.clone()) {
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+                if new_sources.len() > sources.len() {
+                    aliases.insert(target, new_sources);
+                }
+            }
+        }
+        
+        aliases
+    }
 
     /// Check if a line is a log sink that uses a sensitive variable
     fn find_logged_secrets(body: &[String], sensitive_vars: &HashMap<String, String>) -> Vec<(String, String)> {
@@ -9721,37 +9805,108 @@ impl CleartextLoggingRule {
             return findings;
         }
         
+        // Build alias map for dataflow tracking
+        let aliases = Self::build_alias_map(body);
+        
+        // Track sanitized variables (redact, mask, hash functions applied)
+        let sanitized_vars = Self::find_sanitized_vars(body);
+        
         // For each log sink, scan backward to see if any sensitive var flows to it
         for (log_idx, log_line) in &log_lines {
-            // Look for pattern: Arguments or fmt related calls that precede the log
-            // and check if any sensitive var is used in the window before the log call
-            let start_idx = log_idx.saturating_sub(15); // Look back ~15 lines
+            let start_idx = log_idx.saturating_sub(30); // Look back more for complex flows
             
             for (var, env_name) in sensitive_vars {
-                // Check if sensitive var (or ref to it) appears in the window before log
-                let var_patterns = [
-                    format!("&{}", var),
-                    format!("copy {}", var),
-                    format!("move {}", var),
-                    var.clone(),
-                ];
+                // Skip if this variable has been sanitized
+                if sanitized_vars.contains(var) {
+                    continue;
+                }
+                
+                // Also check if any alias of the sensitive variable is sanitized
+                let mut is_sanitized_flow = false;
+                if let Some(var_aliases) = aliases.get(var) {
+                    // Check if any variable that points to this sensitive var is sanitized
+                    for alias in var_aliases {
+                        if sanitized_vars.contains(alias) {
+                            is_sanitized_flow = true;
+                            break;
+                        }
+                    }
+                }
+                // And check if the sensitive var flows to any sanitized var
+                for (target, sources) in &aliases {
+                    if sources.contains(var) && sanitized_vars.contains(target) {
+                        is_sanitized_flow = true;
+                        break;
+                    }
+                }
+                if is_sanitized_flow {
+                    continue;
+                }
+                
+                // Build patterns for the sensitive var and all its aliases
+                let mut check_vars = vec![var.clone()];
+                for (target, sources) in &aliases {
+                    if sources.contains(var) {
+                        check_vars.push(target.clone());
+                    }
+                }
+                
+                // Generate patterns for all vars to check
+                let mut var_patterns = Vec::new();
+                for v in &check_vars {
+                    var_patterns.push(format!("&{} ", v));
+                    var_patterns.push(format!("&{})", v));
+                    var_patterns.push(format!("&{};", v));
+                    var_patterns.push(format!("&{},", v));
+                    var_patterns.push(format!("copy {} ", v));
+                    var_patterns.push(format!("copy {})", v));
+                    var_patterns.push(format!("copy {});", v));
+                    var_patterns.push(format!("move {} ", v));
+                    var_patterns.push(format!("move {})", v));
+                    var_patterns.push(format!("move {});", v));
+                }
                 
                 for check_idx in start_idx..*log_idx {
                     let check_line = body.get(check_idx).map(|s| s.trim()).unwrap_or("");
                     
-                    // Check if this line uses the sensitive var in a formatting context
-                    let is_fmt_related = check_line.contains("Argument::") || 
-                                        check_line.contains("::fmt") ||
-                                        check_line.contains("new_display") ||
-                                        check_line.contains("new_debug") ||
-                                        check_line.contains("Arguments");
+                    // Check if this line is a formatting call (Argument::new_display, etc.)
+                    let is_fmt_call = check_line.contains("Argument::") && 
+                                     (check_line.contains("new_display") || 
+                                      check_line.contains("new_debug") ||
+                                      check_line.contains("new_lower_exp") ||
+                                      check_line.contains("new_upper_exp") ||
+                                      check_line.contains("new_octal") ||
+                                      check_line.contains("new_pointer") ||
+                                      check_line.contains("new_binary") ||
+                                      check_line.contains("new_lower_hex") ||
+                                      check_line.contains("new_upper_hex"));
                     
-                    if is_fmt_related {
-                        for pattern in &var_patterns {
-                            if check_line.contains(pattern) {
-                                findings.push((env_name.clone(), log_line.to_string()));
-                                break;
-                            }
+                    // Only check formatting calls - this is where the sensitive data would appear
+                    // if it's being logged directly
+                    if !is_fmt_call {
+                        continue;
+                    }
+                    
+                    // Check what TYPE is being formatted - skip non-sensitive types
+                    // Pattern: new_display::<TYPE>(...)
+                    // If TYPE is bool, usize, u32, i32, etc., it's derived data, not the secret
+                    let safe_types = ["bool", "usize", "isize", "u8", "u16", "u32", "u64", "u128",
+                                     "i8", "i16", "i32", "i64", "i128", "f32", "f64"];
+                    let is_safe_type = safe_types.iter().any(|t| {
+                        check_line.contains(&format!("::<{}>", t)) ||
+                        check_line.contains(&format!("::<{},", t)) ||
+                        check_line.contains(&format!("<{}>", t))
+                    });
+                    
+                    if is_safe_type {
+                        // This is formatting a primitive type, not the secret string
+                        continue;
+                    }
+                    
+                    for pattern in &var_patterns {
+                        if check_line.contains(pattern) {
+                            findings.push((env_name.clone(), log_line.to_string()));
+                            break;
                         }
                     }
                 }
@@ -9764,6 +9919,135 @@ impl CleartextLoggingRule {
         
         findings
     }
+    
+    /// Find variables that have been sanitized (redact, mask, hash functions applied)
+    fn find_sanitized_vars(body: &[String]) -> HashSet<String> {
+        let mut sanitized = HashSet::new();
+        
+        // Sanitization function patterns
+        let sanitize_patterns = ["redact", "mask", "censor", "hide", "obfuscate", 
+                                 "hash", "encrypt", "truncate"];
+        
+        for line in body {
+            let trimmed = line.trim();
+            let lower = trimmed.to_lowercase();
+            
+            // Check if this line calls a sanitization function
+            let has_sanitize = sanitize_patterns.iter().any(|p| lower.contains(p));
+            
+            if has_sanitize && trimmed.contains(" = ") {
+                // Extract the target variable that receives sanitized output
+                if let Some(eq_pos) = trimmed.find(" = ") {
+                    let target = trimmed[..eq_pos].trim();
+                    if let Some(var) = Self::extract_mir_local(target) {
+                        sanitized.insert(var);
+                    }
+                }
+            }
+        }
+        
+        // Propagate sanitization through assignments
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for line in body {
+                let trimmed = line.trim();
+                if trimmed.contains(" = ") {
+                    if let Some(eq_pos) = trimmed.find(" = ") {
+                        let target = trimmed[..eq_pos].trim();
+                        let source = trimmed[eq_pos + 3..].trim();
+                        
+                        // Check if source uses a sanitized var
+                        for svar in sanitized.clone() {
+                            if source.contains(&svar) {
+                                if let Some(target_var) = Self::extract_mir_local(target) {
+                                    if sanitized.insert(target_var) {
+                                        changed = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        sanitized
+    }
+    
+    /// Identify functions that log their parameters (helper logging functions)
+    fn find_logging_functions(functions: &[MirFunction]) -> HashSet<String> {
+        let mut logging_funcs = HashSet::new();
+        let sink_patterns = Self::log_sink_patterns();
+        
+        for function in functions {
+            // Check if function has log sinks
+            let has_log_sink = function.body.iter().any(|line| {
+                sink_patterns.iter().any(|p| line.contains(p))
+            });
+            
+            if !has_log_sink {
+                continue;
+            }
+            
+            // Check if parameter _1 is logged (common pattern for helper functions)
+            // Pattern: function logs its first parameter directly
+            let logs_param = function.body.iter().any(|line| {
+                let trimmed = line.trim();
+                trimmed.contains("Argument::") &&
+                (trimmed.contains("new_display") || trimmed.contains("new_debug")) &&
+                (trimmed.contains("copy _1)") || trimmed.contains("&_1)") || 
+                 trimmed.contains("copy _6)") && function.body.iter().any(|l| l.contains("_6 = &_1")))
+            });
+            
+            if logs_param {
+                logging_funcs.insert(function.name.clone());
+            }
+        }
+        
+        logging_funcs
+    }
+    
+    /// Check if sensitive data flows to a call of a logging helper function
+    fn find_logged_via_helper(
+        body: &[String], 
+        sensitive_vars: &HashMap<String, String>,
+        logging_funcs: &HashSet<String>,
+        aliases: &HashMap<String, HashSet<String>>,
+    ) -> Vec<(String, String)> {
+        let mut findings = Vec::new();
+        
+        for line in body {
+            let trimmed = line.trim();
+            
+            // Check if this is a call to a logging function
+            for func_name in logging_funcs {
+                if trimmed.contains(&format!(" {}(", func_name)) || 
+                   trimmed.contains(&format!("= {}(", func_name)) {
+                    // Check if any sensitive variable is passed as argument
+                    for (var, env_name) in sensitive_vars {
+                        // Check direct use
+                        if trimmed.contains(&format!("copy {}", var)) ||
+                           trimmed.contains(&format!("move {}", var)) {
+                            findings.push((env_name.clone(), trimmed.to_string()));
+                        }
+                        
+                        // Check aliased use
+                        for (alias_target, alias_sources) in aliases {
+                            if alias_sources.contains(var) {
+                                if trimmed.contains(&format!("copy {}", alias_target)) ||
+                                   trimmed.contains(&format!("move {}", alias_target)) {
+                                    findings.push((env_name.clone(), trimmed.to_string()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        findings
+    }
 }
 
 impl Rule for CleartextLoggingRule {
@@ -9773,6 +10057,9 @@ impl Rule for CleartextLoggingRule {
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
         let mut findings = Vec::new();
+        
+        // First pass: identify helper functions that log their parameters
+        let logging_funcs = Self::find_logging_functions(&package.functions);
 
         for function in &package.functions {
             // Skip internal functions
@@ -9786,11 +10073,24 @@ impl Rule for CleartextLoggingRule {
             if sensitive_vars.is_empty() {
                 continue;
             }
+            
+            // Build alias map for this function
+            let aliases = Self::build_alias_map(&function.body);
 
-            // Find log sinks that use sensitive variables
+            // Find log sinks that use sensitive variables (direct logging)
             let logged_secrets = Self::find_logged_secrets(&function.body, &sensitive_vars);
             
-            for (env_name, evidence_line) in logged_secrets {
+            // Also check for sensitive data passed to logging helper functions
+            let helper_logged = Self::find_logged_via_helper(
+                &function.body, &sensitive_vars, &logging_funcs, &aliases
+            );
+            
+            // Combine findings
+            let mut all_logged: Vec<_> = logged_secrets.into_iter().chain(helper_logged).collect();
+            all_logged.sort_by(|a, b| a.0.cmp(&b.0));
+            all_logged.dedup_by(|a, b| a.0 == b.0);
+            
+            for (env_name, evidence_line) in all_logged {
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),

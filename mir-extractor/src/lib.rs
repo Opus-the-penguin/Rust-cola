@@ -14321,17 +14321,33 @@ impl InsecureYamlDeserializationRule {
         "serde_yaml::from_reader::",
     ];
 
-    /// Untrusted sources
+    /// Untrusted sources - includes MIR patterns
     const UNTRUSTED_SOURCES: &'static [&'static str] = &[
+        // Environment variables - source and MIR forms
         "env::var",
         "env::var_os",
+        "std::env::var",
+        "var::<",        // MIR: _1 = var::<&str>(const "VAR")
+        "var_os::<",     // MIR: _1 = var_os::<&str>(const "VAR")
+        // Command-line arguments - source and MIR forms
         "env::args",
+        "std::env::args",
+        "args::<",       // MIR form
+        "Args>",         // Iterator type
+        // Stdin
         "stdin",
+        "Stdin",
+        // File operations
         "read_to_string",
         "read_to_end",
         "BufRead::read_line",
         "fs::read_to_string",
         "fs::read",
+        "Read>::read_to_string",
+        "Read>::read_to_end",
+        // Network (could receive YAML)
+        "TcpStream",
+        "::connect(",
     ];
 
     /// Sanitization patterns that make YAML parsing safer

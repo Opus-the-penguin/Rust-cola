@@ -14662,25 +14662,49 @@ impl UnboundedReadRule {
         }
     }
 
-    /// Untrusted stream sources
+    /// Untrusted stream sources - expanded patterns for MIR detection
     const UNTRUSTED_SOURCES: &'static [&'static str] = &[
-        // Network streams
+        // Network streams - direct
         "TcpStream::connect",
         "TcpListener::accept",
+        "TcpListener::incoming",
         "UnixStream::connect",
+        "UnixListener::accept",
         "UdpSocket::",
-        // Stdin
+        // Network - MIR patterns
+        "::connect(",
+        "::accept(",
+        "::incoming(",
+        "Incoming>",
+        "<TcpStream",
+        "<UnixStream",
+        // Stdin - direct and MIR patterns
         "io::stdin",
         "stdin()",
-        // User-controlled file paths
+        " = stdin(",
+        "Stdin",
+        // User-controlled file paths via env - MIR patterns
         "env::var",
         "env::args",
+        "std::env::var",
+        "std::env::args",
+        "var::<",        // MIR: _1 = var::<&str>(const "HOME")
+        "var_os::<",     // MIR: _1 = var_os::<&str>(const "PATH")
+        " = args(",
+        "args::<",       // MIR form
+        "Args>",
+        "OsString>",     // Common return from env vars
+        // File operations that could be on untrusted paths
+        "File::open",
     ];
 
     /// Dangerous unbounded read operations
     const UNBOUNDED_SINKS: &'static [&'static str] = &[
         "read_to_end",
         "read_to_string",
+        "Read>::read_to_end",
+        "Read>::read_to_string",
+        "BufRead>::read_to_end",
     ];
 
     /// Safe patterns that limit read size
@@ -14738,20 +14762,38 @@ impl UnboundedReadRule {
     fn has_trusted_source_only(&self, function: &MirFunction) -> bool {
         let body_str = function.body.join("\n");
         
-        // If we have File::open with a hardcoded path (string literal in const)
-        // and NO env::var or env::args, it's trusted
-        let has_file_open = body_str.contains("File::open");
-        let has_env_var = body_str.contains("env::var") || body_str.contains("env::args");
+        // Check for various untrusted sources
         let has_network = body_str.contains("TcpStream") || 
                          body_str.contains("UnixStream") ||
-                         body_str.contains("TcpListener");
-        let has_stdin = body_str.contains("stdin");
+                         body_str.contains("TcpListener") ||
+                         body_str.contains("UdpSocket") ||
+                         body_str.contains("::connect(") ||
+                         body_str.contains("::accept(") ||
+                         body_str.contains("::incoming(");
+        let has_stdin = body_str.contains("stdin") || body_str.contains("Stdin");
+        let has_env_input = body_str.contains("env::var") || 
+                           body_str.contains("env::args") ||
+                           body_str.contains("var::<") ||    // MIR pattern
+                           body_str.contains("var_os::<") || // MIR pattern
+                           body_str.contains("args::<") ||   // MIR pattern
+                           body_str.contains("Args>");
         
-        // If only file operations with no untrusted path sources
-        if has_file_open && !has_env_var && !has_network && !has_stdin {
-            // Check for hardcoded paths (string literals)
-            if body_str.contains("const ") || body_str.contains(r#""/etc/"#) || 
-               body_str.contains(r#""/app/"#) || body_str.contains(r#""/usr/"#) {
+        // If any network or stdin or env input source, it's not trusted-only
+        if has_network || has_stdin || has_env_input {
+            return false;
+        }
+        
+        // File::open without untrusted input sources is considered trusted
+        // (hardcoded paths, config files, etc.)
+        let has_file_open = body_str.contains("File::open");
+        if has_file_open {
+            // Check for hardcoded paths (string literals starting with /)
+            if body_str.contains(r#""/etc/"#) || 
+               body_str.contains(r#""/app/"#) || 
+               body_str.contains(r#""/usr/"#) ||
+               body_str.contains(r#""/var/"#) ||
+               body_str.contains(r#""/tmp/"#) ||
+               body_str.contains("const ") {
                 return true;
             }
         }

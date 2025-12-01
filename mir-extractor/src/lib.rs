@@ -10727,6 +10727,7 @@ impl UncheckedIndexRule {
             }
         }
         
+        // First pass: identify initial source taints
         for line in body {
             let trimmed = line.trim();
             
@@ -10754,75 +10755,49 @@ impl UncheckedIndexRule {
                     }
                 }
             }
-            
-            // Track .parse() results - these convert strings to indices
-            if trimmed.contains("::parse") || trimmed.contains("parse::") {
-                let uses_untrusted = untrusted_vars.iter().any(|v| Self::contains_var(trimmed, v));
-                if uses_untrusted {
-                    if let Some(eq_pos) = trimmed.find(" = ") {
-                        let target = trimmed[..eq_pos].trim();
-                        if let Some(var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
-                            .find(|s| s.starts_with('_'))
-                        {
-                            untrusted_vars.insert(var.to_string());
-                        }
-                    }
-                }
-            }
-            
-            // Track from_str results
-            if trimmed.contains("from_str") {
-                let uses_untrusted = untrusted_vars.iter().any(|v| Self::contains_var(trimmed, v));
-                if uses_untrusted {
-                    if let Some(eq_pos) = trimmed.find(" = ") {
-                        let target = trimmed[..eq_pos].trim();
-                        if let Some(var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
-                            .find(|s| s.starts_with('_'))
-                        {
-                            untrusted_vars.insert(var.to_string());
-                        }
-                    }
-                }
-            }
-            
-            // Track unwrap/expect results (propagate taint from Result/Option)
-            if trimmed.contains("::unwrap(") || trimmed.contains("::expect(") {
-                let uses_untrusted = untrusted_vars.iter().any(|v| Self::contains_var(trimmed, v));
-                if uses_untrusted {
-                    if let Some(eq_pos) = trimmed.find(" = ") {
-                        let target = trimmed[..eq_pos].trim();
-                        if let Some(var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
-                            .find(|s| s.starts_with('_'))
-                        {
-                            untrusted_vars.insert(var.to_string());
-                        }
-                    }
-                }
-            }
         }
         
-        // Second pass: propagate taint through assignments
+        // Second pass: propagate taint through assignments, parse, unwrap, etc.
+        // This needs to be iterative because taint can propagate through chains
         let mut changed = true;
         while changed {
             changed = false;
             for line in body {
                 let trimmed = line.trim();
                 
-                if trimmed.contains(" = ") {
-                    if let Some(eq_pos) = trimmed.find(" = ") {
-                        let target = trimmed[..eq_pos].trim();
-                        let source = trimmed[eq_pos + 3..].trim();
-                        
-                        let uses_untrusted = untrusted_vars.iter().any(|v| Self::contains_var(source, v));
-                        
-                        if uses_untrusted {
-                            if let Some(target_var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
-                                .find(|s| s.starts_with('_'))
-                            {
-                                if !untrusted_vars.contains(target_var) {
-                                    untrusted_vars.insert(target_var.to_string());
-                                    changed = true;
-                                }
+                // Check if line uses any untrusted variable
+                let uses_untrusted = untrusted_vars.iter().any(|v| Self::contains_var(trimmed, v));
+                
+                if !uses_untrusted {
+                    continue;
+                }
+                
+                // Extract target variable if this is an assignment
+                if let Some(eq_pos) = trimmed.find(" = ") {
+                    let target = trimmed[..eq_pos].trim();
+                    if let Some(target_var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                        .find(|s| s.starts_with('_'))
+                    {
+                        if !untrusted_vars.contains(target_var) {
+                            // Taint propagates through:
+                            // - parse/from_str (string to number conversion)
+                            // - unwrap/expect (Result/Option extraction)
+                            // - general assignments (references, derefs, copies, moves)
+                            let dominated_by_untrusted = 
+                                trimmed.contains("::parse") || 
+                                trimmed.contains("parse::") ||
+                                trimmed.contains("from_str") ||
+                                trimmed.contains("::unwrap(") || 
+                                trimmed.contains("::expect(") ||
+                                // General assignment - check source side
+                                {
+                                    let source = trimmed[eq_pos + 3..].trim();
+                                    untrusted_vars.iter().any(|v| Self::contains_var(source, v))
+                                };
+                            
+                            if dominated_by_untrusted {
+                                untrusted_vars.insert(target_var.to_string());
+                                changed = true;
                             }
                         }
                     }
@@ -10834,7 +10809,11 @@ impl UncheckedIndexRule {
     }
 
     /// Check if function has bounds validation for indices
+    /// This checks for EXPLICIT bounds checking, not just MIR-level panic assertions
     fn has_bounds_validation(body: &[String], untrusted_vars: &HashSet<String>) -> bool {
+        // Track comparison results to see if they're used in conditional branches
+        let mut comparison_vars: HashSet<String> = HashSet::new();
+        
         for line in body {
             let trimmed = line.trim();
             
@@ -10848,7 +10827,7 @@ impl UncheckedIndexRule {
             if trimmed.contains(".len()") || trimmed.contains("::len(") {
                 for var in untrusted_vars {
                     if Self::contains_var(trimmed, var) {
-                        // Looks like a bounds check
+                        // Looks like a bounds check against len()
                         return true;
                     }
                 }
@@ -10865,21 +10844,34 @@ impl UncheckedIndexRule {
                 }
             }
             
-            // Check for explicit < or > comparisons with untrusted variable
-            // Avoid matching MIR syntax like `<Vec<i32> as Index<usize>>`
+            // Track comparison results (Lt, Gt, etc.) that involve untrusted vars
+            // These are only valid if they control a conditional branch, not just an assert
             let has_comparison = trimmed.contains("Lt(") || trimmed.contains("Le(") || 
                                   trimmed.contains("Gt(") || trimmed.contains("Ge(");
             if has_comparison {
                 for var in untrusted_vars {
                     if Self::contains_var(trimmed, var) {
-                        return true;
+                        // Extract the target variable for this comparison
+                        if let Some(eq_pos) = trimmed.find(" = ") {
+                            let target = trimmed[..eq_pos].trim();
+                            if let Some(target_var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                                .find(|s| s.starts_with('_'))
+                            {
+                                comparison_vars.insert(target_var.to_string());
+                            }
+                        }
                     }
                 }
             }
             
-            // Check for assert with bounds
-            if trimmed.contains("assert") && trimmed.contains("len") {
-                return true;
+            // Check if comparison result is used in switchInt (conditional branch)
+            // This indicates a proper if-check, not just an assert that panics
+            if trimmed.contains("switchInt(") {
+                for comp_var in &comparison_vars {
+                    if Self::contains_var(trimmed, comp_var) {
+                        return true;
+                    }
+                }
             }
         }
         

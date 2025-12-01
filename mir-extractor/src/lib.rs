@@ -10697,7 +10697,9 @@ impl UncheckedIndexRule {
     }
 
     /// Track untrusted index variables (especially numeric ones)
-    fn track_untrusted_indices(body: &[String]) -> HashSet<String> {
+    /// Now with inter-procedural support: tainted_return_funcs contains names of functions
+    /// that return tainted data from user input sources.
+    fn track_untrusted_indices(body: &[String], tainted_return_funcs: &HashSet<String>) -> HashSet<String> {
         let mut untrusted_vars = HashSet::new();
         let source_patterns = Self::input_source_patterns();
         
@@ -10751,6 +10753,29 @@ impl UncheckedIndexRule {
                     for (ref_var, target_var) in &mut_refs {
                         if trimmed.contains(ref_var) {
                             untrusted_vars.insert(target_var.clone());
+                        }
+                    }
+                }
+            }
+            
+            // Inter-procedural: Check if this line calls a function that returns tainted data
+            // Pattern: _N = function_name(...) -> [return: ...]
+            if !tainted_return_funcs.is_empty() {
+                if let Some(eq_pos) = trimmed.find(" = ") {
+                    let source = trimmed[eq_pos + 3..].trim();
+                    // Check if any tainted function is called
+                    for func_name in tainted_return_funcs {
+                        // Look for the function name followed by ( or ::
+                        // Handle both "get_user_index(" and "module::get_user_index("
+                        let short_name = func_name.split("::").last().unwrap_or(func_name);
+                        if source.contains(&format!("{}(", short_name)) || 
+                           source.contains(&format!("{}::", short_name)) {
+                            let target = trimmed[..eq_pos].trim();
+                            if let Some(var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                                .find(|s| s.starts_with('_'))
+                            {
+                                untrusted_vars.insert(var.to_string());
+                            }
                         }
                     }
                 }
@@ -10945,6 +10970,56 @@ impl UncheckedIndexRule {
         
         evidence
     }
+    
+    /// Identify functions that return tainted data from user input sources.
+    /// These are functions that:
+    /// 1. Contain input source patterns (stdin, env, args, file reads)
+    /// 2. Return data derived from those sources (taint flows to _0)
+    fn find_tainted_return_functions(package: &MirPackage) -> HashSet<String> {
+        let mut tainted_funcs = HashSet::new();
+        let source_patterns = Self::input_source_patterns();
+        
+        for function in &package.functions {
+            // Skip internal functions
+            if function.name.contains("mir_extractor") || 
+               function.name.contains("mir-extractor") ||
+               function.name.contains("__") {
+                continue;
+            }
+            
+            // Check if function contains a source
+            let has_source = function.body.iter().any(|line| {
+                source_patterns.iter().any(|p| line.contains(p))
+            });
+            
+            if !has_source {
+                continue;
+            }
+            
+            // Track taint to see if it reaches the return value (_0)
+            // Use simplified taint tracking just for this analysis
+            let empty_set = HashSet::new();
+            let tainted = Self::track_untrusted_indices(&function.body, &empty_set);
+            
+            // Check if taint propagates to return value
+            // MIR patterns: "_0 = move _N" or "_0 = copy _N" where _N is tainted
+            let returns_tainted = function.body.iter().any(|line| {
+                let trimmed = line.trim();
+                if trimmed.starts_with("_0 = ") || trimmed.starts_with("_0 =") {
+                    // Check if any tainted var is on the RHS
+                    tainted.iter().any(|v| Self::contains_var(trimmed, v))
+                } else {
+                    false
+                }
+            });
+            
+            if returns_tainted {
+                tainted_funcs.insert(function.name.clone());
+            }
+        }
+        
+        tainted_funcs
+    }
 }
 
 impl Rule for UncheckedIndexRule {
@@ -10954,7 +11029,11 @@ impl Rule for UncheckedIndexRule {
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
         let mut findings = Vec::new();
+        
+        // Phase 1: Build inter-procedural taint map - identify functions that return tainted data
+        let tainted_return_funcs = Self::find_tainted_return_functions(package);
 
+        // Phase 2: Analyze each function with inter-procedural context
         for function in &package.functions {
             // Skip internal functions and test harnesses
             if function.name.contains("mir_extractor") || 
@@ -10963,8 +11042,8 @@ impl Rule for UncheckedIndexRule {
                 continue;
             }
 
-            // Track untrusted index variables
-            let untrusted_vars = Self::track_untrusted_indices(&function.body);
+            // Track untrusted index variables (now with inter-procedural support)
+            let untrusted_vars = Self::track_untrusted_indices(&function.body, &tainted_return_funcs);
             
             if untrusted_vars.is_empty() {
                 continue;

@@ -10405,20 +10405,30 @@ impl RegexInjectionRule {
     /// Input source patterns (untrusted data origins)
     fn input_source_patterns() -> &'static [&'static str] {
         &[
-            "= var::",            // env::var - MIR format: var::<&str>(const "...")
+            // Environment variables - MIR patterns
+            "var::<",             // MIR: var::<&str>(const "...")
+            "var_os::<",          // MIR: var_os::<&str>(const "...")
             "= var(",             // env::var - alternate format
-            "var_os(",            // env::var_os
-            "= args(",            // env::args
+            "env::var",           // Source form
+            // Command-line arguments - MIR patterns
+            "args::<",            // MIR form for env::args
+            "= args(",            // env::args - alternate format
             "args_os(",           // env::args_os
+            "Args>",              // Args iterator type
             "::nth(",             // iterator nth (often on args)
+            // Stdin - MIR patterns
             "read_line(",         // stdin - includes BufRead>::read_line
             "read_to_string",     // file/stdin reads - includes fs::read_to_string
             "Read>::read(",       // file reads
+            "= stdin(",           // stdin() call
+            "Stdin",              // Stdin type
+            // Network/HTTP sources
             "::get(",             // HashMap/BTreeMap get, query params
             "query(",             // URL query parameters
             "body(",              // HTTP body
             "json(",              // JSON payload
-            "= stdin(",           // stdin() call
+            "TcpStream",          // Network source
+            "::connect(",         // Network connection
         ]
     }
 
@@ -10644,19 +10654,30 @@ impl UncheckedIndexRule {
     /// Input source patterns (untrusted data origins)
     fn input_source_patterns() -> &'static [&'static str] {
         &[
-            "= var::",            // env::var
+            // Environment variables - MIR patterns
+            "var::<",             // MIR: var::<&str>(const "...")
+            "var_os::<",          // MIR: var_os::<&str>(const "...")
             "= var(",             // env::var alternate
-            "var_os(",            // env::var_os
-            "= args(",            // env::args
+            "env::var",           // Source form
+            // Command-line arguments - MIR patterns
+            "args::<",            // MIR form for env::args
+            "= args(",            // env::args alternate
             "args_os(",           // env::args_os
+            "Args>",              // Args iterator type
             "::nth(",             // iterator nth (often on args)
+            // Stdin - MIR patterns
             "read_line(",         // stdin read_line
             "Stdin::read_line",   // explicit Stdin::read_line
+            "Stdin",              // Stdin type
+            "= stdin(",           // stdin() call
+            // File operations
             "read_to_string",     // file/stdin reads
             "Read>::read(",       // file reads
-            "::get(",             // HashMap/query params (can be untrusted)
-            "= stdin(",           // stdin() call
             "fs::read_to_string", // fs::read_to_string
+            // Other untrusted sources
+            "::get(",             // HashMap/query params (can be untrusted)
+            "TcpStream",          // Network source
+            "::connect(",         // Network connection
         ]
     }
 

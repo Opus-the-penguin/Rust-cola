@@ -12108,6 +12108,12 @@ impl Rule for SliceFromRawPartsRule {
 
                 // Check if length is a direct function parameter (potentially untrusted)
                 if Self::is_function_parameter(&len_var, &function.signature) {
+                    // Skip if function uses NonNull - indicates safety-aware API design
+                    // where the caller is trusted to provide valid values
+                    if function.signature.contains("NonNull<") {
+                        continue;
+                    }
+                    
                     // This is a warning - the parameter could be from a trusted caller
                     findings.push(Finding {
                         rule_id: self.metadata.id.clone(),

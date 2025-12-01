@@ -11775,22 +11775,51 @@ impl SliceFromRawPartsRule {
             }
         }
         
-        // Check for min/saturating operations
-        if body_str.contains(&format!("min(")) && body_str.contains(len_var) {
-            return true;
+        // Check for min/saturating operations involving the length variable directly
+        // Pattern: _N = min(copy len_var, ...) or min(..., copy len_var)
+        if body_str.contains("::min(") {
+            if body_str.contains(&format!("copy {}", len_var)) || 
+               body_str.contains(&format!("move {}", len_var)) {
+                // Make sure it's actually using min() on our variable
+                for line in body {
+                    if line.contains("::min(") && line.contains(len_var) {
+                        return true;
+                    }
+                }
+            }
         }
         if body_str.contains("saturating_") && body_str.contains(len_var) {
-            return true;
+            // Check for saturating operations that actually involve our variable
+            for line in body {
+                if line.contains("saturating_") && line.contains(len_var) {
+                    return true;
+                }
+            }
         }
         
-        // Check for checked arithmetic
+        // Check for checked arithmetic on the length variable
         if body_str.contains("checked_") && body_str.contains(len_var) {
-            return true;
+            for line in body {
+                if line.contains("checked_") && line.contains(len_var) {
+                    return true;
+                }
+            }
         }
         
-        // Check for assert! on length
-        if body_str.contains("assert") && body_str.contains(len_var) {
-            return true;
+        // Check for assert!/debug_assert! that specifically compares the length
+        // The assertion should directly reference the length variable in a comparison
+        // NOT overflow checks on intermediate variables
+        for line in body {
+            if line.contains("assert") {
+                // Only count as validation if the assertion directly compares len_var
+                // Pattern: assert!(len <= max) shows as assert(Le(copy len_var, ...))
+                if line.contains(&format!("Le(copy {}", len_var)) ||
+                   line.contains(&format!("Lt(copy {}", len_var)) ||
+                   line.contains(&format!("Le(move {}", len_var)) ||
+                   line.contains(&format!("Lt(move {}", len_var)) {
+                    return true;
+                }
+            }
         }
         
         false
@@ -11827,7 +11856,7 @@ impl SliceFromRawPartsRule {
         }
         
         // Check if variable comes from env::args
-        if body_str.contains("env::args") || body_str.contains("Args") {
+        if body_str.contains("env::args") || body_str.contains("Args") || body_str.contains("args::<") {
             return true;
         }
         
@@ -11840,6 +11869,82 @@ impl SliceFromRawPartsRule {
         // This is less certain, so we'll mark it but with lower confidence
         
         false
+    }
+
+    /// Check if length comes from a potentially dangerous computation
+    /// Returns Some(reason) if dangerous, None if safe
+    fn is_dangerous_length_computation(len_var: &str, body: &[String]) -> Option<String> {
+        // First, check if len_var is assigned from another variable via cast/move
+        // Pattern: _3 = move _4 as usize (IntToInt)
+        let mut source_var = len_var.to_string();
+        for line in body {
+            let trimmed = line.trim();
+            if trimmed.contains(&format!("{} = move ", len_var)) && trimmed.contains("as usize") {
+                // Extract the source variable
+                if let Some(start) = trimmed.find("move ") {
+                    let after_move = &trimmed[start + 5..];
+                    if let Some(end) = after_move.find(" as") {
+                        source_var = after_move[..end].to_string();
+                    }
+                }
+            }
+        }
+        
+        // Now check both len_var and source_var for dangerous patterns
+        for line in body {
+            let trimmed = line.trim();
+            
+            // Pattern: _N = MulWithOverflow(...) or _N = Mul(...)
+            // Dangerous: multiplication could overflow or be wrong scale
+            if trimmed.contains(&format!("{} = MulWithOverflow", len_var)) ||
+                trimmed.contains(&format!("{} = Mul(", len_var)) {
+                return Some("length computed from multiplication (may overflow or use wrong scale)".to_string());
+            }
+            
+            // Pattern: _N = offset_from(...)
+            // Dangerous: pointer diff from untrusted pointers
+            // Check both the direct var and the source var (before cast)
+            if trimmed.contains(&format!("{} =", len_var)) && trimmed.contains("offset_from") {
+                return Some("length derived from pointer difference (end pointer may be invalid)".to_string());
+            }
+            if source_var != len_var && trimmed.contains(&format!("{} =", source_var)) && trimmed.contains("offset_from") {
+                return Some("length derived from pointer difference (end pointer may be invalid)".to_string());
+            }
+            
+            // Pattern: _N = move (_M.0: usize) where _M is from MulWithOverflow
+            // This is the result of MulWithOverflow
+            if trimmed.contains(&format!("{} = move (", len_var)) && 
+               trimmed.contains(".0: usize)") {
+                // Check if any line was MulWithOverflow
+                let body_str = body.join("\n");
+                if body_str.contains("MulWithOverflow") {
+                    return Some("length computed from multiplication (may overflow or use wrong scale)".to_string());
+                }
+            }
+            
+            // Pattern: _N = Layout::size(...)
+            // Dangerous: returns byte size, not element count
+            if trimmed.contains(&format!("{} = Layout::size", len_var)) {
+                return Some("length from Layout::size() returns bytes, not element count".to_string());
+            }
+            // Also check general pattern with Layout::size anywhere on the line
+            if trimmed.contains(&format!("{} =", len_var)) && trimmed.contains("Layout::size") {
+                return Some("length from Layout::size() returns bytes, not element count".to_string());
+            }
+            
+            // Pattern: _N = Div(...) with wrong divisor for type
+            // This needs more context, but we can flag suspicious divisions
+            if trimmed.contains(&format!("{} = Div(", len_var)) {
+                // Check if divisor doesn't match expected element size
+                // For from_raw_parts::<T>, divisor should be size_of::<T>()
+                // For now, flag divisions by 2 when element type is likely 4+ bytes
+                if trimmed.contains("const 2_usize") {
+                    return Some("length divided by 2 may not match element size".to_string());
+                }
+            }
+        }
+        
+        None
     }
 
     /// Parse from_raw_parts call and extract length variable
@@ -11973,6 +12078,25 @@ impl Rule for SliceFromRawPartsRule {
                             (environment variable, command-line argument, or user input). \
                             Validate length against allocation size before creating slice.",
                             len_var
+                        ),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence: vec![trimmed.to_string()],
+                        span: function.span.clone(),
+                    });
+                    continue;
+                }
+                
+                // Check for dangerous length computations (multiplication, pointer diff, Layout::size)
+                if let Some(reason) = Self::is_dangerous_length_computation(&len_var, &function.body) {
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: format!(
+                            "slice::from_raw_parts length '{}': {}. \
+                            Verify the length correctly represents element count within the allocation.",
+                            len_var, reason
                         ),
                         function: function.name.clone(),
                         function_signature: function.signature.clone(),

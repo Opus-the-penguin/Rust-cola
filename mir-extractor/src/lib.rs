@@ -14883,11 +14883,27 @@ impl SqlInjectionRule {
         let has_sql_const = body.iter().any(|line| {
             let line_upper = line.to_uppercase();
             // Look for SQL keywords in const strings
-            (line.contains("const ") || line.contains("[const ")) &&
-            Self::SQL_KEYWORDS.iter().any(|kw| line_upper.contains(kw))
+            // Pattern 1: Inline const strings like [const "SELECT ..."]
+            // Pattern 2: Promoted const references like ::promoted[0]
+            ((line.contains("const ") || line.contains("[const ")) &&
+             Self::SQL_KEYWORDS.iter().any(|kw| line_upper.contains(kw))) ||
+            // Pattern 3: Check promoted const blocks (lines containing SQL in const blocks)
+            (line.contains("::promoted[") && Self::SQL_KEYWORDS.iter().any(|kw| line_upper.contains(kw)))
         });
         
-        if !has_sql_const {
+        // Also check if the body contains references to promoted consts that might have SQL
+        // The promoted const names like "bad_rusqlite_execute::promoted[0]" suggest SQL in consts
+        let has_promoted_sql_ref = body.iter().any(|line| {
+            line.contains("::promoted[") && 
+            body.iter().any(|other| {
+                let other_upper = other.to_uppercase();
+                // Check if any line has UPDATE, SELECT, INSERT, etc. as a const string definition
+                (other.contains("[const ") || other.contains(" = [const ")) &&
+                Self::SQL_KEYWORDS.iter().any(|kw| other_upper.contains(kw))
+            })
+        });
+        
+        if !has_sql_const && !has_promoted_sql_ref {
             return evidence;
         }
         
@@ -14937,23 +14953,27 @@ impl SqlInjectionRule {
             }
         }
         
-        // Also check for string concatenation with SQL keywords
-        for line in body {
-            let trimmed = line.trim();
-            // Check for string concatenation involving SQL
-            if trimmed.contains("Add>::add(") || trimmed.contains("push_str(") {
-                let line_upper = line.to_uppercase();
-                if Self::SQL_KEYWORDS.iter().any(|kw| line_upper.contains(kw)) {
+        // Also check for string concatenation with SQL keywords in the function
+        // (SQL keywords may be in const strings, concatenation uses tainted vars)
+        if has_sql_const {
+            for line in body {
+                let trimmed = line.trim();
+                // Check for string concatenation involving untrusted data
+                // MIR pattern: <String as Add<&str>>::add(...) or Add>::add(...)
+                if trimmed.contains("Add<") && trimmed.contains(">::add(") || trimmed.contains("push_str(") {
                     for var in untrusted_vars {
                         if self.contains_var(trimmed, var) {
-                            evidence.push(trimmed.to_string());
+                            evidence.push(format!("String concatenation with tainted var: {}", trimmed));
                             break;
                         }
                     }
                 }
             }
-            
-            // Check for direct SQL sink patterns
+        }
+        
+        // Check for direct SQL sink patterns
+        for line in body {
+            let trimmed = line.trim();
             for sink in Self::SQL_SINKS {
                 if trimmed.contains(sink) {
                     for var in untrusted_vars {
@@ -15000,6 +15020,61 @@ impl SqlInjectionRule {
         line.contains(&format!(" {} ", var)) ||
         line.contains(&format!("[{}]", var))
     }
+    
+    /// Extract function parameters from MIR body
+    /// Parameters appear as "debug PARAM_NAME => _N" lines
+    fn extract_function_params(&self, body: &[String]) -> HashSet<String> {
+        let mut params = HashSet::new();
+        for line in body {
+            let trimmed = line.trim();
+            // Pattern: "debug param_name => _N;"
+            if trimmed.starts_with("debug ") && trimmed.contains(" => _") {
+                if let Some(start) = trimmed.find(" => _") {
+                    let after = &trimmed[start + 5..];
+                    // Extract _N where N is a digit  
+                    let var: String = after.chars().take_while(|c| c.is_ascii_digit() || *c == '_').collect();
+                    if !var.is_empty() {
+                        // Don't include _0 (return value)
+                        if var != "0" {
+                            params.insert(format!("_{}", var.trim_start_matches('_')));
+                        }
+                    }
+                }
+            }
+        }
+        params
+    }
+    
+    /// Propagate taint through assignments in the function body
+    fn propagate_taint(&self, body: &[String], untrusted_vars: &mut HashSet<String>) {
+        let mut changed = true;
+        let max_iterations = 20;
+        let mut iterations = 0;
+        
+        while changed && iterations < max_iterations {
+            changed = false;
+            iterations += 1;
+            
+            for line in body {
+                let trimmed = line.trim();
+                
+                if !trimmed.contains(" = ") {
+                    continue;
+                }
+                
+                if let Some(target) = self.extract_assignment_target(trimmed) {
+                    for untrusted in untrusted_vars.clone() {
+                        if self.contains_var(trimmed, &untrusted) {
+                            if !untrusted_vars.contains(&target) {
+                                untrusted_vars.insert(target.clone());
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl Rule for SqlInjectionRule {
@@ -15010,7 +15085,102 @@ impl Rule for SqlInjectionRule {
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
         let mut findings = Vec::new();
 
-        // Phase 1: Intra-procedural analysis
+        // Phase 0: Identify functions that return tainted data (helper functions)
+        // This includes:
+        //   a) Functions with direct sources (env::var, stdin, etc.)
+        //   b) Functions that call other tainted functions and return that data (transitive)
+        let mut tainted_return_functions: HashSet<String> = HashSet::new();
+        
+        // Step 0a: Find functions with direct taint sources
+        for function in &package.functions {
+            // Check if this function has a taint source
+            let has_source = function.body.iter().any(|line| {
+                Self::UNTRUSTED_SOURCES.iter().any(|src| line.contains(src))
+            });
+            
+            if has_source {
+                // Simple heuristic: if it has a source and doesn't have SQL keywords in const strings,
+                // it likely returns tainted data as a helper function
+                let has_sql_const = function.body.iter().any(|line| {
+                    let upper = line.to_uppercase();
+                    (line.contains("const ") || line.contains("[const ")) &&
+                    Self::SQL_KEYWORDS.iter().any(|kw| upper.contains(kw))
+                });
+                
+                if !has_sql_const {
+                    tainted_return_functions.insert(function.name.clone());
+                }
+            }
+        }
+        
+        // Step 0b: Transitive closure - find functions that call tainted functions and return their data
+        let mut changed = true;
+        let mut iterations = 0;
+        let max_iterations = 10;
+        
+        while changed && iterations < max_iterations {
+            changed = false;
+            iterations += 1;
+            
+            for function in &package.functions {
+                // Skip if already known as tainted
+                if tainted_return_functions.contains(&function.name) {
+                    continue;
+                }
+                
+                // Check if this function calls a tainted function and returns that data
+                let mut tainted_vars_from_calls: HashSet<String> = HashSet::new();
+                
+                for line in &function.body {
+                    let trimmed = line.trim();
+                    if trimmed.contains(" = ") {
+                        for tainted_fn in &tainted_return_functions {
+                            let fn_name = tainted_fn.split("::").last().unwrap_or(tainted_fn);
+                            // MIR pattern: _N = function_name() -> [return: ...]
+                            if trimmed.contains(&format!("= {}()", fn_name)) ||
+                               trimmed.contains(&format!("= {}(", fn_name)) {
+                                if let Some(target) = self.extract_assignment_target(trimmed) {
+                                    tainted_vars_from_calls.insert(target);
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                if tainted_vars_from_calls.is_empty() {
+                    continue;
+                }
+                
+                // Propagate taint within this function
+                self.propagate_taint(&function.body, &mut tainted_vars_from_calls);
+                
+                // Check if any tainted var flows to return value (_0)
+                let returns_tainted = function.body.iter().any(|line| {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with("_0 = ") || trimmed.starts_with("_0 =") {
+                        tainted_vars_from_calls.iter().any(|v| self.contains_var(trimmed, v))
+                    } else {
+                        false
+                    }
+                });
+                
+                if returns_tainted {
+                    // Check it doesn't have SQL sinks (it's a helper, not a consumer)
+                    let has_sql_const = function.body.iter().any(|line| {
+                        let upper = line.to_uppercase();
+                        (line.contains("const ") || line.contains("[const ")) &&
+                        Self::SQL_KEYWORDS.iter().any(|kw| upper.contains(kw))
+                    });
+                    
+                    if !has_sql_const {
+                        tainted_return_functions.insert(function.name.clone());
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        // Phase 1: Intra-procedural analysis with inter-procedural taint sources
         for function in &package.functions {
             // Skip internal/test functions
             if function.name.contains("mir_extractor") || 
@@ -15020,8 +15190,74 @@ impl Rule for SqlInjectionRule {
                 continue;
             }
 
-            // Track untrusted variables
-            let untrusted_vars = self.track_untrusted_vars(&function.body);
+            // Track untrusted variables (intra-procedural)
+            let mut untrusted_vars = self.track_untrusted_vars(&function.body);
+            
+            // Also add variables from calls to tainted-return functions
+            let mut added_from_calls = false;
+            for line in &function.body {
+                let trimmed = line.trim();
+                if trimmed.contains(" = ") {
+                    for tainted_fn in &tainted_return_functions {
+                        // Extract just the function name
+                        let fn_name = tainted_fn.split("::").last().unwrap_or(tainted_fn);
+                        // MIR pattern: _N = function_name() -> [return: ...]
+                        if trimmed.contains(&format!("= {}()", fn_name)) {
+                            if let Some(target) = self.extract_assignment_target(trimmed) {
+                                if !untrusted_vars.contains(&target) {
+                                    untrusted_vars.insert(target);
+                                    added_from_calls = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // If we added new tainted vars from function calls, propagate them
+            if added_from_calls {
+                self.propagate_taint(&function.body, &mut untrusted_vars);
+            }
+            
+            // Phase 1b: Check for function parameters used in SQL (conservative approach)
+            // If this function has parameters and uses them in SQL, treat as potential vulnerability
+            // even if we can't trace the caller (the parameter source could be untrusted)
+            if untrusted_vars.is_empty() {
+                // Check if function has parameters used in SQL format operations
+                let params = self.extract_function_params(&function.body);
+                if !params.is_empty() {
+                    // Propagate params through function body
+                    let mut param_vars = params.clone();
+                    self.propagate_taint(&function.body, &mut param_vars);
+                    
+                    // Check if params flow to format with SQL
+                    let has_sql_const = function.body.iter().any(|line| {
+                        let upper = line.to_uppercase();
+                        (line.contains("const ") || line.contains("[const ")) &&
+                        Self::SQL_KEYWORDS.iter().any(|kw| upper.contains(kw))
+                    });
+                    
+                    if has_sql_const {
+                        let has_param_in_format = function.body.iter().any(|line| {
+                            let trimmed = line.trim();
+                            // Check for format-related patterns
+                            let is_format_related = 
+                                trimmed.contains("fmt::Arguments") ||
+                                trimmed.contains("Argument::") ||  // Catches Argument::new, Argument::<'_>::new_display, etc.
+                                trimmed.contains("format_args") ||
+                                trimmed.contains("core::fmt::") ||
+                                trimmed.contains("new_display") ||
+                                trimmed.contains("new_debug");
+                            
+                            is_format_related && param_vars.iter().any(|v| self.contains_var(trimmed, v))
+                        });
+                        
+                        if has_param_in_format {
+                            untrusted_vars = param_vars;
+                        }
+                    }
+                }
+            }
             
             if untrusted_vars.is_empty() {
                 continue;

@@ -10143,11 +10143,12 @@ impl LogInjectionRule {
     /// Input source patterns (untrusted data origins)
     fn input_source_patterns() -> &'static [&'static str] {
         &[
-            "var(",           // env::var
+            "= var::<",       // env::var::<T> - generic call (MIR format)
+            "= var(",         // env::var - standard call
             "var_os(",        // env::var_os
-            "args(",          // env::args
+            "::args(",        // env::args
             "args_os(",       // env::args_os
-            "nth(",           // iterator nth (often on args)
+            "::nth(",         // iterator nth (often on args)
             "read_line(",     // stdin
             "read_to_string(", // file/stdin reads
         ]
@@ -10156,13 +10157,14 @@ impl LogInjectionRule {
     /// Sanitizer patterns that remove/escape newlines
     fn newline_sanitizer_patterns() -> &'static [&'static str] {
         &[
-            "replace(",       // .replace("\n", "")
-            "trim(",          // .trim() removes trailing newlines
-            "trim_end(",      
-            "trim_matches(",
+            "::replace",      // .replace() - MIR format: str::replace::<...>
+            "::trim(",        // .trim() removes trailing newlines
+            "::trim_end(",      
+            "::trim_matches(",
             "escape_",        // escape_default, escape_debug
-            "lines(",         // .lines() splits on newlines
-            "split(",         // .split('\n')
+            "::lines(",       // .lines() splits on newlines
+            "::split(",       // .split('\n')
+            "::parse::<",     // .parse::<T>() converts to different type (no newlines)
         ]
     }
 
@@ -10195,8 +10197,8 @@ impl LogInjectionRule {
                     let target = trimmed[..eq_pos].trim();
                     let source = trimmed[eq_pos + 3..].trim();
                     
-                    // Check if source uses an untrusted var
-                    let uses_untrusted = untrusted_vars.iter().any(|v| source.contains(v));
+                    // Check if source uses an untrusted var (with word boundaries)
+                    let uses_untrusted = untrusted_vars.iter().any(|v| Self::contains_var(source, v));
                     
                     if uses_untrusted {
                         // Check if there's a sanitizer on this line
@@ -10220,6 +10222,21 @@ impl LogInjectionRule {
         untrusted_vars
     }
 
+    /// Check if a MIR line contains a specific variable with proper word boundaries
+    fn contains_var(line: &str, var: &str) -> bool {
+        for (idx, _) in line.match_indices(var) {
+            let after_pos = idx + var.len();
+            if after_pos >= line.len() {
+                return true;
+            }
+            let next_char = line[after_pos..].chars().next().unwrap();
+            if !next_char.is_ascii_digit() {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Find log sinks using untrusted variables
     fn find_log_injections(body: &[String], untrusted_vars: &HashSet<String>) -> Vec<String> {
         let mut evidence = Vec::new();
@@ -10232,11 +10249,104 @@ impl LogInjectionRule {
             let is_log_sink = log_sinks.iter().any(|p| trimmed.contains(p));
             
             if is_log_sink {
-                // Check if any untrusted variable is used
+                // Check if any untrusted variable is used (with proper word boundaries)
                 for var in untrusted_vars {
-                    if trimmed.contains(var) {
+                    if Self::contains_var(trimmed, var) {
                         evidence.push(trimmed.to_string());
                         break;
+                    }
+                }
+            }
+        }
+        
+        evidence
+    }
+
+    /// Find helper functions that log their parameters
+    /// Returns a set of function names that log parameter _1
+    fn find_logging_helpers(package: &MirPackage) -> HashSet<String> {
+        let mut helpers = HashSet::new();
+        let log_sinks = CleartextLoggingRule::log_sink_patterns();
+        
+        for function in &package.functions {
+            // Skip closures
+            if function.name.contains("{closure") {
+                continue;
+            }
+            
+            // Check if function has a parameter (look for "debug X => _1")
+            let has_param = function.body.iter().any(|line| {
+                let trimmed = line.trim();
+                trimmed.starts_with("debug ") && trimmed.contains(" => _1")
+            });
+            
+            if !has_param {
+                continue;
+            }
+            
+            // Check if the parameter flows to a log sink
+            // Simple check: _1 or derivatives used in log sink
+            let mut param_vars: HashSet<String> = HashSet::new();
+            param_vars.insert("_1".to_string());
+            
+            // Propagate through simple assignments
+            for line in &function.body {
+                let trimmed = line.trim();
+                if let Some(eq_pos) = trimmed.find(" = ") {
+                    let target = trimmed[..eq_pos].trim();
+                    let source = trimmed[eq_pos + 3..].trim();
+                    
+                    let uses_param = param_vars.iter().any(|v| Self::contains_var(source, v));
+                    if uses_param {
+                        if let Some(target_var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                            .find(|s| s.starts_with('_'))
+                        {
+                            param_vars.insert(target_var.to_string());
+                        }
+                    }
+                }
+            }
+            
+            // Check if any param-derived var reaches a log sink
+            for line in &function.body {
+                let trimmed = line.trim();
+                let is_log_sink = log_sinks.iter().any(|p| trimmed.contains(p));
+                if is_log_sink {
+                    for var in &param_vars {
+                        if Self::contains_var(trimmed, var) {
+                            helpers.insert(function.name.clone());
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        helpers
+    }
+
+    /// Find calls to logging helper functions with untrusted data
+    fn find_helper_log_injections(
+        body: &[String],
+        untrusted_vars: &HashSet<String>,
+        logging_helpers: &HashSet<String>,
+    ) -> Vec<String> {
+        let mut evidence = Vec::new();
+        
+        for line in body {
+            let trimmed = line.trim();
+            
+            // Check if this is a call to a logging helper
+            for helper in logging_helpers {
+                // Extract just the function name (last part of path)
+                let helper_name = helper.split("::").last().unwrap_or(helper);
+                if trimmed.contains(&format!("{}(", helper_name)) {
+                    // Check if any untrusted variable is passed
+                    for var in untrusted_vars {
+                        if Self::contains_var(trimmed, var) {
+                            evidence.push(trimmed.to_string());
+                            break;
+                        }
                     }
                 }
             }
@@ -10253,6 +10363,9 @@ impl Rule for LogInjectionRule {
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
         let mut findings = Vec::new();
+        
+        // First pass: Find helper functions that log their parameters
+        let logging_helpers = Self::find_logging_helpers(package);
 
         for function in &package.functions {
             // Skip internal functions
@@ -10267,8 +10380,16 @@ impl Rule for LogInjectionRule {
                 continue;
             }
 
-            // Find log injections
-            let injections = Self::find_log_injections(&function.body, &untrusted_vars);
+            // Find direct log injections
+            let mut injections = Self::find_log_injections(&function.body, &untrusted_vars);
+            
+            // Also find injections via helper functions
+            let helper_injections = Self::find_helper_log_injections(
+                &function.body,
+                &untrusted_vars,
+                &logging_helpers,
+            );
+            injections.extend(helper_injections);
             
             if !injections.is_empty() {
                 findings.push(Finding {

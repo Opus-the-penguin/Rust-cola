@@ -71,6 +71,31 @@ struct Args {
     /// Control whether HIR snapshots are persisted alongside MIR cache entries (default true)
     #[arg(long, value_parser = BoolishValueParser::new())]
     hir_cache: Option<bool>,
+
+    /// Generate LLM-optimized output with prompt template for AI-assisted security analysis
+    #[arg(long)]
+    llm_report: Option<PathBuf>,
+
+    /// LLM API endpoint for automated analysis (e.g., https://api.openai.com/v1/chat/completions)
+    /// Supports OpenAI-compatible APIs including Anthropic, Ollama, etc.
+    #[arg(long)]
+    llm_endpoint: Option<String>,
+
+    /// LLM model name (e.g., gpt-4, claude-3-opus-20240229, llama2)
+    #[arg(long, default_value = "gpt-4")]
+    llm_model: String,
+
+    /// LLM API key (can also be set via RUSTCOLA_LLM_API_KEY environment variable)
+    #[arg(long, env = "RUSTCOLA_LLM_API_KEY")]
+    llm_api_key: Option<String>,
+
+    /// Maximum tokens for LLM response (default: 4096)
+    #[arg(long, default_value = "4096")]
+    llm_max_tokens: u32,
+
+    /// Generate a standalone human-readable security report (no LLM required)
+    #[arg(long)]
+    report: Option<PathBuf>,
 }
 
 struct PackageOutput {
@@ -245,6 +270,35 @@ fn main() -> Result<()> {
         write_findings_json(&findings_path, &output.analysis.findings)?;
         write_sarif_json(&sarif_path, &output.sarif)?;
 
+        // Generate LLM report if requested
+        if let Some(llm_path) = &args.llm_report {
+            let llm_config = args.llm_endpoint.as_ref().map(|endpoint| LlmConfig {
+                endpoint: endpoint.clone(),
+                model: args.llm_model.clone(),
+                api_key: args.llm_api_key.clone().unwrap_or_default(),
+                max_tokens: args.llm_max_tokens,
+            });
+            generate_llm_analysis(
+                llm_path,
+                &output.package.crate_name,
+                &output.analysis.findings,
+                &output.analysis.rules,
+                llm_config.as_ref(),
+            )?;
+            println!("- LLM Report: {}", llm_path.display());
+        }
+
+        // Generate standalone report if requested
+        if let Some(report_path) = &args.report {
+            generate_standalone_report(
+                report_path,
+                &output.package.crate_name,
+                &output.analysis.findings,
+                &output.analysis.rules,
+            )?;
+            println!("- Standalone Report: {}", report_path.display());
+        }
+
         #[cfg(feature = "hir-driver")]
         let mut hir_summary_path: Option<PathBuf> = None;
         #[cfg(feature = "hir-driver")]
@@ -312,6 +366,41 @@ fn main() -> Result<()> {
     write_findings_json(&findings_path, &aggregated_findings)?;
     write_sarif_json(&sarif_path, &aggregated_sarif)?;
 
+    // Generate LLM report if requested (workspace mode)
+    if let Some(llm_path) = &args.llm_report {
+        let project_name = workspace_root
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("workspace");
+        let llm_config = args.llm_endpoint.as_ref().map(|endpoint| LlmConfig {
+            endpoint: endpoint.clone(),
+            model: args.llm_model.clone(),
+            api_key: args.llm_api_key.clone().unwrap_or_default(),
+            max_tokens: args.llm_max_tokens,
+        });
+        generate_llm_analysis(
+            llm_path,
+            project_name,
+            &aggregated_findings,
+            &aggregated_rules,
+            llm_config.as_ref(),
+        )?;
+    }
+
+    // Generate standalone report if requested (workspace mode)
+    if let Some(report_path) = &args.report {
+        let project_name = workspace_root
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("workspace");
+        generate_standalone_report(
+            report_path,
+            project_name,
+            &aggregated_findings,
+            &aggregated_rules,
+        )?;
+    }
+
     #[cfg(feature = "hir-driver")]
     let mut hir_summary_dir: Option<PathBuf> = None;
     #[cfg(feature = "hir-driver")]
@@ -348,6 +437,12 @@ fn main() -> Result<()> {
     println!("- MIR JSON: {}", mir_json_path.display());
     println!("- Findings JSON: {}", findings_path.display());
     println!("- SARIF: {}", sarif_path.display());
+    if let Some(llm_path) = &args.llm_report {
+        println!("- LLM Report: {}", llm_path.display());
+    }
+    if let Some(report_path) = &args.report {
+        println!("- Standalone Report: {}", report_path.display());
+    }
     #[cfg(feature = "hir-driver")]
     if let Some(dir) = hir_summary_dir {
         println!("- HIR JSON dir: {} (one file per crate)", dir.display());
@@ -718,4 +813,624 @@ fn merge_sarif_reports(reports: &[Value]) -> Result<Value> {
         "version": version,
         "runs": [merged_run],
     }))
+}
+
+/// Configuration for LLM API calls
+struct LlmConfig {
+    endpoint: String,
+    model: String,
+    api_key: String,
+    max_tokens: u32,
+}
+
+/// Call an LLM API to analyze findings and generate a curated security report.
+/// Supports OpenAI-compatible APIs (OpenAI, Anthropic via proxy, Ollama, etc.)
+fn call_llm_api(config: &LlmConfig, prompt: &str) -> Result<String> {
+    use serde::{Deserialize, Serialize};
+
+    #[allow(dead_code)] // Used by serde Serialize
+    #[derive(Serialize)]
+    struct Message {
+        role: String,
+        content: String,
+    }
+
+    #[allow(dead_code)] // Used by serde Serialize  
+    #[derive(Serialize)]
+    struct ChatRequest {
+        model: String,
+        messages: Vec<Message>,
+        max_tokens: u32,
+        temperature: f32,
+    }
+
+    #[derive(Deserialize)]
+    struct Choice {
+        message: MessageResponse,
+    }
+
+    #[derive(Deserialize)]
+    struct MessageResponse {
+        content: String,
+    }
+
+    #[derive(Deserialize)]
+    struct ChatResponse {
+        choices: Vec<Choice>,
+    }
+
+    // Detect API type from endpoint
+    let is_anthropic = config.endpoint.contains("anthropic.com");
+    let is_ollama = config.endpoint.contains("localhost:11434") || config.endpoint.contains("127.0.0.1:11434");
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(300)) // 5 min timeout for large reports
+        .build()
+        .context("failed to build HTTP client")?;
+
+    let mut request = client.post(&config.endpoint);
+
+    // Set appropriate auth header
+    if is_anthropic {
+        request = request
+            .header("x-api-key", &config.api_key)
+            .header("anthropic-version", "2023-06-01");
+    } else if !is_ollama {
+        // Standard OpenAI-compatible auth
+        request = request.header("Authorization", format!("Bearer {}", config.api_key));
+    }
+
+    // Build request body
+    let body = if is_anthropic {
+        // Anthropic has a slightly different format
+        json!({
+            "model": config.model,
+            "max_tokens": config.max_tokens,
+            "messages": [{
+                "role": "user",
+                "content": prompt
+            }]
+        })
+    } else {
+        // OpenAI-compatible format (works for OpenAI, Ollama, etc.)
+        json!({
+            "model": config.model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a senior security engineer specializing in Rust security analysis. Produce clear, actionable security reports with code fixes."
+                },
+                {
+                    "role": "user", 
+                    "content": prompt
+                }
+            ],
+            "max_tokens": config.max_tokens,
+            "temperature": 0.3
+        })
+    };
+
+    eprintln!("  Calling LLM API at {}...", config.endpoint);
+    eprintln!("  Model: {}", config.model);
+    eprintln!("  Prompt length: {} chars", prompt.len());
+
+    let response = request
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .context("failed to send request to LLM API")?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let error_text = response.text().unwrap_or_else(|_| "unknown error".to_string());
+        return Err(anyhow!("LLM API returned error {}: {}", status, error_text));
+    }
+
+    // Parse response - handle both OpenAI and Anthropic formats
+    let response_text = response.text().context("failed to read LLM response")?;
+    
+    if is_anthropic {
+        // Anthropic format: { "content": [{ "text": "..." }] }
+        #[derive(Deserialize)]
+        struct AnthropicContent {
+            text: String,
+        }
+        #[derive(Deserialize)]
+        struct AnthropicResponse {
+            content: Vec<AnthropicContent>,
+        }
+        let parsed: AnthropicResponse = serde_json::from_str(&response_text)
+            .context("failed to parse Anthropic API response")?;
+        parsed.content.first()
+            .map(|c| c.text.clone())
+            .ok_or_else(|| anyhow!("Anthropic response contained no content"))
+    } else {
+        // OpenAI-compatible format
+        let parsed: ChatResponse = serde_json::from_str(&response_text)
+            .context("failed to parse LLM API response")?;
+        parsed.choices.first()
+            .map(|c| c.message.content.clone())
+            .ok_or_else(|| anyhow!("LLM response contained no choices"))
+    }
+}
+
+/// Generate LLM report and optionally call LLM API for automated analysis
+fn generate_llm_analysis(
+    path: &Path,
+    project_name: &str,
+    findings: &[Finding],
+    rules: &[mir_extractor::RuleMetadata],
+    llm_config: Option<&LlmConfig>,
+) -> Result<()> {
+    use std::fmt::Write as _;
+
+    // First, generate the prompt content (same as write_llm_report)
+    let mut prompt_content = String::new();
+    
+    // Build the analysis prompt
+    writeln!(&mut prompt_content, "Analyze the following {} security findings from the Rust project '{}'.", 
+        findings.len(), project_name)?;
+    writeln!(&mut prompt_content)?;
+    writeln!(&mut prompt_content, "## Instructions")?;
+    writeln!(&mut prompt_content)?;
+    writeln!(&mut prompt_content, "Produce a security report with:")?;
+    writeln!(&mut prompt_content, "1. **Executive Summary** - Total findings, true positives vs false positives, top 3 critical issues")?;
+    writeln!(&mut prompt_content, "2. **True Positives** - For each real vulnerability:")?;
+    writeln!(&mut prompt_content, "   - Severity (Critical/High/Medium/Low), CVSS estimate")?;
+    writeln!(&mut prompt_content, "   - Attack scenario")?;
+    writeln!(&mut prompt_content, "   - **Vulnerable code** (from evidence)")?;
+    writeln!(&mut prompt_content, "   - **Recommended fix** with corrected Rust code")?;
+    writeln!(&mut prompt_content, "3. **False Positives** - Explain why each is likely a false detection")?;
+    writeln!(&mut prompt_content, "4. **Remediation Priority** - P0 (immediate), P1 (sprint), P2 (quarter)")?;
+    writeln!(&mut prompt_content)?;
+    writeln!(&mut prompt_content, "### Fix Patterns Reference")?;
+    writeln!(&mut prompt_content, "- SQL Injection: Use `.bind()` or `?` placeholders")?;
+    writeln!(&mut prompt_content, "- Path Traversal: `path.canonicalize()?.starts_with(base)`")?;
+    writeln!(&mut prompt_content, "- Regex Injection: `regex::escape(&input)`")?;
+    writeln!(&mut prompt_content, "- SSRF: Validate URL host against allowlist")?;
+    writeln!(&mut prompt_content, "- Unbounded Allocation: Add size check before allocation")?;
+    writeln!(&mut prompt_content)?;
+
+    // Rule reference
+    writeln!(&mut prompt_content, "## Rule Reference")?;
+    writeln!(&mut prompt_content)?;
+    for rule in rules {
+        writeln!(&mut prompt_content, "- **{}** ({}): {} [Severity: {:?}]", 
+            rule.id, rule.name, rule.short_description, rule.default_severity)?;
+    }
+    writeln!(&mut prompt_content)?;
+
+    // Findings
+    writeln!(&mut prompt_content, "## Findings to Analyze")?;
+    writeln!(&mut prompt_content)?;
+    
+    for (i, finding) in findings.iter().enumerate() {
+        writeln!(&mut prompt_content, "### Finding {}: {} - {}", i + 1, finding.rule_id, finding.rule_name)?;
+        writeln!(&mut prompt_content, "- **Severity:** {:?}", finding.severity)?;
+        writeln!(&mut prompt_content, "- **Function:** `{}`", finding.function)?;
+        if let Some(span) = &finding.span {
+            writeln!(&mut prompt_content, "- **File:** {}:{}-{}", span.file, span.start_line, span.end_line)?;
+        }
+        writeln!(&mut prompt_content, "- **Message:** {}", finding.message)?;
+        if !finding.evidence.is_empty() {
+            writeln!(&mut prompt_content, "- **Evidence:**")?;
+            for ev in &finding.evidence {
+                writeln!(&mut prompt_content, "```")?;
+                writeln!(&mut prompt_content, "{}", ev.trim())?;
+                writeln!(&mut prompt_content, "```")?;
+            }
+        }
+        writeln!(&mut prompt_content)?;
+    }
+
+    // If LLM config provided, call the API
+    let final_content = if let Some(config) = llm_config {
+        eprintln!("  Sending {} findings to LLM for analysis...", findings.len());
+        
+        match call_llm_api(config, &prompt_content) {
+            Ok(llm_response) => {
+                // Wrap LLM response with metadata
+                let mut output = String::new();
+                writeln!(&mut output, "# Security Analysis Report: {}", project_name)?;
+                writeln!(&mut output)?;
+                writeln!(&mut output, "*Generated by rust-cola with {} analysis*", config.model)?;
+                writeln!(&mut output, "*Findings analyzed: {}*", findings.len())?;
+                writeln!(&mut output)?;
+                writeln!(&mut output, "---")?;
+                writeln!(&mut output)?;
+                writeln!(&mut output, "{}", llm_response)?;
+                output
+            }
+            Err(e) => {
+                eprintln!("  Warning: LLM API call failed: {}", e);
+                eprintln!("  Falling back to prompt-only output");
+                
+                // Fall back to prompt-only format
+                let mut output = String::new();
+                writeln!(&mut output, "# Security Analysis Context for LLM Review")?;
+                writeln!(&mut output)?;
+                writeln!(&mut output, "*LLM API call failed: {}*", e)?;
+                writeln!(&mut output, "*Copy the content below to your preferred LLM for analysis.*")?;
+                writeln!(&mut output)?;
+                writeln!(&mut output, "---")?;
+                writeln!(&mut output)?;
+                writeln!(&mut output, "{}", prompt_content)?;
+                output
+            }
+        }
+    } else {
+        // No LLM config - just output the prompt for manual submission
+        let mut output = String::new();
+        writeln!(&mut output, "# Security Analysis Context for LLM Review")?;
+        writeln!(&mut output)?;
+        writeln!(&mut output, "**Project:** {}", project_name)?;
+        writeln!(&mut output, "**Total Findings:** {}", findings.len())?;
+        writeln!(&mut output)?;
+        writeln!(&mut output, "*Copy the content below to your preferred LLM (Claude, GPT-4, etc.) for analysis.*")?;
+        writeln!(&mut output)?;
+        writeln!(&mut output, "---")?;
+        writeln!(&mut output)?;
+        writeln!(&mut output, "{}", prompt_content)?;
+        output
+    };
+
+    // Write output file
+    let mut file = File::create(path)
+        .with_context(|| format!("create LLM report at {}", path.display()))?;
+    file.write_all(final_content.as_bytes())?;
+    
+    if llm_config.is_some() {
+        eprintln!("  LLM-analyzed report written to: {}", path.display());
+    } else {
+        eprintln!("  Prompt file written to: {}", path.display());
+        eprintln!("  Tip: Use --llm-endpoint to automatically send to an LLM API");
+    }
+    
+    Ok(())
+}
+
+/// Generate a standalone human-readable security report (no LLM required)
+/// This provides structured output with heuristic-based triage hints
+fn generate_standalone_report(
+    path: &Path,
+    project_name: &str,
+    findings: &[Finding],
+    rules: &[mir_extractor::RuleMetadata],
+) -> Result<()> {
+    use std::collections::HashMap;
+    use std::fmt::Write as _;
+
+    let mut content = String::new();
+
+    // Categorize findings with heuristics
+    let mut high_confidence: Vec<&Finding> = Vec::new();
+    let mut needs_review: Vec<&Finding> = Vec::new();
+    let mut likely_fp: Vec<&Finding> = Vec::new();
+
+    for finding in findings {
+        let fp_score = compute_false_positive_likelihood(finding);
+        if fp_score >= 0.7 {
+            likely_fp.push(finding);
+        } else if fp_score >= 0.4 {
+            needs_review.push(finding);
+        } else {
+            high_confidence.push(finding);
+        }
+    }
+
+    // Header
+    writeln!(&mut content, "# 🔒 Security Report: {}", project_name)?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "*Generated by rust-cola v{}*", env!("CARGO_PKG_VERSION"))?;
+    writeln!(&mut content, "*Date: {}*", chrono_lite_date())?;
+    writeln!(&mut content)?;
+
+    // Executive Summary
+    writeln!(&mut content, "## Executive Summary")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "| Category | Count |")?;
+    writeln!(&mut content, "|----------|-------|")?;
+    writeln!(&mut content, "| 🔴 **High Confidence Issues** | {} |", high_confidence.len())?;
+    writeln!(&mut content, "| 🟡 **Needs Review** | {} |", needs_review.len())?;
+    writeln!(&mut content, "| ⚪ **Likely False Positives** | {} |", likely_fp.len())?;
+    writeln!(&mut content, "| **Total Findings** | {} |", findings.len())?;
+    writeln!(&mut content)?;
+
+    // Severity breakdown
+    let high_count = findings.iter().filter(|f| matches!(f.severity, mir_extractor::Severity::High)).count();
+    let medium_count = findings.iter().filter(|f| matches!(f.severity, mir_extractor::Severity::Medium)).count();
+    let low_count = findings.iter().filter(|f| matches!(f.severity, mir_extractor::Severity::Low)).count();
+
+    writeln!(&mut content, "### By Severity")?;
+    writeln!(&mut content)?;
+    if high_count > 0 {
+        writeln!(&mut content, "- � **High:** {}", high_count)?;
+    }
+    if medium_count > 0 {
+        writeln!(&mut content, "- 🟡 **Medium:** {}", medium_count)?;
+    }
+    if low_count > 0 {
+        writeln!(&mut content, "- 🔵 **Low:** {}", low_count)?;
+    }
+    writeln!(&mut content)?;
+
+    // Recommendation banner
+    writeln!(&mut content, "---")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "> 💡 **Tip:** For better analysis with false positive filtering and code fix suggestions,")?;
+    writeln!(&mut content, "> run with `--llm-report` and an LLM endpoint. See [LLM Integration](#llm-integration) below.")?;
+    writeln!(&mut content)?;
+
+    // High confidence issues (most important)
+    if !high_confidence.is_empty() {
+        writeln!(&mut content, "---")?;
+        writeln!(&mut content)?;
+        writeln!(&mut content, "## 🔴 High Confidence Issues ({} findings)", high_confidence.len())?;
+        writeln!(&mut content)?;
+        writeln!(&mut content, "*These findings are in application code and likely represent real vulnerabilities.*")?;
+        writeln!(&mut content)?;
+
+        for (i, finding) in high_confidence.iter().enumerate() {
+            write_finding_detail(&mut content, i + 1, finding, rules)?;
+        }
+    }
+
+    // Needs review
+    if !needs_review.is_empty() {
+        writeln!(&mut content, "---")?;
+        writeln!(&mut content)?;
+        writeln!(&mut content, "## 🟡 Needs Review ({} findings)", needs_review.len())?;
+        writeln!(&mut content)?;
+        writeln!(&mut content, "*These findings require manual review to determine if they are true positives.*")?;
+        writeln!(&mut content)?;
+
+        // Group by rule for easier review
+        let mut by_rule: HashMap<&str, Vec<&Finding>> = HashMap::new();
+        for finding in &needs_review {
+            by_rule.entry(&finding.rule_id).or_default().push(finding);
+        }
+
+        for (rule_id, findings_list) in by_rule {
+            let rule_name = rules.iter()
+                .find(|r| r.id == rule_id)
+                .map(|r| r.name.as_str())
+                .unwrap_or("unknown");
+            writeln!(&mut content, "### {} - {} ({} findings)", rule_id, rule_name, findings_list.len())?;
+            writeln!(&mut content)?;
+            
+            for finding in findings_list.iter().take(5) {
+                writeln!(&mut content, "- `{}` @ {}", 
+                    finding.function,
+                    finding.span.as_ref()
+                        .map(|s| format!("{}:{}", s.file, s.start_line))
+                        .unwrap_or_else(|| "unknown".to_string())
+                )?;
+            }
+            if findings_list.len() > 5 {
+                writeln!(&mut content, "- *... and {} more*", findings_list.len() - 5)?;
+            }
+            writeln!(&mut content)?;
+        }
+    }
+
+    // Likely false positives (collapsed)
+    if !likely_fp.is_empty() {
+        writeln!(&mut content, "---")?;
+        writeln!(&mut content)?;
+        writeln!(&mut content, "## ⚪ Likely False Positives ({} findings)", likely_fp.len())?;
+        writeln!(&mut content)?;
+        writeln!(&mut content, "*These findings are in test/example code or match common false positive patterns.*")?;
+        writeln!(&mut content)?;
+        writeln!(&mut content, "<details>")?;
+        writeln!(&mut content, "<summary>Click to expand</summary>")?;
+        writeln!(&mut content)?;
+
+        let mut by_reason: HashMap<&str, Vec<&Finding>> = HashMap::new();
+        for finding in &likely_fp {
+            let reason = get_fp_reason(finding);
+            by_reason.entry(reason).or_default().push(finding);
+        }
+
+        for (reason, findings_list) in by_reason {
+            writeln!(&mut content, "### {} ({} findings)", reason, findings_list.len())?;
+            writeln!(&mut content)?;
+            for finding in findings_list.iter().take(3) {
+                writeln!(&mut content, "- {} in `{}`", finding.rule_id, finding.function)?;
+            }
+            if findings_list.len() > 3 {
+                writeln!(&mut content, "- *... and {} more*", findings_list.len() - 3)?;
+            }
+            writeln!(&mut content)?;
+        }
+
+        writeln!(&mut content, "</details>")?;
+        writeln!(&mut content)?;
+    }
+
+    // Remediation guide
+    writeln!(&mut content, "---")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "## 🛠️ Remediation Quick Reference")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "| Vulnerability | Fix Pattern |")?;
+    writeln!(&mut content, "|--------------|-------------|")?;
+    writeln!(&mut content, "| SQL Injection | Use parameterized queries: `.bind()` or `?` placeholders |")?;
+    writeln!(&mut content, "| Path Traversal | `path.canonicalize()?.starts_with(base_dir)` |")?;
+    writeln!(&mut content, "| Command Injection | Use `Command::new().arg()` instead of string concat |")?;
+    writeln!(&mut content, "| SSRF | Validate URL host against allowlist |")?;
+    writeln!(&mut content, "| Regex Injection | `regex::escape(&user_input)` |")?;
+    writeln!(&mut content, "| Weak Crypto | Replace MD5/SHA1 with SHA-256+ |")?;
+    writeln!(&mut content, "| Hardcoded Secrets | Use environment variables or secret managers |")?;
+    writeln!(&mut content, "| Unbounded Allocation | Add `if size > MAX {{ return Err(...) }}` |")?;
+    writeln!(&mut content)?;
+
+    // LLM integration section
+    writeln!(&mut content, "---")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "## 🤖 LLM Integration")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "For enhanced analysis with AI-powered false positive detection and code fix suggestions:")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "```bash")?;
+    writeln!(&mut content, "# With OpenAI")?;
+    writeln!(&mut content, "export RUSTCOLA_LLM_API_KEY=sk-...")?;
+    writeln!(&mut content, "cargo-cola --crate-path . --llm-report report.md \\")?;
+    writeln!(&mut content, "  --llm-endpoint https://api.openai.com/v1/chat/completions")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "# With Anthropic Claude")?;
+    writeln!(&mut content, "cargo-cola --crate-path . --llm-report report.md \\")?;
+    writeln!(&mut content, "  --llm-endpoint https://api.anthropic.com/v1/messages \\")?;
+    writeln!(&mut content, "  --llm-model claude-3-sonnet-20240229")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "# With local Ollama")?;
+    writeln!(&mut content, "cargo-cola --crate-path . --llm-report report.md \\")?;
+    writeln!(&mut content, "  --llm-endpoint http://localhost:11434/v1/chat/completions \\")?;
+    writeln!(&mut content, "  --llm-model llama2")?;
+    writeln!(&mut content, "```")?;
+    writeln!(&mut content)?;
+
+    // Write file
+    let mut file = File::create(path)
+        .with_context(|| format!("create standalone report at {}", path.display()))?;
+    file.write_all(content.as_bytes())?;
+    
+    eprintln!("  Standalone report written to: {}", path.display());
+    
+    Ok(())
+}
+
+/// Compute a heuristic false positive likelihood score (0.0 = definitely real, 1.0 = definitely FP)
+fn compute_false_positive_likelihood(finding: &Finding) -> f64 {
+    let mut score: f64 = 0.0;
+    
+    // Check file path patterns
+    if let Some(span) = &finding.span {
+        let file = span.file.to_lowercase();
+        if file.contains("/test") || file.contains("_test.rs") || file.contains("/tests/") {
+            score += 0.4;
+        }
+        if file.contains("/example") || file.contains("/examples/") {
+            score += 0.35;
+        }
+        if file.contains("/mock") || file.contains("/fixture") {
+            score += 0.3;
+        }
+        if file.contains("/benches/") || file.contains("_bench.rs") {
+            score += 0.25;
+        }
+    }
+    
+    // Check function name patterns
+    let func = finding.function.to_lowercase();
+    if func.contains("test_") || func.starts_with("test") || func.contains("_test") {
+        score += 0.3;
+    }
+    if func.contains("mock") || func.contains("fake") || func.contains("stub") {
+        score += 0.25;
+    }
+    if func.contains("example") || func.contains("demo") {
+        score += 0.2;
+    }
+    
+    // Check evidence for common FP patterns
+    for ev in &finding.evidence {
+        let ev_lower = ev.to_lowercase();
+        if ev_lower.contains("const ") && (ev_lower.contains("\"select") || ev_lower.contains("\"insert")) {
+            // SQL in const string - common false positive
+            score += 0.2;
+        }
+        if ev_lower.contains("error") || ev_lower.contains("panic") || ev_lower.contains("assert") {
+            // In error handling or assertion - less likely to be exploitable
+            score += 0.1;
+        }
+    }
+    
+    score.min(1.0_f64)
+}
+
+/// Get a human-readable reason for why something is likely a false positive
+fn get_fp_reason(finding: &Finding) -> &'static str {
+    if let Some(span) = &finding.span {
+        let file = span.file.to_lowercase();
+        if file.contains("/test") || file.contains("_test.rs") || file.contains("/tests/") {
+            return "In test code";
+        }
+        if file.contains("/example") || file.contains("/examples/") {
+            return "In example code";
+        }
+        if file.contains("/mock") || file.contains("/fixture") {
+            return "In mock/fixture code";
+        }
+    }
+    
+    let func = finding.function.to_lowercase();
+    if func.contains("test") {
+        return "Test function";
+    }
+    if func.contains("mock") || func.contains("fake") {
+        return "Mock/fake function";
+    }
+    
+    "Other heuristic match"
+}
+
+/// Write detailed finding information
+fn write_finding_detail(
+    content: &mut String,
+    index: usize,
+    finding: &Finding,
+    rules: &[mir_extractor::RuleMetadata],
+) -> Result<()> {
+    use std::fmt::Write as _;
+    
+    let rule_name = rules.iter()
+        .find(|r| r.id == finding.rule_id)
+        .map(|r| r.name.as_str())
+        .unwrap_or("unknown");
+    
+    let severity_emoji = match finding.severity {
+        mir_extractor::Severity::High => "�",
+        mir_extractor::Severity::Medium => "🟡",
+        mir_extractor::Severity::Low => "🔵",
+    };
+
+    writeln!(content, "### {}. {} {} - {}", index, severity_emoji, finding.rule_id, rule_name)?;
+    writeln!(content)?;
+    writeln!(content, "**Severity:** {:?}", finding.severity)?;
+    writeln!(content, "**Function:** `{}`", finding.function)?;
+    if let Some(span) = &finding.span {
+        writeln!(content, "**Location:** [{}:{}]({}#L{})", 
+            span.file, span.start_line, span.file, span.start_line)?;
+    }
+    writeln!(content)?;
+    writeln!(content, "**Issue:** {}", finding.message)?;
+    writeln!(content)?;
+    
+    if !finding.evidence.is_empty() {
+        writeln!(content, "**Evidence:**")?;
+        writeln!(content, "```rust")?;
+        for ev in &finding.evidence {
+            writeln!(content, "{}", ev.trim())?;
+        }
+        writeln!(content, "```")?;
+        writeln!(content)?;
+    }
+    
+    Ok(())
+}
+
+/// Simple date string without external dependency
+fn chrono_lite_date() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = duration.as_secs();
+    // Simple calculation - good enough for a report date
+    let days = secs / 86400;
+    let years = 1970 + days / 365;
+    let remaining_days = days % 365;
+    let month = remaining_days / 30 + 1;
+    let day = remaining_days % 30 + 1;
+    format!("{:04}-{:02}-{:02}", years, month.min(12), day.min(31))
 }

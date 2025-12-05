@@ -2,7 +2,11 @@
 
 Rust-cola is a static application security testing tool for Rust code. It employs a three-tier hybrid analysis approach combining MIR heuristics, source-level inspection, and semantic analysis via rustc HIR integration.
 
-> **Recent Achievement (Nov 2025):** Added RUSTCOLA090 (Unbounded read_to_end), RUSTCOLA089 (Insecure YAML Deserialization) detecting billion laughs attacks via serde_yaml. Added RUSTCOLA088 (Server-Side Request Forgery detection) with 100% recall/precision via MIR dataflow + inter-procedural analysis. Added RUSTCOLA087 (SQL injection detection) with 100% recall/precision. Improved RUSTCOLA086 (path traversal detection) to 100% recall with inter-procedural analysis support. Added RUSTCOLA085 (AWS S3 unscoped access), RUSTCOLA084 (TLS verification disabled), RUSTCOLA083-080 for memory safety rules plus MIR dataflow rules (RUSTCOLA075-079) for cleartext logging, log injection, division by untrusted input, MaybeUninit misuse, and regex injection. Total: 87 security rules.
+> **Recent Achievement (Dec 2025):** 
+> - **LLM Integration:** Added `--llm-report` with "Bring Your Own LLM" support (OpenAI, Anthropic, Ollama). Automated security analysis with false positive filtering, CVSS estimates, attack scenarios, and code fix suggestions.
+> - **Standalone Reports:** Added `--report` for human-readable reports without LLM access, with heuristic-based triage.
+> - **New Rules:** RUSTCOLA090 (Unbounded read_to_end), RUSTCOLA089 (YAML Deserialization), RUSTCOLA088 (SSRF), RUSTCOLA087 (SQL injection), RUSTCOLA086 (Path traversal) - all with 100% recall via inter-procedural analysis.
+> - **Total: 89 security rules**
 
 ## Features
 
@@ -10,6 +14,7 @@ Rust-cola is a static application security testing tool for Rust code. It employ
   - **Tier 1 (MIR Heuristics):** 85 rules using pattern matching on compiler-generated MIR
   - **Tier 2 (Source Analysis):** 2 rules using AST inspection for comments and attributes  
   - **Tier 3 (Semantic Analysis):** HIR integration for type-aware rules (type sizes, Send/Sync detection)
+- **AI-Powered Report Generation:** Integrates with LLMs (Claude, GPT-4) via `--llm-report` to produce curated security reports with triage, CVSS estimates, attack scenarios, and prioritized remediation
 - **87 Built-in Security Rules** covering:
 	- Memory safety issues: `Box::into_raw` leaks, unchecked `transmute`, `Vec::set_len` misuse, premature `MaybeUninit::assume_init`, deprecated zero-initialization functions
 	- Unsafe code patterns: unsafe blocks, untrusted environment variable reads, command execution with user-influenced input
@@ -100,6 +105,125 @@ Get-Content out/cola/mir.json | Select-Object -First 40
 head -n 40 out/cola/mir.json
 ```
 
+### AI-Powered Security Reports (NEW)
+
+Rust-cola offers flexible reporting options with or without LLM integration:
+
+| Mode | Command | Best For |
+|------|---------|----------|
+| **Standalone Report** | `--report report.md` | Quick triage without LLM access |
+| **LLM Prompt** | `--llm-report prompt.md` | Manual submission to any LLM |
+| **Automated LLM** | `--llm-report report.md --llm-endpoint ...` | CI/CD integration |
+
+#### Standalone Reports (No LLM Required)
+
+Generate a human-readable security report with heuristic-based triage:
+
+```bash
+cargo-cola --crate-path /path/to/project --report security-report.md
+```
+
+The standalone report includes:
+- **Automatic triage:** Findings categorized as High Confidence / Needs Review / Likely False Positive
+- **False positive detection:** Test files, example code, and mock patterns automatically flagged
+- **Severity breakdown:** Findings grouped by severity level
+- **Remediation guide:** Quick reference for common fix patterns
+
+#### LLM-Enhanced Reports
+
+For best results, integrate with an LLM to transform raw findings into curated security reports with:
+
+- **Triage & Classification:** Separates true positives from false positives  
+- **Severity Assessment:** CVSS estimates, exploitability analysis
+- **Attack Scenarios:** Concrete examples of how vulnerabilities could be exploited
+- **Code Fixes:** Specific remediation code for each vulnerability
+- **Prioritization:** P0-P3 remediation priority ranking
+
+**Option 1: Generate LLM prompt for manual submission**
+
+```bash
+cargo-cola --crate-path /path/to/project --llm-report security-context.md
+# Then paste content into Claude, GPT-4, or your preferred LLM
+```
+
+**Option 2: Automated LLM analysis (Bring Your Own LLM)**
+
+```bash
+# With OpenAI
+export RUSTCOLA_LLM_API_KEY=sk-...
+cargo-cola --crate-path . --llm-report report.md \
+  --llm-endpoint https://api.openai.com/v1/chat/completions \
+  --llm-model gpt-4
+
+# With Anthropic Claude  
+cargo-cola --crate-path . --llm-report report.md \
+  --llm-endpoint https://api.anthropic.com/v1/messages \
+  --llm-model claude-3-sonnet-20240229 \
+  --llm-api-key $ANTHROPIC_API_KEY
+
+# With local Ollama (no API key needed)
+cargo-cola --crate-path . --llm-report report.md \
+  --llm-endpoint http://localhost:11434/v1/chat/completions \
+  --llm-model llama2
+```
+
+**Option 3: VS Code with GitHub Copilot**
+
+1. Generate a prompt file: `cargo-cola --crate-path . --llm-report security-context.md`
+2. Open `security-context.md` in VS Code
+3. Ask Copilot: "Analyze these security findings and produce a curated report"
+
+#### LLM Options Reference
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--llm-report <PATH>` | Output path for LLM-optimized markdown | - |
+| `--llm-endpoint <URL>` | LLM API endpoint (OpenAI-compatible) | - |
+| `--llm-model <NAME>` | Model name | `gpt-4` |
+| `--llm-api-key <KEY>` | API key (or use `RUSTCOLA_LLM_API_KEY` env var) | - |
+| `--llm-max-tokens <N>` | Max response tokens | `4096` |
+| `--report <PATH>` | Standalone report (no LLM) | - |
+
+#### Example LLM Output
+
+```markdown
+# Security Analysis Report
+
+## Executive Summary
+- Total findings: 150
+- True Positives (Actionable): ~25 (17%)
+- False Positives: ~100 (67%)
+- Informational: ~25 (17%)
+
+## 🔴 CRITICAL: RUSTCOLA087 - SQL Injection
+**Impact:** Data breach, unauthorized access  
+**Exploitability:** HIGH - Remote, unauthenticated  
+**Attack Scenario:** `GET /users?id=1 OR 1=1--`
+
+**Vulnerable Code:**
+```rust
+let query = format!("SELECT * FROM users WHERE id = {}", user_id);
+```
+
+**Recommended Fix:**
+```rust
+let query = sqlx::query("SELECT * FROM users WHERE id = ?")
+    .bind(user_id);
+```
+...
+```
+
+#### Recommendation
+
+While Rust-cola works in standalone mode, **LLM integration is strongly recommended** for security reviews. LLMs dramatically improve:
+
+- **False positive filtering:** Typically reduces 1000+ raw findings to 20-30 actionable issues
+- **Remediation quality:** Provides specific, copy-paste-ready code fixes
+- **Prioritization:** Risk-based ordering vs. flat rule severity
+- **Context understanding:** Explains why findings matter in your specific codebase
+
+For air-gapped environments or CI pipelines without LLM access, use `--report` for basic triage, then review high-confidence findings manually.
+
 ### Using rulepacks
 
 You can extend the analysis with YAML rulepacks. A starter pack lives at `examples/rulepacks/example-basic.yaml`.
@@ -127,6 +251,26 @@ The backlog in [`docs/security-rule-backlog.md`](docs/security-rule-backlog.md) 
 ## Example commands
 
 > Choose the snippet that matches your shell. Forward slashes in paths work on both Windows and Unix-like systems; feel free to use backslashes in PowerShell if you prefer.
+
+- **Quick standalone security report** (no LLM required):
+
+	```bash
+	cargo-cola --crate-path . --report security-report.md
+	# Opens with automatic triage and heuristic false positive detection
+	```
+
+- **LLM-powered security analysis** (recommended for thorough reviews):
+
+	```bash
+	# Automated with OpenAI
+	export RUSTCOLA_LLM_API_KEY=sk-...
+	cargo-cola --crate-path . --llm-report report.md \
+	  --llm-endpoint https://api.openai.com/v1/chat/completions
+
+	# Or generate prompt for manual LLM submission
+	cargo-cola --crate-path . --llm-report security-context.md
+	# Then open in VS Code and ask Copilot to analyze it
+	```
 
 - **Scan the current project** (writes MIR, findings, and SARIF to `out/my-project`):
 

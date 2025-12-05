@@ -1,0 +1,87 @@
+{
+  "name": "rustcola",
+  "displayName": "Rust-cola Security Analyzer",
+  "description": "Static security analysis for Rust with AI-powered report generation",
+  "version": "0.1.0",
+  "publisher": "rust-cola",
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "categories": [
+    "Linters",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "rust",
+    "security",
+    "static analysis",
+    "sast",
+    "copilot"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "rustcola.scan",
+        "title": "Rust-cola: Scan Current Workspace"
+      },
+      {
+        "command": "rustcola.scanWithReport",
+        "title": "Rust-cola: Scan and Generate Security Report"
+      }
+    ],
+    "configuration": {
+      "title": "Rust-cola",
+      "properties": {
+        "rustcola.binaryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to cargo-cola binary. If empty, uses 'cargo-cola' from PATH."
+        },
+        "rustcola.outputDirectory": {
+          "type": "string",
+          "default": "out/cola",
+          "description": "Directory for analysis output files."
+        }
+      }
+    },
+    "chatParticipants": [
+      {
+        "id": "rustcola.chat",
+        "name": "rustcola",
+        "fullName": "Rust-cola Security Analyzer",
+        "description": "Run security scans and analyze findings for Rust projects",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "scan",
+            "description": "Run a security scan on the current workspace"
+          },
+          {
+            "name": "analyze",
+            "description": "Analyze existing scan results and produce a security report"
+          },
+          {
+            "name": "explain",
+            "description": "Explain a specific finding or rule"
+          }
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.93.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0"
+  }
+}

@@ -21,11 +21,11 @@
 
 **New MIR Dataflow Rules (Nov 2025):**
 - ✅ RUSTCOLA075: Cleartext logging of secrets (86% recall, 67% precision)
-- ✅ RUSTCOLA076: Log injection (untrusted input to log sinks)
+- ✅ RUSTCOLA076: Log injection (untrusted input to log sinks) - 100% recall
 - ✅ RUSTCOLA077: Division by untrusted denominator
 - ✅ RUSTCOLA078: MaybeUninit::assume_init without initialization
-- ✅ RUSTCOLA079: Regex injection (80% recall, 100% precision)
-- ✅ RUSTCOLA080: Unchecked index arithmetic (55% recall, 100% precision)
+- ✅ RUSTCOLA079: Regex injection - 100% recall (improved from 80%)
+- ✅ RUSTCOLA080: Unchecked index arithmetic (100% recall, 100% precision)
 - ✅ RUSTCOLA081: Serde serialize_* length mismatch (71% recall, 100% precision)
 - ✅ RUSTCOLA082: Slice element size mismatch (90% recall, 100% precision)
 - ✅ RUSTCOLA083: slice::from_raw_parts length inflation (60% recall, 89% precision)

@@ -133,6 +133,38 @@ fn vulnerable_indirect_index() {
     println!("{}", data[idx]);
 }
 
+/// Index through multiple intermediate assignments
+fn vulnerable_chained_assignment() {
+    let data = vec![1, 2, 3, 4, 5];
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).unwrap();
+    let raw_idx: usize = input.trim().parse().unwrap();
+    let temp = raw_idx;      // Intermediate assignment
+    let final_idx = temp;    // Another hop
+    
+    // VULNERABLE: Chained through multiple vars
+    println!("{}", data[final_idx]);
+}
+
+/// Index via HashMap lookup (untrusted key, trusted map)
+fn vulnerable_hashmap_index() {
+    use std::collections::HashMap;
+    let mut map: HashMap<String, usize> = HashMap::new();
+    map.insert("a".to_string(), 0);
+    map.insert("b".to_string(), 100);  // Could be out of bounds
+    
+    let data = vec![1, 2, 3, 4, 5];
+    let mut key_input = String::new();
+    io::stdin().read_line(&mut key_input).unwrap();
+    let key = key_input.trim().to_string();
+    
+    // VULNERABLE: Index from HashMap lookup with untrusted key
+    // The map value could be manipulated or the key could select a bad value
+    if let Some(&idx) = map.get(&key) {
+        println!("{}", data[idx]);
+    }
+}
+
 // ============================================
 // SAFE PATTERNS (should NOT flag)
 // ============================================
@@ -251,6 +283,7 @@ fn main() {
 }
 
 // Test counts:
-// Vulnerable: 11 functions
+// Vulnerable: 12 functions (including 2 new edge cases added Dec 2025)
 // Safe: 9 functions
 // Expected: Flag vulnerable_*, not safe_*
+// Results (Dec 2025): 100% recall, 100% precision

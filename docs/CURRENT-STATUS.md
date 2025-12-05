@@ -1,18 +1,19 @@
 # Rust-cola Current Status & Next Steps
 
-**Date:** November 29, 2025  
-**Version:** 83 security rules  
-**Recent Achievement:** ✅ RUSTCOLA085 shipped! AWS S3 unscoped access detection.
+**Date:** December 1, 2025  
+**Version:** 89 security rules  
+**Recent Achievement:** ✅ Interprocedural dataflow rules shipped! RUSTCOLA086-089 (command injection, SQL injection, path traversal, YAML deserialization).
 
 ## Current State Summary
 
 ### ✅ What's Completed
 
-**83 Security Rules Shipped:**
-- **Tier 1 (MIR Heuristics):** 81 rules - Pattern matching on compiler IR
+**89 Security Rules Shipped:**
+- **Tier 1 (MIR Heuristics):** 87 rules - Pattern matching on compiler IR
   - Memory safety, crypto, concurrency, FFI, input validation, cloud security
+  - Interprocedural dataflow rules (RUSTCOLA086-089)
   - 10-30% typical false positive rate (acceptable for heuristics)
-  - Recent additions: RUSTCOLA075-085 (MIR dataflow rules)
+  - Recent additions: RUSTCOLA075-089 (MIR dataflow rules)
 
 - **Tier 2 (Source Analysis):** 2 rules - AST inspection with syn crate
   - RUSTCOLA067: Commented-out code (87.5% recall, 100% precision)
@@ -31,6 +32,10 @@
 - ✅ RUSTCOLA083: slice::from_raw_parts length inflation (100% recall, 100% precision)
 - ✅ RUSTCOLA084: TLS verification disabled (100% recall, 100% precision)
 - ✅ RUSTCOLA085: AWS S3 unscoped access (MIR dataflow, cloud security)
+- ✅ RUSTCOLA086: Command injection (100% recall) - interprocedural analysis
+- ✅ RUSTCOLA087: SQL injection (100% recall) - interprocedural analysis
+- ✅ RUSTCOLA088: Path traversal (100% recall) - interprocedural analysis
+- ✅ RUSTCOLA089: YAML deserialization (82% recall, 9/11) - interprocedural analysis
 
 **Advanced Dataflow:**
 - ✅ Phase 3.5.1: Branch-sensitive CFG analysis COMPLETE (Nov 25, 2025)

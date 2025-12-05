@@ -399,6 +399,7 @@ impl FunctionSummary {
         let has_command_sink = Self::contains_command_sink(function);
         let has_filesystem_sink = Self::contains_filesystem_sink(function);
         let has_http_sink = Self::contains_http_sink(function);
+        let has_yaml_sink = Self::contains_yaml_sink(function);
         
         // Step 3: Analyze parameter flows
         // Check if function propagates parameters to return value
@@ -435,6 +436,14 @@ impl FunctionSummary {
             summary.propagation_rules.push(TaintPropagation::ParamToSink {
                 param: 0,
                 sink_type: "http".to_string(),
+            });
+        }
+        
+        if has_yaml_sink {
+            // If function has a YAML deserialization sink
+            summary.propagation_rules.push(TaintPropagation::ParamToSink {
+                param: 0,
+                sink_type: "yaml".to_string(),
             });
         }
         
@@ -515,7 +524,7 @@ impl FunctionSummary {
     
     /// Check if function contains a taint sink
     fn contains_sink(function: &MirFunction) -> bool {
-        Self::contains_command_sink(function) || Self::contains_filesystem_sink(function) || Self::contains_http_sink(function)
+        Self::contains_command_sink(function) || Self::contains_filesystem_sink(function) || Self::contains_http_sink(function) || Self::contains_yaml_sink(function)
     }
     
     /// Check if function contains a command execution sink
@@ -593,6 +602,22 @@ impl FunctionSummary {
                 || line.contains("get::<&str>")
                 || line.contains("post::<&String>")
                 || line.contains("post::<&str>")
+        })
+    }
+    
+    /// Check if function contains a YAML deserialization sink (for YAML injection detection)
+    fn contains_yaml_sink(function: &MirFunction) -> bool {
+        function.body.iter().any(|line| {
+            // serde_yaml patterns
+            line.contains("serde_yaml::from_str")
+                || line.contains("serde_yaml::from_slice")
+                || line.contains("serde_yaml::from_reader")
+                // MIR patterns for generic instantiation
+                || line.contains("from_str::<") && line.contains("serde_yaml")
+                || line.contains("from_slice::<") && line.contains("serde_yaml")
+                || line.contains("from_reader::<") && line.contains("serde_yaml")
+                // Generic yaml patterns - function names with yaml
+                || (line.contains("from_str") && function.name.to_lowercase().contains("yaml"))
         })
     }
     

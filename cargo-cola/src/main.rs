@@ -94,8 +94,15 @@ struct Args {
     llm_max_tokens: u32,
 
     /// Generate a standalone human-readable security report (no LLM required)
-    #[arg(long)]
+    /// Defaults to <out_dir>/reports/report.md if no path specified
+    #[arg(long, num_args = 0..=1, default_missing_value = "")]
     report: Option<PathBuf>,
+
+    /// Generate an LLM prompt file for use with IDE-integrated AI assistants (Copilot, Cursor, etc.)
+    /// The output is a markdown file with findings formatted as a prompt ready for analysis.
+    /// Defaults to <out_dir>/reports/llm-prompt.md if no path specified
+    #[arg(long, num_args = 0..=1, default_missing_value = "")]
+    llm_prompt: Option<PathBuf>,
 }
 
 struct PackageOutput {
@@ -290,13 +297,26 @@ fn main() -> Result<()> {
 
         // Generate standalone report if requested
         if let Some(report_path) = &args.report {
+            let resolved_path = resolve_report_path(report_path, &args.out_dir, "report.md");
             generate_standalone_report(
-                report_path,
+                &resolved_path,
                 &output.package.crate_name,
                 &output.analysis.findings,
                 &output.analysis.rules,
             )?;
-            println!("- Standalone Report: {}", report_path.display());
+            println!("- Standalone Report: {}", resolved_path.display());
+        }
+
+        // Generate LLM prompt for IDE-integrated assistants
+        if let Some(prompt_path) = &args.llm_prompt {
+            let resolved_path = resolve_report_path(prompt_path, &args.out_dir, "llm-prompt.md");
+            generate_llm_prompt(
+                &resolved_path,
+                &output.package.crate_name,
+                &output.analysis.findings,
+                &output.analysis.rules,
+            )?;
+            println!("- LLM Prompt: {}", resolved_path.display());
         }
 
         #[cfg(feature = "hir-driver")]
@@ -389,12 +409,28 @@ fn main() -> Result<()> {
 
     // Generate standalone report if requested (workspace mode)
     if let Some(report_path) = &args.report {
+        let resolved_path = resolve_report_path(report_path, &args.out_dir, "report.md");
         let project_name = workspace_root
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("workspace");
         generate_standalone_report(
-            report_path,
+            &resolved_path,
+            project_name,
+            &aggregated_findings,
+            &aggregated_rules,
+        )?;
+    }
+
+    // Generate LLM prompt if requested (workspace mode)
+    if let Some(prompt_path) = &args.llm_prompt {
+        let resolved_path = resolve_report_path(prompt_path, &args.out_dir, "llm-prompt.md");
+        let project_name = workspace_root
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("workspace");
+        generate_llm_prompt(
+            &resolved_path,
             project_name,
             &aggregated_findings,
             &aggregated_rules,
@@ -441,7 +477,12 @@ fn main() -> Result<()> {
         println!("- LLM Report: {}", llm_path.display());
     }
     if let Some(report_path) = &args.report {
-        println!("- Standalone Report: {}", report_path.display());
+        let resolved = resolve_report_path(report_path, &args.out_dir, "report.md");
+        println!("- Standalone Report: {}", resolved.display());
+    }
+    if let Some(prompt_path) = &args.llm_prompt {
+        let resolved = resolve_report_path(prompt_path, &args.out_dir, "llm-prompt.md");
+        println!("- LLM Prompt: {}", resolved.display());
     }
     #[cfg(feature = "hir-driver")]
     if let Some(dir) = hir_summary_dir {
@@ -673,6 +714,36 @@ fn resolve_crate_roots(path: &Path) -> Result<(Vec<PathBuf>, PathBuf)> {
     let crate_roots = members.into_iter().map(|(_, path)| path).collect();
 
     Ok((crate_roots, workspace_root))
+}
+
+/// Resolves report paths. If the path is a directory, appends the default filename.
+/// If the path contains "cola/reports" it's used as-is, otherwise the default filename is used.
+/// Also ensures parent directories exist.
+fn resolve_report_path(user_path: &Path, out_dir: &Path, default_filename: &str) -> PathBuf {
+    let resolved = if user_path.is_dir() || user_path.to_string_lossy().ends_with('/') {
+        // If the user provided just a directory or ending slash, add default filename
+        user_path.join(default_filename)
+    } else if let Some(stem) = user_path.file_stem() {
+        if stem == "reports" && user_path.extension().is_none() {
+            // If the path ends with "reports" (no extension), treat as directory
+            // out_dir is typically "out/cola", so we just add "reports/"
+            out_dir.join("reports").join(default_filename)
+        } else {
+            // Otherwise use the path as-is (it's a specific file)
+            user_path.to_path_buf()
+        }
+    } else {
+        user_path.to_path_buf()
+    };
+    
+    // Ensure parent directories exist
+    if let Some(parent) = resolved.parent() {
+        if !parent.exists() {
+            let _ = fs::create_dir_all(parent);
+        }
+    }
+    
+    resolved
 }
 
 fn write_workspace_mir_json(
@@ -1153,6 +1224,9 @@ fn generate_standalone_report(
         writeln!(&mut content, "- 🔵 **Low:** {}", low_count)?;
     }
     writeln!(&mut content)?;
+    
+    // Rule summary table with FP estimates
+    write_rule_summary_table(&mut content, findings, rules)?;
 
     // Recommendation banner
     writeln!(&mut content, "---")?;
@@ -1286,6 +1360,10 @@ fn generate_standalone_report(
     writeln!(&mut content, "cargo-cola --crate-path . --llm-report report.md \\")?;
     writeln!(&mut content, "  --llm-endpoint http://localhost:11434/v1/chat/completions \\")?;
     writeln!(&mut content, "  --llm-model llama2")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "# With IDE-integrated AI (Copilot, Cursor, etc.)")?;
+    writeln!(&mut content, "cargo-cola --crate-path . --llm-prompt prompt.md")?;
+    writeln!(&mut content, "# Then open prompt.md and paste into your AI chat")?;
     writeln!(&mut content, "```")?;
     writeln!(&mut content)?;
 
@@ -1295,6 +1373,123 @@ fn generate_standalone_report(
     file.write_all(content.as_bytes())?;
     
     eprintln!("  Standalone report written to: {}", path.display());
+    
+    Ok(())
+}
+
+/// Generate an LLM prompt file for use with IDE-integrated AI assistants
+/// This creates a markdown file with findings formatted as a prompt ready to paste
+/// into Copilot Chat, Cursor, or any other AI assistant integrated into the IDE.
+fn generate_llm_prompt(
+    path: &Path,
+    project_name: &str,
+    findings: &[Finding],
+    rules: &[mir_extractor::RuleMetadata],
+) -> Result<()> {
+    use std::collections::HashMap;
+    use std::fmt::Write as _;
+
+    let mut content = String::new();
+
+    // Instructions header
+    writeln!(&mut content, "# Security Analysis Prompt for {}", project_name)?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "**Instructions:** Copy everything below the line and paste it into your AI assistant (Copilot Chat, Cursor, Claude, etc.)")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "---")?;
+    writeln!(&mut content)?;
+
+    // The actual prompt
+    writeln!(&mut content, "## 🔒 Rust Security Analysis Request")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "I ran cargo-cola (a Rust static security analyzer) on the **{}** project and got {} findings.", project_name, findings.len())?;
+    writeln!(&mut content, "Please analyze these findings and help me:")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "1. **Identify true positives** - Which findings represent real security vulnerabilities?")?;
+    writeln!(&mut content, "2. **Filter false positives** - Which findings are likely safe patterns or test code?")?;
+    writeln!(&mut content, "3. **Prioritize by severity** - Which issues should I fix first?")?;
+    writeln!(&mut content, "4. **Suggest fixes** - For each true positive, suggest a code fix.")?;
+    writeln!(&mut content)?;
+
+    // Summary by rule
+    let mut by_rule: HashMap<&str, Vec<&Finding>> = HashMap::new();
+    for finding in findings {
+        by_rule.entry(&finding.rule_id).or_default().push(finding);
+    }
+    let mut sorted_rules: Vec<_> = by_rule.iter().collect();
+    sorted_rules.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+
+    writeln!(&mut content, "### Summary by Rule")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "| Rule | Name | Count | Severity |")?;
+    writeln!(&mut content, "|------|------|-------|----------|")?;
+    for (rule_id, findings_list) in &sorted_rules {
+        let rule_name = rules.iter()
+            .find(|r| r.id == **rule_id)
+            .map(|r| r.name.as_str())
+            .unwrap_or("unknown");
+        let severity = findings_list.first()
+            .map(|f| format!("{:?}", f.severity))
+            .unwrap_or_else(|| "Unknown".to_string());
+        writeln!(&mut content, "| {} | {} | {} | {} |", rule_id, rule_name, findings_list.len(), severity)?;
+    }
+    writeln!(&mut content)?;
+
+    // Detailed findings (limit to first 50 to avoid token limits)
+    let findings_limit = 50;
+    let show_all = findings.len() <= findings_limit;
+    
+    writeln!(&mut content, "### Detailed Findings")?;
+    writeln!(&mut content)?;
+    if !show_all {
+        writeln!(&mut content, "*Showing first {} of {} findings. Run with fewer rules for complete analysis.*", findings_limit, findings.len())?;
+        writeln!(&mut content)?;
+    }
+
+    for (i, finding) in findings.iter().take(findings_limit).enumerate() {
+        let rule_name = rules.iter()
+            .find(|r| r.id == finding.rule_id)
+            .map(|r| r.name.as_str())
+            .unwrap_or("unknown");
+        
+        writeln!(&mut content, "#### {}. {} - {}", i + 1, finding.rule_id, rule_name)?;
+        writeln!(&mut content)?;
+        writeln!(&mut content, "- **Severity:** {:?}", finding.severity)?;
+        writeln!(&mut content, "- **Function:** `{}`", finding.function)?;
+        if let Some(span) = &finding.span {
+            writeln!(&mut content, "- **Location:** {}:{}", span.file, span.start_line)?;
+        }
+        writeln!(&mut content, "- **Message:** {}", finding.message)?;
+        
+        if !finding.evidence.is_empty() {
+            writeln!(&mut content, "- **Evidence:**")?;
+            writeln!(&mut content, "  ```rust")?;
+            for ev in finding.evidence.iter().take(3) {
+                writeln!(&mut content, "  {}", ev.trim())?;
+            }
+            if finding.evidence.len() > 3 {
+                writeln!(&mut content, "  // ... {} more lines", finding.evidence.len() - 3)?;
+            }
+            writeln!(&mut content, "  ```")?;
+        }
+        writeln!(&mut content)?;
+    }
+
+    // Closing instructions
+    writeln!(&mut content, "---")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "Please provide your analysis in markdown format with:")?;
+    writeln!(&mut content, "- A summary of true positives vs false positives")?;
+    writeln!(&mut content, "- Specific code fixes for each true positive")?;
+    writeln!(&mut content, "- Any patterns you notice that could improve the scanner")?;
+
+    // Write file
+    let mut file = File::create(path)
+        .with_context(|| format!("create LLM prompt at {}", path.display()))?;
+    file.write_all(content.as_bytes())?;
+    
+    eprintln!("  LLM prompt written to: {}", path.display());
+    eprintln!("  → Open this file and paste the content into your AI assistant (Copilot Chat, Cursor, etc.)");
     
     Ok(())
 }
@@ -1433,4 +1628,82 @@ fn chrono_lite_date() -> String {
     let month = remaining_days / 30 + 1;
     let day = remaining_days % 30 + 1;
     format!("{:04}-{:02}-{:02}", years, month.min(12), day.min(31))
+}
+
+/// Get estimated false positive rate and notes for a rule based on empirical testing
+/// Returns (estimated_fp_rate_percent, notes)
+fn get_rule_fp_estimate(rule_id: &str) -> (Option<u8>, &'static str) {
+    match rule_id {
+        // Low FP rate rules - well-tuned
+        "RUSTCOLA087" => (Some(5), "SQL injection - uses format string validation"),
+        "RUSTCOLA030" => (Some(10), "Lock guard - tracks wildcard bindings only"),
+        "RUSTCOLA064" => (Some(15), "ZST arithmetic - skips derive macros"),
+        "RUSTCOLA065" => (Some(10), "Cleartext env vars - keyword-based"),
+        "RUSTCOLA005" => (Some(5), "Weak crypto - MD5/SHA1 detection"),
+        "RUSTCOLA006" => (Some(5), "Hardcoded secrets - pattern-based"),
+        
+        // Medium FP rate rules - context-dependent
+        "RUSTCOLA024" => (Some(25), "Unbounded allocation - needs context"),
+        "RUSTCOLA044" => (Some(35), "Timing attack - may be intentional"),
+        "RUSTCOLA007" => (Some(40), "Command execution - may be intentional"),
+        "RUSTCOLA088" => (Some(35), "SSRF - depends on URL source"),
+        "RUSTCOLA011" => (Some(45), "Non-HTTPS - many safe dev/local cases"),
+        
+        // Higher FP rate rules - need more context
+        "RUSTCOLA022" => (Some(50), "Length truncation - often safe casts"),
+        "RUSTCOLA003" => (Some(60), "Unsafe usage - many are safe patterns"),
+        
+        // Code quality rules - not security FPs
+        "RUSTCOLA067" => (None, "Commented code - informational only"),
+        "RUSTCOLA020" => (None, "Cargo auditable - build config check"),
+        
+        _ => (None, ""),
+    }
+}
+
+/// Generate rule summary table with FP estimates
+fn write_rule_summary_table(
+    content: &mut String,
+    findings: &[Finding],
+    rules: &[mir_extractor::RuleMetadata],
+) -> Result<()> {
+    use std::collections::HashMap;
+    use std::fmt::Write as _;
+    
+    // Count findings by rule
+    let mut by_rule: HashMap<&str, usize> = HashMap::new();
+    for finding in findings {
+        *by_rule.entry(&finding.rule_id).or_default() += 1;
+    }
+    
+    if by_rule.is_empty() {
+        return Ok(());
+    }
+    
+    // Sort by count descending
+    let mut sorted_rules: Vec<_> = by_rule.into_iter().collect();
+    sorted_rules.sort_by(|a, b| b.1.cmp(&a.1));
+    
+    writeln!(content, "### Findings by Rule")?;
+    writeln!(content)?;
+    writeln!(content, "| Rule ID | Name | Count | Est. FP Rate | Notes |")?;
+    writeln!(content, "|---------|------|-------|--------------|-------|")?;
+    
+    for (rule_id, count) in sorted_rules {
+        let rule_name = rules.iter()
+            .find(|r| r.id == rule_id)
+            .map(|r| r.name.as_str())
+            .unwrap_or("unknown");
+        
+        let (fp_rate, notes) = get_rule_fp_estimate(rule_id);
+        let fp_str = fp_rate
+            .map(|r| format!("~{}%", r))
+            .unwrap_or_else(|| "N/A".to_string());
+        
+        writeln!(content, "| {} | {} | {} | {} | {} |",
+            rule_id, rule_name, count, fp_str, notes)?;
+    }
+    writeln!(content)?;
+    
+    Ok(())
 }

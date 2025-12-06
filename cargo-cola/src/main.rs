@@ -1384,112 +1384,75 @@ fn generate_llm_prompt(
     path: &Path,
     project_name: &str,
     findings: &[Finding],
-    rules: &[mir_extractor::RuleMetadata],
+    _rules: &[mir_extractor::RuleMetadata],
 ) -> Result<()> {
-    use std::collections::HashMap;
     use std::fmt::Write as _;
 
     let mut content = String::new();
 
     // Instructions header
-    writeln!(&mut content, "# Security Analysis Prompt for {}", project_name)?;
+    writeln!(&mut content, "# Security Analysis Request: {}", project_name)?;
     writeln!(&mut content)?;
-    writeln!(&mut content, "**Instructions:** Copy everything below the line and paste it into your AI assistant (Copilot Chat, Cursor, Claude, etc.)")?;
+    writeln!(&mut content, "**Instructions:** Paste this content into your AI assistant (Copilot Chat, Cursor, Claude, etc.)")?;
     writeln!(&mut content)?;
     writeln!(&mut content, "---")?;
     writeln!(&mut content)?;
 
-    // The actual prompt
-    writeln!(&mut content, "## 🔒 Rust Security Analysis Request")?;
+    // The actual prompt - concise instructions
+    writeln!(&mut content, "## Task")?;
     writeln!(&mut content)?;
-    writeln!(&mut content, "I ran cargo-cola (a Rust static security analyzer) on the **{}** project and got {} findings.", project_name, findings.len())?;
-    writeln!(&mut content, "Please analyze these findings and help me:")?;
+    writeln!(&mut content, "Analyze {} security findings from cargo-cola (Rust static analyzer) on **{}**.", findings.len(), project_name)?;
     writeln!(&mut content)?;
-    writeln!(&mut content, "1. **Identify true positives** - Which findings represent real security vulnerabilities?")?;
-    writeln!(&mut content, "2. **Filter false positives** - Which findings are likely safe patterns or test code?")?;
-    writeln!(&mut content, "3. **Prioritize by severity** - Which issues should I fix first?")?;
-    writeln!(&mut content, "4. **Suggest fixes** - For each true positive, suggest a code fix.")?;
+    writeln!(&mut content, "For each finding:")?;
+    writeln!(&mut content, "1. Is it a **true positive** (real vulnerability) or **false positive** (safe pattern/test code)?")?;
+    writeln!(&mut content, "2. If true positive: severity, impact, and code fix")?;
+    writeln!(&mut content, "3. Group similar findings to avoid repetition")?;
     writeln!(&mut content)?;
-
-    // Summary by rule
-    let mut by_rule: HashMap<&str, Vec<&Finding>> = HashMap::new();
-    for finding in findings {
-        by_rule.entry(&finding.rule_id).or_default().push(finding);
-    }
-    let mut sorted_rules: Vec<_> = by_rule.iter().collect();
-    sorted_rules.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
-
-    writeln!(&mut content, "### Summary by Rule")?;
-    writeln!(&mut content)?;
-    writeln!(&mut content, "| Rule | Name | Count | Severity |")?;
-    writeln!(&mut content, "|------|------|-------|----------|")?;
-    for (rule_id, findings_list) in &sorted_rules {
-        let rule_name = rules.iter()
-            .find(|r| r.id == **rule_id)
-            .map(|r| r.name.as_str())
-            .unwrap_or("unknown");
-        let severity = findings_list.first()
-            .map(|f| format!("{:?}", f.severity))
-            .unwrap_or_else(|| "Unknown".to_string());
-        writeln!(&mut content, "| {} | {} | {} | {} |", rule_id, rule_name, findings_list.len(), severity)?;
-    }
+    writeln!(&mut content, "## Findings")?;
     writeln!(&mut content)?;
 
-    // Detailed findings (limit to first 50 to avoid token limits)
-    let findings_limit = 50;
+    // Include more findings (up to 100) - no summary table, just raw data
+    let findings_limit = 100;
     let show_all = findings.len() <= findings_limit;
     
-    writeln!(&mut content, "### Detailed Findings")?;
-    writeln!(&mut content)?;
     if !show_all {
-        writeln!(&mut content, "*Showing first {} of {} findings. Run with fewer rules for complete analysis.*", findings_limit, findings.len())?;
+        writeln!(&mut content, "*Showing {} of {} findings.*", findings_limit, findings.len())?;
         writeln!(&mut content)?;
     }
 
     for (i, finding) in findings.iter().take(findings_limit).enumerate() {
-        let rule_name = rules.iter()
-            .find(|r| r.id == finding.rule_id)
-            .map(|r| r.name.as_str())
-            .unwrap_or("unknown");
-        
-        writeln!(&mut content, "#### {}. {} - {}", i + 1, finding.rule_id, rule_name)?;
-        writeln!(&mut content)?;
-        writeln!(&mut content, "- **Severity:** {:?}", finding.severity)?;
-        writeln!(&mut content, "- **Function:** `{}`", finding.function)?;
+        writeln!(&mut content, "### {}. {} ({:?})", i + 1, finding.rule_id, finding.severity)?;
+        writeln!(&mut content, "**Function:** `{}`", finding.function)?;
         if let Some(span) = &finding.span {
-            writeln!(&mut content, "- **Location:** {}:{}", span.file, span.start_line)?;
+            writeln!(&mut content, "**File:** {}:{}", span.file, span.start_line)?;
         }
-        writeln!(&mut content, "- **Message:** {}", finding.message)?;
+        writeln!(&mut content, "**Issue:** {}", finding.message)?;
         
         if !finding.evidence.is_empty() {
-            writeln!(&mut content, "- **Evidence:**")?;
-            writeln!(&mut content, "  ```rust")?;
-            for ev in finding.evidence.iter().take(3) {
-                writeln!(&mut content, "  {}", ev.trim())?;
+            writeln!(&mut content, "```rust")?;
+            for ev in finding.evidence.iter().take(4) {
+                writeln!(&mut content, "{}", ev.trim())?;
             }
-            if finding.evidence.len() > 3 {
-                writeln!(&mut content, "  // ... {} more lines", finding.evidence.len() - 3)?;
-            }
-            writeln!(&mut content, "  ```")?;
+            writeln!(&mut content, "```")?;
         }
         writeln!(&mut content)?;
     }
 
-    // Closing instructions
+    // Concise closing
     writeln!(&mut content, "---")?;
-    writeln!(&mut content)?;
-    writeln!(&mut content, "Please provide your analysis in markdown format with:")?;
-    writeln!(&mut content, "- A summary of true positives vs false positives")?;
-    writeln!(&mut content, "- Specific code fixes for each true positive")?;
-    writeln!(&mut content, "- Any patterns you notice that could improve the scanner")?;
+    writeln!(&mut content, "Output format: Markdown with true positives, false positives, and recommended fixes.")?;
 
     // Write file
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)?;
+        }
+    }
     let mut file = File::create(path)
         .with_context(|| format!("create LLM prompt at {}", path.display()))?;
     file.write_all(content.as_bytes())?;
     
     eprintln!("  LLM prompt written to: {}", path.display());
-    eprintln!("  → Open this file and paste the content into your AI assistant (Copilot Chat, Cursor, etc.)");
     
     Ok(())
 }
@@ -1620,14 +1583,66 @@ fn chrono_lite_date() -> String {
     let duration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
-    let secs = duration.as_secs();
-    // Simple calculation - good enough for a report date
-    let days = secs / 86400;
-    let years = 1970 + days / 365;
-    let remaining_days = days % 365;
-    let month = remaining_days / 30 + 1;
-    let day = remaining_days % 30 + 1;
-    format!("{:04}-{:02}-{:02}", years, month.min(12), day.min(31))
+    
+    // Attempt to get local timezone offset
+    // On Unix systems, we can check /etc/localtime or TZ environment variable
+    // For simplicity, we'll use a heuristic based on common US timezones
+    let tz_offset_hours: i64 = std::env::var("TZ")
+        .ok()
+        .and_then(|tz| {
+            let tz_lower = tz.to_lowercase();
+            if tz_lower.contains("pst") || tz_lower.contains("pacific") || tz_lower.contains("los_angeles") {
+                Some(-8)
+            } else if tz_lower.contains("mst") || tz_lower.contains("mountain") || tz_lower.contains("denver") {
+                Some(-7)
+            } else if tz_lower.contains("cst") || tz_lower.contains("central") || tz_lower.contains("chicago") {
+                Some(-6)
+            } else if tz_lower.contains("est") || tz_lower.contains("eastern") || tz_lower.contains("new_york") {
+                Some(-5)
+            } else if tz_lower.contains("utc") || tz_lower.contains("gmt") {
+                Some(0)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(-8); // Default to PST for US-based development
+    
+    let adjusted_secs = duration.as_secs() as i64 + (tz_offset_hours * 3600);
+    let mut days = adjusted_secs / 86400;
+    
+    // Calculate year, accounting for leap years
+    let mut year = 1970i64;
+    loop {
+        let days_in_year = if is_leap_year(year) { 366 } else { 365 };
+        if days < days_in_year {
+            break;
+        }
+        days -= days_in_year;
+        year += 1;
+    }
+    
+    // Calculate month and day
+    let days_in_months: [i64; 12] = if is_leap_year(year) {
+        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+    
+    let mut month = 1;
+    for &dim in &days_in_months {
+        if days < dim {
+            break;
+        }
+        days -= dim;
+        month += 1;
+    }
+    let day = days + 1;
+    
+    format!("{:04}-{:02}-{:02}", year, month, day)
+}
+
+fn is_leap_year(year: i64) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 
 /// Get estimated false positive rate and notes for a rule based on empirical testing

@@ -1,6 +1,6 @@
-# Rust-cola — Static Security Analysis for Rust
+# Rust-cola — LLM-Assisted Static Security Analysis for Rust
 
-Rust-cola is a static application security testing tool for Rust code. It employs a three-tier hybrid analysis approach combining MIR heuristics, source-level inspection, and semantic analysis via rustc HIR integration.
+Rust-cola is an **LLM-integrated static application security testing (SAST)** tool for Rust code. It combines a three-tier hybrid analysis engine (MIR heuristics, source inspection, and rustc HIR semantic analysis) with optional LLM-powered report generation for intelligent false positive filtering, exploitability analysis, and remediation suggestions.
 
 > **Recent Achievement (Dec 2025):** 
 > - **LLM Integration:** Added `--llm-report` with "Bring Your Own LLM" support (OpenAI, Anthropic, Ollama). Automated security analysis with false positive filtering, CVSS estimates, attack scenarios, and code fix suggestions.
@@ -14,7 +14,12 @@ Rust-cola is a static application security testing tool for Rust code. It employ
   - **Tier 1 (MIR Heuristics):** 85 rules using pattern matching on compiler-generated MIR
   - **Tier 2 (Source Analysis):** 2 rules using AST inspection for comments and attributes  
   - **Tier 3 (Semantic Analysis):** HIR integration for type-aware rules (type sizes, Send/Sync detection)
-- **AI-Powered Report Generation:** Integrates with LLMs (Claude, GPT-4) via `--llm-report` to produce curated security reports with triage, CVSS estimates, attack scenarios, and prioritized remediation
+- **LLM-Assisted Analysis (Optional):** Integrates with LLMs (Claude, GPT-4, Ollama, or any OpenAI-compatible API) to enhance raw findings with:
+  - **Precision improvement:** Intelligent false positive filtering based on code context
+  - **Severity organization:** Findings grouped and prioritized by actual risk
+  - **Exploitability analysis:** Attack scenarios, CVSS estimates, and real-world impact assessment
+  - **Remediation suggestions:** Concrete code fixes for each confirmed vulnerability
+  - **Executive reporting:** Polished security reports ready for stakeholders
 - **87 Built-in Security Rules** covering:
 	- Memory safety issues: `Box::into_raw` leaks, unchecked `transmute`, `Vec::set_len` misuse, premature `MaybeUninit::assume_init`, deprecated zero-initialization functions
 	- Unsafe code patterns: unsafe blocks, untrusted environment variable reads, command execution with user-influenced input

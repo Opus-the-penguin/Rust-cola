@@ -54,6 +54,93 @@ Rust-cola uses a hybrid three-tier detection approach:
 
 Research prototypes are available in [`mir-extractor/src/prototypes.rs`](mir-extractor/src/prototypes.rs) with documentation in [`docs/research/`](docs/research/).
 
+## Why Rust-cola Requires Compilation
+
+Unlike traditional static analysis tools that operate purely on source code or abstract syntax trees (ASTs), Rust-cola requires the target code to be **compiled** by the Rust compiler. This is a deliberate design choice that unlocks significantly deeper analysis capabilities.
+
+### The Compilation Requirement
+
+When you run Rust-cola, it invokes `cargo rustc` with special flags to extract the compiler's internal representations:
+
+- **MIR (Mid-level Intermediate Representation):** A simplified, desugared representation of Rust code after type checking, borrow checking, and monomorphization
+- **HIR (High-level Intermediate Representation):** The compiler's typed AST with full semantic information
+
+This means your code must successfully compile before Rust-cola can analyze it. While this adds a prerequisite, the benefits far outweigh the costs.
+
+### Why This Matters for Rust
+
+Rust is uniquely challenging for source-level static analysis. Many other languages (JavaScript, Python, Java) can be effectively analyzed at the source/AST level because their semantics are relatively straightforward. Rust, however, has:
+
+| Rust Feature | Source/AST Challenge | MIR/HIR Solution |
+|--------------|---------------------|------------------|
+| **Macros** | Unexpanded, opaque tokens | Fully expanded, analyzable code |
+| **Generics & Monomorphization** | Abstract type parameters | Concrete instantiated types |
+| **Trait resolution** | Unknown impl at call sites | Resolved to specific implementations |
+| **Deref coercion** | Implicit, invisible in source | Explicit operations in MIR |
+| **Borrow checker semantics** | Complex lifetime inference | Already validated, explicit lifetimes |
+| **Pattern matching** | Complex match expressions | Desugared to simple control flow |
+| **Closures** | Anonymous types, captures hidden | Explicit struct types with fields |
+| **Async/await** | Sugar over state machines | Explicit Future state machines |
+
+### Concrete Examples
+
+**Example 1: Macro Expansion**
+
+```rust
+// Source code - what an AST scanner sees
+sqlx::query!("SELECT * FROM users WHERE id = {}", user_id);
+
+// MIR - what Rust-cola sees
+// The macro is fully expanded, revealing the actual SQL string
+// construction and parameter binding, enabling SQL injection detection
+```
+
+**Example 2: Generic Monomorphization**
+
+```rust
+// Source code
+fn process<T: AsRef<[u8]>>(data: T) { ... }
+process(user_input);
+
+// MIR - Rust-cola sees the concrete instantiation
+// process::<String>(user_input) - enabling taint tracking through generics
+```
+
+**Example 3: Trait Method Resolution**
+
+```rust
+// Source code - which `read` implementation?
+reader.read(&mut buffer)?;
+
+// MIR - Rust-cola knows exactly which impl is called
+// <File as std::io::Read>::read - enabling accurate API tracking
+```
+
+### Comparison with Source-Level Scanners
+
+| Capability | Source/AST Scanner | Rust-cola (MIR/HIR) |
+|------------|-------------------|---------------------|
+| Macro-heavy code | ❌ Limited/blind | ✅ Full visibility |
+| Generic functions | ❌ Abstract types only | ✅ Concrete instantiations |
+| Trait objects | ❌ Cannot resolve impls | ✅ Knows exact types |
+| Type sizes (for buffer overflow) | ❌ Must guess | ✅ Exact via rustc |
+| Send/Sync safety | ❌ Cannot verify | ✅ Uses trait solver |
+| Deref chains | ❌ Misses implicit derefs | ✅ All explicit in MIR |
+| False positive rate | Higher | Lower |
+
+### The Trade-off
+
+The compilation requirement means:
+
+- ✅ **Pro:** Much higher detection accuracy and lower false positives
+- ✅ **Pro:** Access to compiler's type system, trait solver, and borrow checker results  
+- ✅ **Pro:** Analysis of macro-expanded code (critical for Rust ecosystems using `serde`, `tokio`, etc.)
+- ⚠️ **Con:** Code must compile successfully before analysis
+- ⚠️ **Con:** Requires nightly Rust toolchain (for `-Zunpretty=mir` flag)
+- ⚠️ **Con:** Analysis time includes compilation time
+
+For security scanning, we believe the accuracy gains justify the compilation requirement. Rust's deep semantics—macros, traits, generics, lifetimes—make source-level analysis fundamentally limited.
+
 ## Getting started
 
 > **Prerequisites**

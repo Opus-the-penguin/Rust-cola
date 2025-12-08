@@ -31,12 +31,12 @@ Low-effort fixes to improve existing rules. Target: 1-2 days.
 **Fix:** Added heuristic detection for custom ZST types by naming convention. Detects types containing "Empty", "Unit", "Marker", "ZST" in their names via MIR pointer type parsing.  
 **Effort:** Low (< 1 hour) - **COMPLETE**
 
-### 1.3 RUSTCOLA089 - YAML Deserialization
+### 1.3 RUSTCOLA089 - YAML Deserialization ✅
 
-**Current:** 82% recall (9/11), 100% precision  
-**Issue:** CLI arg flows and some interprocedural patterns not fully tracked  
-**Fix:** Extend taint sources to include `clap` argument parsing patterns, improve interprocedural call chain following  
-**Effort:** Medium (2-4 hours)
+**Current:** 100% recall (11/11), 100% precision  
+**Issue:** ~~CLI arg flows not tracked - bare `args()` in MIR wasn't recognized as untrusted source~~  
+**Fix:** Added `"= args()"` pattern to UNTRUSTED_SOURCES to match MIR form `_X = args() -> [return: ...]`. Taint now propagates through `Iterator::collect`, `Index::index`, and `Deref::deref` operations.  
+**Effort:** Low (< 1 hour) - **COMPLETE**
 
 ## Phase 2: New High-Value Rule
 

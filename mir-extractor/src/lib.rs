@@ -15654,6 +15654,7 @@ impl InsecureYamlDeserializationRule {
         "env::args",
         "std::env::args",
         "args::<",       // MIR form
+        "= args()",      // MIR: _X = args() -> [return: ...]
         "Args>",         // Iterator type
         // Stdin
         "stdin",
@@ -15739,11 +15740,50 @@ impl InsecureYamlDeserializationRule {
                 }
             }
             
-            // Track through reference creation (&(*_X))
+            // Track through reference creation (&(*_X) or &_X)
             if line.contains("&(*_") || line.contains("&_") {
                 if let Some(var) = self.extract_assigned_var(line) {
                     for tvar in tainted.clone() {
-                        if line.contains(&tvar) {
+                        if self.contains_var(line, &tvar) {
+                            tainted.insert(var.clone());
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Track through Index/IndexMut operations
+            // Pattern: _X = <Vec<T> as Index<usize>>::index(move _Y, ...) or similar
+            if line.contains("Index") && line.contains(">::index") {
+                if let Some(var) = self.extract_assigned_var(line) {
+                    for tvar in tainted.clone() {
+                        if self.contains_var(line, &tvar) {
+                            tainted.insert(var.clone());
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Track through Deref operations
+            // Pattern: _X = <String as Deref>::deref(copy _Y)
+            if line.contains("Deref>::deref") {
+                if let Some(var) = self.extract_assigned_var(line) {
+                    for tvar in tainted.clone() {
+                        if self.contains_var(line, &tvar) {
+                            tainted.insert(var.clone());
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Track through Iterator::collect - the collected vec inherits taint from iterator
+            // Pattern: _X = <Args as Iterator>::collect::<Vec<String>>(move _Y)
+            if line.contains("Iterator>::collect") {
+                if let Some(var) = self.extract_assigned_var(line) {
+                    for tvar in tainted.clone() {
+                        if self.contains_var(line, &tvar) {
                             tainted.insert(var.clone());
                             break;
                         }
@@ -15778,9 +15818,10 @@ impl InsecureYamlDeserializationRule {
             return true;
         }
         
-        // Match patterns like move _X, _X.0, &_X, (*_X)
+        // Match patterns like move _X, copy _X, _X.0, &_X, (*_X)
         let var_num = var.trim_start_matches('_');
         if text.contains(&format!("move _{}", var_num)) ||
+           text.contains(&format!("copy _{}", var_num)) ||
            text.contains(&format!("_{}.0", var_num)) ||
            text.contains(&format!("_{}.1", var_num)) ||
            text.contains(&format!("&_{}", var_num)) ||

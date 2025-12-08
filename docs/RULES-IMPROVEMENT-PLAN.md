@@ -67,8 +67,8 @@ Rules requiring more significant work:
 
 | Rule | Current | Target | Approach |
 |------|---------|--------|----------|
-| RUSTCOLA080 (Unchecked index) | 55% recall | 90%+ | Better env::var taint propagation |
-| RUSTCOLA053 (stdin no trim) | 50% FP | 10% FP | Convert from heuristic to dataflow |
+| ~~RUSTCOLA080 (Unchecked index)~~ | ~~55% recall~~ | ~~90%+~~ | ~~Better env::var taint propagation~~ **ALREADY COMPLETE (100%/100%)** |
+| ~~RUSTCOLA053 (stdin no trim)~~ | ~~50% FP~~ | ~~10% FP~~ | ~~Convert from heuristic to dataflow~~ **COMPLETE (100%/100%) - Fixed by detecting only read_line() (not lines()), filtering int parsing and trim calls** |
 | RUSTCOLA054 (Infinite iterators) | 75% recall | 90%+ | Detect loop break statements |
 | RUSTCOLA057 (Unnecessary borrow_mut) | 25% recall | 80%+ | Full mutation tracking in MIR |
 

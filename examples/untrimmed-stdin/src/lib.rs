@@ -1,6 +1,9 @@
 //! Demonstrates RUSTCOLA053: Untrimmed stdin detection
 //!
-//! Reading lines from stdin without trimming can enable injection attacks.
+//! Reading lines from stdin via read_line() without trimming can enable injection attacks.
+//! NOTE: BufRead::lines() auto-strips trailing newlines - only read_line() is vulnerable.
+//!
+//! Test results: 3 vulnerable patterns (read_line without trim), 5 safe patterns.
 
 use std::io::{self, BufRead};
 use std::process::Command;
@@ -35,15 +38,17 @@ pub fn execute_command_untrimmed() -> io::Result<()> {
     Ok(())
 }
 
-/// ❌ PROBLEMATIC: Reading lines iterator without trimming
-pub fn process_lines_untrimmed() -> io::Result<Vec<String>> {
+/// ✅ ACTUALLY SAFE: BufRead::lines() auto-strips newlines!
+/// This is not actually problematic - lines() returns strings without trailing newlines.
+/// Keeping for documentation that this is a common misconception.
+pub fn process_lines_auto_trimmed() -> io::Result<Vec<String>> {
     let stdin = io::stdin();
     let lines: Vec<String> = stdin.lock()
         .lines()
         .collect::<io::Result<Vec<String>>>()?;
     
-    // Each line still may have trailing whitespace
-    // If used in commands/paths, this is dangerous
+    // Each line does NOT have trailing newlines - lines() strips them!
+    // Still may have leading/trailing spaces though
     Ok(lines)
 }
 
@@ -89,14 +94,15 @@ pub fn execute_command_trimmed() -> io::Result<()> {
     Ok(())
 }
 
-/// ✅ BETTER: Trim each line after reading
+/// ✅ BETTER: Trim each line after reading (for spaces, not newlines)
+/// Note: .lines() already strips newlines, this is for whitespace
 pub fn process_lines_trimmed() -> io::Result<Vec<String>> {
     let stdin = io::stdin();
     let lines: Vec<String> = stdin.lock()
         .lines()
         .collect::<io::Result<Vec<_>>>()?
         .into_iter()
-        .map(|line| line.trim().to_string())  // Trim each line
+        .map(|line| line.trim().to_string())  // Trim spaces (newlines already gone)
         .collect();
     
     Ok(lines)

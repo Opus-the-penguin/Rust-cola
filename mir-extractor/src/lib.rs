@@ -8028,7 +8028,7 @@ impl UntrimmedStdinRule {
                 id: "RUSTCOLA053".to_string(),
                 name: "untrimmed-stdin".to_string(),
                 short_description: "Lines read from stdin not trimmed".to_string(),
-                full_description: "Detects reading lines from stdin without trimming whitespace/newlines. Untrimmed input can enable injection attacks when passed to shell commands, file paths, or other contexts where trailing newlines or whitespace have semantic meaning.".to_string(),
+                full_description: "Detects reading lines from stdin via read_line() without trimming. BufRead::lines() auto-strips newlines, so only read_line() is vulnerable. Parsing to integers is safe as parse() ignores whitespace.".to_string(),
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
@@ -8037,31 +8037,73 @@ impl UntrimmedStdinRule {
     }
 
     fn looks_like_untrimmed_stdin(&self, function: &MirFunction) -> bool {
-        // Look for patterns like:
-        // 1. stdin().lock().lines() or BufReader::new(stdin()).lines()
-        // 2. read_line() on stdin
-        // Without subsequent .trim() or .trim_end() calls
+        // Key insight: BufRead::lines() already strips trailing newlines!
+        // Only read_line() is actually vulnerable because it preserves the newline.
+        // Also safe: parsing to integers (parse::<usize>(), etc.) ignores whitespace.
         
-        let mut has_stdin_read = false;
-        let mut has_trim = false;
+        let body_str = function.body.join("\n");
+        let body_lower = body_str.to_lowercase();
         
-        for line in &function.body {
-            let lower = line.to_lowercase();
-            
-            // Check for stdin reads
-            if (lower.contains("stdin") && (lower.contains("lines()") || lower.contains("read_line"))) 
-                || lower.contains("bufreader") && lower.contains("stdin") {
-                has_stdin_read = true;
-            }
-            
-            // Check for trim operations
-            if lower.contains(".trim()") || lower.contains(".trim_end()") || lower.contains(".trim_start()") {
-                has_trim = true;
-            }
+        // Skip functions that are just defining constant arrays of patterns
+        // These contain strings like "read_line" but aren't actual code
+        if function.name.contains("input_source_patterns")
+            || function.name.contains("::new")
+            || body_lower.contains("const \"read_line")
+            || body_lower.contains("const \"stdin") {
+            return false;
         }
         
-        // Flag if we read from stdin but never trim
-        has_stdin_read && !has_trim
+        // Only flag read_line() calls - lines() auto-strips
+        // MIR pattern: BufRead>::read_line or Stdin::read_line or read_line(move _X
+        let has_read_line = body_lower.contains("read_line(") 
+            || body_lower.contains("bufread>::read_line")
+            || body_lower.contains("stdin::read_line");
+        
+        if !has_read_line {
+            return false;
+        }
+        
+        // Check if we have stdin involved (direct stdin() call or in same function)
+        let has_stdin = body_lower.contains("stdin()") 
+            || body_lower.contains("= stdin(")
+            || body_lower.contains("io::stdin");
+        
+        if !has_stdin {
+            return false;
+        }
+        
+        // Safe: if we call trim on the result
+        // MIR pattern: str::trim, .trim(), trim_end, trim_start
+        let has_trim = body_lower.contains("::trim(") 
+            || body_lower.contains("::trim_end(")
+            || body_lower.contains("::trim_start(")
+            || body_lower.contains("str::trim")
+            || body_lower.contains("trim::<");
+        
+        if has_trim {
+            return false;
+        }
+        
+        // Safe: parsing to integers (parse ignores whitespace)
+        // MIR pattern: parse::<usize>, parse::<i32>, FromStr>::from_str
+        let has_int_parse = body_lower.contains("parse::<usize>")
+            || body_lower.contains("parse::<u8>")
+            || body_lower.contains("parse::<u16>")
+            || body_lower.contains("parse::<u32>")
+            || body_lower.contains("parse::<u64>")
+            || body_lower.contains("parse::<i8>")
+            || body_lower.contains("parse::<i16>")
+            || body_lower.contains("parse::<i32>")
+            || body_lower.contains("parse::<i64>")
+            || body_lower.contains("parse::<f32>")
+            || body_lower.contains("parse::<f64>")
+            || body_lower.contains("fromstr>::from_str");
+        
+        if has_int_parse {
+            return false;
+        }
+        
+        true
     }
 }
 
@@ -8077,9 +8119,8 @@ impl Rule for UntrimmedStdinRule {
             if self.looks_like_untrimmed_stdin(function) {
                 let mut evidence = vec![];
                 for line in &function.body {
-                    if line.to_lowercase().contains("stdin") 
-                        || line.to_lowercase().contains("lines") 
-                        || line.to_lowercase().contains("read_line") {
+                    let lower = line.to_lowercase();
+                    if lower.contains("read_line") || lower.contains("stdin") {
                         evidence.push(line.clone());
                         if evidence.len() >= 3 {
                             break;
@@ -8091,7 +8132,7 @@ impl Rule for UntrimmedStdinRule {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
                     severity: self.metadata.default_severity,
-                    message: "Lines read from stdin are not trimmed. Untrimmed input can contain trailing newlines or whitespace that enable injection attacks when passed to commands, file paths, or other sensitive contexts. Use .trim() or .trim_end() to remove trailing whitespace.".to_string(),
+                    message: "Input from stdin via read_line() is not trimmed. read_line() preserves trailing newlines that can enable injection attacks when passed to commands, file paths, or other sensitive contexts. Use .trim() or .trim_end() on the input.".to_string(),
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence,

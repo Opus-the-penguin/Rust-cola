@@ -1945,6 +1945,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "json-toml-deserialization"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "length-truncation-cast"
 version = "0.1.0"
 dependencies = [

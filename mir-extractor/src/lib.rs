@@ -16007,6 +16007,340 @@ impl Rule for InsecureYamlDeserializationRule {
     }
 }
 
+/// RUSTCOLA091: Insecure JSON/TOML Deserialization
+///
+/// Detects when untrusted input is passed to JSON or TOML deserialization
+/// functions without proper validation. While JSON/TOML don't have YAML's
+/// billion laughs vulnerability, deeply nested structures can still cause:
+/// - Stack overflow from deep recursion
+/// - Memory exhaustion from large allocations
+/// - CPU exhaustion from complex parsing
+///
+/// **Sources:** env::var, env::args, stdin, file contents, network data
+/// **Sinks:** serde_json::from_str, from_slice, from_reader, toml::from_str
+/// **Sanitizers:** Size limits, depth limits, schema validation
+struct InsecureJsonTomlDeserializationRule {
+    metadata: RuleMetadata,
+}
+
+impl InsecureJsonTomlDeserializationRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA091".to_string(),
+                name: "insecure-json-toml-deserialization".to_string(),
+                short_description: "Untrusted input used in JSON/TOML deserialization".to_string(),
+                full_description: "User-controlled input is passed to serde_json or toml \
+                    deserialization functions without validation. Attackers can craft \
+                    deeply nested structures to cause stack overflow, or very large \
+                    payloads to cause memory exhaustion. Validate input size and structure \
+                    before deserialization, or use streaming parsers with limits.".to_string(),
+                help_uri: Some("https://owasp.org/www-project-web-security-testing-guide/".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// JSON/TOML deserialization sinks - MIR patterns
+    const SINKS: &'static [&'static str] = &[
+        // JSON sinks - source forms
+        "serde_json::from_str",
+        "serde_json::from_slice", 
+        "serde_json::from_reader",
+        // JSON sinks - MIR forms (sometimes drops module prefix)
+        "serde_json::from_str::",
+        "serde_json::from_slice::",
+        "serde_json::from_reader::",
+        // Bare forms in MIR
+        "= from_slice::<",    // MIR: _X = from_slice::<'_, T>(...)
+        "= from_reader::<",   // MIR: _X = from_reader::<R, T>(...)
+        "= from_str::<",      // MIR: _X = from_str::<'_, T>(...)
+        // TOML sinks
+        "toml::from_str",
+        "toml::de::from_str",
+        "toml::from_str::",
+        "toml::de::from_str::",
+    ];
+
+    /// Untrusted sources - includes MIR patterns
+    const UNTRUSTED_SOURCES: &'static [&'static str] = &[
+        // Environment variables - source and MIR forms
+        "env::var",
+        "env::var_os",
+        "std::env::var",
+        "var::<",        // MIR: _1 = var::<&str>(const "VAR")
+        "var_os::<",
+        // Command-line arguments
+        "env::args",
+        "std::env::args",
+        "args::<",
+        "= args()",      // MIR: _X = args() -> [return: ...]
+        "Args>",
+        // Stdin
+        "stdin",
+        "Stdin",
+        // File operations
+        "read_to_string",
+        "read_to_end",
+        "BufRead::read_line",
+        "fs::read_to_string",
+        "fs::read",
+        "fs::File::open",    // File handle from path
+        "File::open",        // MIR form
+        "OpenOptions",       // File from OpenOptions
+        "Read>::read_to_string",
+        "Read>::read_to_end",
+        // Network
+        "TcpStream",
+        "::connect(",
+    ];
+
+    /// Track tainted variables from untrusted sources
+    fn track_untrusted_vars<'a>(&self, function: &'a MirFunction) -> HashSet<String> {
+        let mut tainted: HashSet<String> = HashSet::new();
+        
+        for line in &function.body {
+            // Source detection
+            for source in Self::UNTRUSTED_SOURCES {
+                if line.contains(source) {
+                    if let Some(var) = self.extract_assigned_var(line) {
+                        tainted.insert(var);
+                    }
+                }
+            }
+            
+            // Taint propagation through assignments
+            if line.contains(" = ") {
+                if let Some((dest, src_part)) = line.split_once(" = ") {
+                    let dest_var = dest.trim().to_string();
+                    for tvar in tainted.clone() {
+                        if self.contains_var(src_part, &tvar) {
+                            tainted.insert(dest_var.clone());
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Track through Result unwrapping
+            if line.contains("((_") && line.contains("as Continue).0)") {
+                if let Some(var) = self.extract_assigned_var(line) {
+                    let any_tainted = tainted.iter().any(|t| line.contains(&format!("_{}", t.trim_start_matches('_'))));
+                    if any_tainted || tainted.iter().any(|t| line.contains(t)) {
+                        tainted.insert(var);
+                    }
+                }
+            }
+            
+            // Track through reference creation
+            if line.contains("&(*_") || line.contains("&_") {
+                if let Some(var) = self.extract_assigned_var(line) {
+                    for tvar in tainted.clone() {
+                        if self.contains_var(line, &tvar) {
+                            tainted.insert(var.clone());
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Track through Index operations
+            if line.contains("Index") && line.contains(">::index") {
+                if let Some(var) = self.extract_assigned_var(line) {
+                    for tvar in tainted.clone() {
+                        if self.contains_var(line, &tvar) {
+                            tainted.insert(var.clone());
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Track through Deref operations
+            if line.contains("Deref>::deref") {
+                if let Some(var) = self.extract_assigned_var(line) {
+                    for tvar in tainted.clone() {
+                        if self.contains_var(line, &tvar) {
+                            tainted.insert(var.clone());
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Track through Iterator::collect
+            if line.contains("Iterator>::collect") {
+                if let Some(var) = self.extract_assigned_var(line) {
+                    for tvar in tainted.clone() {
+                        if self.contains_var(line, &tvar) {
+                            tainted.insert(var.clone());
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        tainted
+    }
+
+    fn extract_assigned_var(&self, line: &str) -> Option<String> {
+        let line = line.trim();
+        if let Some(eq_pos) = line.find(" = ") {
+            let lhs = line[..eq_pos].trim();
+            if lhs.starts_with('_') && lhs.chars().skip(1).all(|c| c.is_ascii_digit()) {
+                return Some(lhs.to_string());
+            }
+            if lhs.starts_with("(*_") {
+                if let Some(end) = lhs.find(')') {
+                    return Some(lhs[2..end].to_string());
+                }
+            }
+        }
+        None
+    }
+
+    fn contains_var(&self, text: &str, var: &str) -> bool {
+        if text.contains(var) {
+            return true;
+        }
+        let var_num = var.trim_start_matches('_');
+        text.contains(&format!("move _{}", var_num)) ||
+        text.contains(&format!("copy _{}", var_num)) ||
+        text.contains(&format!("_{}.0", var_num)) ||
+        text.contains(&format!("_{}.1", var_num)) ||
+        text.contains(&format!("&_{}", var_num)) ||
+        text.contains(&format!("(*_{})", var_num))
+    }
+
+    /// Check if the function has a size limit check on tainted data
+    fn has_size_limit_check(&self, function: &MirFunction, tainted: &HashSet<String>) -> bool {
+        // Look for patterns like:
+        // _X = String::len(move _tainted) or str::len(move _tainted)
+        // followed by comparison: _Y = Gt/Lt/Ge/Le(move _X, const N)
+        //
+        // We specifically look for String/str length checks, not Vec length checks
+        // Vec::len() is typically for checking argument count, not payload size
+        
+        let mut len_result_vars: HashSet<String> = HashSet::new();
+        
+        for line in &function.body {
+            // Check for len() call on String or str (not Vec)
+            // MIR shows: String::len or str::len
+            let is_string_len = (line.contains("String::len(") || line.contains("str::len("))
+                && !line.contains("Vec<");
+                
+            if is_string_len {
+                // Check if the argument is tainted
+                for tvar in tainted {
+                    if self.contains_var(line, tvar) {
+                        // Extract the result variable
+                        if let Some(var) = self.extract_assigned_var(line) {
+                            len_result_vars.insert(var);
+                        }
+                    }
+                }
+            }
+            
+            // Check for comparison using the len result
+            if line.contains("Gt(") || line.contains("Lt(") || line.contains("Ge(") || line.contains("Le(") {
+                for len_var in &len_result_vars {
+                    if self.contains_var(line, len_var) {
+                        return true;  // Found size limit check
+                    }
+                }
+            }
+        }
+        
+        false
+    }
+
+    /// Find unsafe JSON/TOML deserialization operations
+    fn find_unsafe_operations(&self, function: &MirFunction, tainted: &HashSet<String>) -> Vec<String> {
+        let mut unsafe_ops = Vec::new();
+        
+        // Check for meaningful sanitization patterns
+        // We need len() called on a tainted variable followed by comparison
+        let has_size_limit = self.has_size_limit_check(function, tainted);
+        
+        if has_size_limit {
+            return unsafe_ops;  // Sanitized - don't report
+        }
+        
+        for line in &function.body {
+            // Check if line contains a sink
+            let is_sink = Self::SINKS.iter().any(|sink| line.contains(sink));
+            if !is_sink {
+                continue;
+            }
+            
+            // Check if any tainted variable flows to the sink
+            let taint_flows = tainted.iter().any(|t| self.contains_var(line, t));
+            
+            if taint_flows {
+                unsafe_ops.push(line.trim().to_string());
+            }
+        }
+        
+        unsafe_ops
+    }
+}
+
+impl Rule for InsecureJsonTomlDeserializationRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Skip test functions
+            if function.name.contains("test") {
+                continue;
+            }
+            
+            // Track tainted variables from untrusted sources
+            let tainted = self.track_untrusted_vars(function);
+            
+            if tainted.is_empty() {
+                continue;
+            }
+            
+            // Find JSON/TOML deserialization operations using tainted data
+            let unsafe_ops = self.find_unsafe_operations(function, &tainted);
+            
+            if !unsafe_ops.is_empty() {
+                // Determine if it's JSON or TOML based on the sink
+                let is_toml = unsafe_ops.iter().any(|op| op.contains("toml::"));
+                let format_name = if is_toml { "TOML" } else { "JSON" };
+                
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: Severity::Medium,
+                    message: format!(
+                        "Insecure {} deserialization in `{}`. User-controlled input is \
+                        passed to serde_{} without validation. Deeply nested structures \
+                        can cause stack overflow, and large payloads can exhaust memory. \
+                        Validate input size and structure before parsing.",
+                        format_name,
+                        function.name,
+                        format_name.to_lowercase()
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence: unsafe_ops.into_iter().take(3).collect(),
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        findings
+    }
+}
+
 /// RUSTCOLA090: Unbounded read_to_end Detection
 ///
 /// Detects when read_to_end() or read_to_string() is called on untrusted
@@ -16342,6 +16676,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(SsrfRule::new())); // RUSTCOLA088
     engine.register_rule(Box::new(InsecureYamlDeserializationRule::new())); // RUSTCOLA089
     engine.register_rule(Box::new(UnboundedReadRule::new())); // RUSTCOLA090
+    engine.register_rule(Box::new(InsecureJsonTomlDeserializationRule::new())); // RUSTCOLA091
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

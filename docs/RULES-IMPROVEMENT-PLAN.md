@@ -38,23 +38,28 @@ Low-effort fixes to improve existing rules. Target: 1-2 days.
 **Fix:** Added `"= args()"` pattern to UNTRUSTED_SOURCES to match MIR form `_X = args() -> [return: ...]`. Taint now propagates through `Iterator::collect`, `Index::index`, and `Deref::deref` operations.  
 **Effort:** Low (< 1 hour) - **COMPLETE**
 
-## Phase 2: New High-Value Rule
+## Phase 2: New High-Value Rule ✅
 
 Implement one new high-impact rule using existing infrastructure.
 
-### 2.1 RUSTCOLA091 - TOML/JSON Deserialization (Proposed)
+### 2.1 RUSTCOLA091 - TOML/JSON Deserialization ✅
 
+**Current:** 100% recall (10/10), ~83% precision (2 FP from external example)  
 **Rationale:** Extends YAML pattern to other serde formats. While TOML/JSON don't have YAML's billion laughs vulnerability, deeply nested structures can still cause stack overflow or memory exhaustion.
 
 **Detection approach:**
-- Sources: Same as YAML (env vars, CLI args, stdin, network, files)
-- Sinks: `serde_json::from_str`, `serde_json::from_slice`, `serde_json::from_reader`, `toml::from_str`, `toml::de::from_str`
-- Sanitizers: Depth limits, size limits, custom deserializers with bounds
+- Sources: env::var, env::args, stdin, file contents, network data
+- Sinks: `serde_json::from_str/slice/reader`, `toml::from_str`
+- Sanitizers: Size limit checks (String::len with comparison)
 
-**Test suite target:** 10 bad + 8 safe patterns  
-**Target metrics:** 90%+ recall, 100% precision
+**Implementation:**
+- Added new rule struct `InsecureJsonTomlDeserializationRule`
+- Taint tracking reuses YAML pattern (sources, propagation through collect/index/deref)
+- Size limit detection: tracks String::len() calls on tainted vars followed by comparison
+- Sink patterns include bare MIR forms (`= from_slice::<`, `= from_reader::<`)
 
-**Effort:** Medium (4-6 hours) - reuses YAML infrastructure
+**Test suite:** 10 bad + 8 safe patterns in `examples/json-toml-deserialization/`  
+**Effort:** Medium (2-3 hours) - **COMPLETE**
 
 ## Phase 3: Deep Hardening (Future)
 

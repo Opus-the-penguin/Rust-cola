@@ -5,8 +5,8 @@ Rust-cola is an **LLM-integrated static application security testing (SAST)** to
 > **Recent Achievement (Dec 2025):** 
 > - **LLM Integration:** Added `--llm-report` with "Bring Your Own LLM" support (OpenAI, Anthropic, Ollama). Automated security analysis with false positive filtering, CVSS estimates, attack scenarios, and code fix suggestions.
 > - **Standalone Reports:** Added `--report` for human-readable reports without LLM access, with heuristic-based triage.
-> - **New Rules:** RUSTCOLA090 (Unbounded read_to_end), RUSTCOLA089 (YAML Deserialization), RUSTCOLA088 (SSRF), RUSTCOLA087 (SQL injection), RUSTCOLA086 (Path traversal) - all with 100% recall via inter-procedural analysis.
-> - **Total: 89 security rules**
+> - **New Rules:** RUSTCOLA091 (JSON/TOML deserialization), RUSTCOLA090 (Unbounded read_to_end), RUSTCOLA089 (YAML Deserialization), RUSTCOLA088 (SSRF), RUSTCOLA087 (SQL injection), RUSTCOLA086 (Path traversal) - all with 100% recall via inter-procedural analysis.
+> - **Total: 87 security rules**
 
 ## Features
 
@@ -27,7 +27,7 @@ Rust-cola is an **LLM-integrated static application security testing (SAST)** to
 	- Network security: HTTP URLs, disabled TLS certificate validation, SSRF detection
 	- Concurrency: unsafe `Send`/`Sync` implementations, mutex guard issues, panic in destructors
 	- FFI: allocator mismatches, dangling CString pointers, blocking calls in async contexts
-	- Input validation: SQL injection, path traversal, YAML deserialization attacks, untrusted input to commands and file operations
+	- Input validation: SQL injection, path traversal, YAML/JSON/TOML deserialization attacks, untrusted input to commands and file operations
 	- Code hygiene: commented-out code, overscoped allow attributes
 - Generates findings in JSON format and SARIF format for CI/CD integration
 - Supports custom rule extensions via YAML rulepacks

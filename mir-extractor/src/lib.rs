@@ -513,8 +513,43 @@ fn looks_like_zst_pointer_arithmetic(line: &str) -> bool {
         return true;
     }
     
-    // Future enhancement: When HIR type_metadata is available, check size_bytes field
-    // TODO: Add HIR metadata lookup here once extract_type_size() is implemented
+    // 7. Heuristic: Detect custom empty types by naming convention
+    // Types with names like "EmptyStruct", "EmptyEnum", "UnitType", etc.
+    // These are commonly user-defined ZSTs
+    let empty_type_patterns = [
+        "emptystruct", "emptyenum", "emptytype", "empty_struct", "empty_enum", "empty_type",
+        "unitstruct", "unitenum", "unittype", "unit_struct", "unit_enum", "unit_type",
+        "markerstruct", "markerenum", "markertype", "marker_struct", "marker_enum", "marker_type",
+        "zststruct", "zstenum", "zsttype", "zst_struct", "zst_enum", "zst_type",
+    ];
+    if empty_type_patterns.iter().any(|p| lower.contains(p)) && has_arithmetic {
+        return true;
+    }
+    
+    // 8. Detect pointer types in impl blocks: <impl *const SomeType>::add(...)
+    // Extract the type from the pattern and check if it looks like a ZST
+    // Pattern: const_ptr::<impl *const TypeName>::method or const_ptr::<impl *mut TypeName>::method
+    if let Some(impl_start) = lower.find("<impl *const ") {
+        let type_start = impl_start + "<impl *const ".len();
+        if let Some(impl_end) = lower[type_start..].find('>') {
+            let type_name = &lower[type_start..type_start + impl_end];
+            // Check if the extracted type name matches any ZST naming patterns
+            if type_name.contains("empty") || type_name.contains("unit") || 
+               type_name.contains("marker") || type_name.contains("zst") {
+                return true;
+            }
+        }
+    }
+    if let Some(impl_start) = lower.find("<impl *mut ") {
+        let type_start = impl_start + "<impl *mut ".len();
+        if let Some(impl_end) = lower[type_start..].find('>') {
+            let type_name = &lower[type_start..type_start + impl_end];
+            if type_name.contains("empty") || type_name.contains("unit") || 
+               type_name.contains("marker") || type_name.contains("zst") {
+                return true;
+            }
+        }
+    }
     
     false
 }

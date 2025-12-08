@@ -59,6 +59,99 @@ Rust-cola uses a hybrid three-tier detection approach:
 
 Research prototypes are available in [`mir-extractor/src/prototypes.rs`](mir-extractor/src/prototypes.rs) with documentation in [`docs/research/`](docs/research/).
 
+## Inter-Procedural Taint Analysis
+
+Rust-cola includes **inter-procedural taint analysis** that tracks data flow across function boundaries—not just within a single function. This is critical for detecting real-world vulnerabilities where untrusted input flows through helper functions before reaching dangerous sinks.
+
+### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                 Inter-Procedural Taint Flow                     │
+│                                                                 │
+│   get_user_input()     process_data()        execute_query()   │
+│        │                    │                      │            │
+│        ▼                    ▼                      ▼            │
+│   ┌─────────┐          ┌─────────┐           ┌─────────┐       │
+│   │ env::var│ ───────► │ helper  │ ────────► │ sqlx::  │       │
+│   │ [SOURCE]│  taint   │ fn()    │   taint   │ query() │       │
+│   └─────────┘  flows   └─────────┘   flows   │ [SINK]  │       │
+│                                              └─────────┘       │
+│                                                                 │
+│   Detected: SQL injection via 3-function call chain            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**The analysis proceeds in phases:**
+
+1. **Call Graph Construction** — Extract function calls from MIR to build a directed graph of dependencies
+2. **Function Summarization** — Analyze each function bottom-up to create summaries describing how taint flows through parameters and return values
+3. **Path Finding** — Starting from source functions, explore the call graph to find paths to sink functions
+4. **Sanitization Detection** — Identify validation patterns (allowlists, bounds checks, escaping) that break taint flows
+
+### Why This Matters
+
+Consider this vulnerable pattern that intra-procedural analysis would **miss**:
+
+```rust
+fn get_user_path() -> String {
+    std::env::var("USER_PATH").unwrap()  // Taint source
+}
+
+fn process_file() {
+    let path = get_user_path();           // Taint flows in
+    std::fs::read_to_string(&path);       // Path traversal sink!
+}
+```
+
+An intra-procedural analyzer only sees:
+- `get_user_path()`: Returns a String (no visible taint)
+- `process_file()`: Uses that String in a filesystem call
+
+It **cannot** see that the String originates from `env::var`. Rust-cola's inter-procedural analysis detects this because it:
+1. Summarizes `get_user_path()` as returning tainted data (`ReturnTaint::FromSource`)
+2. Tracks that `process_file()` calls it and uses the result in a sink
+3. Reports the full taint path: `env::var → get_user_path → process_file → fs::read_to_string`
+
+### Supported Source → Sink Flows
+
+| Source Type | Examples |
+|-------------|----------|
+| Environment | `env::var()`, `env::args()` |
+| Stdin | `stdin().read_line()`, `stdin().lines()` |
+| Files | `fs::read_to_string()` on untrusted paths |
+| Network | `TcpStream::read()`, HTTP request bodies |
+
+| Sink Type | Examples |
+|-----------|----------|
+| Command Execution | `Command::new()`, `Command::arg()` |
+| Filesystem | `fs::read_to_string()`, `File::create()`, `fs::remove_file()` |
+| SQL | `sqlx::query()`, `diesel::sql_query()`, format strings with SQL keywords |
+| HTTP/SSRF | `reqwest::get()`, `ureq::get()` with user-controlled URLs |
+| Regex | `Regex::new()` with user-controlled patterns |
+
+### Sanitization Patterns Detected
+
+Rust-cola recognizes common sanitization patterns that break taint flows:
+
+- **Path validation:** `path.canonicalize()?.starts_with(base_dir)`
+- **SQL parameterization:** `.bind()`, `?` placeholders
+- **Allowlist checks:** `allowed_values.contains(&input)`
+- **Input parsing:** Integer parsing for numeric-only fields
+- **Escaping:** `regex::escape()`, string replacement
+
+### Current Capabilities
+
+| Metric | Value |
+|--------|-------|
+| **Call chain depth** | Unlimited (with cycle detection) |
+| **Cross-function detection** | ✅ Full support |
+| **Closure capture tracking** | ✅ Phase 3.5.2 |
+| **Path-sensitive (branching)** | ✅ CFG-based analysis |
+| **False positive filtering** | ✅ Validation guard detection |
+
+For implementation details, see [`mir-extractor/src/interprocedural.rs`](mir-extractor/src/interprocedural.rs).
+
 ## Why Rust-cola Requires Compilation
 
 Unlike traditional static analysis tools that operate purely on source code or abstract syntax trees (ASTs), Rust-cola requires the target code to be **compiled** by the Rust compiler. This is a deliberate design choice that unlocks significantly deeper analysis capabilities.

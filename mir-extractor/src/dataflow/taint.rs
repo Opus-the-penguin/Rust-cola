@@ -438,9 +438,6 @@ impl TaintAnalysis {
         // Step 2: Identify sanitized variables
         // These are variables that result from sanitizing operations on tainted data
         let sanitized_vars = self.detect_sanitized_variables(function, &sources);
-        
-        eprintln!("DEBUG SANITIZE: Found {} sanitized variables in {}: {:?}", 
-            sanitized_vars.len(), function.name, sanitized_vars);
 
         // Step 3: Propagate taint through dataflow
         let dataflow = MirDataflow::new(function);
@@ -474,11 +471,6 @@ impl TaintAnalysis {
                         &sanitized_vars,
                         &tainted_vars
                     );
-                    
-                    if is_sanitized {
-                        eprintln!("DEBUG FLOW SANITIZED: {} -> {} (goes through sanitization)", 
-                            source.variable, sink.variable);
-                    }
                     
                     flows.push(TaintFlow {
                         source: source.clone(),
@@ -551,8 +543,6 @@ impl TaintAnalysis {
             // Check if any sanitized variable guards this sink block
             for sanitized_var in sanitized_vars {
                 if cfg.is_guarded_by(&sink_bb, sanitized_var) {
-                    eprintln!("DEBUG CONTROL-FLOW GUARD: sink in {} is guarded by sanitization check on {}", 
-                        sink_bb, sanitized_var);
                     return true;
                 }
             }
@@ -597,19 +587,12 @@ impl TaintAnalysis {
         for line in &function.body {
             // Check if this line is a sanitizing operation
             let is_sanitizing = self.sanitizer_registry.patterns.iter().any(|pattern| {
-                pattern.function_patterns.iter().any(|p| {
-                    let matches = line.contains(p);
-                    if matches {
-                        eprintln!("DEBUG SANITIZE MATCH: pattern '{}' in line: {}", p, line.trim());
-                    }
-                    matches
-                })
+                pattern.function_patterns.iter().any(|p| line.contains(p))
             });
 
             if is_sanitizing {
                 // Extract the target variable (left side of assignment)
                 if let Some(target) = extract_assignment_target(line) {
-                    eprintln!("DEBUG SANITIZE VAR: Adding {} as sanitized", target);
                     sanitized_vars.insert(target);
                 }
             }

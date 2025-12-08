@@ -382,9 +382,12 @@ fn line_contains_weak_hash_extended(line: &str) -> bool {
     let lower = line.to_lowercase();
     
     // Skip const string assignments and hex dumps entirely
-    if lower.starts_with("    _") && lower.contains("= [const \"") {
+    // This catches MIR patterns like: _1 = [const "error message with adler32 or crc"]
+    // These are often error messages or documentation, not actual weak hash usage
+    if lower.contains("= [const \"") || lower.contains("const \"") {
         return false;
     }
+    // Skip hex dumps (MIR allocator debug output)
     if lower.starts_with("0x") || (lower.contains("0x") && lower.contains("│")) {
         return false;
     }
@@ -13767,7 +13770,6 @@ impl PathTraversalRule {
                 // In MIR: _4 = <StdinLock<'_> as BufRead>::read_line(move _5, copy _8)
                 // where _8 is &mut String that receives the input
                 if let Some(buffer_ref) = Self::extract_read_line_buffer(line) {
-                    eprintln!("DEBUG read_line buffer_ref: {}", buffer_ref);
                     // buffer_ref might be _8, but we need to find what _8 points to
                     // Look for "_8 = &mut _2" pattern
                     if let Some(actual_var) = Self::resolve_reference(body, &buffer_ref) {

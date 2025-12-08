@@ -5,6 +5,46 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0] - 2025-12-08
+
+First versioned release of Rust-cola, an LLM-integrated static application security testing (SAST) tool for Rust.
+
+### Highlights
+- **87 security rules** across memory safety, cryptography, injection, concurrency, and FFI
+- **Three-tier analysis architecture**: MIR heuristics (85 rules), source analysis (2 rules), HIR semantic analysis
+- **Inter-procedural taint analysis** tracking data flow across function boundaries
+- **LLM integration** for intelligent false positive filtering and remediation suggestions
+- **SARIF output** for CI/CD integration
+
+### Security Rules by Category
+- **Memory Safety**: Box::into_raw leaks, transmute misuse, Vec::set_len, MaybeUninit::assume_init, slice::from_raw_parts
+- **Cryptography**: MD5/SHA-1/RIPEMD/CRC detection, weak ciphers (DES/RC4), hardcoded keys, predictable randomness
+- **Injection**: SQL injection, path traversal, command injection, regex injection, YAML/JSON/TOML deserialization
+- **Network**: SSRF detection, disabled TLS verification, HTTP URLs, unscoped AWS S3 access
+- **Concurrency**: Unsafe Send/Sync, mutex guards, panic in Drop, unwrap in Poll
+- **FFI**: Allocator mismatches, dangling CString pointers, blocking calls in async
+
+### New Rules (December 2025)
+- **RUSTCOLA091**: Insecure JSON/TOML deserialization - 100% recall (10/10)
+- **RUSTCOLA090**: Unbounded read_to_end - Memory exhaustion via unlimited reads
+- **RUSTCOLA089**: YAML deserialization attacks - Billion laughs, deep nesting
+- **RUSTCOLA088**: Server-Side Request Forgery (SSRF) - 100% recall (12/12)
+- **RUSTCOLA087**: SQL injection - 100% recall (10/10)
+- **RUSTCOLA086**: Path traversal - 100% recall (10/10)
+
+### LLM Integration
+- `--llm-report` flag for AI-assisted analysis
+- Supports OpenAI, Anthropic Claude, and Ollama
+- False positive filtering, CVSS estimates, attack scenarios, code fixes
+- `--report` for standalone human-readable reports without LLM
+
+### Output Formats
+- JSON findings (default)
+- SARIF for GitHub Code Scanning and CI/CD
+- LLM-enhanced reports with remediation guidance
+
+---
+
 ## [Unreleased]
 
 ### Added - November 12, 2025

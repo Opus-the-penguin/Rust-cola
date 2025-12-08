@@ -8157,7 +8157,7 @@ impl InfiniteIteratorRule {
                 id: "RUSTCOLA054".to_string(),
                 name: "infinite-iterator-without-termination".to_string(),
                 short_description: "Infinite iterator without termination".to_string(),
-                full_description: "Detects infinite iterators (std::iter::repeat, cycle, repeat_with) without termination methods (take, take_while, any, find, position). Such iterators can cause unbounded loops leading to Denial of Service (DoS) if not properly constrained.".to_string(),
+                full_description: "Detects infinite iterators (std::iter::repeat, cycle, repeat_with) without termination methods (take, take_while, any, find, position, zip, enumerate+break). Such iterators can cause unbounded loops leading to Denial of Service (DoS) if not properly constrained.".to_string(),
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
@@ -8166,28 +8166,69 @@ impl InfiniteIteratorRule {
     }
 
     fn looks_like_infinite_iterator(&self, function: &MirFunction) -> bool {
-        let body_str = format!("{:?}", function.body);
+        let body_str = function.body.join("\n");
+        
+        // Skip functions that are just defining string constants (rule infrastructure)
+        // These contain strings like "iter::repeat" but aren't actual code
+        if function.name.contains("::new") 
+            || body_str.contains("const \"iter::repeat")
+            || body_str.contains("const \"std::iter::repeat")
+            || body_str.contains("const \"cycle") {
+            return false;
+        }
         
         // Check for infinite iterator constructors
+        // Note: MIR may show these as:
+        // - std::iter::repeat / core::iter::repeat
+        // - repeat_with::<...> (without full path)
+        // - RepeatWith<...>::collect / Repeat<...>::collect
         let has_repeat = body_str.contains("std::iter::repeat")
-            || body_str.contains("core::iter::repeat");
-        let has_cycle = body_str.contains("::cycle");
+            || body_str.contains("core::iter::repeat")
+            || body_str.contains("Repeat<"); // Type name in MIR
+        let has_cycle = body_str.contains("::cycle")
+            || body_str.contains("Cycle<"); // Type name in MIR
         let has_repeat_with = body_str.contains("std::iter::repeat_with")
-            || body_str.contains("core::iter::repeat_with");
+            || body_str.contains("core::iter::repeat_with")
+            || body_str.contains("repeat_with::<") // Called without full path
+            || body_str.contains("RepeatWith<"); // Type name in MIR
         
         if !has_repeat && !has_cycle && !has_repeat_with {
             return false;
         }
         
         // Check if there are termination methods
-        let has_take = body_str.contains("::take(") || body_str.contains("::take>");
-        let has_take_while = body_str.contains("::take_while");
-        let has_any = body_str.contains("::any(") || body_str.contains("::any>");
-        let has_find = body_str.contains("::find(") || body_str.contains("::find>");
-        let has_position = body_str.contains("::position");
+        // MIR pattern: >::method::<  or ::method( or ::method>
+        let has_take = body_str.contains("::take(") || body_str.contains("::take>")
+            || body_str.contains(">::take::<");
+        let has_take_while = body_str.contains("::take_while")
+            || body_str.contains(">::take_while::<");
+        let has_any = body_str.contains("::any(") || body_str.contains("::any>")
+            || body_str.contains(">::any::<");
+        let has_find = body_str.contains("::find(") || body_str.contains("::find>")
+            || body_str.contains(">::find::<");
+        let has_position = body_str.contains("::position")
+            || body_str.contains(">::position::<");
+        let has_zip = body_str.contains("::zip"); // zip with finite iterator terminates
+        let has_nth = body_str.contains("::nth(") || body_str.contains(">::nth::<");
+        let has_last = body_str.contains("::last"); // last would hang but it's clear intent
+        let has_fold = body_str.contains("::fold"); // fold on infinite = hang, but usually with early return
+        
+        // Check for break statement in the function (manual loop termination)
+        // In MIR, break in a for loop appears as a conditional jump that exits the loop
+        // We can detect this by looking for:
+        // 1. A switchInt with one branch going back to loop start and another exiting
+        // 2. Multiple return blocks (one for early exit, one for normal)
+        // 
+        // Heuristic: if the function has both a loop (goto back to earlier bb) 
+        // AND multiple bb's that lead to return, it likely has an early exit.
+        // For now, we use a simpler heuristic: just look for functions where
+        // the number of return; statements > 1 (indicating early return)
+        let return_count = body_str.matches("return;").count();
+        let has_early_return = return_count > 1;
         
         // Flag if we have infinite iterator but no termination
-        !has_take && !has_take_while && !has_any && !has_find && !has_position
+        !has_take && !has_take_while && !has_any && !has_find && !has_position 
+            && !has_zip && !has_nth && !has_early_return
     }
 }
 
@@ -8201,11 +8242,10 @@ impl Rule for InfiniteIteratorRule {
 
         for function in &package.functions {
             if self.looks_like_infinite_iterator(function) {
-                let body_str = format!("{:?}", function.body);
                 let mut evidence = Vec::new();
 
                 // Collect evidence of infinite iterator usage
-                for line in body_str.lines().take(200) {
+                for line in &function.body {
                     if line.contains("std::iter::repeat") 
                         || line.contains("core::iter::repeat")
                         || line.contains("::cycle")
@@ -8221,7 +8261,7 @@ impl Rule for InfiniteIteratorRule {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
                     severity: self.metadata.default_severity,
-                    message: "Infinite iterator (repeat, cycle, or repeat_with) detected without termination method (take, take_while, any, find, position). This can cause unbounded loops leading to DoS. Add a termination condition or ensure the loop has a break statement.".to_string(),
+                    message: "Infinite iterator (repeat, cycle, or repeat_with) detected without termination method (take, take_while, any, find, position, zip, break). This can cause unbounded loops leading to DoS. Add a termination condition.".to_string(),
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence,

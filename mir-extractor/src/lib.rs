@@ -16937,18 +16937,13 @@ fn build_cargo_command() -> Command {
 /// Build a cargo command that forces nightly toolchain for MIR extraction.
 /// MIR extraction requires -Zunpretty=mir which is a nightly-only feature.
 fn build_cargo_nightly_command() -> Command {
-    // Force nightly toolchain using +toolchain syntax
-    // This overrides any rust-toolchain.toml in the target project
-    let toolchain = format!("+{}", REQUIRED_NIGHTLY_TOOLCHAIN);
-    
-    let mut cmd = if let Some(cargo_path) = detect_cargo_binary() {
-        Command::new(cargo_path)
-    } else {
-        Command::new("cargo")
-    };
-    
-    // Insert +nightly as first argument to override target project's toolchain
-    cmd.arg(&toolchain);
+    // Use `rustup run <toolchain> cargo` to invoke cargo with a specific toolchain.
+    // This is more reliable than `cargo +toolchain` which only works when cargo
+    // is invoked through rustup's cargo shim (not a direct path to cargo binary).
+    let mut cmd = Command::new("rustup");
+    cmd.arg("run");
+    cmd.arg(REQUIRED_NIGHTLY_TOOLCHAIN);
+    cmd.arg("cargo");
     cmd
 }
 

@@ -12067,6 +12067,28 @@ impl SerdeLengthMismatchRule {
     fn find_serializer_declarations(body: &[String]) -> Vec<(String, String, usize, String)> {
         let mut declarations = Vec::new();
         
+        // First pass: collect variable assignments for Option<usize> values
+        // Pattern: _N = std::option::Option::<usize>::Some(const K_usize);
+        let mut var_values: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for line in body {
+            let trimmed = line.trim();
+            if trimmed.contains("Option::<usize>::Some(const ") {
+                // Extract variable name (e.g., "_6 = ...")
+                if let Some(eq_pos) = trimmed.find(" = ") {
+                    let var_name = trimmed[..eq_pos].trim().to_string();
+                    // Extract the constant value
+                    if let Some(start) = trimmed.find("Some(const ") {
+                        let after = &trimmed[start + 11..];
+                        if let Some(end) = after.find("_usize") {
+                            if let Ok(val) = after[..end].trim().parse::<usize>() {
+                                var_values.insert(var_name, val);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
         for line in body {
             let trimmed = line.trim();
             
@@ -12091,17 +12113,27 @@ impl SerdeLengthMismatchRule {
                 }
             }
             
-            // Pattern: serialize_seq(Some(K)) - only when K is a constant
+            // Pattern: serialize_seq(move _N) where _N was assigned Some(K) constant
             if trimmed.contains("serialize_seq(") {
+                // First try direct constant in the line
                 if let Some(len) = Self::extract_seq_length(trimmed) {
                     declarations.push(("seq".to_string(), "".to_string(), len, trimmed.to_string()));
+                } else {
+                    // Try to find the variable reference and look it up
+                    if let Some(len) = Self::extract_seq_length_from_var(trimmed, &var_values) {
+                        declarations.push(("seq".to_string(), "".to_string(), len, trimmed.to_string()));
+                    }
                 }
             }
             
-            // Pattern: serialize_map(Some(K)) - only when K is a constant
+            // Pattern: serialize_map(move _N) where _N was assigned Some(K) constant
             if trimmed.contains("serialize_map(") {
                 if let Some(len) = Self::extract_map_length(trimmed) {
                     declarations.push(("map".to_string(), "".to_string(), len, trimmed.to_string()));
+                } else {
+                    if let Some(len) = Self::extract_map_length_from_var(trimmed, &var_values) {
+                        declarations.push(("map".to_string(), "".to_string(), len, trimmed.to_string()));
+                    }
                 }
             }
         }
@@ -12180,6 +12212,36 @@ impl SerdeLengthMismatchRule {
     fn extract_map_length(line: &str) -> Option<usize> {
         // Same logic as seq
         Self::extract_seq_length(line)
+    }
+
+    /// Extract seq length by looking up a variable reference
+    /// Pattern: serialize_seq(move _N, move _M) where _M was assigned Some(K)
+    fn extract_seq_length_from_var(line: &str, var_values: &std::collections::HashMap<String, usize>) -> Option<usize> {
+        // Find the last argument (which should be the Option<usize> for length)
+        // Pattern: serialize_seq(move _2, move _6) -> look up _6
+        if let Some(paren_start) = line.find("serialize_seq(") {
+            let after = &line[paren_start..];
+            // Find the last "move _N" pattern before the closing paren
+            for (var, val) in var_values {
+                if after.contains(&format!("move {}", var)) || after.contains(&format!(", {})", var)) {
+                    return Some(*val);
+                }
+            }
+        }
+        None
+    }
+
+    /// Extract map length by looking up a variable reference
+    fn extract_map_length_from_var(line: &str, var_values: &std::collections::HashMap<String, usize>) -> Option<usize> {
+        if let Some(paren_start) = line.find("serialize_map(") {
+            let after = &line[paren_start..];
+            for (var, val) in var_values {
+                if after.contains(&format!("move {}", var)) || after.contains(&format!(", {})", var)) {
+                    return Some(*val);
+                }
+            }
+        }
+        None
     }
 
     /// Count serialize_field calls in the function body
@@ -12272,24 +12334,65 @@ impl Rule for SerdeLengthMismatchRule {
             }
 
             for (ser_type, name, declared_len, decl_line) in &declarations {
+                let has_loop = Self::has_loop_serialization(&function.body);
+                
                 let actual_count = match ser_type.as_str() {
                     "struct" => Self::count_serialize_fields(&function.body),
                     "tuple" | "tuple_struct" => Self::count_serialize_elements(&function.body),
                     "seq" => {
-                        // Skip if there's loop-based serialization
-                        if Self::has_loop_serialization(&function.body) {
-                            continue;
+                        // For loop-based serialization, we can't count statically
+                        // but using a hardcoded constant with a loop is suspicious
+                        if has_loop {
+                            // Signal that we have a loop pattern
+                            usize::MAX
+                        } else {
+                            Self::count_seq_elements(&function.body)
                         }
-                        Self::count_seq_elements(&function.body)
                     }
                     "map" => {
-                        if Self::has_loop_serialization(&function.body) {
-                            continue;
+                        if has_loop {
+                            usize::MAX
+                        } else {
+                            Self::count_map_entries(&function.body)
                         }
-                        Self::count_map_entries(&function.body)
                     }
                     _ => continue,
                 };
+
+                // Special case: loop-based serialization with hardcoded constant
+                if actual_count == usize::MAX {
+                    // Hardcoded constant + loop = likely bug
+                    // The declared length won't match the runtime iteration count
+                    let type_desc = match ser_type.as_str() {
+                        "seq" => "sequence",
+                        "map" => "map",
+                        _ => "collection",
+                    };
+
+                    let name_info = if name.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" for `{}`", name)
+                    };
+
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: format!(
+                            "Serde serialize_{}{} declares constant length {} but uses loop-based serialization. \
+                            The hardcoded length hint will likely not match the actual number of {} entries. \
+                            Use `None` for dynamic-length collections or use `self.{}.len()` instead.",
+                            ser_type, name_info, declared_len, type_desc,
+                            if ser_type == "seq" { "data" } else { "items" }
+                        ),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence: vec![decl_line.clone()],
+                        span: function.span.clone(),
+                    });
+                    continue;
+                }
 
                 // Check for mismatch
                 if actual_count != *declared_len {

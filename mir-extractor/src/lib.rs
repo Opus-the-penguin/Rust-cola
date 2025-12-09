@@ -1872,51 +1872,44 @@ impl Rule for SpawnedChildNoWaitRule {
                 continue;
             }
 
-            let body_str = function.body.join("\n").to_lowercase();
+            let body_str = function.body.join("\n");
+            let lower = body_str.to_lowercase();
             
-            // Check for Command::spawn()
-            let spawn_patterns = [
-                "::spawn(",
-                "command::spawn",
-            ];
+            // Count spawn calls
+            let spawn_count = lower.matches("::spawn(").count();
             
-            let has_spawn = spawn_patterns.iter().any(|pattern| body_str.contains(pattern));
-            
-            if !has_spawn {
+            if spawn_count == 0 {
                 continue;
             }
             
-            // Check for wait methods that would collect the child
-            let wait_patterns = [
-                "::wait(",
-                "::status(",
-                "::wait_with_output(",
-                "child.wait",
-                ".wait()",
-                ".status()",
-                ".wait_with_output()",
-            ];
+            // Count wait calls
+            let wait_count = lower.matches("child::wait(").count()
+                + lower.matches("::wait_with_output(").count();
             
-            let has_wait = wait_patterns.iter().any(|pattern| body_str.contains(pattern));
+            // Also check for Child::status (alternative wait method)
+            // But be careful - status() might be for other things
+            // Let's also count status() calls on Child
+            let mut child_status_count = 0;
+            for line in &function.body {
+                let line_lower = line.to_lowercase();
+                // Pattern: <... Child ...>::status(
+                if line_lower.contains("child") && line_lower.contains("::status(") {
+                    child_status_count += 1;
+                }
+            }
             
-            // If spawn without wait, flag it
-            if !has_wait {
-                // Collect evidence lines showing spawn
-                let evidence: Vec<String> = function
-                    .body
+            let total_wait_count = wait_count + child_status_count;
+            
+            // If more spawns than waits, flag
+            if spawn_count > total_wait_count {
+                // Collect spawn lines as evidence
+                let evidence: Vec<String> = function.body
                     .iter()
-                    .filter(|line| {
-                        let lower = line.to_lowercase();
-                        spawn_patterns.iter().any(|p| lower.contains(p))
-                    })
+                    .filter(|line| line.to_lowercase().contains("::spawn("))
                     .take(5)
                     .map(|line| line.trim().to_string())
                     .collect();
                 
-                if evidence.is_empty() {
-                    continue;
-                }
-
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
@@ -9165,7 +9158,7 @@ impl Rule for OverscopedAllowRule {
     }
 }
 
-// RUSTCOLA067: Commented-out code detection (Source-level analysis)
+// RUSTCOLA092: Commented-out code detection (Source-level analysis)
 struct CommentedOutCodeRule {
     metadata: RuleMetadata,
 }
@@ -9174,7 +9167,7 @@ impl CommentedOutCodeRule {
     fn new() -> Self {
         Self {
             metadata: RuleMetadata {
-                id: "RUSTCOLA067".to_string(),
+                id: "RUSTCOLA092".to_string(),
                 name: "commented-out-code".to_string(),
                 short_description: "Commented-out code detected".to_string(),
                 full_description: "Detects commented-out code that should be removed to maintain clean, analyzable codebases. Commented-out code creates maintenance burden, confuses readers about actual functionality, and should be removed in favor of version control for historical reference.".to_string(),
@@ -16925,7 +16918,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(CtorDtorStdApiRule::new())); // RUSTCOLA059
     engine.register_rule(Box::new(ConnectionStringPasswordRule::new())); // RUSTCOLA060
     engine.register_rule(Box::new(PasswordFieldMaskingRule::new())); // RUSTCOLA061
-    engine.register_rule(Box::new(CommentedOutCodeRule::new())); // RUSTCOLA067
+    engine.register_rule(Box::new(CommentedOutCodeRule::new())); // RUSTCOLA092
     engine.register_rule(Box::new(DeadStoreArrayRule::new())); // RUSTCOLA068
     engine.register_rule(Box::new(OverscopedAllowRule::new())); // RUSTCOLA072
     engine.register_rule(Box::new(UnsafeFfiPointerReturnRule::new())); // RUSTCOLA073

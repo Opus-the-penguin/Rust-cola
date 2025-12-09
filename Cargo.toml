@@ -68,5 +68,6 @@ members = [
     "examples/json-toml-deserialization",
     "examples/blocking-in-async",
     "examples/mutex-guard-await",
+    "examples/transmute-lifetime",
 ]
 resolver = "2"

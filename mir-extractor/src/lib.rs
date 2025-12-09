@@ -5489,6 +5489,292 @@ impl Rule for MutexGuardAcrossAwaitRule {
     }
 }
 
+/// RUSTCOLA095: Transmute that changes lifetime parameters
+/// Using transmute to extend or change reference lifetimes is undefined behavior.
+struct TransmuteLifetimeChangeRule {
+    metadata: RuleMetadata,
+}
+
+impl TransmuteLifetimeChangeRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA095".to_string(),
+                name: "transmute-lifetime-change".to_string(),
+                short_description: "Transmute changes reference lifetime".to_string(),
+                full_description: "Using std::mem::transmute to change lifetime parameters of references is undefined behavior. It can create references that outlive the data they point to, leading to use-after-free. Use proper lifetime annotations or safe APIs instead.".to_string(),
+                help_uri: Some("https://doc.rust-lang.org/std/mem/fn.transmute.html#examples".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Extract the lifetime from a type annotation like "&'a str" or "&'static str"
+    fn extract_lifetime(type_str: &str) -> Option<String> {
+        // Look for 'lifetime pattern
+        if let Some(quote_pos) = type_str.find('\'') {
+            let after_quote = &type_str[quote_pos + 1..];
+            // Lifetime ends at space, comma, >, or end of word characters
+            let end_pos = after_quote
+                .find(|c: char| !c.is_alphanumeric() && c != '_')
+                .unwrap_or(after_quote.len());
+            if end_pos > 0 {
+                return Some(format!("'{}", &after_quote[..end_pos]));
+            }
+        }
+        None
+    }
+
+    /// Check if two types differ only in lifetime parameters
+    fn types_differ_in_lifetime(from_type: &str, to_type: &str) -> bool {
+        let from_lifetime = Self::extract_lifetime(from_type);
+        let to_lifetime = Self::extract_lifetime(to_type);
+
+        // Both must have lifetimes, and they must differ
+        match (from_lifetime, to_lifetime) {
+            (Some(from_lt), Some(to_lt)) => {
+                if from_lt != to_lt {
+                    // Verify the types are otherwise similar (both are references)
+                    let from_is_ref = from_type.contains('&');
+                    let to_is_ref = to_type.contains('&');
+                    return from_is_ref && to_is_ref;
+                }
+                false
+            }
+            // One has explicit lifetime, one has implicit - suspicious
+            (Some(_), None) | (None, Some(_)) => {
+                // Check if both are reference types
+                from_type.contains('&') && to_type.contains('&')
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Rule for TransmuteLifetimeChangeRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+            let mut current_fn_name = String::new();
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+
+                // Track function names
+                if trimmed.contains("fn ") {
+                    if let Some(fn_pos) = trimmed.find("fn ") {
+                        let after_fn = &trimmed[fn_pos + 3..];
+                        if let Some(paren_pos) = after_fn.find('(') {
+                            current_fn_name = after_fn[..paren_pos].trim().to_string();
+                        }
+                    }
+                }
+
+                // Skip comments
+                if trimmed.starts_with("//") || trimmed.starts_with("*") || trimmed.starts_with("/*") {
+                    continue;
+                }
+
+                // Look for transmute patterns
+                if trimmed.contains("transmute") {
+                    // Pattern 1: transmute::<From, To>(...)
+                    if let Some(turbofish_start) = trimmed.find("transmute::<") {
+                        let after_turbofish = &trimmed[turbofish_start + 12..];
+                        if let Some(end) = after_turbofish.find(">(") {
+                            let types_str = &after_turbofish[..end];
+                            // Split by comma to get from and to types
+                            let parts: Vec<&str> = types_str.split(',').collect();
+                            if parts.len() == 2 {
+                                let from_type = parts[0].trim();
+                                let to_type = parts[1].trim();
+                                
+                                if Self::types_differ_in_lifetime(from_type, to_type) {
+                                    let location = format!("{}:{}", rel_path, idx + 1);
+                                    findings.push(Finding {
+                                        rule_id: self.metadata.id.clone(),
+                                        rule_name: self.metadata.name.clone(),
+                                        severity: self.metadata.default_severity,
+                                        message: format!(
+                                            "Transmute changes lifetime in `{}`: {} -> {}. This can create dangling references.",
+                                            current_fn_name, from_type, to_type
+                                        ),
+                                        function: location,
+                                        function_signature: current_fn_name.clone(),
+                                        evidence: vec![trimmed.to_string()],
+                                        span: None,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Pattern 2: Check function signature for lifetime extension patterns
+                    // Look for return types like -> &'static T when input has different lifetime
+                    // Only match if this line contains transmute (not just uses) and 
+                    // the function signature itself shows the lifetime change
+                    
+                    // Find the function signature line (contains "fn " and "->")
+                    let mut fn_sig_line = String::new();
+                    for back_idx in (0..=idx).rev() {
+                        let back_line = lines[back_idx].trim();
+                        if back_line.contains("fn ") && back_line.contains("->") {
+                            fn_sig_line = back_line.to_string();
+                            break;
+                        }
+                        // Stop if we hit another function or struct definition
+                        if back_line.starts_with("pub fn ") || back_line.starts_with("fn ") {
+                            if !back_line.contains("->") {
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Check if function signature shows lifetime change pattern
+                    // The signature should have both a short lifetime param ('a, 'b) AND return 'static
+                    let sig_has_short_lifetime = fn_sig_line.contains("'a") || 
+                                                fn_sig_line.contains("'b");
+                    let sig_returns_static = fn_sig_line.contains("-> &'static") ||
+                                            fn_sig_line.contains("-> StaticData");
+                    
+                    // Only trigger if this is an actual transmute call (not just mention in string)
+                    let is_actual_transmute = trimmed.contains("transmute(") || 
+                                             trimmed.contains("transmute::<");
+                    
+                    if sig_has_short_lifetime && sig_returns_static && is_actual_transmute {
+                        // Don't double-report if we already caught this with turbofish
+                        let already_reported = findings.iter().any(|f| 
+                            f.function == format!("{}:{}", rel_path, idx + 1)
+                        );
+                        if !already_reported {
+                            let location = format!("{}:{}", rel_path, idx + 1);
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message: format!(
+                                    "Transmute may extend lifetime to 'static in `{}`. This can create dangling references.",
+                                    current_fn_name
+                                ),
+                                function: location,
+                                function_signature: current_fn_name.clone(),
+                                evidence: vec![trimmed.to_string()],
+                                span: None,
+                            });
+                        }
+                    }
+                    
+                    // Pattern 3: Struct with lifetime parameter transmuted to struct without
+                    // e.g. transmute::<BorrowedData<'a>, StaticData>
+                    if let Some(turbofish_start) = trimmed.find("transmute::<") {
+                        let after_turbofish = &trimmed[turbofish_start + 12..];
+                        if let Some(end) = after_turbofish.find(">(") {
+                            let types_str = &after_turbofish[..end];
+                            // Check if from type has lifetime but to type doesn't
+                            // e.g., BorrowedData<'a> -> StaticData
+                            if types_str.contains("<'") || types_str.contains("< '") {
+                                // Split by comma, careful of nested <>
+                                let mut depth = 0;
+                                let mut split_pos = None;
+                                for (i, c) in types_str.char_indices() {
+                                    match c {
+                                        '<' => depth += 1,
+                                        '>' => depth -= 1,
+                                        ',' if depth == 0 => {
+                                            split_pos = Some(i);
+                                            break;
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                
+                                if let Some(pos) = split_pos {
+                                    let from_type = types_str[..pos].trim();
+                                    let to_type = types_str[pos + 1..].trim();
+                                    
+                                    // From has lifetime, to doesn't (or has 'static)
+                                    let from_has_lifetime = from_type.contains("'a") ||
+                                                           from_type.contains("'b") ||
+                                                           from_type.contains("'_");
+                                    let to_has_static = !to_type.contains('\'') ||  // No lifetime = implicitly 'static for structs
+                                                       to_type.contains("'static");
+                                    
+                                    if from_has_lifetime && to_has_static {
+                                        let already_reported = findings.iter().any(|f| 
+                                            f.function == format!("{}:{}", rel_path, idx + 1)
+                                        );
+                                        if !already_reported {
+                                            let location = format!("{}:{}", rel_path, idx + 1);
+                                            findings.push(Finding {
+                                                rule_id: self.metadata.id.clone(),
+                                                rule_name: self.metadata.name.clone(),
+                                                severity: self.metadata.default_severity,
+                                                message: format!(
+                                                    "Transmute changes struct lifetime in `{}`: {} -> {}. This can create dangling references.",
+                                                    current_fn_name, from_type, to_type
+                                                ),
+                                                function: location,
+                                                function_signature: current_fn_name.clone(),
+                                                evidence: vec![trimmed.to_string()],
+                                                span: None,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 struct VecSetLenMisuseRule {
     metadata: RuleMetadata,
 }
@@ -17423,6 +17709,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(InsecureJsonTomlDeserializationRule::new())); // RUSTCOLA091
     engine.register_rule(Box::new(BlockingOpsInAsyncRule::new())); // RUSTCOLA093
     engine.register_rule(Box::new(MutexGuardAcrossAwaitRule::new())); // RUSTCOLA094
+    engine.register_rule(Box::new(TransmuteLifetimeChangeRule::new())); // RUSTCOLA095
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

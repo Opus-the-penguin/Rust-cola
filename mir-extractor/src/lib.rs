@@ -8493,42 +8493,51 @@ impl UnnecessaryBorrowMutRule {
     }
 
     fn looks_like_unnecessary_borrow_mut(&self, function: &MirFunction) -> bool {
-        let body_str = format!("{:?}", function.body);
+        let body_str = function.body.join("\n");
         
-        // Look for borrow_mut calls
-        if !body_str.contains("borrow_mut") {
+        // Skip rule infrastructure functions
+        if function.name.contains("::new") {
             return false;
         }
         
-        // Simple heuristic: if we see borrow_mut but don't see common mutation patterns,
-        // it might be unnecessary. This is a simple approximation.
+        // Look for borrow_mut calls on RefCell
         let has_borrow_mut = body_str.contains("RefCell") && body_str.contains("borrow_mut");
         
         if !has_borrow_mut {
             return false;
         }
         
-        // Check for signs of actual mutation after borrow_mut
-        // Look for common mutating method names that appear in MIR
-        let mutation_methods = [
-            "::push", "::insert", "::remove", "::clear", "::extend",
-            "::swap", "::sort", "::reverse", "::drain", "::append",
-            "::truncate", "::resize", "::retain", "::dedup",
-            "::split_off", "::pop", "::swap_remove"
-        ];
+        // Check for actual mutation patterns in MIR:
         
+        // 1. Mutation methods on collections
+        let mutation_methods = [
+            "::push(", "::insert(", "::remove(", "::clear(", "::extend(",
+            "::swap(", "::sort(", "::reverse(", "::drain(", "::append(",
+            "::truncate(", "::resize(", "::retain(", "::dedup(",
+            "::split_off(", "::pop(", "::swap_remove(",
+            // HashMap/BTreeMap mutations
+            "::entry(", "::get_mut(",
+        ];
         let has_mutation_method = mutation_methods.iter().any(|m| body_str.contains(m));
         
-        // Also check for assignment patterns in MIR
-        // Direct field/index assignments often appear as specific patterns
-        let has_assignment = 
-            // Check for mutable deref and field access patterns
-            (body_str.contains("(*_") || body_str.contains("* _")) && 
-            (body_str.contains("][") || body_str.contains(").") || body_str.contains("] ="));
+        // 2. DerefMut access on RefMut - THE KEY MUTATION INDICATOR
+        // Read-only: <RefMut<'_, ...> as Deref>::deref
+        // Mutation:  <RefMut<'_, ...> as DerefMut>::deref_mut
+        let has_refmut_deref_mut = body_str.contains("RefMut") && body_str.contains("DerefMut");
+        
+        // 3. IndexMut access (mutable indexing)
+        // MIR pattern: IndexMut<...>>::index_mut
+        let has_index_mut = body_str.contains("IndexMut") || body_str.contains("index_mut");
+        
+        // 4. Direct assignment to variable derived from borrow
+        // Look for patterns like (*_X) = where X is the borrow result
+        // This is tricky - we need to avoid matching initialization
+        // For now, rely on DerefMut and IndexMut detection
         
         // Flag if we have borrow_mut but no clear mutation patterns
-        // This is conservative - we may miss some cases but avoid false positives
-        has_borrow_mut && !has_mutation_method && !has_assignment
+        let has_mutation = has_mutation_method || has_refmut_deref_mut || has_index_mut;
+        
+        has_borrow_mut && !has_mutation
     }
 }
 

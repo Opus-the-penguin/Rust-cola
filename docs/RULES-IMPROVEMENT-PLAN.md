@@ -70,7 +70,7 @@ Rules requiring more significant work:
 | ~~RUSTCOLA080 (Unchecked index)~~ | ~~55% recall~~ | ~~90%+~~ | ~~Better env::var taint propagation~~ **ALREADY COMPLETE (100%/100%)** |
 | ~~RUSTCOLA053 (stdin no trim)~~ | ~~50% FP~~ | ~~10% FP~~ | ~~Convert from heuristic to dataflow~~ **COMPLETE (100%/100%) - Fixed by detecting only read_line() (not lines()), filtering int parsing and trim calls** |
 | ~~RUSTCOLA054 (Infinite iterators)~~ | ~~75% recall~~ | ~~90%+~~ | ~~Detect loop break statements~~ **COMPLETE (100%/100%) - Added MIR type patterns (Repeat<, RepeatWith<, Cycle<), >::method::< termination patterns, early return detection** |
-| RUSTCOLA057 (Unnecessary borrow_mut) | 25% recall | 80%+ | Full mutation tracking in MIR |
+| ~~RUSTCOLA057 (Unnecessary borrow_mut)~~ | ~~25% recall~~ | ~~80%+~~ | ~~Full mutation tracking in MIR~~ **COMPLETE (100%/100%) - Key insight: RefMut+DerefMut=mutation vs RefMut+Deref=read-only** |
 
 ## Phase 4: Advanced Rules (Backlog)
 

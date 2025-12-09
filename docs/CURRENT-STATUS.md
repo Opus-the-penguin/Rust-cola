@@ -16,7 +16,7 @@
   - Recent additions: RUSTCOLA075-089 (MIR dataflow rules)
 
 - **Tier 2 (Source Analysis):** 2 rules - AST inspection with syn crate
-  - RUSTCOLA067: Commented-out code (87.5% recall, 100% precision)
+  - RUSTCOLA092: Commented-out code (87.5% recall, 100% precision)
   - RUSTCOLA072: Overscoped allow attributes (100% recall, 100% precision)
   - Infrastructure operational and proven
 
@@ -36,6 +36,9 @@
 - ✅ RUSTCOLA087: SQL injection (100% recall) - interprocedural analysis
 - ✅ RUSTCOLA088: Path traversal (100% recall) - interprocedural analysis
 - ✅ RUSTCOLA089: YAML deserialization (82% recall, 9/11) - interprocedural analysis
+
+**Other Rule Improvements (Dec 2025):**
+- ✅ RUSTCOLA067: Spawned child without wait (100% recall, 100% precision) - improved from 86% with per-spawn tracking
 
 **Advanced Dataflow:**
 - ✅ Phase 3.5.1: Branch-sensitive CFG analysis COMPLETE (Nov 25, 2025)

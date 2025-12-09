@@ -12522,15 +12522,30 @@ impl SliceElementSizeMismatchRule {
             return None;
         }
         
-        let from_size = Self::get_primitive_size(&from_elem)?;
-        let to_size = Self::get_primitive_size(&to_elem)?;
+        let from_size = Self::get_primitive_size(&from_elem);
+        let to_size = Self::get_primitive_size(&to_elem);
         
-        // Same size is fine (e.g., u32 -> i32)
-        if from_size == to_size {
-            return None;
+        match (from_size, to_size) {
+            (Some(fs), Some(ts)) => {
+                // Both primitives - check if sizes differ
+                if fs == ts {
+                    None
+                } else {
+                    Some((from_elem, to_elem, fs, ts))
+                }
+            }
+            (None, None) => {
+                // Both are custom types (structs) - different named types = likely mismatch
+                // We can't know the sizes, but different struct names suggest different layouts
+                // Use 0 as sentinel for "unknown size"
+                Some((from_elem, to_elem, 0, 0))
+            }
+            _ => {
+                // One primitive, one custom - definitely a mismatch
+                // Use the known size or 0 for unknown
+                Some((from_elem, to_elem, from_size.unwrap_or(0), to_size.unwrap_or(0)))
+            }
         }
-        
-        Some((from_elem, to_elem, from_size, to_size))
     }
 
     /// Check if types are Vecs with different element sizes
@@ -12755,16 +12770,36 @@ impl Rule for SliceElementSizeMismatchRule {
                     if let Some((from_elem, to_elem, from_size, to_size)) = 
                         Self::is_slice_size_mismatch(from_type, to_type) 
                     {
+                        // Format message based on whether sizes are known
+                        let size_info = if from_size == 0 && to_size == 0 {
+                            format!(
+                                "Transmute between slices of different struct types: \
+                                [{}] to [{}]. Different struct types likely have different sizes, \
+                                causing the slice length to be incorrect.",
+                                from_elem, to_elem
+                            )
+                        } else if from_size == 0 || to_size == 0 {
+                            format!(
+                                "Transmute between slices with different element types: \
+                                [{}] to [{}]. The slice length won't be adjusted for size differences.",
+                                from_elem, to_elem
+                            )
+                        } else {
+                            format!(
+                                "Transmute between slices with different element sizes: \
+                                [{}] ({} bytes) to [{}] ({} bytes). The slice length won't be \
+                                adjusted, causing memory access beyond the original allocation.",
+                                from_elem, from_size, to_elem, to_size
+                            )
+                        };
+                        
                         findings.push(Finding {
                             rule_id: self.metadata.id.clone(),
                             rule_name: self.metadata.name.clone(),
                             severity: self.metadata.default_severity,
                             message: format!(
-                                "Transmute between slices with different element sizes: \
-                                [{}] ({} bytes) to [{}] ({} bytes). The slice length won't be \
-                                adjusted, causing memory access beyond the original allocation. \
-                                Use slice::from_raw_parts with adjusted length, or slice::align_to.",
-                                from_elem, from_size, to_elem, to_size
+                                "{} Use slice::from_raw_parts with adjusted length, or slice::align_to.",
+                                size_info
                             ),
                             function: function.name.clone(),
                             function_signature: function.signature.clone(),

@@ -28,7 +28,7 @@
 - ✅ RUSTCOLA079: Regex injection - 100% recall (improved from 80%)
 - ✅ RUSTCOLA080: Unchecked index arithmetic (100% recall, 100% precision)
 - ✅ RUSTCOLA081: Serde serialize_* length mismatch (100% recall, 100% precision) - improved from 71%
-- ✅ RUSTCOLA082: Slice element size mismatch (90% recall, 100% precision)
+- ✅ RUSTCOLA082: Slice element size mismatch (100% recall, 100% precision) - improved from 90%
 - ✅ RUSTCOLA083: slice::from_raw_parts length inflation (100% recall, 100% precision)
 - ✅ RUSTCOLA084: TLS verification disabled (100% recall, 100% precision)
 - ✅ RUSTCOLA085: AWS S3 unscoped access (MIR dataflow, cloud security)

@@ -67,5 +67,6 @@ members = [
     "examples/unbounded-read",
     "examples/json-toml-deserialization",
     "examples/blocking-in-async",
+    "examples/mutex-guard-await",
 ]
 resolver = "2"

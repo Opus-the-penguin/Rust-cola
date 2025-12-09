@@ -5271,6 +5271,224 @@ impl Rule for BlockingOpsInAsyncRule {
     }
 }
 
+/// RUSTCOLA094: MutexGuard/RwLockGuard held across await points
+/// Holding a sync guard across an .await point can cause deadlocks because
+/// the guard is held while the async task is suspended.
+struct MutexGuardAcrossAwaitRule {
+    metadata: RuleMetadata,
+}
+
+impl MutexGuardAcrossAwaitRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA094".to_string(),
+                name: "mutex-guard-across-await".to_string(),
+                short_description: "MutexGuard held across await point".to_string(),
+                full_description: "Holding a std::sync::MutexGuard or RwLockGuard across an .await point can cause deadlocks. When the async task yields, another task on the same thread may try to acquire the same lock, leading to deadlock. Use tokio::sync::Mutex or drop the guard before awaiting.".to_string(),
+                help_uri: Some("https://rust-lang.github.io/rust-clippy/master/index.html#await_holding_lock".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn guard_patterns() -> &'static [(&'static str, &'static str)] {
+        &[
+            (".lock().unwrap()", "MutexGuard"),
+            (".lock().expect(", "MutexGuard"),
+            (".lock()?", "MutexGuard"),
+            (".read().unwrap()", "RwLockReadGuard"),
+            (".read().expect(", "RwLockReadGuard"),
+            (".read()?", "RwLockReadGuard"),
+            (".write().unwrap()", "RwLockWriteGuard"),
+            (".write().expect(", "RwLockWriteGuard"),
+            (".write()?", "RwLockWriteGuard"),
+        ]
+    }
+
+    fn safe_guard_patterns() -> &'static [&'static str] {
+        &[
+            "tokio::sync::Mutex",
+            "tokio::sync::RwLock",
+            "async_std::sync::Mutex",
+            "async_std::sync::RwLock",
+            "futures::lock::Mutex",
+        ]
+    }
+}
+
+impl Rule for MutexGuardAcrossAwaitRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+
+            // Track async function boundaries and guard acquisitions
+            let mut in_async_fn = false;
+            let mut async_fn_start = 0;
+            let mut brace_depth = 0;
+            let mut async_fn_name = String::new();
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+
+                // Detect async function start
+                if trimmed.contains("async fn ") || trimmed.contains("async move") {
+                    if trimmed.contains("async fn ") {
+                        in_async_fn = true;
+                        async_fn_start = idx;
+                        brace_depth = 0;
+
+                        // Extract function name
+                        if let Some(fn_pos) = trimmed.find("fn ") {
+                            let after_fn = &trimmed[fn_pos + 3..];
+                            if let Some(paren_pos) = after_fn.find('(') {
+                                async_fn_name = after_fn[..paren_pos].trim().to_string();
+                            }
+                        }
+                    }
+                }
+
+                // Track brace depth to know when async function ends
+                if in_async_fn {
+                    brace_depth += trimmed.chars().filter(|&c| c == '{').count() as i32;
+                    brace_depth -= trimmed.chars().filter(|&c| c == '}').count() as i32;
+
+                    // Look for guard acquisition patterns
+                    for (pattern, guard_type) in Self::guard_patterns() {
+                        if trimmed.contains(pattern) {
+                            // Skip if it's a tokio/async mutex (has .await on same line)
+                            if trimmed.contains(".await") {
+                                continue;
+                            }
+                            // Skip comments
+                            if trimmed.starts_with("//") || trimmed.starts_with("*") || trimmed.starts_with("/*") {
+                                continue;
+                            }
+
+                            // Check if the function containing this line uses async mutex types
+                            let fn_content: String = lines[async_fn_start..=std::cmp::min(idx + 50, lines.len() - 1)]
+                                .iter()
+                                .map(|s| *s)
+                                .collect::<Vec<&str>>()
+                                .join("\n");
+
+                            // Skip if the function uses async-aware mutex types
+                            let uses_async_mutex = Self::safe_guard_patterns()
+                                .iter()
+                                .any(|p| fn_content.contains(p));
+                            if uses_async_mutex {
+                                continue;
+                            }
+
+                            // Check if there's an .await AFTER this guard acquisition within the same scope
+                            // Look at lines after the guard acquisition until scope ends
+                            let mut inner_brace_depth = 0;
+                            let mut has_await_after = false;
+                            let mut await_line = 0;
+
+                            for (later_idx, later_line) in lines[idx..].iter().enumerate() {
+                                let later_trimmed = later_line.trim();
+                                inner_brace_depth += later_trimmed.chars().filter(|&c| c == '{').count() as i32;
+                                inner_brace_depth -= later_trimmed.chars().filter(|&c| c == '}').count() as i32;
+
+                                // Check for drop() which would release the guard
+                                if later_trimmed.contains("drop(") {
+                                    break;
+                                }
+
+                                // Check for .await after guard acquisition
+                                if later_idx > 0 && later_trimmed.contains(".await") {
+                                    has_await_after = true;
+                                    await_line = idx + later_idx + 1;
+                                    break;
+                                }
+
+                                // If we exit the scope (brace depth negative), guard is dropped
+                                if inner_brace_depth < 0 {
+                                    break;
+                                }
+
+                                // Don't look too far ahead
+                                if later_idx > 30 {
+                                    break;
+                                }
+                            }
+
+                            if has_await_after {
+                                let location = format!("{}:{}", rel_path, idx + 1);
+                                findings.push(Finding {
+                                    rule_id: self.metadata.id.clone(),
+                                    rule_name: self.metadata.name.clone(),
+                                    severity: self.metadata.default_severity,
+                                    message: format!(
+                                        "{} held across .await in async function `{}` (line {}). This can cause deadlocks. Drop the guard before awaiting or use tokio::sync::Mutex.",
+                                        guard_type, async_fn_name, await_line
+                                    ),
+                                    function: location,
+                                    function_signature: async_fn_name.clone(),
+                                    evidence: vec![trimmed.to_string()],
+                                    span: None,
+                                });
+                            }
+                        }
+                    }
+
+                    // If brace depth returns to 0, we've exited the async function
+                    if brace_depth <= 0 && idx > async_fn_start {
+                        in_async_fn = false;
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 struct VecSetLenMisuseRule {
     metadata: RuleMetadata,
 }
@@ -17204,6 +17422,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(UnboundedReadRule::new())); // RUSTCOLA090
     engine.register_rule(Box::new(InsecureJsonTomlDeserializationRule::new())); // RUSTCOLA091
     engine.register_rule(Box::new(BlockingOpsInAsyncRule::new())); // RUSTCOLA093
+    engine.register_rule(Box::new(MutexGuardAcrossAwaitRule::new())); // RUSTCOLA094
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

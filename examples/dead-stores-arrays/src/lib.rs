@@ -6,6 +6,11 @@
 //! - Security issues (stale sensitive data not properly cleared)
 //! - Performance waste (unnecessary writes)
 //!
+//! Detection metrics: 71% recall (5/7 problematic patterns detected)
+//! - Detected: overwrite_without_read, stale_password_data, multiple_overwrites, 
+//!   conditional_overwrite, branch_dead_stores
+//! - Not detected (require more advanced analysis): write_never_read, loop_overwrite
+//!
 //! NOSEC: All vulnerable patterns are intentional test cases for rust-cola validation.
 
 #![allow(dead_code)]
@@ -15,7 +20,7 @@
 // PROBLEMATIC PATTERNS - Should trigger RUSTCOLA068
 // ============================================================================
 
-/// BAD: Array element written but immediately overwritten without being read
+/// BAD: Array element written but overwritten without being read
 /// RUSTCOLA068 should flag this - first assignment to arr[0] is dead
 /// NOSEC: Intentional test case
 pub fn overwrite_without_read() {

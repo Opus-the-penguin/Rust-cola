@@ -9417,12 +9417,17 @@ impl DeadStoreArrayRule {
         
         // Pattern 1: function(&array) or function(copy array) - array passed to function
         // This is a form of read since the function may access all elements
+        // We need to be careful about matching _1 vs _10, _11, etc.
         if trimmed.contains("(copy ") || trimmed.contains("(&") || trimmed.contains("(move ") {
+            // Use word-boundary aware matching for the variable
             let patterns = [
-                format!("(copy {})", var),
-                format!("(&{})", var),
-                format!("(move {})", var),
-                format!("copy {}", var),  // Also just "copy _1" in some contexts
+                format!("(copy {})", var),   // "(copy _1)"
+                format!("(&{})", var),        // "(&_1)"
+                format!("(move {})", var),    // "(move _1)"
+                format!("copy {})", var),     // "copy _1)"
+                format!("copy {},", var),     // "copy _1,"
+                format!("move {})", var),     // "move _1)"
+                format!("move {},", var),     // "move _1,"
             ];
             if patterns.iter().any(|p| trimmed.contains(p)) {
                 return true;
@@ -9477,7 +9482,7 @@ impl Rule for DeadStoreArrayRule {
                 continue;
             }
             
-            // Strategy: Track constant index assignments and detect consecutive overwrites
+            // Strategy: Track all array writes and detect overwrites without intervening reads
             // Build a map of temporary variables to their constant values
             let mut const_values: std::collections::HashMap<String, String> = std::collections::HashMap::new();
             
@@ -9494,50 +9499,87 @@ impl Rule for DeadStoreArrayRule {
                 }
             }
             
-            // Second pass: detect consecutive array writes to the same resolved location
-            let mut last_write: Option<(String, String, usize, String)> = None; // (var, resolved_index, line_num, line_text)
+            // Collect all array writes with their resolved indices
+            // (line_idx, array_var, resolved_index, line_text)
+            let mut all_writes: Vec<(usize, String, String, String)> = Vec::new();
             
             for (line_idx, line) in function.body.iter().enumerate() {
                 let trimmed = line.trim();
-                
-                // Check if this line is an array write
                 if let Some((var, index)) = Self::is_array_write(trimmed) {
-                    // Resolve the index to its constant value if possible
                     let resolved_index = const_values.get(index).unwrap_or(&index.to_string()).clone();
-                    let key = format!("{}[{}]", var, resolved_index);
+                    all_writes.push((line_idx, var.to_string(), resolved_index, line.clone()));
+                }
+            }
+            
+            // For each write, check if there's another write to the same location later
+            // without any read in between
+            for (i, (write_line_idx, write_var, write_resolved_idx, write_line)) in all_writes.iter().enumerate() {
+                let key = format!("{}[{}]", write_var, write_resolved_idx);
+                
+                // Look for a later write to the same location
+                for (j, (overwrite_line_idx, overwrite_var, overwrite_resolved_idx, overwrite_line)) in all_writes.iter().enumerate() {
+                    if j <= i {
+                        continue; // Only look at later writes
+                    }
                     
-                    // Check if we have a previous write to the exact same location
-                    if let Some((prev_var, prev_resolved_index, prev_line_idx, prev_line)) = &last_write {
-                        let prev_key = format!("{}[{}]", prev_var, prev_resolved_index);
+                    let overwrite_key = format!("{}[{}]", overwrite_var, overwrite_resolved_idx);
+                    if key != overwrite_key {
+                        continue; // Different location
+                    }
+                    
+                    // Check if there's any read of this index between write and overwrite
+                    let mut has_read_between = false;
+                    for (between_idx, between_line) in function.body.iter().enumerate() {
+                        if between_idx <= *write_line_idx || between_idx >= *overwrite_line_idx {
+                            continue;
+                        }
                         
-                        if key == prev_key {
-                            // Found consecutive writes to same location without intervening read
-                            findings.push(Finding {
-                                rule_id: self.metadata.id.clone(),
-                                rule_name: self.metadata.name.clone(),
-                                severity: self.metadata.default_severity,
-                                message: format!(
-                                    "Dead store: array element {} written but immediately overwritten without being read in `{}`",
-                                    prev_key,
-                                    function.name
-                                ),
-                                function: function.name.clone(),
-                                function_signature: function.signature.clone(),
-                                evidence: vec![
-                                    format!("Line {}: {}", prev_line_idx, prev_line.trim()),
-                                    format!("Line {}: {} (overwrites previous)", line_idx, trimmed),
-                                ],
-                                span: function.span.clone(),
-                            });
+                        // Check for specific index read: var[resolved_idx] on right side
+                        // Note: We need to be careful not to match the index variable assignment
+                        let trimmed = between_line.trim();
+                        
+                        // Skip basic block labels, assertions, gotos
+                        if trimmed.starts_with("bb") || trimmed.starts_with("goto") 
+                            || trimmed.starts_with("assert") || trimmed.starts_with("switchInt")
+                            || trimmed.starts_with("return") || trimmed.starts_with("unreachable") {
+                            continue;
+                        }
+                        
+                        // Check for array read of this variable
+                        if Self::is_array_read(trimmed, write_var) {
+                            // Need to check if it's reading THIS specific index
+                            // For simplicity, treat any read of the array as reading this index
+                            // This is conservative and avoids false positives
+                            has_read_between = true;
+                            break;
                         }
                     }
                     
-                    // Update last write
-                    last_write = Some((var.to_string(), resolved_index, line_idx, line.clone()));
-                }
-                // If we see an array read or index operation, clear last_write to be conservative
-                else if trimmed.contains("[_") {
-                    last_write = None;
+                    if !has_read_between {
+                        // Found a dead store: written then overwritten without read
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: self.metadata.default_severity,
+                            message: format!(
+                                "Dead store: array element {} written but overwritten without being read in `{}`",
+                                key,
+                                function.name
+                            ),
+                            function: function.name.clone(),
+                            function_signature: function.signature.clone(),
+                            evidence: vec![
+                                format!("Line {}: {}", write_line_idx, write_line.trim()),
+                                format!("Line {}: {} (overwrites previous)", overwrite_line_idx, overwrite_line.trim()),
+                            ],
+                            span: function.span.clone(),
+                        });
+                        // Only report first overwrite for this write
+                        break;
+                    } else {
+                        // There's a read between this write and the potential overwrite
+                        // Move on to check the next potential overwrite
+                    }
                 }
             }
         }

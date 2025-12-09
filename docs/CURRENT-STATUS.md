@@ -35,7 +35,7 @@
 - ✅ RUSTCOLA086: Command injection (100% recall) - interprocedural analysis
 - ✅ RUSTCOLA087: SQL injection (100% recall) - interprocedural analysis
 - ✅ RUSTCOLA088: Path traversal (100% recall) - interprocedural analysis
-- ✅ RUSTCOLA089: YAML deserialization (82% recall, 9/11) - interprocedural analysis
+- ✅ RUSTCOLA089: YAML deserialization (100% recall, 11/11) - interprocedural analysis
 
 **Other Rule Improvements (Dec 2025):**
 - ✅ RUSTCOLA067: Spawned child without wait (100% recall, 100% precision) - improved from 86% with per-spawn tracking

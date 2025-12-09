@@ -66,5 +66,6 @@ members = [
     "examples/yaml-deserialization",
     "examples/unbounded-read",
     "examples/json-toml-deserialization",
+    "examples/blocking-in-async",
 ]
 resolver = "2"

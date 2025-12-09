@@ -5008,6 +5008,269 @@ impl Rule for BlockingSleepInAsyncRule {
     }
 }
 
+/// RUSTCOLA093: Blocking operations in async context
+/// Extends RUSTCOLA037 to detect a broader range of blocking operations:
+/// - std::sync::Mutex::lock() (use tokio::sync::Mutex instead)
+/// - std::fs::* operations (use tokio::fs::* instead)
+/// - std::net::* operations (use tokio::net::* instead)
+/// - std::io::stdin/stdout (use tokio::io instead)
+struct BlockingOpsInAsyncRule {
+    metadata: RuleMetadata,
+}
+
+impl BlockingOpsInAsyncRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA093".to_string(),
+                name: "blocking-ops-in-async".to_string(),
+                short_description: "Blocking operation in async function".to_string(),
+                full_description: "Detects blocking operations inside async functions that can stall the async executor. This includes std::sync::Mutex::lock(), std::fs::* operations, std::net::* operations, and blocking I/O. These operations block the current thread, preventing the async runtime from executing other tasks. Use async alternatives (tokio::sync::Mutex, tokio::fs, tokio::net) or wrap blocking ops in spawn_blocking/block_in_place.".to_string(),
+                help_uri: None,
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Blocking patterns to detect with their categories
+    fn blocking_patterns() -> Vec<(&'static str, &'static str, &'static str)> {
+        vec![
+            // Pattern, Category, Recommendation
+            // std::sync::Mutex
+            ("Mutex::new", "sync_mutex", "Consider tokio::sync::Mutex for async contexts"),
+            (".lock().unwrap()", "sync_mutex", "Use tokio::sync::Mutex::lock().await instead"),
+            (".lock().expect(", "sync_mutex", "Use tokio::sync::Mutex::lock().await instead"),
+            ("mutex.lock()", "sync_mutex", "Use tokio::sync::Mutex::lock().await instead"),
+            // std::fs operations
+            ("fs::read_to_string(", "blocking_fs", "Use tokio::fs::read_to_string().await instead"),
+            ("fs::read(", "blocking_fs", "Use tokio::fs::read().await instead"),
+            ("fs::write(", "blocking_fs", "Use tokio::fs::write().await instead"),
+            ("fs::remove_file(", "blocking_fs", "Use tokio::fs::remove_file().await instead"),
+            ("fs::remove_dir(", "blocking_fs", "Use tokio::fs::remove_dir().await instead"),
+            ("fs::create_dir(", "blocking_fs", "Use tokio::fs::create_dir().await instead"),
+            ("fs::create_dir_all(", "blocking_fs", "Use tokio::fs::create_dir_all().await instead"),
+            ("fs::metadata(", "blocking_fs", "Use tokio::fs::metadata().await instead"),
+            ("fs::copy(", "blocking_fs", "Use tokio::fs::copy().await instead"),
+            ("fs::rename(", "blocking_fs", "Use tokio::fs::rename().await instead"),
+            ("fs::File::open(", "blocking_fs", "Use tokio::fs::File::open().await instead"),
+            ("fs::File::create(", "blocking_fs", "Use tokio::fs::File::create().await instead"),
+            ("File::open(", "blocking_fs", "Use tokio::fs::File::open().await instead"),
+            ("File::create(", "blocking_fs", "Use tokio::fs::File::create().await instead"),
+            ("std::fs::read_to_string(", "blocking_fs", "Use tokio::fs::read_to_string().await instead"),
+            ("std::fs::read(", "blocking_fs", "Use tokio::fs::read().await instead"),
+            ("std::fs::write(", "blocking_fs", "Use tokio::fs::write().await instead"),
+            // std::net operations
+            ("TcpStream::connect(", "blocking_net", "Use tokio::net::TcpStream::connect().await instead"),
+            ("TcpListener::bind(", "blocking_net", "Use tokio::net::TcpListener::bind().await instead"),
+            ("UdpSocket::bind(", "blocking_net", "Use tokio::net::UdpSocket::bind().await instead"),
+            ("std::net::TcpStream::connect(", "blocking_net", "Use tokio::net::TcpStream::connect().await instead"),
+            ("std::net::TcpListener::bind(", "blocking_net", "Use tokio::net::TcpListener::bind().await instead"),
+            // std::io blocking
+            ("stdin().read_line(", "blocking_io", "Use tokio::io::stdin() with AsyncBufReadExt instead"),
+            ("stdin().read(", "blocking_io", "Use tokio::io::stdin() with AsyncReadExt instead"),
+            ("stdout().write(", "blocking_io", "Use tokio::io::stdout() with AsyncWriteExt instead"),
+            ("stderr().write(", "blocking_io", "Use tokio::io::stderr() with AsyncWriteExt instead"),
+            ("std::io::stdin()", "blocking_io", "Use tokio::io::stdin() instead"),
+            ("std::io::stdout()", "blocking_io", "Use tokio::io::stdout() instead"),
+            // reqwest blocking
+            ("reqwest::blocking::", "blocking_http", "Use reqwest async API (reqwest::get, Client::new()) instead"),
+        ]
+    }
+
+    /// Patterns that indicate the blocking op is wrapped safely
+    fn safe_wrappers() -> &'static [&'static str] {
+        &[
+            "spawn_blocking",
+            "block_in_place",
+            "tokio::task::spawn_blocking",
+            "tokio::task::block_in_place",
+            "actix_web::web::block",
+        ]
+    }
+}
+
+impl Rule for BlockingOpsInAsyncRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+
+            // Track async function boundaries
+            let mut in_async_fn = false;
+            let mut async_fn_start = 0;
+            let mut brace_depth = 0;
+            let mut async_fn_name = String::new();
+            let mut in_safe_wrapper = false;
+            let mut safe_wrapper_depth = 0;
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+
+                // Detect async function start
+                if trimmed.contains("async fn ") || trimmed.contains("async move") {
+                    if trimmed.contains("async fn ") {
+                        in_async_fn = true;
+                        async_fn_start = idx;
+                        brace_depth = 0;
+
+                        // Extract function name
+                        if let Some(fn_pos) = trimmed.find("fn ") {
+                            let after_fn = &trimmed[fn_pos + 3..];
+                            if let Some(paren_pos) = after_fn.find('(') {
+                                async_fn_name = after_fn[..paren_pos].trim().to_string();
+                            }
+                        }
+                    }
+                }
+
+                // Track brace depth to know when async function ends
+                if in_async_fn {
+                    // Check for safe wrappers (spawn_blocking, block_in_place)
+                    for wrapper in Self::safe_wrappers() {
+                        if trimmed.contains(wrapper) {
+                            in_safe_wrapper = true;
+                            safe_wrapper_depth = brace_depth;
+                        }
+                    }
+
+                    brace_depth += trimmed.chars().filter(|&c| c == '{').count() as i32;
+                    brace_depth -= trimmed.chars().filter(|&c| c == '}').count() as i32;
+
+                    // Reset safe wrapper when we exit its scope
+                    if in_safe_wrapper && brace_depth <= safe_wrapper_depth {
+                        in_safe_wrapper = false;
+                    }
+
+                    // Skip if we're inside a safe wrapper
+                    if in_safe_wrapper {
+                        if brace_depth <= 0 && idx > async_fn_start {
+                            in_async_fn = false;
+                        }
+                        continue;
+                    }
+
+                    // Check for blocking patterns
+                    for (pattern, category, recommendation) in Self::blocking_patterns() {
+                        if trimmed.contains(pattern) {
+                            // Skip if the line has .await - it's an async version
+                            if trimmed.contains(".await") {
+                                continue;
+                            }
+                            // Skip if it's a tokio:: call (either on this line or mutex is tokio-based)
+                            if trimmed.contains("tokio::") {
+                                continue;
+                            }
+                            // Skip comments
+                            if trimmed.starts_with("//") || trimmed.starts_with("*") || trimmed.starts_with("/*") {
+                                continue;
+                            }
+                            // Skip if this is within a function using tokio::sync::Mutex
+                            // Look at the function's lines for tokio mutex declaration
+                            let fn_content: String = lines[async_fn_start..=idx]
+                                .iter()
+                                .map(|s| *s)
+                                .collect::<Vec<&str>>()
+                                .join("\n");
+                            if fn_content.contains("tokio::sync::Mutex") && pattern.contains(".lock") {
+                                continue;
+                            }
+
+                            let location = format!("{}:{}", rel_path, idx + 1);
+                            let message = match category {
+                                "sync_mutex" => format!(
+                                    "Blocking std::sync::Mutex in async function `{}`. {}",
+                                    async_fn_name, recommendation
+                                ),
+                                "blocking_fs" => format!(
+                                    "Blocking filesystem operation in async function `{}`. {}",
+                                    async_fn_name, recommendation
+                                ),
+                                "blocking_net" => format!(
+                                    "Blocking network operation in async function `{}`. {}",
+                                    async_fn_name, recommendation
+                                ),
+                                "blocking_io" => format!(
+                                    "Blocking I/O in async function `{}`. {}",
+                                    async_fn_name, recommendation
+                                ),
+                                "blocking_http" => format!(
+                                    "Blocking HTTP client in async function `{}`. {}",
+                                    async_fn_name, recommendation
+                                ),
+                                _ => format!(
+                                    "Blocking operation in async function `{}`",
+                                    async_fn_name
+                                ),
+                            };
+
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message,
+                                function: location,
+                                function_signature: async_fn_name.clone(),
+                                evidence: vec![trimmed.to_string()],
+                                span: None,
+                            });
+                        }
+                    }
+
+                    // If brace depth returns to 0, we've exited the async function
+                    if brace_depth <= 0 && idx > async_fn_start {
+                        in_async_fn = false;
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 struct VecSetLenMisuseRule {
     metadata: RuleMetadata,
 }
@@ -16940,6 +17203,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(InsecureYamlDeserializationRule::new())); // RUSTCOLA089
     engine.register_rule(Box::new(UnboundedReadRule::new())); // RUSTCOLA090
     engine.register_rule(Box::new(InsecureJsonTomlDeserializationRule::new())); // RUSTCOLA091
+    engine.register_rule(Box::new(BlockingOpsInAsyncRule::new())); // RUSTCOLA093
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

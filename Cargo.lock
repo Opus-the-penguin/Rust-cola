@@ -625,6 +625,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "blocking-in-async"
+version = "0.1.0"
+dependencies = [
+ "tokio",
+]
+
+[[package]]
 name = "blocking-sleep-async"
 version = "0.1.0"
 dependencies = [

@@ -24,9 +24,10 @@ This plan outlines the approach for implementing the remaining advanced rules in
   - *Technical*: Taint tracking to network sinks, protocol detection.
 
 ### Input Validation & Injection
-- **43. TOML/JSON deserialization**
+- **43. TOML/JSON deserialization** *(implemented 2025-12-10)*
   - Detect unsafe deserialization of untrusted data.
   - *Technical*: Taint tracking to serde/json/toml sinks, sanitizer detection.
+  - *Status notes*: Added `InsecureJsonTomlDeserializationRule` in `mir-advanced-rules`, covering env-based JSON inflow, constant-safe cases, and length-check sanitization with regression tests.
 - **44. bincode / postcard deserialization**
   - Highlight binary format parsing on tainted input.
   - *Technical*: Similar to above, but for binary formats.

@@ -4,9 +4,11 @@ Static security analyzer for Rust. Compiles source code to access MIR and HIR, e
 
 ## Usage
 
-Run the scan, then submit results to an LLM for analysis.
+Two methods for LLM analysis:
 
-**Step 1: Scan**
+### Method 1: Manual
+
+Run the scan, paste results into your LLM, copy the response.
 
 ```bash
 cargo-cola --crate-path /path/to/project --llm-prompt
@@ -14,20 +16,20 @@ cargo-cola --crate-path /path/to/project --llm-prompt
 
 Output: `out/reports/llm-prompt.md`
 
-**Step 2: Analyze**
+Paste the contents into your LLM (ChatGPT, Claude, Copilot, etc.). The file includes analysis instructions. Save the LLM's response as your report.
 
-Paste the contents of `out/reports/llm-prompt.md` into your LLM (ChatGPT, Claude, Copilot, etc.). The file includes analysis instructions.
+### Method 2: Automated
 
-### Automated API
-
-For CI or scripts, call the LLM API directly:
+Calls the LLM API directly and writes the report to a file.
 
 ```bash
 export RUSTCOLA_LLM_API_KEY=sk-...
-cargo-cola --crate-path . --llm-report report.md \
+cargo-cola --crate-path . --llm-report out/reports/report.md \
   --llm-endpoint https://api.openai.com/v1/chat/completions \
   --llm-model gpt-4
 ```
+
+Output: `out/reports/report.md`
 
 ### Standalone (no LLM)
 

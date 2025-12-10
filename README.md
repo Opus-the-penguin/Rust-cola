@@ -19,7 +19,7 @@ cargo-cola --crate-path /path/to/project --llm-prompt
 
 Output: `out/reports/llm-prompt.md`
 
-Paste the contents into your LLM (ChatGPT, Claude, Copilot, etc.). The file includes analysis instructions. Save the LLM's response as your report.
+Paste the contents of out/reports/llm-prompt.md into your LLM (ChatGPT, Claude, Copilot, etc.). The file includes analysis instructions. Save the LLM's response as your report.
 
 ### Method 2: Automated
 

@@ -1,6 +1,7 @@
 //! Advanced MIR-based security rules for Rust-cola
 
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -99,6 +100,18 @@ struct PointerInfo {
     creation_index: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PointerValidityKind {
+    Null,
+    Misaligned { alignment: usize, address: u128 },
+}
+
+#[derive(Debug, Clone)]
+struct PointerValidityInfo {
+    kind: PointerValidityKind,
+    line: String,
+}
+
 #[derive(Debug, Default)]
 struct PointerAnalyzer {
     pointers: HashMap<String, PointerInfo>,
@@ -106,6 +119,7 @@ struct PointerAnalyzer {
     owners: HashMap<String, OwnerState>,
     findings: Vec<String>,
     reported: HashSet<(String, usize)>,
+    pointer_validities: HashMap<String, PointerValidityInfo>,
 }
 
 impl PointerAnalyzer {
@@ -121,6 +135,14 @@ impl PointerAnalyzer {
             if let Some((alias, base)) = Self::detect_alias_assignment(trimmed) {
                 let base_resolved = self.resolve_alias(&base);
                 self.aliases.insert(alias, base_resolved);
+            }
+
+            if let Some(pointer) = Self::detect_null_pointer_assignment(trimmed) {
+                self.record_null_pointer(pointer, idx, trimmed);
+            }
+
+            if let Some(event) = Self::detect_const_pointer_assignment(trimmed) {
+                self.record_const_pointer(event, idx, trimmed);
             }
 
             if let Some(event) = Self::detect_pointer_creation(trimmed) {
@@ -159,6 +181,7 @@ impl PointerAnalyzer {
 
             for ptr_var in Self::detect_pointer_dereference(trimmed) {
                 self.evaluate_pointer_use(idx, trimmed, &ptr_var, "dereference after owner drop");
+                self.evaluate_invalid_pointer_use(idx, trimmed, &ptr_var);
             }
 
             for ptr_var in Self::detect_return_aggregate_pointers(trimmed) {
@@ -216,6 +239,50 @@ impl PointerAnalyzer {
         self.pointers.insert(event.pointer.clone(), info);
         // Reset any previous alias chain to ensure the pointer resolves to itself.
         self.aliases.remove(&event.pointer);
+        self.pointer_validities.remove(&event.pointer);
+    }
+
+    fn reset_pointer_state(&mut self, pointer: &str) {
+        self.aliases.remove(pointer);
+        self.pointers.remove(pointer);
+    }
+
+    fn record_null_pointer(&mut self, pointer: String, _line_index: usize, line: &str) {
+        self.reset_pointer_state(&pointer);
+        let info = PointerValidityInfo {
+            kind: PointerValidityKind::Null,
+            line: line.to_string(),
+        };
+        self.pointer_validities.insert(pointer, info);
+    }
+
+    fn record_const_pointer(&mut self, event: ConstPointerEvent, _line_index: usize, line: &str) {
+        self.reset_pointer_state(&event.pointer);
+
+        if event.value == 0 {
+            let info = PointerValidityInfo {
+                kind: PointerValidityKind::Null,
+                line: line.to_string(),
+            };
+            self.pointer_validities.insert(event.pointer, info);
+            return;
+        }
+
+        if let Some(align) = alignment_for_type(&event.pointee) {
+            if align > 1 && (event.value % align as u128 != 0) {
+                let info = PointerValidityInfo {
+                    kind: PointerValidityKind::Misaligned {
+                        alignment: align,
+                        address: event.value,
+                    },
+                    line: line.to_string(),
+                };
+                self.pointer_validities.insert(event.pointer, info);
+                return;
+            }
+        }
+
+        self.pointer_validities.remove(&event.pointer);
     }
 
     fn evaluate_pointer_use(&mut self, line_index: usize, line: &str, ptr_var: &str, reason: &str) {
@@ -250,6 +317,48 @@ impl PointerAnalyzer {
                 }
             }
         }
+    }
+
+    fn evaluate_invalid_pointer_use(&mut self, line_index: usize, line: &str, ptr_var: &str) {
+        let pointer_key = self.resolve_alias(ptr_var);
+        if pointer_key.is_empty() {
+            return;
+        }
+
+        let info = match self.pointer_validities.get(&pointer_key) {
+            Some(info) => info.clone(),
+            None => return,
+        };
+
+        let display = if pointer_key == ptr_var {
+            pointer_key.clone()
+        } else {
+            format!("{} (alias of {})", ptr_var, pointer_key)
+        };
+
+        let reported_key = format!("invalid:{}", pointer_key);
+        if !self.reported.insert((reported_key, line_index)) {
+            return;
+        }
+
+        let message = match info.kind {
+            PointerValidityKind::Null => format!(
+                "Invalid pointer dereference: `{}` is null.\n  assignment: `{}`\n  use: `{}`",
+                display,
+                info.line.trim(),
+                line.trim()
+            ),
+            PointerValidityKind::Misaligned { alignment, address } => format!(
+                "Invalid pointer dereference: `{}` has address 0x{:x} which is not aligned to {} bytes.\n  assignment: `{}`\n  use: `{}`",
+                display,
+                address,
+                alignment,
+                info.line.trim(),
+                line.trim()
+            ),
+        };
+
+        self.findings.push(message);
     }
 
     fn evaluate_pointer_escape(&mut self, line_index: usize, line: &str, ptr_var: &str, reason: &str) {
@@ -310,6 +419,36 @@ impl PointerAnalyzer {
         }
 
         None
+    }
+
+    fn detect_null_pointer_assignment(line: &str) -> Option<String> {
+        static RE_NULL: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r"^(_\d+)\s*=\s*null(?:_mut)?::<[^>]+>\(\)\s*->")
+                .expect("null pointer regex")
+        });
+
+        RE_NULL
+            .captures(line)
+            .map(|caps| caps[1].to_string())
+    }
+
+    fn detect_const_pointer_assignment(line: &str) -> Option<ConstPointerEvent> {
+        static RE_CONST_PTR: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r"^(_\d+)\s*=\s*const\s+([0-9_]+)_(?:[iu](?:size|8|16|32|64|128))\s+as\s+\*(?:const|mut)\s+([A-Za-z0-9_]+)")
+                .expect("const pointer regex")
+        });
+
+        let caps = RE_CONST_PTR.captures(line)?;
+        let pointer = caps[1].to_string();
+        let value_raw = caps[2].replace('_', "");
+        let value = u128::from_str(&value_raw).ok()?;
+    let pointee = caps[3].to_ascii_lowercase();
+
+        Some(ConstPointerEvent {
+            pointer,
+            value,
+            pointee,
+        })
     }
 
     fn detect_pointer_creation(line: &str) -> Option<PointerCreationEvent<'_>> {
@@ -412,7 +551,7 @@ impl PointerAnalyzer {
 
     fn detect_pointer_dereference(line: &str) -> Vec<String> {
         static RE_DEREF: Lazy<Regex> = Lazy::new(|| {
-            Regex::new(r"\*\s+(_\d+)").expect("deref regex")
+            Regex::new(r"\*\s*\(?\s*(_\d+)").expect("deref regex")
         });
         static RE_PTR_READ: Lazy<Regex> = Lazy::new(|| {
             Regex::new(r"ptr::(?:read|write)(?:_unchecked)?::<[^>]+>\(\s*(?:move\s+)?(_\d+)\)")
@@ -485,6 +624,12 @@ struct PointerCreationEvent<'a> {
     line: &'a str,
 }
 
+struct ConstPointerEvent {
+    pointer: String,
+    value: u128,
+    pointee: String,
+}
+
 impl<'a> PointerCreationEvent<'a> {
     fn stack(pointer: String, owner: String, line: &'a str) -> Self {
         Self {
@@ -543,6 +688,18 @@ fn normalize_owner(raw: &str) -> String {
     text.to_string()
 }
 
+fn alignment_for_type(type_name: &str) -> Option<usize> {
+    match type_name {
+        "u8" | "i8" | "bool" | "()" | "str" => Some(1),
+        "u16" | "i16" => Some(2),
+        "u32" | "i32" | "f32" | "char" => Some(4),
+        "u64" | "i64" | "f64" => Some(8),
+        "u128" | "i128" => Some(16),
+        "usize" | "isize" => Some(8),
+        _ => None,
+    }
+}
+
 // Add more advanced rules here...
 
 #[cfg(test)]
@@ -571,6 +728,58 @@ bb0: {
         let findings = run_rule(mir);
         assert!(!findings.is_empty(), "expected dangling pointer finding");
         assert!(findings[0].contains("dereference"));
+    }
+
+    #[test]
+    fn detects_null_pointer_dereference() {
+        let mir = r#"
+bb0: {
+    StorageLive(_1);
+    _1 = null::<i32>() -> [return: bb1, unwind continue];
+}
+
+bb1: {
+    StorageLive(_2);
+    _2 = &raw const (*_1);
+    _0 = copy (*_1);
+    return;
+}
+"#;
+
+        let findings = run_rule(mir);
+        assert!(!findings.is_empty(), "expected null pointer finding");
+        assert!(findings[0].contains("null"));
+    }
+
+    #[test]
+    fn detects_misaligned_pointer_dereference() {
+        let mir = r#"
+bb0: {
+    StorageLive(_1);
+    _1 = const 4097_usize as *const u16 (PointerWithExposedProvenance);
+    _0 = copy (*_1);
+    return;
+}
+"#;
+
+        let findings = run_rule(mir);
+        assert!(!findings.is_empty(), "expected misaligned pointer finding");
+        assert!(findings[0].contains("not aligned"));
+    }
+
+    #[test]
+    fn allows_aligned_constant_pointer() {
+        let mir = r#"
+bb0: {
+    StorageLive(_1);
+    _1 = const 4096_usize as *const u16 (PointerWithExposedProvenance);
+    _0 = copy (*_1);
+    return;
+}
+"#;
+
+        let findings = run_rule(mir);
+        assert!(findings.is_empty(), "aligned constant pointer should not be flagged");
     }
 
     #[test]

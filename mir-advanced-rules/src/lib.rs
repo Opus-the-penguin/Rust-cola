@@ -112,6 +112,14 @@ struct PointerValidityInfo {
     line: String,
 }
 
+/// Captures the MIR locals used as the source and destination operands of a
+/// `ptr::copy_nonoverlapping` call so we can reason about aliasing.
+#[derive(Debug, Clone)]
+struct CopyNonOverlappingCall {
+    src: String,
+    dst: String,
+}
+
 #[derive(Debug, Default)]
 struct PointerAnalyzer {
     pointers: HashMap<String, PointerInfo>,
@@ -147,6 +155,10 @@ impl PointerAnalyzer {
 
             if let Some(event) = Self::detect_pointer_creation(trimmed) {
                 self.record_pointer_creation(idx, event);
+            }
+
+            if let Some(call) = Self::detect_copy_nonoverlapping(trimmed) {
+                self.evaluate_copy_nonoverlapping(idx, trimmed, call);
             }
 
             if let Some((owner_raw, kind)) = Self::detect_owner_invalidation(trimmed) {
@@ -378,6 +390,74 @@ impl PointerAnalyzer {
         }
     }
 
+    fn evaluate_copy_nonoverlapping(
+        &mut self,
+        line_index: usize,
+        line: &str,
+        call: CopyNonOverlappingCall,
+    ) {
+        let src_candidates = self.pointer_equivalence_set(&call.src);
+        let dst_candidates = self.pointer_equivalence_set(&call.dst);
+
+        if src_candidates.is_empty() || dst_candidates.is_empty() {
+            return;
+        }
+
+        let overlap = src_candidates
+            .intersection(&dst_candidates)
+            .any(|candidate| !candidate.is_empty());
+
+        if !overlap {
+            return;
+        }
+
+        let src_key = self.resolve_alias(&call.src);
+        let dst_key = self.resolve_alias(&call.dst);
+
+        let reported_key = format!("copy:{}->{}", src_key, dst_key);
+        if !self.reported.insert((reported_key, line_index)) {
+            return;
+        }
+
+        let src_origin = self
+            .pointers
+            .get(&src_key)
+            .map(|info| info.creation_line.trim().to_string());
+        let dst_origin = self
+            .pointers
+            .get(&dst_key)
+            .map(|info| info.creation_line.trim().to_string());
+
+        let src_display = if call.src == src_key {
+            call.src.clone()
+        } else {
+            format!("{} (resolves to {})", call.src, src_key)
+        };
+
+        let dst_display = if call.dst == dst_key {
+            call.dst.clone()
+        } else {
+            format!("{} (resolves to {})", call.dst, dst_key)
+        };
+
+        let mut message = format!(
+            "Unsafe ptr::copy_nonoverlapping: src `{}` and dst `{}` may overlap.\n  call: `{}`",
+            src_display,
+            dst_display,
+            line.trim()
+        );
+
+        if let Some(origin) = src_origin {
+            message.push_str(&format!("\n  src origin: `{}`", origin));
+        }
+
+        if let Some(origin) = dst_origin {
+            message.push_str(&format!("\n  dst origin: `{}`", origin));
+        }
+
+        self.findings.push(message);
+    }
+
     fn lookup_pointer(&self, var: &str) -> Option<(String, PointerInfo)> {
         let pointer_key = self.resolve_alias(var);
         self.pointers
@@ -398,6 +478,30 @@ impl PointerAnalyzer {
         }
 
         current
+    }
+
+    fn pointer_equivalence_set(&self, var: &str) -> HashSet<String> {
+        let mut set = HashSet::new();
+
+        let trimmed = var.trim();
+        if trimmed.is_empty() {
+            return set;
+        }
+
+        set.insert(trimmed.to_string());
+
+        let resolved = self.resolve_alias(trimmed);
+        if !resolved.is_empty() {
+            set.insert(resolved.clone());
+
+            if let Some(info) = self.pointers.get(&resolved) {
+                if !info.owner.is_empty() {
+                    set.insert(info.owner.clone());
+                }
+            }
+        }
+
+        set
     }
 
     fn detect_alias_assignment(line: &str) -> Option<(String, String)> {
@@ -448,6 +552,19 @@ impl PointerAnalyzer {
             pointer,
             value,
             pointee,
+        })
+    }
+
+    fn detect_copy_nonoverlapping(line: &str) -> Option<CopyNonOverlappingCall> {
+        static RE_COPY: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r"copy_nonoverlapping::<[^>]+>\((?:move|copy)\s+(_\d+)[^,]*,\s*(?:move|copy)\s+(_\d+)")
+                .expect("copy_nonoverlapping regex")
+        });
+
+        let caps = RE_COPY.captures(line)?;
+        Some(CopyNonOverlappingCall {
+            src: caps[1].to_string(),
+            dst: caps[2].to_string(),
         })
     }
 
@@ -917,4 +1034,35 @@ bb0: {
         assert!(!findings.is_empty(), "expected pointer store escape finding");
         assert!(findings[0].contains("stored through pointer"));
     }
+
+    #[test]
+    fn detects_copy_nonoverlapping_overlap() {
+        let mir = r#"
+bb0: {
+    StorageLive(_1);
+    std::ptr::copy_nonoverlapping::<u8>(copy _1, copy _1, const 4_usize);
+    return;
+}
+"#;
+
+        let findings = run_rule(mir);
+        assert!(!findings.is_empty(), "expected copy_nonoverlapping overlap finding");
+        assert!(findings[0].contains("copy_nonoverlapping"));
+    }
+
+    #[test]
+    fn allows_disjoint_copy_nonoverlapping() {
+        let mir = r#"
+bb0: {
+    StorageLive(_1);
+    StorageLive(_2);
+    std::ptr::copy_nonoverlapping::<u8>(copy _1, copy _2, const 4_usize);
+    return;
+}
+"#;
+
+        let findings = run_rule(mir);
+        assert!(findings.is_empty(), "disjoint copy_nonoverlapping should not be flagged");
+    }
+
 }

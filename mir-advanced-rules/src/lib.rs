@@ -44,12 +44,14 @@ enum OwnerKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InvalidationKind {
     Drop,
+    Reallocate,
 }
 
 impl std::fmt::Display for InvalidationKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Drop => write!(f, "drop"),
+            Self::Reallocate => write!(f, "reallocation"),
         }
     }
 }
@@ -83,7 +85,7 @@ impl OwnerState {
         }
 
         match &self.invalidation {
-            Some(current) if current.line_index <= inv.line_index => {}
+            Some(current) if current.line_index >= inv.line_index => {}
             _ => self.invalidation = Some(inv),
         }
     }
@@ -126,22 +128,45 @@ impl PointerAnalyzer {
             }
 
             if let Some((owner_raw, kind)) = Self::detect_owner_invalidation(trimmed) {
-                let owner = normalize_owner(&owner_raw);
-                if !owner.is_empty() {
-                    let entry = self
-                        .owners
-                        .entry(owner.clone())
-                        .or_insert_with(|| OwnerState::new(OwnerKind::Unknown));
-                    entry.note_invalidation(Invalidation {
-                        line_index: idx,
-                        line: trimmed.to_string(),
-                        kind,
-                    });
+                let mut owner = normalize_owner(&owner_raw);
+                owner = self.resolve_alias(&owner);
+
+                let mut inferred_kind = OwnerKind::Unknown;
+                if let Some(info) = self.pointers.get(&owner) {
+                    inferred_kind = info.owner_kind;
+                    owner = info.owner.clone();
                 }
+
+                if owner.is_empty() {
+                    continue;
+                }
+
+                let entry = self
+                    .owners
+                    .entry(owner.clone())
+                    .or_insert_with(|| OwnerState::new(inferred_kind));
+
+                if entry.kind == OwnerKind::Unknown {
+                    entry.kind = inferred_kind;
+                }
+
+                entry.note_invalidation(Invalidation {
+                    line_index: idx,
+                    line: trimmed.to_string(),
+                    kind,
+                });
             }
 
             for ptr_var in Self::detect_pointer_dereference(trimmed) {
                 self.evaluate_pointer_use(idx, trimmed, &ptr_var, "dereference after owner drop");
+            }
+
+            for ptr_var in Self::detect_return_aggregate_pointers(trimmed) {
+                self.evaluate_pointer_escape(idx, trimmed, &ptr_var, "returned inside aggregate");
+            }
+
+            for ptr_var in Self::detect_pointer_store(trimmed) {
+                self.evaluate_pointer_escape(idx, trimmed, &ptr_var, "stored through pointer");
             }
 
             if let Some(ptr_var) = Self::detect_return_pointer(trimmed) {
@@ -153,7 +178,16 @@ impl PointerAnalyzer {
     }
 
     fn record_pointer_creation(&mut self, line_index: usize, event: PointerCreationEvent) {
-        let owner = normalize_owner(&event.owner);
+        let mut owner = normalize_owner(&event.owner);
+        owner = self.resolve_alias(&owner);
+
+        let mut owner_kind = event.owner_kind;
+
+        if let Some(existing) = self.pointers.get(&owner) {
+            owner = existing.owner.clone();
+            owner_kind = existing.owner_kind;
+        }
+
         if owner.is_empty() {
             return;
         }
@@ -161,10 +195,10 @@ impl PointerAnalyzer {
         let entry = self
             .owners
             .entry(owner.clone())
-            .or_insert_with(|| OwnerState::new(event.owner_kind));
+            .or_insert_with(|| OwnerState::new(owner_kind));
 
         if entry.kind == OwnerKind::Unknown {
-            entry.kind = event.owner_kind;
+            entry.kind = owner_kind;
         }
 
         if event.leaked {
@@ -258,14 +292,24 @@ impl PointerAnalyzer {
     }
 
     fn detect_alias_assignment(line: &str) -> Option<(String, String)> {
-        static RE_ALIAS: Lazy<Regex> = Lazy::new(|| {
+        static RE_ALIAS_SIMPLE: Lazy<Regex> = Lazy::new(|| {
             Regex::new(r"^(_\d+)\s*=\s*(?:copy|move)\s+(_\d+)\s*;")
                 .expect("alias regex")
         });
+        static RE_ALIAS_INDEX: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r"^(_\d+)\s*=.*::index\(\s*(?:move|copy)\s+(_\d+),")
+                .expect("index alias regex")
+        });
 
-        RE_ALIAS
-            .captures(line)
-            .map(|caps| (caps[1].to_string(), caps[2].to_string()))
+        if let Some(caps) = RE_ALIAS_SIMPLE.captures(line) {
+            return Some((caps[1].to_string(), caps[2].to_string()));
+        }
+
+        if let Some(caps) = RE_ALIAS_INDEX.captures(line) {
+            return Some((caps[1].to_string(), caps[2].to_string()));
+        }
+
+        None
     }
 
     fn detect_pointer_creation(line: &str) -> Option<PointerCreationEvent<'_>> {
@@ -338,6 +382,10 @@ impl PointerAnalyzer {
         static RE_DEALLOC: Lazy<Regex> = Lazy::new(|| {
             Regex::new(r"dealloc\(\s*(?:move\s+)?([^,\s\)]+)").expect("dealloc regex")
         });
+        static RE_VEC_REALLOC: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r"Vec::<[^>]+>::(?:push|append|extend|insert|reserve|reserve_exact|resize|resize_with|shrink_to_fit|shrink_to|truncate|clear)\(\s*(?:move|copy)?\s*(_\d+)")
+                .expect("vec realloc regex")
+        });
 
         if let Some(caps) = RE_DROP.captures(line) {
             return Some((caps[1].to_string(), InvalidationKind::Drop));
@@ -353,6 +401,10 @@ impl PointerAnalyzer {
 
         if let Some(caps) = RE_DEALLOC.captures(line) {
             return Some((caps[1].to_string(), InvalidationKind::Drop));
+        }
+
+        if let Some(caps) = RE_VEC_REALLOC.captures(line) {
+            return Some((caps[1].to_string(), InvalidationKind::Reallocate));
         }
 
         None
@@ -377,6 +429,41 @@ impl PointerAnalyzer {
         }
 
         vars
+    }
+
+    fn detect_return_aggregate_pointers(line: &str) -> Vec<String> {
+        let trimmed = line.trim_start();
+        if !trimmed.starts_with("_0") {
+            return Vec::new();
+        }
+
+        if !(trimmed.contains('{') || trimmed.contains('(')) {
+            return Vec::new();
+        }
+
+        static RE_MOVE: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r"(?:move|copy)\s+(_\d+)").expect("aggregate move regex")
+        });
+
+        let mut vars = HashSet::new();
+
+        for caps in RE_MOVE.captures_iter(line) {
+            vars.insert(caps[1].to_string());
+        }
+
+        vars.into_iter().collect()
+    }
+
+    fn detect_pointer_store(line: &str) -> Vec<String> {
+        static RE_STORE: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r"\(\*[^\)]+\)\s*=\s*(?:move|copy)\s+(_\d+)")
+                .expect("pointer store regex")
+        });
+
+        RE_STORE
+            .captures_iter(line)
+            .map(|caps| caps[1].to_string())
+            .collect()
     }
 
     fn detect_return_pointer(line: &str) -> Option<String> {
@@ -538,5 +625,87 @@ bb0: {
 
         let findings = run_rule(mir);
         assert!(findings.is_empty(), "leaked pointers should not be flagged");
+    }
+
+    #[test]
+    fn detects_vec_reallocation_dereference() {
+        let mir = r#"
+bb0: {
+    StorageLive(_1);
+    _1 = Vec::<i32>::new() -> [return: bb1, unwind continue];
+}
+
+bb1: {
+    StorageLive(_2);
+    _2 = &mut _1;
+    _3 = Vec::<i32>::push(move _2, const 1_i32) -> [return: bb2, unwind continue];
+}
+
+bb2: {
+    StorageLive(_4);
+    _4 = &_1;
+    StorageLive(_5);
+    _5 = <Vec<i32> as Index<usize>>::index(move _4, const 0_usize) -> [return: bb3, unwind continue];
+}
+
+bb3: {
+    StorageLive(_6);
+    _6 = &raw const (*_5);
+    StorageLive(_7);
+    _7 = &mut _1;
+    _8 = Vec::<i32>::push(move _7, const 2_i32) -> [return: bb4, unwind continue];
+}
+
+bb4: {
+    _9 = * _6;
+    drop(_1) -> [return: bb5, unwind continue];
+}
+
+bb5: {
+    return;
+}
+"#;
+
+        let findings = run_rule(mir);
+        assert!(!findings.is_empty(), "expected reallocation finding");
+        assert!(findings[0].contains("reallocation"));
+    }
+
+    #[test]
+    fn detects_returned_aggregate_with_stack_pointer() {
+        let mir = r#"
+bb0: {
+    StorageLive(_1);
+    _1 = const 123_i32;
+    StorageLive(_2);
+    _2 = &raw const (*_1);
+    _0 = PointerHolder { ptr: move _2 };
+    StorageDead(_1);
+    return;
+}
+"#;
+
+        let findings = run_rule(mir);
+        assert!(!findings.is_empty(), "expected aggregate escape finding");
+        assert!(findings[0].contains("aggregate"));
+    }
+
+    #[test]
+    fn detects_pointer_store_escape() {
+        let mir = r#"
+bb0: {
+    StorageLive(_2);
+    _2 = const 456_i32;
+    StorageLive(_3);
+    _3 = &raw const (*_2);
+    (*_1) = move _3;
+    StorageDead(_2);
+    return;
+}
+"#;
+
+        let findings = run_rule(mir);
+        assert!(!findings.is_empty(), "expected pointer store escape finding");
+        assert!(findings[0].contains("stored through pointer"));
     }
 }

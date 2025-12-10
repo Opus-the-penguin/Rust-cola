@@ -23,13 +23,24 @@ Paste the contents into your LLM (ChatGPT, Claude, Copilot, etc.). The file incl
 
 ### Method 2: Automated
 
+
 Calls the LLM API directly and writes the report to a file.
 
+**Note:** The OpenAI endpoint and `gpt-4` model below are just examples. You can use any compatible LLM API, including local models.
+
+Example with OpenAI API:
 ```bash
 export RUSTCOLA_LLM_API_KEY=sk-...
 cargo-cola --crate-path . --llm-report out/reports/report.md \
   --llm-endpoint https://api.openai.com/v1/chat/completions \
   --llm-model gpt-4
+```
+
+Example with local Ollama LLM:
+```bash
+cargo-cola --crate-path . --llm-report out/reports/report.md \
+  --llm-endpoint http://localhost:11434/v1/chat/completions \
+  --llm-model llama3
 ```
 
 Output: `out/reports/report.md`

@@ -880,7 +880,7 @@ impl JsonTomlAnalyzer {
                 continue;
             }
 
-            if let Some(dest) = Self::detect_assignment(trimmed) {
+            if let Some(dest) = detect_assignment(trimmed) {
                 if Self::is_untrusted_source(trimmed) {
                     self.mark_source(&dest, trimmed);
                 } else if let Some(source) = self.find_tainted_in_line(trimmed) {
@@ -891,7 +891,7 @@ impl JsonTomlAnalyzer {
             self.track_len_checks(trimmed);
 
             if let Some(sink_name) = Self::detect_sink(trimmed) {
-                let args = Self::extract_call_args(trimmed);
+                let args = extract_call_args(trimmed);
                 for arg in args {
                     if let Some(root) = self.taint_roots.get(&arg).cloned() {
                         if self.sanitized_roots.contains(&root) {
@@ -937,33 +937,17 @@ impl JsonTomlAnalyzer {
     }
 
     fn track_len_checks(&mut self, line: &str) {
-        if let Some((len_var, src_var)) = Self::detect_len_call(line) {
+        if let Some((len_var, src_var)) = detect_len_call(line) {
             if let Some(root) = self.taint_roots.get(&src_var).cloned() {
                 self.pending_len_checks.insert(len_var, root);
             }
         }
 
-        if let Some(len_var) = Self::detect_len_comparison(line) {
+        if let Some(len_var) = detect_len_comparison(line) {
             if let Some(root) = self.pending_len_checks.remove(&len_var) {
                 self.sanitized_roots.insert(root);
             }
         }
-    }
-
-    fn detect_assignment(line: &str) -> Option<String> {
-        static RE_ASSIGN: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(_\d+)\s*=").expect("assign regex"));
-
-        if let Some(caps) = RE_ASSIGN.captures(line) {
-            return Some(caps[1].to_string());
-        }
-
-        if line.starts_with("(*_") {
-            if let Some(end) = line.find(')') {
-                return Some(line[2..end].to_string());
-            }
-        }
-
-        None
     }
 
     fn is_untrusted_source(line: &str) -> bool {
@@ -977,55 +961,223 @@ impl JsonTomlAnalyzer {
             .find(|pattern| line.contains(pattern))
     }
 
-    fn extract_call_args(line: &str) -> Vec<String> {
-        static RE_ARG: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?:copy|move)\s+(_\d+)").expect("arg regex"));
+    fn find_tainted_in_line(&self, line: &str) -> Option<String> {
+        self.tainted
+            .iter()
+            .find(|var| contains_var(line, var))
+            .cloned()
+    }
+}
 
-        RE_ARG
-            .captures_iter(line)
-            .map(|caps| caps[1].to_string())
-            .collect()
+fn detect_assignment(line: &str) -> Option<String> {
+    static RE_ASSIGN: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(_\d+)\s*=").expect("assign regex"));
+
+    if let Some(caps) = RE_ASSIGN.captures(line) {
+        return Some(caps[1].to_string());
     }
 
-    fn detect_len_call(line: &str) -> Option<(String, String)> {
-        static RE_LEN: Lazy<Regex> = Lazy::new(|| {
-            Regex::new(r"^(_\d+)\s*=.*(?:String::len|str::len)\((?:move|copy)\s+(_\d+)")
-                .expect("len regex")
-        });
-
-        RE_LEN
-            .captures(line)
-            .map(|caps| (caps[1].to_string(), caps[2].to_string()))
+    if line.starts_with("(*_") {
+        if let Some(end) = line.find(')') {
+            return Some(line[2..end].to_string());
+        }
     }
 
-    fn detect_len_comparison(line: &str) -> Option<String> {
-        static RE_LEN_CMP: Lazy<Regex> = Lazy::new(|| {
-            Regex::new(r"(?:Gt|Lt|Ge|Le)\((?:move|copy)\s+(_\d+),\s*const")
-                .expect("len cmp regex")
-        });
+    None
+}
 
-        RE_LEN_CMP
-            .captures(line)
-            .map(|caps| caps[1].to_string())
+fn extract_call_args(line: &str) -> Vec<String> {
+    static RE_ARG: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?:copy|move)\s+(_\d+)").expect("arg regex"));
+
+    RE_ARG
+        .captures_iter(line)
+        .map(|caps| caps[1].to_string())
+        .collect()
+}
+
+fn detect_len_call(line: &str) -> Option<(String, String)> {
+    static RE_LEN: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"^(_\d+)\s*=.*::len\((?:move|copy)\s+(_\d+)")
+            .expect("len regex")
+    });
+
+    RE_LEN
+        .captures(line)
+        .map(|caps| (caps[1].to_string(), caps[2].to_string()))
+}
+
+fn detect_len_comparison(line: &str) -> Option<String> {
+    static RE_LEN_CMP: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"(?:Gt|Lt|Ge|Le)\((?:move|copy)\s+(_\d+),\s*const")
+            .expect("len cmp regex")
+    });
+
+    RE_LEN_CMP
+        .captures(line)
+        .map(|caps| caps[1].to_string())
+}
+
+fn contains_var(text: &str, var: &str) -> bool {
+    if text.contains(var) {
+        return true;
     }
 
-    fn contains_var(text: &str, var: &str) -> bool {
-        if text.contains(var) {
-            return true;
+    let var_num = var.trim_start_matches('_');
+    text.contains(&format!("move _{}", var_num))
+        || text.contains(&format!("copy _{}", var_num))
+        || text.contains(&format!("_{}.0", var_num))
+        || text.contains(&format!("_{}.1", var_num))
+        || text.contains(&format!("&_{}", var_num))
+        || text.contains(&format!("(*_{})", var_num))
+}
+
+/// Advanced rule that flags binary (bincode/postcard) deserialization on
+/// untrusted data without prior validation.
+pub struct InsecureBinaryDeserializationRule;
+
+impl AdvancedRule for InsecureBinaryDeserializationRule {
+    fn id(&self) -> &'static str {
+        "ADV003"
+    }
+
+    fn description(&self) -> &'static str {
+        "Detects binary deserialization on untrusted input without size checks."
+    }
+
+    fn evaluate(&self, mir: &str) -> Vec<String> {
+        BinaryDeserializationAnalyzer::default().analyze(mir)
+    }
+}
+
+#[derive(Default)]
+struct BinaryDeserializationAnalyzer {
+    tainted: HashSet<String>,
+    taint_roots: HashMap<String, String>,
+    sanitized_roots: HashSet<String>,
+    pending_len_checks: HashMap<String, String>,
+    sources: HashMap<String, String>,
+    findings: Vec<String>,
+}
+
+impl BinaryDeserializationAnalyzer {
+    const SINK_PATTERNS: &'static [&'static str] = &[
+        "bincode::deserialize",
+        "bincode::deserialize_from",
+        "bincode::config::deserialize",
+        "bincode::config::deserialize_from",
+        "postcard::from_bytes",
+        "postcard::from_bytes_cobs",
+        "postcard::take_from_bytes",
+        "postcard::take_from_bytes_cobs",
+    ];
+
+    const UNTRUSTED_PATTERNS: &'static [&'static str] = &[
+        "env::var",
+        "env::var_os",
+        "env::args",
+        "std::env::var",
+        "std::env::args",
+        "stdin",
+        "TcpStream",
+        "read_to_string",
+        "read_to_end",
+        "fs::read",
+        "File::open",
+    ];
+
+    fn analyze(mut self, mir: &str) -> Vec<String> {
+        for line in mir.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            if let Some(dest) = detect_assignment(trimmed) {
+                if Self::is_untrusted_source(trimmed) {
+                    self.mark_source(&dest, trimmed);
+                } else if let Some(source) = self.find_tainted_in_line(trimmed) {
+                    self.mark_alias(&dest, &source);
+                }
+            }
+
+            self.track_len_checks(trimmed);
+
+            if let Some(sink_name) = Self::detect_sink(trimmed) {
+                let args = extract_call_args(trimmed);
+                for arg in args {
+                    if let Some(root) = self.taint_roots.get(&arg).cloned() {
+                        if self.sanitized_roots.contains(&root) {
+                            continue;
+                        }
+
+                        let mut message = format!(
+                            "Insecure binary deserialization: untrusted data flows into `{}`.\n  call: `{}`",
+                            sink_name,
+                            trimmed
+                        );
+
+                        if let Some(origin) = self.sources.get(&root) {
+                            message.push_str(&format!("\n  source: `{}`", origin));
+                        }
+
+                        self.findings.push(message);
+                        break;
+                    }
+                }
+            }
         }
 
-        let var_num = var.trim_start_matches('_');
-        text.contains(&format!("move _{}", var_num))
-            || text.contains(&format!("copy _{}", var_num))
-            || text.contains(&format!("_{}.0", var_num))
-            || text.contains(&format!("_{}.1", var_num))
-            || text.contains(&format!("&_{}", var_num))
-            || text.contains(&format!("(*_{})", var_num))
+        self.findings
+    }
+
+    fn mark_source(&mut self, var: &str, origin: &str) {
+        let var = var.to_string();
+        self.tainted.insert(var.clone());
+        self.taint_roots.insert(var.clone(), var.clone());
+        self.sources.entry(var).or_insert_with(|| origin.trim().to_string());
+    }
+
+    fn mark_alias(&mut self, dest: &str, source: &str) {
+        if !self.tainted.contains(source) {
+            return;
+        }
+
+        if let Some(root) = self.taint_roots.get(source).cloned() {
+            self.tainted.insert(dest.to_string());
+            self.taint_roots.insert(dest.to_string(), root.clone());
+        }
+    }
+
+    fn track_len_checks(&mut self, line: &str) {
+        if let Some((len_var, src_var)) = detect_len_call(line) {
+            if let Some(root) = self.taint_roots.get(&src_var).cloned() {
+                self.pending_len_checks.insert(len_var, root);
+            }
+        }
+
+        if let Some(len_var) = detect_len_comparison(line) {
+            if let Some(root) = self.pending_len_checks.remove(&len_var) {
+                self.sanitized_roots.insert(root);
+            }
+        }
+    }
+
+    fn is_untrusted_source(line: &str) -> bool {
+        Self::UNTRUSTED_PATTERNS
+            .iter()
+            .any(|pattern| line.contains(pattern))
+    }
+
+    fn detect_sink(line: &str) -> Option<&'static str> {
+        Self::SINK_PATTERNS
+            .iter()
+            .copied()
+            .find(|pattern| line.contains(pattern))
     }
 
     fn find_tainted_in_line(&self, line: &str) -> Option<String> {
         self.tainted
             .iter()
-            .find(|var| Self::contains_var(line, var))
+            .find(|var| contains_var(line, var))
             .cloned()
     }
 }
@@ -1041,6 +1193,11 @@ mod tests {
 
     fn run_json_rule(mir: &str) -> Vec<String> {
         let rule = InsecureJsonTomlDeserializationRule;
+        rule.evaluate(mir)
+    }
+
+    fn run_binary_rule(mir: &str) -> Vec<String> {
+        let rule = InsecureBinaryDeserializationRule;
         rule.evaluate(mir)
     }
 
@@ -1320,6 +1477,104 @@ bb3: {
 
         let findings = run_json_rule(mir);
         assert!(findings.is_empty(), "size-checked JSON should not be flagged");
+    }
+
+    #[test]
+    fn detects_bincode_deserialization_from_env() {
+        let mir = r#"
+bb0: {
+    StorageLive(_1);
+    _1 = std::env::var::<String>(const "BIN_PAYLOAD") -> [return: bb1, unwind continue];
+}
+
+bb1: {
+    StorageLive(_2);
+    _2 = copy _1;
+    StorageLive(_3);
+    _3 = bincode::deserialize::<Payload>(move _2) -> [return: bb2, unwind continue];
+}
+
+bb2: {
+    return;
+}
+"#;
+
+        let findings = run_binary_rule(mir);
+        assert!(!findings.is_empty(), "expected binary deserialization finding");
+        assert!(findings[0].contains("bincode::deserialize"));
+    }
+
+    #[test]
+    fn allows_const_bincode_deserialization() {
+        let mir = r#"
+bb0: {
+    StorageLive(_1);
+    _1 = const b"\x01\x02\x03\x04";
+    StorageLive(_2);
+    _2 = bincode::deserialize::<Payload>(move _1) -> [return: bb1, unwind continue];
+}
+
+bb1: {
+    return;
+}
+"#;
+
+        let findings = run_binary_rule(mir);
+        assert!(findings.is_empty(), "expected constant binary input to be allowed");
+    }
+
+    #[test]
+    fn allows_bincode_with_size_check() {
+        let mir = r#"
+bb0: {
+    StorageLive(_1);
+    _1 = fs::read(const "payload.bin") -> [return: bb1, unwind continue];
+}
+
+bb1: {
+    StorageLive(_2);
+    _2 = copy _1;
+    StorageLive(_3);
+    _3 = Vec::<u8>::len(move _2);
+    StorageLive(_4);
+    _4 = Lt(move _3, const 1024_usize);
+}
+
+bb2: {
+    StorageLive(_5);
+    _5 = bincode::deserialize::<Payload>(move _1) -> [return: bb3, unwind continue];
+}
+
+bb3: {
+    return;
+}
+"#;
+
+        let findings = run_binary_rule(mir);
+        assert!(findings.is_empty(), "expected len-checked binary flow to be allowed");
+    }
+
+    #[test]
+    fn detects_postcard_deserialization_from_socket() {
+        let mir = r#"
+bb0: {
+    StorageLive(_1);
+    _1 = TcpStream::read_to_end(move _0) -> [return: bb1, unwind continue];
+}
+
+bb1: {
+    StorageLive(_2);
+    _2 = postcard::from_bytes::<Payload>(move _1) -> [return: bb2, unwind continue];
+}
+
+bb2: {
+    return;
+}
+"#;
+
+        let findings = run_binary_rule(mir);
+        assert!(!findings.is_empty(), "expected postcard binary finding");
+        assert!(findings[0].contains("postcard::from_bytes"));
     }
 
     #[test]

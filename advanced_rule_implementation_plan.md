@@ -28,9 +28,10 @@ This plan outlines the approach for implementing the remaining advanced rules in
   - Detect unsafe deserialization of untrusted data.
   - *Technical*: Taint tracking to serde/json/toml sinks, sanitizer detection.
   - *Status notes*: Added `InsecureJsonTomlDeserializationRule` in `mir-advanced-rules`, covering env-based JSON inflow, constant-safe cases, and length-check sanitization with regression tests.
-- **44. bincode / postcard deserialization**
+- **44. bincode / postcard deserialization** *(implemented 2025-12-10)*
   - Highlight binary format parsing on tainted input.
   - *Technical*: Similar to above, but for binary formats.
+  - *Status notes*: Added `InsecureBinaryDeserializationRule` covering `bincode` and `postcard` sinks with len-check sanitizer support and regression tests.
 - **45. Regex denial-of-service**
   - Flag untrusted patterns compiled with catastrophic backtracking.
   - *Technical*: Pattern analysis, taint tracking, regex complexity heuristics.

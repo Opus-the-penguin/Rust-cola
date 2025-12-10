@@ -1030,6 +1030,362 @@ fn contains_var(text: &str, var: &str) -> bool {
         || text.contains(&format!("(*_{})", var_num))
 }
 
+fn detect_const_string_assignment(line: &str) -> Option<(String, String)> {
+    static RE_CONST_STR: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r#"^(_\d+)\s*=\s*const\s*\"((?:\\.|[^\"])*)\""#)
+            .expect("const string regex")
+    });
+
+    RE_CONST_STR.captures(line).map(|caps| {
+        let var = caps[1].to_string();
+        let literal = caps[2].to_string();
+        (var, literal)
+    })
+}
+
+fn detect_var_alias(line: &str) -> Option<(String, String)> {
+    static RE_ALIAS: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"^(_\d+)\s*=\s*(?:copy|move)\s+(_\d+)")
+            .expect("alias regex")
+    });
+
+    RE_ALIAS
+        .captures(line)
+        .map(|caps| (caps[1].to_string(), caps[2].to_string()))
+}
+
+fn extract_const_literals(line: &str) -> Vec<String> {
+    static RE_LITERAL: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r#"const\s*\"((?:\\.|[^\"])*)\""#).expect("literal regex")
+    });
+
+    RE_LITERAL
+        .captures_iter(line)
+        .map(|caps| caps[1].to_string())
+        .collect()
+}
+
+fn unescape_rust_literal(raw: &str) -> String {
+    let mut result = String::with_capacity(raw.len());
+    let mut chars = raw.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            if let Some(next) = chars.next() {
+                match next {
+                    'n' => result.push('\n'),
+                    'r' => result.push('\r'),
+                    't' => result.push('\t'),
+                    '\\' => result.push('\\'),
+                    '"' => result.push('"'),
+                    other => {
+                        result.push(other);
+                    }
+                }
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+    result
+}
+
+fn pattern_is_high_risk(pattern: &str) -> bool {
+    static RE_NESTED_QUANTIFIERS: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"\((?:[^()]|\\.)*[+*](?:[^()]|\\.)*\)[+*{]")
+            .expect("nested quantifier regex")
+    });
+
+    static RE_DOT_STAR_LOOP: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"\(\?:?\.\*(?:[^()]|\\.)*\)[+*{]")
+            .expect("dot-star loop regex")
+    });
+
+    let simplified = pattern.replace(' ', "");
+    RE_NESTED_QUANTIFIERS.is_match(&simplified) || RE_DOT_STAR_LOOP.is_match(&simplified)
+}
+
+/// Advanced rule highlighting catastrophic backtracking patterns in regex
+/// compilation.
+pub struct RegexBacktrackingDosRule;
+
+impl AdvancedRule for RegexBacktrackingDosRule {
+    fn id(&self) -> &'static str {
+        "ADV004"
+    }
+
+    fn description(&self) -> &'static str {
+        "Detects regex patterns with nested quantifiers that trigger catastrophic backtracking."
+    }
+
+    fn evaluate(&self, mir: &str) -> Vec<String> {
+        RegexDosAnalyzer::default().analyze(mir)
+    }
+}
+
+#[derive(Default)]
+struct RegexDosAnalyzer {
+    const_strings: HashMap<String, String>,
+    findings: Vec<String>,
+    reported_lines: HashSet<String>,
+}
+
+impl RegexDosAnalyzer {
+    const SINK_PATTERNS: &'static [&'static str] = &[
+        "regex::Regex::new",
+        "regex::RegexSet::new",
+        "regex::builders::RegexBuilder::new",
+        "regex::RegexBuilder::new",
+    ];
+
+    fn analyze(mut self, mir: &str) -> Vec<String> {
+        for line in mir.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            if let Some((var, literal)) = detect_const_string_assignment(trimmed) {
+                self.const_strings.insert(var, unescape_rust_literal(&literal));
+                continue;
+            }
+
+            if let Some((dest, src)) = detect_var_alias(trimmed) {
+                if let Some(value) = self.const_strings.get(&src).cloned() {
+                    self.const_strings.insert(dest, value);
+                }
+            }
+
+            if let Some(sink) = Self::detect_sink(trimmed) {
+                if self.check_const_literals(sink, trimmed) {
+                    continue;
+                }
+
+                let args = extract_call_args(trimmed);
+                for arg in args {
+                    if let Some(pattern) = self.const_strings.get(&arg).cloned() {
+                        if pattern_is_high_risk(&pattern) {
+                            self.report_finding(sink, trimmed, &pattern);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        self.findings
+    }
+
+    fn detect_sink(line: &str) -> Option<&'static str> {
+        Self::SINK_PATTERNS
+            .iter()
+            .copied()
+            .find(|pattern| line.contains(pattern))
+    }
+
+    fn check_const_literals(&mut self, sink: &str, line: &str) -> bool {
+        for literal in extract_const_literals(line) {
+            let unescaped = unescape_rust_literal(&literal);
+            if pattern_is_high_risk(&unescaped) {
+                self.report_finding(sink, line, &unescaped);
+                return true;
+            }
+        }
+        false
+    }
+
+    fn report_finding(&mut self, sink: &str, line: &str, pattern: &str) {
+        let key = format!("{}::{}", sink, line.trim());
+        if !self.reported_lines.insert(key) {
+            return;
+        }
+
+        let display = if pattern.len() > 60 {
+            format!("{}...", &pattern[..57])
+        } else {
+            pattern.to_string()
+        };
+
+        let message = format!(
+            "Potential regex denial-of-service: pattern `{}` compiled via `{}` may trigger catastrophic backtracking.\n  call: `{}`",
+            display,
+            sink,
+            line.trim()
+        );
+
+        self.findings.push(message);
+    }
+}
+
+/// Advanced rule detecting template/HTML responses built from unescaped user
+/// input in web handlers.
+pub struct TemplateInjectionRule;
+
+impl AdvancedRule for TemplateInjectionRule {
+    fn id(&self) -> &'static str {
+        "ADV005"
+    }
+
+    fn description(&self) -> &'static str {
+        "Detects template/HTML responses built from untrusted input without HTML escaping."
+    }
+
+    fn evaluate(&self, mir: &str) -> Vec<String> {
+        TemplateInjectionAnalyzer::default().analyze(mir)
+    }
+}
+
+#[derive(Default)]
+struct TemplateInjectionAnalyzer {
+    tainted: HashSet<String>,
+    taint_roots: HashMap<String, String>,
+    sanitized_roots: HashSet<String>,
+    sources: HashMap<String, String>,
+    findings: Vec<String>,
+}
+
+impl TemplateInjectionAnalyzer {
+    const UNTRUSTED_PATTERNS: &'static [&'static str] = &[
+        "env::var",
+        "env::var_os",
+        "env::args",
+        "std::env::var",
+        "std::env::args",
+        "stdin",
+        "TcpStream",
+        "read_to_string",
+        "read_to_end",
+        "axum::extract",
+        "warp::filters::path::param",
+        "warp::filters::query::query",
+        "Request::uri",
+        "Request::body",
+        "hyper::body::to_bytes",
+    ];
+
+    const SANITIZER_PATTERNS: &'static [&'static str] = &[
+        "html_escape::encode_safe",
+        "html_escape::encode_double_quoted_attribute",
+        "html_escape::encode_single_quoted_attribute",
+        "ammonia::clean",
+        "maud::Escaped",
+    ];
+
+    const SINK_PATTERNS: &'static [&'static str] = &[
+        "warp::reply::html",
+        "axum::response::Html::from",
+        "axum::response::Html::new",
+        "rocket::response::content::Html::new",
+        "rocket::response::content::Html::from",
+        "HttpResponse::body",
+        "HttpResponse::Ok",
+    ];
+
+    fn analyze(mut self, mir: &str) -> Vec<String> {
+        for line in mir.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            if let Some(dest) = detect_assignment(trimmed) {
+                if Self::is_untrusted_source(trimmed) {
+                    self.mark_source(&dest, trimmed);
+                    continue;
+                }
+
+                if Self::is_sanitizer_call(trimmed) {
+                    if let Some(source) = self.find_tainted_in_line(trimmed) {
+                        self.mark_sanitized(&dest, &source);
+                        continue;
+                    }
+                }
+
+                if let Some(source) = self.find_tainted_in_line(trimmed) {
+                    self.mark_alias(&dest, &source);
+                }
+            }
+
+            if let Some(sink) = Self::detect_sink(trimmed) {
+                let args = extract_call_args(trimmed);
+                for arg in args {
+                    if let Some(root) = self.taint_roots.get(&arg).cloned() {
+                        if self.sanitized_roots.contains(&root) {
+                            continue;
+                        }
+
+                        let mut message = format!(
+                            "Possible template injection: unescaped input flows into `{}`.\n  call: `{}`",
+                            sink,
+                            trimmed
+                        );
+
+                        if let Some(origin) = self.sources.get(&root) {
+                            message.push_str(&format!("\n  source: `{}`", origin));
+                        }
+
+                        self.findings.push(message);
+                        break;
+                    }
+                }
+            }
+        }
+
+        self.findings
+    }
+
+    fn mark_source(&mut self, var: &str, origin: &str) {
+        let var = var.to_string();
+        self.tainted.insert(var.clone());
+        self.taint_roots.insert(var.clone(), var.clone());
+        self.sources.entry(var).or_insert_with(|| origin.trim().to_string());
+    }
+
+    fn mark_alias(&mut self, dest: &str, source: &str) {
+        if !self.tainted.contains(source) {
+            return;
+        }
+
+        if let Some(root) = self.taint_roots.get(source).cloned() {
+            self.tainted.insert(dest.to_string());
+            self.taint_roots.insert(dest.to_string(), root);
+        }
+    }
+
+    fn mark_sanitized(&mut self, dest: &str, source: &str) {
+        if let Some(root) = self.taint_roots.get(source).cloned() {
+            self.sanitized_roots.insert(root.clone());
+            self.tainted.insert(dest.to_string());
+            self.taint_roots.insert(dest.to_string(), root);
+        }
+    }
+
+    fn is_untrusted_source(line: &str) -> bool {
+        Self::UNTRUSTED_PATTERNS
+            .iter()
+            .any(|pattern| line.contains(pattern))
+    }
+
+    fn is_sanitizer_call(line: &str) -> bool {
+        Self::SANITIZER_PATTERNS
+            .iter()
+            .any(|pattern| line.contains(pattern))
+    }
+
+    fn detect_sink(line: &str) -> Option<&'static str> {
+        Self::SINK_PATTERNS
+            .iter()
+            .copied()
+            .find(|pattern| line.contains(pattern))
+    }
+
+    fn find_tainted_in_line(&self, line: &str) -> Option<String> {
+        self.tainted
+            .iter()
+            .find(|var| contains_var(line, var))
+            .cloned()
+    }
+}
+
 /// Advanced rule that flags binary (bincode/postcard) deserialization on
 /// untrusted data without prior validation.
 pub struct InsecureBinaryDeserializationRule;
@@ -1198,6 +1554,16 @@ mod tests {
 
     fn run_binary_rule(mir: &str) -> Vec<String> {
         let rule = InsecureBinaryDeserializationRule;
+        rule.evaluate(mir)
+    }
+
+    fn run_regex_rule(mir: &str) -> Vec<String> {
+        let rule = RegexBacktrackingDosRule;
+        rule.evaluate(mir)
+    }
+
+    fn run_template_rule(mir: &str) -> Vec<String> {
+        let rule = TemplateInjectionRule;
         rule.evaluate(mir)
     }
 
@@ -1590,6 +1956,130 @@ bb0: {
         let findings = run_rule(mir);
         assert!(!findings.is_empty(), "expected copy_nonoverlapping overlap finding");
         assert!(findings[0].contains("copy_nonoverlapping"));
+    }
+
+    #[test]
+    fn detects_nested_quantifier_regex() {
+        let mir = r#"
+bb0: {
+    StorageLive(_1);
+    _1 = const "(a+)+";
+    StorageLive(_2);
+    _2 = regex::Regex::new(move _1) -> [return: bb1, unwind continue];
+}
+
+bb1: {
+    return;
+}
+"#;
+
+        let findings = run_regex_rule(mir);
+        assert!(!findings.is_empty(), "expected regex DoS finding");
+        assert!(findings[0].contains("regex::Regex::new"));
+    }
+
+    #[test]
+    fn detects_dot_star_loop_regex() {
+        let mir = r#"
+bb0: {
+    StorageLive(_1);
+    _1 = const "(.*)+";
+    _0 = regex::Regex::new(const "(.*)+") -> [return: bb1, unwind continue];
+}
+
+bb1: {
+    return;
+}
+"#;
+
+        let findings = run_regex_rule(mir);
+        assert!(!findings.is_empty(), "expected dot-star regex finding");
+        assert!(findings[0].contains("catastrophic backtracking"));
+    }
+
+    #[test]
+    fn allows_simple_regex_pattern() {
+        let mir = r#"
+bb0: {
+    StorageLive(_1);
+    _1 = const "^[a-z0-9_-]{3,16}$";
+    StorageLive(_2);
+    _2 = regex::Regex::new(copy _1) -> [return: bb1, unwind continue];
+}
+
+bb1: {
+    return;
+}
+"#;
+
+        let findings = run_regex_rule(mir);
+        assert!(findings.is_empty(), "expected safe regex to be allowed");
+    }
+
+    #[test]
+    fn detects_template_injection_env() {
+        let mir = r#"
+bb0: {
+    StorageLive(_1);
+    _1 = std::env::var::<String>(const "USERNAME") -> [return: bb1, unwind continue];
+}
+
+bb1: {
+    StorageLive(_2);
+    _2 = warp::reply::html(move _1) -> [return: bb2, unwind continue];
+}
+
+bb2: {
+    return;
+}
+"#;
+
+        let findings = run_template_rule(mir);
+        assert!(!findings.is_empty(), "expected template injection finding");
+        assert!(findings[0].contains("warp::reply::html"));
+    }
+
+    #[test]
+    fn allows_template_with_escape() {
+        let mir = r#"
+bb0: {
+    StorageLive(_1);
+    _1 = std::env::var::<String>(const "USERNAME") -> [return: bb1, unwind continue];
+}
+
+bb1: {
+    StorageLive(_2);
+    _2 = html_escape::encode_safe(move _1);
+    StorageLive(_3);
+    _3 = warp::reply::html(move _2) -> [return: bb2, unwind continue];
+}
+
+bb2: {
+    return;
+}
+"#;
+
+        let findings = run_template_rule(mir);
+        assert!(findings.is_empty(), "expected escaped template to be allowed");
+    }
+
+    #[test]
+    fn allows_const_template() {
+        let mir = r#"
+bb0: {
+    StorageLive(_1);
+    _1 = const "<p>Hello world</p>";
+    StorageLive(_2);
+    _2 = warp::reply::html(copy _1) -> [return: bb1, unwind continue];
+}
+
+bb1: {
+    return;
+}
+"#;
+
+        let findings = run_template_rule(mir);
+        assert!(findings.is_empty(), "expected constant template to be allowed");
     }
 
     #[test]

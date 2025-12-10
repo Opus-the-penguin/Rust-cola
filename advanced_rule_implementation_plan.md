@@ -32,12 +32,14 @@ This plan outlines the approach for implementing the remaining advanced rules in
   - Highlight binary format parsing on tainted input.
   - *Technical*: Similar to above, but for binary formats.
   - *Status notes*: Added `InsecureBinaryDeserializationRule` covering `bincode` and `postcard` sinks with len-check sanitizer support and regression tests.
-- **45. Regex denial-of-service**
-  - Flag untrusted patterns compiled with catastrophic backtracking.
-  - *Technical*: Pattern analysis, taint tracking, regex complexity heuristics.
-- **46. Template injection in web responses**
-  - Taint tracking into response body builders.
-  - *Technical*: Requires interprocedural taint tracking to web response sinks.
+- **45. Regex denial-of-service** *(implemented 2025-12-10)*
+  - Flag regex patterns with nested quantifiers that cause catastrophic backtracking.
+  - *Technical*: Pattern analysis with nested quantifier detection.
+  - *Status notes*: Added `RegexBacktrackingDosRule` (ADV004) identifying nested quantifier/dot-star loops in regex compilation with regression coverage.
+- **46. Template injection in web responses** *(implemented 2025-12-10)*
+  - Detect tainted data rendered directly into HTML/template response builders.
+  - *Technical*: Uses MIR taint tracking from env/request sources through aliasing into templating sinks with sanitizer allowlist for HTML escaping and constant literals.
+  - *Status notes*: Added `TemplateInjectionRule` covering `warp::reply::html` and similar templating sinks, recognizing sanitizers like `html_escape::encode_safe` and constant bodies. Regression tests ensure tainted env var flows are flagged while escaped and constant cases are allowed.
 
 ### Concurrency & Async
 - **48. Unsafe Send across async boundaries**

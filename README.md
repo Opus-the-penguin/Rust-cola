@@ -66,10 +66,10 @@ Binary: `target/release/cargo-cola`
 
 ## What It Detects
 
-100 rules covering:
+101 rules covering:
 
 - Memory safety (transmute, uninitialized memory, Box leaks, dangling pointer escapes)
-- Input validation (SQL injection, path traversal, command injection, SSRF, unsafe JSON/TOML/binary deserialization)
+- Input validation (SQL injection, path traversal, command injection, SSRF, unsafe JSON/TOML/binary deserialization, template injection, regex catastrophic backtracking)
 - Cryptography (weak hashes, weak ciphers, hardcoded keys)
 - Concurrency (mutex across await, blocking in async)
 - FFI (allocator mismatch, CString pointer misuse)

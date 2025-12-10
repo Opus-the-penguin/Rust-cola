@@ -66,9 +66,9 @@ Binary: `target/release/cargo-cola`
 
 ## What It Detects
 
-97 rules covering:
+98 rules covering:
 
-- Memory safety (transmute, uninitialized memory, Box leaks)
+- Memory safety (transmute, uninitialized memory, Box leaks, dangling pointer escapes)
 - Input validation (SQL injection, path traversal, command injection, SSRF)
 - Cryptography (weak hashes, weak ciphers, hardcoded keys)
 - Concurrency (mutex across await, blocking in async)

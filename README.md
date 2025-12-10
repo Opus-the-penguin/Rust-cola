@@ -1,6 +1,9 @@
 # Rust-cola
 
-Static security analyzer for Rust. Compiles source code to access MIR and HIR, enabling detection of issues invisible to source-level scanners (expanded macros, resolved generics, trait implementations). Optionally uses an LLM to filter false positives and suggest fixes.
+
+Static security analyzer for Rust. Compiles source code to access MIR (Mid-level Intermediate Representation) and HIR (High-level Intermediate Representation)—internal compiler formats that reveal issues invisible to source-level scanners (expanded macros, resolved generics, trait implementations). Optionally uses an LLM to filter false positives and suggest fixes.
+
+Rust's compiler uses several intermediate representations (IRs) to analyze and transform code. HIR (High-level Intermediate Representation) is a structured form of the source code after parsing, while MIR (Mid-level Intermediate Representation) is a simplified, control-flow-oriented version used for borrow checking and optimization. These IRs allow Rust-cola to detect issues that are not visible in raw source code. To use Rust-cola, the environment must be able to compile the target Rust codebase, as analysis depends on successful compilation and extraction of these IRs. Note: Rust-cola requires the nightly Rust toolchain (not stable), as only nightly provides the developer tools needed to extract HIR and MIR for analysis.
 
 ## Usage
 

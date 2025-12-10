@@ -1390,23 +1390,17 @@ fn generate_llm_prompt(
 
     let mut content = String::new();
 
-    // Instructions header
-    writeln!(&mut content, "# Security Analysis Request: {}", project_name)?;
+    // Task instructions (included so user just pastes the whole file)
+    writeln!(&mut content, "# Security Analysis: {}", project_name)?;
     writeln!(&mut content)?;
-    writeln!(&mut content, "**Instructions:** Paste this content into your AI assistant (Copilot Chat, Cursor, Claude, etc.)")?;
+    writeln!(&mut content, "Analyze these {} security findings. For each:", findings.len())?;
+    writeln!(&mut content, "1. True positive or false positive?")?;
+    writeln!(&mut content, "2. If true: severity, attack scenario, code fix")?;
+    writeln!(&mut content, "3. Priority: P0 (immediate), P1 (this sprint), P2 (backlog)")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "Output a markdown security report.")?;
     writeln!(&mut content)?;
     writeln!(&mut content, "---")?;
-    writeln!(&mut content)?;
-
-    // The actual prompt - concise instructions
-    writeln!(&mut content, "## Task")?;
-    writeln!(&mut content)?;
-    writeln!(&mut content, "Analyze {} security findings from cargo-cola (Rust static analyzer) on **{}**.", findings.len(), project_name)?;
-    writeln!(&mut content)?;
-    writeln!(&mut content, "For each finding:")?;
-    writeln!(&mut content, "1. Is it a **true positive** (real vulnerability) or **false positive** (safe pattern/test code)?")?;
-    writeln!(&mut content, "2. If true positive: severity, impact, and code fix")?;
-    writeln!(&mut content, "3. Group similar findings to avoid repetition")?;
     writeln!(&mut content)?;
     writeln!(&mut content, "## Findings")?;
     writeln!(&mut content)?;
@@ -1437,10 +1431,6 @@ fn generate_llm_prompt(
         }
         writeln!(&mut content)?;
     }
-
-    // Concise closing
-    writeln!(&mut content, "---")?;
-    writeln!(&mut content, "Output format: Markdown with true positives, false positives, and recommended fixes.")?;
 
     // Write file
     if let Some(parent) = path.parent() {

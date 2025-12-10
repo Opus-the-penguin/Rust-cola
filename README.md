@@ -16,16 +16,7 @@ Output: `out/reports/llm-prompt.md`
 
 **Step 2: Analyze**
 
-Open `out/reports/llm-prompt.md` and paste its contents into your LLM (ChatGPT, Claude, Copilot, etc.) with this prompt:
-
-```
-Analyze these security findings. For each:
-1. True positive or false positive?
-2. If true: severity, attack scenario, code fix
-3. Priority: P0/P1/P2
-
-Output a markdown report.
-```
+Paste the contents of `out/reports/llm-prompt.md` into your LLM (ChatGPT, Claude, Copilot, etc.). The file includes analysis instructions.
 
 ### Automated API
 

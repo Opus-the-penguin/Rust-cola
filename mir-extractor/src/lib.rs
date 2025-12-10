@@ -6074,6 +6074,158 @@ impl Rule for RawPointerEscapeRule {
     }
 }
 
+/// RUSTCOLA097: Network/process access in build scripts
+/// Build scripts should not make network requests or download files - supply chain risk.
+struct BuildScriptNetworkRule {
+    metadata: RuleMetadata,
+}
+
+impl BuildScriptNetworkRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA097".to_string(),
+                name: "build-script-network-access".to_string(),
+                short_description: "Network access detected in build script".to_string(),
+                full_description: "Build scripts (build.rs) should not perform network requests, download files, or spawn processes that contact external systems. This is a supply-chain security risk - malicious dependencies could exfiltrate data or download malware at build time. Use vendored dependencies or pre-downloaded assets instead.".to_string(),
+                help_uri: Some("https://doc.rust-lang.org/cargo/reference/build-scripts.html".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Network-related patterns to detect
+    fn network_patterns() -> &'static [(&'static str, &'static str)] {
+        &[
+            // HTTP client libraries
+            ("reqwest::blocking::get", "reqwest HTTP client"),
+            ("reqwest::get", "reqwest HTTP client"),
+            ("reqwest::Client", "reqwest HTTP client"),
+            ("ureq::get", "ureq HTTP client"),
+            ("ureq::post", "ureq HTTP client"),
+            ("ureq::Agent", "ureq HTTP client"),
+            ("hyper::Client", "hyper HTTP client"),
+            ("curl::easy::Easy", "curl library"),
+            ("attohttpc::", "attohttpc HTTP client"),
+            ("minreq::", "minreq HTTP client"),
+            ("isahc::", "isahc HTTP client"),
+            
+            // Network primitives
+            ("TcpStream::connect", "raw TCP connection"),
+            ("UdpSocket::bind", "raw UDP socket"),
+            ("std::net::TcpStream", "TCP network access"),
+            ("tokio::net::", "tokio network access"),
+            ("async_std::net::", "async-std network access"),
+            ("to_socket_addrs", "DNS lookup"),
+            
+            // Dangerous commands
+            ("Command::new(\"curl\")", "curl command"),
+            ("Command::new(\"wget\")", "wget command"),
+            ("Command::new(\"fetch\")", "fetch command"),
+            ("Command::new(\"git\")", "git command (may clone from network)"),
+            ("Command::new(\"npm\")", "npm command (network access)"),
+            ("Command::new(\"pip\")", "pip command (network access)"),
+            ("Command::new(\"cargo\")", "cargo command (may download crates)"),
+        ]
+    }
+
+    /// Safe patterns that shouldn't trigger even if they look like network access
+    fn safe_patterns() -> &'static [&'static str] {
+        &[
+            "// SAFE:",
+            "// Safe:",
+            "#[allow(",
+            "mock",
+            "test",
+            "localhost",
+            "127.0.0.1",
+            "::1",
+        ]
+    }
+}
+
+impl Rule for BuildScriptNetworkRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        // Only scan build.rs files
+        let build_rs = crate_root.join("build.rs");
+        if !build_rs.exists() {
+            return findings;
+        }
+
+        let content = match fs::read_to_string(&build_rs) {
+            Ok(c) => c,
+            Err(_) => return findings,
+        };
+
+        let lines: Vec<&str> = content.lines().collect();
+        let mut current_fn_name = String::new();
+
+        for (idx, line) in lines.iter().enumerate() {
+            let trimmed = line.trim();
+
+            // Track function names
+            if trimmed.contains("fn ") {
+                if let Some(fn_pos) = trimmed.find("fn ") {
+                    let after_fn = &trimmed[fn_pos + 3..];
+                    if let Some(paren_pos) = after_fn.find('(') {
+                        current_fn_name = after_fn[..paren_pos].trim().to_string();
+                    }
+                }
+            }
+
+            // Skip comments
+            if trimmed.starts_with("//") || trimmed.starts_with("/*") {
+                continue;
+            }
+
+            // Check for safe patterns first
+            let is_safe = Self::safe_patterns().iter().any(|p| line.contains(p));
+            if is_safe {
+                continue;
+            }
+
+            // Check for network patterns
+            for (pattern, description) in Self::network_patterns() {
+                if line.contains(pattern) {
+                    let location = format!("build.rs:{}", idx + 1);
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: format!(
+                            "{} detected in build script function `{}`. Build scripts should not perform network requests - this is a supply-chain security risk.",
+                            description, current_fn_name
+                        ),
+                        function: location,
+                        function_signature: current_fn_name.clone(),
+                        evidence: vec![trimmed.to_string()],
+                        span: None,
+                    });
+                    break; // Only report once per line
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 struct VecSetLenMisuseRule {
     metadata: RuleMetadata,
 }
@@ -18010,6 +18162,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(MutexGuardAcrossAwaitRule::new())); // RUSTCOLA094
     engine.register_rule(Box::new(TransmuteLifetimeChangeRule::new())); // RUSTCOLA095
     engine.register_rule(Box::new(RawPointerEscapeRule::new())); // RUSTCOLA096
+    engine.register_rule(Box::new(BuildScriptNetworkRule::new())); // RUSTCOLA097
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

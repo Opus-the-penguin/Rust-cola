@@ -70,5 +70,6 @@ members = [
     "examples/mutex-guard-await",
     "examples/transmute-lifetime",
     "examples/raw-pointer-escape",
+    "examples/build-script-network",
 ]
 resolver = "2"

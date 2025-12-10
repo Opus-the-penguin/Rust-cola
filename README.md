@@ -1,182 +1,361 @@
-# Rust-cola — LLM-Assisted Static Security Analysis for Rust
+# Rust-cola# Rust-cola — LLM-Assisted Static Security Analysis for Rust
 
-Rust-cola is an **LLM-integrated static application security testing (SAST)** tool for Rust code. It combines a three-tier hybrid analysis engine (MIR heuristics, source inspection, and rustc HIR semantic analysis) with optional LLM-powered report generation for intelligent false positive filtering, exploitability analysis, and remediation suggestions.
 
-> **Recent Achievement (Dec 2025):** 
+
+Static security analysis for Rust. Combines MIR-based detection with optional LLM integration for false positive filtering and remediation suggestions.Rust-cola is an **LLM-integrated static application security testing (SAST)** tool for Rust code. It combines a three-tier hybrid analysis engine (MIR heuristics, source inspection, and rustc HIR semantic analysis) with optional LLM-powered report generation for intelligent false positive filtering, exploitability analysis, and remediation suggestions.
+
+
+
+## Quick Start> **Recent Achievement (Dec 2025):** 
+
 > - **LLM Integration:** Added `--llm-report` with "Bring Your Own LLM" support (OpenAI, Anthropic, Ollama). Automated security analysis with false positive filtering, CVSS estimates, attack scenarios, and code fix suggestions.
-> - **Standalone Reports:** Added `--report` for human-readable reports without LLM access, with heuristic-based triage.
+
+### Preferred: Use with an AI Agent> - **Standalone Reports:** Added `--report` for human-readable reports without LLM access, with heuristic-based triage.
+
 > - **New Rules:** RUSTCOLA091 (JSON/TOML deserialization), RUSTCOLA090 (Unbounded read_to_end), RUSTCOLA089 (YAML Deserialization), RUSTCOLA088 (SSRF), RUSTCOLA087 (SQL injection), RUSTCOLA086 (Path traversal) - all with 100% recall via inter-procedural analysis.
-> - **Total: 87 security rules**
 
-## Features
+The recommended way to use Rust-cola is through an AI agent in your IDE (GitHub Copilot, Cursor, or similar) or via direct LLM API access. The agent handles scan result interpretation, false positive pruning, exploitability analysis, and remediation suggestions.> - **Total: 87 security rules**
 
-- **Three-Tier Analysis Architecture:**
-  - **Tier 1 (MIR Heuristics):** 85 rules using pattern matching on compiler-generated MIR
-  - **Tier 2 (Source Analysis):** 2 rules using AST inspection for comments and attributes  
+
+
+**Step 1: Run the scan**## Features
+
+
+
+```bash- **Three-Tier Analysis Architecture:**
+
+cargo-cola --crate-path /path/to/project --llm-prompt  - **Tier 1 (MIR Heuristics):** 85 rules using pattern matching on compiler-generated MIR
+
+```  - **Tier 2 (Source Analysis):** 2 rules using AST inspection for comments and attributes  
+
   - **Tier 3 (Semantic Analysis):** HIR integration for type-aware rules (type sizes, Send/Sync detection)
-- **LLM-Assisted Analysis (Optional):** Integrates with LLMs (Claude, GPT-4, Ollama, or any OpenAI-compatible API) to enhance raw findings with:
+
+This produces `out/reports/llm-prompt.md` containing the findings formatted for LLM analysis.- **LLM-Assisted Analysis (Optional):** Integrates with LLMs (Claude, GPT-4, Ollama, or any OpenAI-compatible API) to enhance raw findings with:
+
   - **Precision improvement:** Intelligent false positive filtering based on code context
-  - **Severity organization:** Findings grouped and prioritized by actual risk
+
+**Step 2: Submit to your AI agent**  - **Severity organization:** Findings grouped and prioritized by actual risk
+
   - **Exploitability analysis:** Attack scenarios, CVSS estimates, and real-world impact assessment
-  - **Remediation suggestions:** Concrete code fixes for each confirmed vulnerability
+
+Open the prompt file and paste this into your AI agent chat window:  - **Remediation suggestions:** Concrete code fixes for each confirmed vulnerability
+
   - **Executive reporting:** Polished security reports ready for stakeholders
-- **87 Built-in Security Rules** covering:
-	- Memory safety issues: `Box::into_raw` leaks, unchecked `transmute`, `Vec::set_len` misuse, premature `MaybeUninit::assume_init`, deprecated zero-initialization functions
-	- Unsafe code patterns: unsafe blocks, untrusted environment variable reads, command execution with user-influenced input
-	- Cryptography: weak hash algorithms (MD5, SHA-1, RIPEMD, CRC), weak ciphers (DES, RC4, Blowfish), hard-coded cryptographic keys, predictable random seeds
-	- Network security: HTTP URLs, disabled TLS certificate validation, SSRF detection
-	- Concurrency: unsafe `Send`/`Sync` implementations, mutex guard issues, panic in destructors
+
+```- **87 Built-in Security Rules** covering:
+
+Analyze the security findings in this file. For each finding:	- Memory safety issues: `Box::into_raw` leaks, unchecked `transmute`, `Vec::set_len` misuse, premature `MaybeUninit::assume_init`, deprecated zero-initialization functions
+
+1. Determine if it is a true positive or false positive	- Unsafe code patterns: unsafe blocks, untrusted environment variable reads, command execution with user-influenced input
+
+2. For true positives: assess severity (Critical/High/Medium/Low), describe the attack scenario, and provide a code fix	- Cryptography: weak hash algorithms (MD5, SHA-1, RIPEMD, CRC), weak ciphers (DES, RC4, Blowfish), hard-coded cryptographic keys, predictable random seeds
+
+3. Group findings by priority: P0 (fix immediately), P1 (fix this sprint), P2 (fix this quarter)	- Network security: HTTP URLs, disabled TLS certificate validation, SSRF detection
+
+4. Explain why false positives are not exploitable	- Concurrency: unsafe `Send`/`Sync` implementations, mutex guard issues, panic in destructors
+
 	- FFI: allocator mismatches, dangling CString pointers, blocking calls in async contexts
-	- Input validation: SQL injection, path traversal, YAML/JSON/TOML deserialization attacks, untrusted input to commands and file operations
-	- Code hygiene: commented-out code, overscoped allow attributes
+
+Output a markdown security report.	- Input validation: SQL injection, path traversal, YAML/JSON/TOML deserialization attacks, untrusted input to commands and file operations
+
+```	- Code hygiene: commented-out code, overscoped allow attributes
+
 - Generates findings in JSON format and SARIF format for CI/CD integration
-- Supports custom rule extensions via YAML rulepacks
+
+Or if the agent has file access:- Supports custom rule extensions via YAML rulepacks
+
 - Includes experimental research prototypes for additional vulnerability patterns
 
-## Architecture
+```
+
+@workspace Review out/reports/llm-prompt.md and produce a security report with triage, severity ranking, and remediation code.## Architecture
+
+```
 
 Rust-cola uses a hybrid three-tier detection approach:
 
+### Alternative: Automated LLM API
+
 ```
-┌─────────────────────────────────────────────────┐
+
+For CI pipelines or scripted workflows:┌─────────────────────────────────────────────────┐
+
 │           Rust-cola Analysis Engine             │
-├─────────────────────────────────────────────────┤
-│  Tier 1: MIR        Tier 2: Source    Tier 3:   │
-│  Heuristics         Analysis          HIR       │
-│  (85 rules)         (2 rules)         ✅ Active │
-│  ✅ Pattern          ✅ Comments/      ✅ Type    │
-│     matching           Attributes        queries │
+
+```bash├─────────────────────────────────────────────────┤
+
+export RUSTCOLA_LLM_API_KEY=sk-...│  Tier 1: MIR        Tier 2: Source    Tier 3:   │
+
+cargo-cola --crate-path . --llm-report report.md \│  Heuristics         Analysis          HIR       │
+
+  --llm-endpoint https://api.openai.com/v1/chat/completions \│  (85 rules)         (2 rules)         ✅ Active │
+
+  --llm-model gpt-4│  ✅ Pattern          ✅ Comments/      ✅ Type    │
+
+```│     matching           Attributes        queries │
+
 │                                       ✅ Send/   │
-│                                          Sync   │
-└─────────────────────────────────────────────────┘
-```
+
+Supported endpoints:│                                          Sync   │
+
+- OpenAI: `https://api.openai.com/v1/chat/completions`└─────────────────────────────────────────────────┘
+
+- Anthropic: `https://api.anthropic.com/v1/messages````
+
+- Ollama (local): `http://localhost:11434/v1/chat/completions`
 
 **Tier 1 (MIR Heuristics):** Fast pattern matching on Mid-level Intermediate Representation strings for API misuse, dangerous patterns, and common vulnerabilities. Best for clear-cut security violations.
 
+### Standalone Mode (No LLM)
+
 **Tier 2 (Source Analysis):** AST-based inspection using the `syn` crate for patterns requiring source-level context like comments, attributes, and formatting that don't appear in MIR.
+
+For environments without LLM access:
 
 **Tier 3 (Semantic Analysis):** Deep semantic analysis via rustc HIR integration for type-aware rules. Currently supports type size queries (100% accuracy) and Send/Sync trait detection. See `docs/tier3-hir-architecture.md`.
 
-Research prototypes are available in [`mir-extractor/src/prototypes.rs`](mir-extractor/src/prototypes.rs) with documentation in [`docs/research/`](docs/research/).
+```bash
+
+cargo-cola --crate-path . --report security-report.mdResearch prototypes are available in [`mir-extractor/src/prototypes.rs`](mir-extractor/src/prototypes.rs) with documentation in [`docs/research/`](docs/research/).
+
+```
 
 ## Inter-Procedural Taint Analysis
 
+This generates a report with heuristic-based triage. Manual review is required to separate true positives from false positives.
+
 Rust-cola includes **inter-procedural taint analysis** that tracks data flow across function boundaries—not just within a single function. This is critical for detecting real-world vulnerabilities where untrusted input flows through helper functions before reaching dangerous sinks.
+
+## Installation
 
 ### How It Works
 
+Requires Rust nightly toolchain.
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                 Inter-Procedural Taint Flow                     │
-│                                                                 │
-│   get_user_input()     process_data()        execute_query()   │
+
+```bash┌─────────────────────────────────────────────────────────────────┐
+
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh│                 Inter-Procedural Taint Flow                     │
+
+rustup toolchain install nightly│                                                                 │
+
+```│   get_user_input()     process_data()        execute_query()   │
+
 │        │                    │                      │            │
-│        ▼                    ▼                      ▼            │
+
+Build from source:│        ▼                    ▼                      ▼            │
+
 │   ┌─────────┐          ┌─────────┐           ┌─────────┐       │
-│   │ env::var│ ───────► │ helper  │ ────────► │ sqlx::  │       │
-│   │ [SOURCE]│  taint   │ fn()    │   taint   │ query() │       │
-│   └─────────┘  flows   └─────────┘   flows   │ [SINK]  │       │
-│                                              └─────────┘       │
-│                                                                 │
+
+```bash│   │ env::var│ ───────► │ helper  │ ────────► │ sqlx::  │       │
+
+git clone https://github.com/Opus-the-penguin/Rust-cola.git│   │ [SOURCE]│  taint   │ fn()    │   taint   │ query() │       │
+
+cd Rust-cola│   └─────────┘  flows   └─────────┘   flows   │ [SINK]  │       │
+
+cargo build --release│                                              └─────────┘       │
+
+```│                                                                 │
+
 │   Detected: SQL injection via 3-function call chain            │
-└─────────────────────────────────────────────────────────────────┘
+
+The binary is at `target/release/cargo-cola`.└─────────────────────────────────────────────────────────────────┘
+
 ```
+
+## How It Works
 
 **The analysis proceeds in phases:**
 
+Rust-cola compiles target code and analyzes the compiler's internal representations:
+
 1. **Call Graph Construction** — Extract function calls from MIR to build a directed graph of dependencies
-2. **Function Summarization** — Analyze each function bottom-up to create summaries describing how taint flows through parameters and return values
-3. **Path Finding** — Starting from source functions, explore the call graph to find paths to sink functions
-4. **Sanitization Detection** — Identify validation patterns (allowlists, bounds checks, escaping) that break taint flows
 
-### Why This Matters
+- **MIR (Mid-level IR)**: Pattern matching on desugared code after macro expansion and type checking2. **Function Summarization** — Analyze each function bottom-up to create summaries describing how taint flows through parameters and return values
 
-Consider this vulnerable pattern that intra-procedural analysis would **miss**:
+- **HIR (High-level IR)**: Type-aware analysis using the compiler's semantic information3. **Path Finding** — Starting from source functions, explore the call graph to find paths to sink functions
 
-```rust
+- **Source analysis**: AST inspection for comments and attributes4. **Sanitization Detection** — Identify validation patterns (allowlists, bounds checks, escaping) that break taint flows
+
+
+
+The tool requires successful compilation because Rust's macros, generics, and trait resolution are only fully resolved by the compiler. Source-level scanners cannot see inside macros or resolve trait implementations.### Why This Matters
+
+
+
+### Detection CapabilitiesConsider this vulnerable pattern that intra-procedural analysis would **miss**:
+
+
+
+97 built-in rules covering:```rust
+
 fn get_user_path() -> String {
-    std::env::var("USER_PATH").unwrap()  // Taint source
+
+- Memory safety: `Box::into_raw` leaks, transmute misuse, uninitialized memory    std::env::var("USER_PATH").unwrap()  // Taint source
+
+- Input validation: SQL injection, path traversal, command injection, SSRF}
+
+- Cryptography: weak hashes (MD5, SHA-1), weak ciphers (DES, RC4), hardcoded keys
+
+- Concurrency: mutex guards held across await, blocking operations in async contextsfn process_file() {
+
+- FFI: allocator mismatches, dangling CString pointers    let path = get_user_path();           // Taint flows in
+
+- Code hygiene: commented-out code, crate-wide allow attributes    std::fs::read_to_string(&path);       // Path traversal sink!
+
 }
 
-fn process_file() {
-    let path = get_user_path();           // Taint flows in
-    std::fs::read_to_string(&path);       // Path traversal sink!
-}
-```
+### Inter-Procedural Analysis```
 
-An intra-procedural analyzer only sees:
+
+
+Tracks taint flow across function boundaries. Detects vulnerabilities where user input passes through helper functions before reaching dangerous sinks.An intra-procedural analyzer only sees:
+
 - `get_user_path()`: Returns a String (no visible taint)
-- `process_file()`: Uses that String in a filesystem call
 
-It **cannot** see that the String originates from `env::var`. Rust-cola's inter-procedural analysis detects this because it:
-1. Summarizes `get_user_path()` as returning tainted data (`ReturnTaint::FromSource`)
-2. Tracks that `process_file()` calls it and uses the result in a sink
-3. Reports the full taint path: `env::var → get_user_path → process_file → fs::read_to_string`
+Example detected pattern:- `process_file()`: Uses that String in a filesystem call
 
-### Supported Source → Sink Flows
 
-| Source Type | Examples |
-|-------------|----------|
-| Environment | `env::var()`, `env::args()` |
+
+```rustIt **cannot** see that the String originates from `env::var`. Rust-cola's inter-procedural analysis detects this because it:
+
+fn get_user_path() -> String {1. Summarizes `get_user_path()` as returning tainted data (`ReturnTaint::FromSource`)
+
+    std::env::var("USER_PATH").unwrap()  // taint source2. Tracks that `process_file()` calls it and uses the result in a sink
+
+}3. Reports the full taint path: `env::var → get_user_path → process_file → fs::read_to_string`
+
+
+
+fn process_file() {### Supported Source → Sink Flows
+
+    let path = get_user_path();           // taint flows through
+
+    std::fs::read_to_string(&path);       // path traversal sink| Source Type | Examples |
+
+}|-------------|----------|
+
+```| Environment | `env::var()`, `env::args()` |
+
 | Stdin | `stdin().read_line()`, `stdin().lines()` |
-| Files | `fs::read_to_string()` on untrusted paths |
+
+## Command Reference| Files | `fs::read_to_string()` on untrusted paths |
+
 | Network | `TcpStream::read()`, HTTP request bodies |
 
-| Sink Type | Examples |
-|-----------|----------|
+```bash
+
+cargo-cola --crate-path <PATH> [OPTIONS]| Sink Type | Examples |
+
+```|-----------|----------|
+
 | Command Execution | `Command::new()`, `Command::arg()` |
-| Filesystem | `fs::read_to_string()`, `File::create()`, `fs::remove_file()` |
-| SQL | `sqlx::query()`, `diesel::sql_query()`, format strings with SQL keywords |
-| HTTP/SSRF | `reqwest::get()`, `ureq::get()` with user-controlled URLs |
-| Regex | `Regex::new()` with user-controlled patterns |
 
-### Sanitization Patterns Detected
+| Option | Description || Filesystem | `fs::read_to_string()`, `File::create()`, `fs::remove_file()` |
 
-Rust-cola recognizes common sanitization patterns that break taint flows:
+|--------|-------------|| SQL | `sqlx::query()`, `diesel::sql_query()`, format strings with SQL keywords |
 
-- **Path validation:** `path.canonicalize()?.starts_with(base_dir)`
-- **SQL parameterization:** `.bind()`, `?` placeholders
-- **Allowlist checks:** `allowed_values.contains(&input)`
-- **Input parsing:** Integer parsing for numeric-only fields
+| `--crate-path <PATH>` | Path to crate or workspace to analyze || HTTP/SSRF | `reqwest::get()`, `ureq::get()` with user-controlled URLs |
+
+| `--out-dir <PATH>` | Output directory (default: `out`) || Regex | `Regex::new()` with user-controlled patterns |
+
+| `--llm-prompt [PATH]` | Generate LLM prompt file for manual submission |
+
+| `--llm-report <PATH>` | Generate LLM report (calls API if endpoint provided) |### Sanitization Patterns Detected
+
+| `--llm-endpoint <URL>` | LLM API endpoint |
+
+| `--llm-model <NAME>` | Model name (default: `gpt-4`) |Rust-cola recognizes common sanitization patterns that break taint flows:
+
+| `--llm-api-key <KEY>` | API key (or set `RUSTCOLA_LLM_API_KEY`) |
+
+| `--report <PATH>` | Generate standalone report without LLM |- **Path validation:** `path.canonicalize()?.starts_with(base_dir)`
+
+| `--sarif <PATH>` | Write SARIF output for CI integration |- **SQL parameterization:** `.bind()`, `?` placeholders
+
+| `--fail-on-findings` | Exit non-zero if findings present (default: true) |- **Allowlist checks:** `allowed_values.contains(&input)`
+
+| `--rulepack <PATH>` | Load additional rules from YAML file |- **Input parsing:** Integer parsing for numeric-only fields
+
 - **Escaping:** `regex::escape()`, string replacement
+
+## Output Formats
 
 ### Current Capabilities
 
-| Metric | Value |
-|--------|-------|
-| **Call chain depth** | Unlimited (with cycle detection) |
+- `findings.json`: Raw findings with rule IDs, locations, and evidence
+
+- `*.sarif`: SARIF format for GitHub code scanning and CI tools| Metric | Value |
+
+- `llm-prompt.md`: Formatted for LLM submission|--------|-------|
+
+- `report.md`: Human-readable standalone report| **Call chain depth** | Unlimited (with cycle detection) |
+
 | **Cross-function detection** | ✅ Full support |
-| **Closure capture tracking** | ✅ Phase 3.5.2 |
+
+## Custom Rules| **Closure capture tracking** | ✅ Phase 3.5.2 |
+
 | **Path-sensitive (branching)** | ✅ CFG-based analysis |
-| **False positive filtering** | ✅ Validation guard detection |
 
-For implementation details, see [`mir-extractor/src/interprocedural.rs`](mir-extractor/src/interprocedural.rs).
+Extend detection with YAML rulepacks:| **False positive filtering** | ✅ Validation guard detection |
 
-## Why Rust-cola Requires Compilation
 
-Unlike traditional static analysis tools that operate purely on source code or abstract syntax trees (ASTs), Rust-cola requires the target code to be **compiled** by the Rust compiler. This is a deliberate design choice that unlocks significantly deeper analysis capabilities.
 
-### The Compilation Requirement
+```bashFor implementation details, see [`mir-extractor/src/interprocedural.rs`](mir-extractor/src/interprocedural.rs).
 
-When you run Rust-cola, it invokes `cargo rustc` with special flags to extract the compiler's internal representations:
+cargo-cola --crate-path . --rulepack custom-rules.yaml
 
-- **MIR (Mid-level Intermediate Representation):** A simplified, desugared representation of Rust code after type checking, borrow checking, and monomorphization
-- **HIR (High-level Intermediate Representation):** The compiler's typed AST with full semantic information
+```## Why Rust-cola Requires Compilation
 
-This means your code must successfully compile before Rust-cola can analyze it. While this adds a prerequisite, the benefits far outweigh the costs.
 
-### Why This Matters for Rust
 
-Rust is uniquely challenging for source-level static analysis. Many other languages (JavaScript, Python, Java) can be effectively analyzed at the source/AST level because their semantics are relatively straightforward. Rust, however, has:
+See `examples/rulepacks/example-basic.yaml` for the schema.Unlike traditional static analysis tools that operate purely on source code or abstract syntax trees (ASTs), Rust-cola requires the target code to be **compiled** by the Rust compiler. This is a deliberate design choice that unlocks significantly deeper analysis capabilities.
 
-| Rust Feature | Source/AST Challenge | MIR/HIR Solution |
-|--------------|---------------------|------------------|
-| **Macros** | Unexpanded, opaque tokens | Fully expanded, analyzable code |
-| **Generics & Monomorphization** | Abstract type parameters | Concrete instantiated types |
+
+
+## Why Compilation Is Required### The Compilation Requirement
+
+
+
+Rust-cola requires target code to compile because:When you run Rust-cola, it invokes `cargo rustc` with special flags to extract the compiler's internal representations:
+
+
+
+1. **Macros**: Only visible after expansion by rustc- **MIR (Mid-level Intermediate Representation):** A simplified, desugared representation of Rust code after type checking, borrow checking, and monomorphization
+
+2. **Generics**: Concrete types only known after monomorphization- **HIR (High-level Intermediate Representation):** The compiler's typed AST with full semantic information
+
+3. **Traits**: Implementation resolution requires the trait solver
+
+4. **Closures**: Capture semantics only explicit in MIRThis means your code must successfully compile before Rust-cola can analyze it. While this adds a prerequisite, the benefits far outweigh the costs.
+
+
+
+Source-level scanners miss these patterns. The compilation requirement enables accurate analysis at the cost of requiring valid code.### Why This Matters for Rust
+
+
+
+## DocumentationRust is uniquely challenging for source-level static analysis. Many other languages (JavaScript, Python, Java) can be effectively analyzed at the source/AST level because their semantics are relatively straightforward. Rust, however, has:
+
+
+
+- Rule development: `docs/RULE_DEVELOPMENT_GUIDE.md`| Rust Feature | Source/AST Challenge | MIR/HIR Solution |
+
+- Inter-procedural analysis: `docs/phase3-interprocedural-design.md`|--------------|---------------------|------------------|
+
+- HIR integration: `docs/tier3-hir-architecture.md`| **Macros** | Unexpanded, opaque tokens | Fully expanded, analyzable code |
+
+- Rule backlog: `docs/security-rule-backlog.md`| **Generics & Monomorphization** | Abstract type parameters | Concrete instantiated types |
+
 | **Trait resolution** | Unknown impl at call sites | Resolved to specific implementations |
-| **Deref coercion** | Implicit, invisible in source | Explicit operations in MIR |
+
+## License| **Deref coercion** | Implicit, invisible in source | Explicit operations in MIR |
+
 | **Borrow checker semantics** | Complex lifetime inference | Already validated, explicit lifetimes |
-| **Pattern matching** | Complex match expressions | Desugared to simple control flow |
+
+MIT| **Pattern matching** | Complex match expressions | Desugared to simple control flow |
+
 | **Closures** | Anonymous types, captures hidden | Explicit struct types with fields |
 | **Async/await** | Sugar over state machines | Explicit Future state machines |
 

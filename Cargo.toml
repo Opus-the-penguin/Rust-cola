@@ -2,6 +2,7 @@
 members = [
     "cargo-cola",
     "mir-extractor",
+    "mir-advanced-rules",
     "examples/simple",
     "examples/hir-typeck-repro",
     "examples/openoptions-truncate",

@@ -44,14 +44,12 @@ enum OwnerKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InvalidationKind {
     Drop,
-    Reallocation,
 }
 
 impl std::fmt::Display for InvalidationKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Drop => write!(f, "drop"),
-            Self::Reallocation => write!(f, "reallocation"),
         }
     }
 }
@@ -93,7 +91,6 @@ impl OwnerState {
 
 #[derive(Debug, Clone)]
 struct PointerInfo {
-    pointer_var: String,
     owner: String,
     owner_kind: OwnerKind,
     creation_line: String,
@@ -176,7 +173,6 @@ impl PointerAnalyzer {
         }
 
         let info = PointerInfo {
-            pointer_var: event.pointer.clone(),
             owner: owner.clone(),
             owner_kind: entry.kind,
             creation_line: event.line.to_string(),
@@ -190,30 +186,33 @@ impl PointerAnalyzer {
 
     fn evaluate_pointer_use(&mut self, line_index: usize, line: &str, ptr_var: &str, reason: &str) {
         if let Some((pointer_key, info)) = self.lookup_pointer(ptr_var) {
-            if let Some(owner_state) = self.owners.get(&info.owner) {
-                if owner_state.leaked {
-                    return;
-                }
+            let (owner_leaked, owner_invalidation) = match self.owners.get(&info.owner) {
+                Some(state) => (state.leaked, state.invalidation.clone()),
+                None => return,
+            };
 
-                if let Some(invalidation) = &owner_state.invalidation {
-                    if invalidation.line_index < line_index
-                        && invalidation.line_index >= info.creation_index
-                        && self
-                            .reported
-                            .insert((pointer_key.clone(), line_index))
-                    {
-                        let message = format!(
-                            "Potential dangling pointer: `{}` {} after {} of `{}`.\n  creation: `{}`\n  invalidation: `{}`\n  use: `{}`",
-                            pointer_key,
-                            reason,
-                            invalidation.kind,
-                            info.owner,
-                            info.creation_line.trim(),
-                            invalidation.line.trim(),
-                            line.trim()
-                        );
-                        self.findings.push(message);
-                    }
+            if owner_leaked {
+                return;
+            }
+
+            if let Some(invalidation) = owner_invalidation {
+                if invalidation.line_index < line_index
+                    && invalidation.line_index >= info.creation_index
+                    && self
+                        .reported
+                        .insert((pointer_key.clone(), line_index))
+                {
+                    let message = format!(
+                        "Potential dangling pointer: `{}` {} after {} of `{}`.\n  creation: `{}`\n  invalidation: `{}`\n  use: `{}`",
+                        pointer_key,
+                        reason,
+                        invalidation.kind,
+                        info.owner,
+                        info.creation_line.trim(),
+                        invalidation.line.trim(),
+                        line.trim()
+                    );
+                    self.findings.push(message);
                 }
             }
         }
@@ -236,10 +235,11 @@ impl PointerAnalyzer {
         }
     }
 
-    fn lookup_pointer(&self, var: &str) -> Option<(String, &PointerInfo)> {
+    fn lookup_pointer(&self, var: &str) -> Option<(String, PointerInfo)> {
         let pointer_key = self.resolve_alias(var);
         self.pointers
             .get(&pointer_key)
+            .cloned()
             .map(|info| (pointer_key, info))
     }
 
@@ -268,7 +268,7 @@ impl PointerAnalyzer {
             .map(|caps| (caps[1].to_string(), caps[2].to_string()))
     }
 
-    fn detect_pointer_creation(line: &str) -> Option<PointerCreationEvent> {
+    fn detect_pointer_creation(line: &str) -> Option<PointerCreationEvent<'_>> {
         static RE_ADDR_OF: Lazy<Regex> = Lazy::new(|| {
             Regex::new(r"^(_\d+)\s*=\s*&raw\s+(?:const|mut)\s+\(\*([^\)]+)\);")
                 .expect("addr-of regex")

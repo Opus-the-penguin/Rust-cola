@@ -2333,6 +2333,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "mir-advanced-rules"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "once_cell",
+ "regex",
+ "serde",
+]
+
+[[package]]
 name = "mir-extractor"
 version = "0.1.0"
 dependencies = [

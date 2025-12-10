@@ -97,7 +97,7 @@ Source-level and AST-based scanners can only see the surface structure of the co
 | `--llm-prompt [PATH]` | Generate prompt file for manual LLM submission |
 | `--llm-report <PATH>` | Generate report (calls API if endpoint provided) |
 | `--llm-endpoint <URL>` | LLM API endpoint |
-| `--llm-model <NAME>` | Model name (default: gpt-4) |
+| `--llm-model <NAME>` | Model name (must be specified; e.g., gpt-4, llama3, etc.) |
 | `--report <PATH>` | Standalone report without LLM |
 | `--sarif <PATH>` | SARIF output for CI |
 | `--rulepack <PATH>` | Additional rules from YAML |

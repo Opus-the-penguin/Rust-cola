@@ -47,6 +47,20 @@ First versioned release of Rust-cola, an LLM-integrated static application secur
 
 ## [Unreleased]
 
+### Added - December 10, 2025
+
+#### Advanced Rules
+- **ADV002 – Insecure JSON/TOML deserialization**: Tracks untrusted sources flowing into `serde_json::from_*` and `toml::from_*` sinks, exempting flows with explicit size checks. Shipped with dedicated MIR analyzer and regression coverage for env-based, constant, and sanitized scenarios.
+- **ADV003 – Insecure binary deserialization**: Flags tainted data reaching `bincode::deserialize*` and `postcard::from_bytes*` sinks while recognizing length guards. Includes postcard socket coverage and len-check sanitization tests.
+
+#### Testing
+- Expanded `mir-advanced-rules` unit suite to **19 tests** covering the new JSON/TOML and binary flows alongside existing pointer rules (all passing).
+
+#### Documentation
+- Updated `README.md` to reflect **100 shipped rules** and highlight unsafe JSON/TOML/binary deserialization detection.
+- Annotated `advanced_rule_implementation_plan.md` with completion notes for Rules 43 and 44.
+- Marked Rules 43 and 44 as shipped in `docs/security-rule-backlog.md` (ADV002 / ADV003 entries).
+
 ### Added - November 12, 2025
 
 #### New Security Rules (3)

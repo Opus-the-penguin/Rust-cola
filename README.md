@@ -4,7 +4,7 @@ Static security analyzer for Rust. Analyzes compiled code (MIR/HIR) and optional
 
 ## Usage
 
-Run the scan, then submit results to an AI agent for analysis.
+Run the scan, then submit results to an LLM for analysis.
 
 **Step 1: Scan**
 
@@ -16,7 +16,7 @@ Output: `out/reports/llm-prompt.md`
 
 **Step 2: Analyze**
 
-Paste the file contents into your AI agent (Copilot, Cursor, Claude, etc.) with this prompt:
+Open `out/reports/llm-prompt.md` and paste its contents into your LLM (ChatGPT, Claude, Copilot, etc.) with this prompt:
 
 ```
 Analyze these security findings. For each:

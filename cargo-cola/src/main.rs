@@ -1395,7 +1395,11 @@ fn generate_llm_prompt(
     writeln!(&mut content)?;
     writeln!(&mut content, "Analyze these {} security findings. For each:", findings.len())?;
     writeln!(&mut content, "1. True positive or false positive?")?;
-    writeln!(&mut content, "2. If true: severity, attack scenario, code fix")?;
+    writeln!(&mut content, "2. If true positive:")?;
+    writeln!(&mut content, "   - Severity (Critical/High/Medium/Low)")?;
+    writeln!(&mut content, "   - Exploitability: attack vector, prerequisites, complexity")?;
+    writeln!(&mut content, "   - Attack scenario")?;
+    writeln!(&mut content, "   - Code fix")?;
     writeln!(&mut content, "3. Priority: P0 (immediate), P1 (this sprint), P2 (backlog)")?;
     writeln!(&mut content)?;
     writeln!(&mut content, "Output a markdown security report.")?;

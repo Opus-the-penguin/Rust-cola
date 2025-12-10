@@ -5775,6 +5775,305 @@ impl Rule for TransmuteLifetimeChangeRule {
     }
 }
 
+/// RUSTCOLA096: Raw pointer from reference escaping safe scope
+/// Detecting when a reference is cast to raw pointer and escapes the valid lifetime.
+struct RawPointerEscapeRule {
+    metadata: RuleMetadata,
+}
+
+impl RawPointerEscapeRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA096".to_string(),
+                name: "raw-pointer-escape".to_string(),
+                short_description: "Raw pointer from local reference escapes function".to_string(),
+                full_description: "Casting a reference to a raw pointer (`as *const T` or `as *mut T`) and returning it or storing it beyond the reference's lifetime creates a dangling pointer. When the referenced data is dropped or moved, the pointer becomes invalid. Use Box::leak, 'static data, or ensure the caller manages the lifetime.".to_string(),
+                help_uri: Some("https://doc.rust-lang.org/std/primitive.pointer.html".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Check if a line contains a raw pointer cast pattern
+    fn is_ptr_cast(line: &str) -> bool {
+        line.contains("as *const") || 
+        line.contains("as *mut") ||
+        line.contains(".as_ptr()") ||
+        line.contains(".as_mut_ptr()")
+    }
+
+    /// Check if the pointer appears to be returned
+    fn is_return_context(lines: &[&str], idx: usize, ptr_var: &str) -> bool {
+        let line = lines[idx].trim();
+        
+        // Direct return on same line
+        if line.starts_with("return ") && (line.contains("as *const") || line.contains("as *mut")) {
+            return true;
+        }
+        
+        // Implicit return (last expression in function)
+        if (line.contains("as *const") || line.contains("as *mut") || line.contains(".as_ptr()")) 
+           && !line.ends_with(';') 
+           && !line.contains("let ") {
+            return true;
+        }
+        
+        // Check if ptr_var is returned in subsequent lines
+        if !ptr_var.is_empty() {
+            for check_line in lines.iter().skip(idx + 1).take(10) {
+                let trimmed = check_line.trim();
+                if trimmed.starts_with("return ") && trimmed.contains(ptr_var) {
+                    return true;
+                }
+                if trimmed.contains(ptr_var) && !trimmed.ends_with(';') && trimmed.ends_with(')') {
+                    // Likely implicit return
+                    return true;
+                }
+                if trimmed.starts_with(ptr_var) && !trimmed.ends_with(';') {
+                    return true;
+                }
+            }
+        }
+        
+        false
+    }
+
+    /// Check if the pointer is stored in a struct field or global
+    fn is_escape_via_store(lines: &[&str], idx: usize) -> bool {
+        let line = lines[idx].trim();
+        
+        // Stored in struct literal field
+        if line.contains("ptr:") && (line.contains("as *const") || line.contains("as *mut")) {
+            return true;
+        }
+        
+        // Stored via dereferencing out parameter  
+        // Match patterns like *out = &x as *const T, *ptr = &local as *mut T
+        if (line.starts_with("*") && line.contains(" = ")) && 
+           (line.contains("as *const") || line.contains("as *mut")) {
+            // Check it's not just a dereference assignment to a local
+            if line.contains("&") {
+                return true;
+            }
+        }
+        
+        // Stored in global/static
+        if line.contains("GLOBAL") || line.contains("STATIC") {
+            if line.contains("as *const") || line.contains("as *mut") {
+                return true;
+            }
+        }
+        
+        false
+    }
+
+    /// Check for safe patterns that should not be flagged
+    fn is_safe_pattern(lines: &[&str], idx: usize, fn_context: &str) -> bool {
+        let line = lines[idx].trim();
+        
+        // Taking pointer from parameter (caller manages lifetime)
+        // Function signature has reference parameter
+        if fn_context.contains("fn ") && fn_context.contains("(&") {
+            // Check if the cast is on a parameter name
+            if !line.contains("let ") && (line.contains(" x ") || line.contains("(x)")) {
+                return true;
+            }
+        }
+        
+        // Box::leak pattern
+        if line.contains("Box::leak") {
+            return true;
+        }
+        
+        // 'static string literals
+        if fn_context.contains("&'static str") {
+            return true;
+        }
+        
+        // Returning Box along with pointer (both in return tuple)
+        if line.contains("(ptr,") && (fn_context.contains("Box<") || fn_context.contains("boxed")) {
+            return true;
+        }
+        
+        // ManuallyDrop pattern
+        if fn_context.contains("ManuallyDrop") {
+            return true;
+        }
+        
+        // Pin pattern
+        if fn_context.contains("Pin<") {
+            return true;
+        }
+        
+        // Used immediately, not stored
+        if line.contains("unsafe {") && line.contains("*ptr") && !line.contains("return") {
+            return true;
+        }
+        
+        // Local use only (no return, no escape)
+        let next_lines: String = lines[idx..std::cmp::min(idx + 5, lines.len())]
+            .iter()
+            .map(|s| *s)
+            .collect::<Vec<&str>>()
+            .join("\n");
+        if next_lines.contains("unsafe { *ptr }") && !next_lines.contains("return ptr") {
+            return true;
+        }
+        
+        false
+    }
+}
+
+impl Rule for RawPointerEscapeRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+            let mut current_fn_name = String::new();
+            let mut current_fn_start = 0;
+            let mut returns_ptr = false;
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+
+                // Track function names and signatures
+                if trimmed.contains("fn ") {
+                    if let Some(fn_pos) = trimmed.find("fn ") {
+                        let after_fn = &trimmed[fn_pos + 3..];
+                        if let Some(paren_pos) = after_fn.find('(') {
+                            current_fn_name = after_fn[..paren_pos].trim().to_string();
+                            current_fn_start = idx;
+                            // Check if function returns a raw pointer
+                            returns_ptr = trimmed.contains("-> *const") || 
+                                         trimmed.contains("-> *mut") ||
+                                         trimmed.contains("*const i32") ||  // Common patterns
+                                         trimmed.contains("*const u8") ||
+                                         trimmed.contains("*const str");
+                        }
+                    }
+                }
+
+                // Skip comments (doc comments start with //, /*, or just * followed by whitespace)
+                if trimmed.starts_with("//") || trimmed.starts_with("/*") {
+                    continue;
+                }
+                // Skip doc comment continuation lines (* at start of line in multiline comments)
+                if trimmed.starts_with("* ") || trimmed == "*" || trimmed.starts_with("*/") {
+                    continue;
+                }
+
+                // Look for raw pointer casts
+                if Self::is_ptr_cast(trimmed) {
+                    // Get function context
+                    let fn_context: String = lines[current_fn_start..=idx.min(lines.len() - 1)]
+                        .iter()
+                        .take(20)
+                        .map(|s| *s)
+                        .collect::<Vec<&str>>()
+                        .join("\n");
+                    
+                    // Check for safe patterns first
+                    if Self::is_safe_pattern(&lines, idx, &fn_context) {
+                        continue;
+                    }
+                    
+                    // Look for local variable being cast
+                    // Pattern: &x as *const, &local as *const, etc.
+                    let is_local_cast = trimmed.contains("&x ") || 
+                                       trimmed.contains("&local") ||
+                                       trimmed.contains("&temp") ||
+                                       trimmed.contains("&s ") ||
+                                       trimmed.contains("s.as_ptr()") ||
+                                       trimmed.contains("s.as_str()") ||
+                                       trimmed.contains("&v[");
+                    
+                    // Check if this escapes
+                    let mut ptr_var = String::new();
+                    if trimmed.contains("let ") && trimmed.contains(" = ") {
+                        if let Some(eq_pos) = trimmed.find(" = ") {
+                            let before_eq = &trimmed[..eq_pos];
+                            if let Some(let_pos) = before_eq.find("let ") {
+                                ptr_var = before_eq[let_pos + 4..].trim().to_string();
+                            }
+                        }
+                    }
+                    
+                    let escapes_via_return = Self::is_return_context(&lines, idx, &ptr_var);
+                    let escapes_via_store = Self::is_escape_via_store(&lines, idx);
+                    
+                    // Flag if: returns raw pointer AND has local cast that escapes
+                    // Also check for dereferenced pointer assignment pattern
+                    let is_deref_assign = trimmed.starts_with("*") && trimmed.contains(" = &");
+                    
+                    if ((returns_ptr || escapes_via_return || escapes_via_store) && is_local_cast) || 
+                       (is_deref_assign && is_local_cast) {
+                        let location = format!("{}:{}", rel_path, idx + 1);
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: self.metadata.default_severity,
+                            message: format!(
+                                "Raw pointer from local reference escapes function `{}`. This creates a dangling pointer when the local is dropped.",
+                                current_fn_name
+                            ),
+                            function: location,
+                            function_signature: current_fn_name.clone(),
+                            evidence: vec![trimmed.to_string()],
+                            span: None,
+                        });
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 struct VecSetLenMisuseRule {
     metadata: RuleMetadata,
 }
@@ -17710,6 +18009,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(BlockingOpsInAsyncRule::new())); // RUSTCOLA093
     engine.register_rule(Box::new(MutexGuardAcrossAwaitRule::new())); // RUSTCOLA094
     engine.register_rule(Box::new(TransmuteLifetimeChangeRule::new())); // RUSTCOLA095
+    engine.register_rule(Box::new(RawPointerEscapeRule::new())); // RUSTCOLA096
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

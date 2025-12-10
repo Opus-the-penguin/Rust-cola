@@ -69,5 +69,6 @@ members = [
     "examples/blocking-in-async",
     "examples/mutex-guard-await",
     "examples/transmute-lifetime",
+    "examples/raw-pointer-escape",
 ]
 resolver = "2"

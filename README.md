@@ -1,6 +1,6 @@
 # Rust-cola
 
-Static security analyzer for Rust. Analyzes compiled code (MIR/HIR) and optionally uses an LLM to filter false positives and suggest fixes.
+Static security analyzer for Rust. Compiles source code to access MIR and HIR, enabling detection of issues invisible to source-level scanners (expanded macros, resolved generics, trait implementations). Optionally uses an LLM to filter false positives and suggest fixes.
 
 ## Usage
 

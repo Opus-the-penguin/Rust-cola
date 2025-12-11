@@ -103,6 +103,11 @@ struct Args {
     /// Defaults to <out_dir>/reports/llm-prompt.md if no path specified
     #[arg(long, num_args = 0..=1, default_missing_value = "")]
     llm_prompt: Option<PathBuf>,
+
+    /// Run cargo-audit to check dependencies for known vulnerabilities (requires cargo-audit installed)
+    /// Findings are merged into the report output
+    #[arg(long = "with-audit", action = ArgAction::SetTrue)]
+    with_audit: bool,
 }
 
 struct PackageOutput {
@@ -120,6 +125,13 @@ fn main() -> Result<()> {
 
     let fail_on_findings = args.fail_on_findings.unwrap_or(true);
     let cache_enabled = args.cache.unwrap_or(true);
+
+    // Run cargo-audit if requested
+    let audit_vulnerabilities = if args.with_audit {
+        run_cargo_audit(&args.crate_path)?
+    } else {
+        Vec::new()
+    };
 
     let (crate_roots, workspace_root) =
         resolve_crate_roots(&args.crate_path).with_context(|| {
@@ -303,6 +315,7 @@ fn main() -> Result<()> {
                 &output.package.crate_name,
                 &output.analysis.findings,
                 &output.analysis.rules,
+                &audit_vulnerabilities,
             )?;
             println!("- Standalone Report: {}", resolved_path.display());
         }
@@ -315,6 +328,7 @@ fn main() -> Result<()> {
                 &output.package.crate_name,
                 &output.analysis.findings,
                 &output.analysis.rules,
+                &audit_vulnerabilities,
             )?;
             println!("- LLM Prompt: {}", resolved_path.display());
         }
@@ -419,6 +433,7 @@ fn main() -> Result<()> {
             project_name,
             &aggregated_findings,
             &aggregated_rules,
+            &audit_vulnerabilities,
         )?;
     }
 
@@ -434,6 +449,7 @@ fn main() -> Result<()> {
             project_name,
             &aggregated_findings,
             &aggregated_rules,
+            &audit_vulnerabilities,
         )?;
     }
 
@@ -1167,6 +1183,7 @@ fn generate_standalone_report(
     project_name: &str,
     findings: &[Finding],
     rules: &[mir_extractor::RuleMetadata],
+    audit_vulns: &[AuditVulnerability],
 ) -> Result<()> {
     use std::collections::HashMap;
     use std::fmt::Write as _;
@@ -1201,11 +1218,19 @@ fn generate_standalone_report(
     writeln!(&mut content)?;
     writeln!(&mut content, "| Category | Count |")?;
     writeln!(&mut content, "|----------|-------|")?;
-    writeln!(&mut content, "| 🔴 **High Confidence Issues** | {} |", high_confidence.len())?;
+    if !audit_vulns.is_empty() {
+        writeln!(&mut content, "| � **Dependency Vulnerabilities** | {} |", audit_vulns.len())?;
+    }
+    writeln!(&mut content, "| �🔴 **High Confidence Issues** | {} |", high_confidence.len())?;
     writeln!(&mut content, "| 🟡 **Needs Review** | {} |", needs_review.len())?;
     writeln!(&mut content, "| ⚪ **Likely False Positives** | {} |", likely_fp.len())?;
     writeln!(&mut content, "| **Total Findings** | {} |", findings.len())?;
     writeln!(&mut content)?;
+
+    // Add audit section if vulnerabilities found
+    if !audit_vulns.is_empty() {
+        content.push_str(&format_audit_section(audit_vulns));
+    }
 
     // Severity breakdown
     let high_count = findings.iter().filter(|f| matches!(f.severity, mir_extractor::Severity::High)).count();
@@ -1385,6 +1410,7 @@ fn generate_llm_prompt(
     project_name: &str,
     findings: &[Finding],
     _rules: &[mir_extractor::RuleMetadata],
+    audit_vulns: &[AuditVulnerability],
 ) -> Result<()> {
     use std::fmt::Write as _;
 
@@ -1393,6 +1419,27 @@ fn generate_llm_prompt(
     // Header
     writeln!(&mut content, "# Security Analysis: {}", project_name)?;
     writeln!(&mut content)?;
+
+    // Include audit vulnerabilities if present
+    if !audit_vulns.is_empty() {
+        writeln!(&mut content, "## Dependency Vulnerabilities (cargo-audit)")?;
+        writeln!(&mut content)?;
+        writeln!(&mut content, "The following {} known vulnerabilities were found in dependencies:", audit_vulns.len())?;
+        writeln!(&mut content)?;
+        writeln!(&mut content, "| ID | Package | Version | Severity | Title |")?;
+        writeln!(&mut content, "|-----|---------|---------|----------|-------|")?;
+        for vuln in audit_vulns {
+            let severity = vuln.severity.as_deref().unwrap_or("unknown");
+            writeln!(&mut content, "| {} | {} | {} | {} | {} |",
+                vuln.id, vuln.package, vuln.version, severity, vuln.title)?;
+        }
+        writeln!(&mut content)?;
+        writeln!(&mut content, "**Note:** Address dependency vulnerabilities by updating affected packages or reviewing advisories for mitigations.")?;
+        writeln!(&mut content)?;
+        writeln!(&mut content, "---")?;
+        writeln!(&mut content)?;
+    }
+
     writeln!(&mut content, "You are a senior security researcher performing a comprehensive audit of a Rust codebase.")?;
     writeln!(&mut content, "Below are {} findings from static analysis. Your task is to transform this raw output into an actionable security report.", findings.len())?;
     writeln!(&mut content)?;
@@ -1863,4 +1910,177 @@ fn write_rule_summary_table(
     writeln!(content)?;
     
     Ok(())
+}
+
+/// Represents a vulnerability found by cargo-audit
+#[derive(Debug, Clone)]
+struct AuditVulnerability {
+    id: String,           // RUSTSEC-XXXX-XXXX
+    package: String,      // affected crate name
+    version: String,      // installed version
+    title: String,        // vulnerability title
+    severity: Option<String>,
+    url: Option<String>,
+}
+
+/// Run cargo-audit and return parsed vulnerabilities
+fn run_cargo_audit(crate_path: &Path) -> Result<Vec<AuditVulnerability>> {
+    use std::process::Command;
+
+    // Check if cargo-audit is installed
+    let check = Command::new("cargo")
+        .args(["audit", "--version"])
+        .output();
+
+    match check {
+        Ok(output) if output.status.success() => {}
+        Ok(_) | Err(_) => {
+            eprintln!("cargo-cola: cargo-audit not found. Install with: cargo install cargo-audit");
+            eprintln!("cargo-cola: skipping dependency audit");
+            return Ok(Vec::new());
+        }
+    }
+
+    println!("Running cargo-audit for dependency vulnerabilities...");
+
+    let output = Command::new("cargo")
+        .args(["audit", "--json"])
+        .current_dir(crate_path)
+        .output()
+        .context("failed to run cargo audit")?;
+
+    // cargo-audit exits with non-zero if vulnerabilities found, but still outputs valid JSON
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    if stdout.trim().is_empty() {
+        // No output - might be an error
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !stderr.is_empty() {
+            eprintln!("cargo-audit stderr: {}", stderr);
+        }
+        return Ok(Vec::new());
+    }
+
+    // Parse the JSON output
+    let json: Value = serde_json::from_str(&stdout)
+        .context("failed to parse cargo-audit JSON output")?;
+
+    let mut vulnerabilities = Vec::new();
+
+    // cargo-audit JSON structure: { "vulnerabilities": { "list": [...] } }
+    if let Some(vuln_obj) = json.get("vulnerabilities") {
+        if let Some(list) = vuln_obj.get("list").and_then(|l| l.as_array()) {
+            for vuln in list {
+                let advisory = vuln.get("advisory").unwrap_or(&Value::Null);
+                let pkg = vuln.get("package").unwrap_or(&Value::Null);
+
+                let id = advisory
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("UNKNOWN")
+                    .to_string();
+
+                let package = pkg
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+
+                let version = pkg
+                    .get("version")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("?")
+                    .to_string();
+
+                let title = advisory
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("No title")
+                    .to_string();
+
+                let severity = advisory
+                    .get("severity")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+
+                let url = advisory
+                    .get("url")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+
+                vulnerabilities.push(AuditVulnerability {
+                    id,
+                    package,
+                    version,
+                    title,
+                    severity,
+                    url,
+                });
+            }
+        }
+    }
+
+    if vulnerabilities.is_empty() {
+        println!("cargo-audit: no known vulnerabilities found in dependencies");
+    } else {
+        println!(
+            "cargo-audit: found {} known vulnerabilities in dependencies",
+            vulnerabilities.len()
+        );
+    }
+
+    Ok(vulnerabilities)
+}
+
+/// Format cargo-audit results for inclusion in reports
+fn format_audit_section(vulnerabilities: &[AuditVulnerability]) -> String {
+    use std::fmt::Write as _;
+
+    let mut output = String::new();
+
+    writeln!(output, "## Dependency Vulnerabilities (cargo-audit)").unwrap();
+    writeln!(output).unwrap();
+
+    if vulnerabilities.is_empty() {
+        writeln!(output, "✅ No known vulnerabilities found in dependencies.").unwrap();
+        writeln!(output).unwrap();
+        return output;
+    }
+
+    writeln!(
+        output,
+        "⚠️ Found **{}** known vulnerabilities in dependencies:",
+        vulnerabilities.len()
+    )
+    .unwrap();
+    writeln!(output).unwrap();
+
+    writeln!(output, "| ID | Package | Version | Severity | Title |").unwrap();
+    writeln!(output, "|-----|---------|---------|----------|-------|").unwrap();
+
+    for vuln in vulnerabilities {
+        let severity = vuln.severity.as_deref().unwrap_or("unknown");
+        let id_link = if let Some(url) = &vuln.url {
+            format!("[{}]({})", vuln.id, url)
+        } else {
+            vuln.id.clone()
+        };
+
+        writeln!(
+            output,
+            "| {} | {} | {} | {} | {} |",
+            id_link, vuln.package, vuln.version, severity, vuln.title
+        )
+        .unwrap();
+    }
+
+    writeln!(output).unwrap();
+    writeln!(
+        output,
+        "**Recommendation:** Update affected dependencies or review advisories for mitigations."
+    )
+    .unwrap();
+    writeln!(output).unwrap();
+
+    output
 }

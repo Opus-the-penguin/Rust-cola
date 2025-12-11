@@ -110,6 +110,28 @@ Source-level and AST-based scanners can only see the surface structure of the co
 | `--report <PATH>` | Standalone report without LLM |
 | `--sarif <PATH>` | SARIF output for CI |
 | `--rulepack <PATH>` | Additional rules from YAML |
+| `--with-audit` | Include cargo-audit dependency vulnerability scan |
+
+## Dependency Auditing
+
+Rust-cola can integrate with [cargo-audit](https://rustsec.org/) to check your dependencies for known vulnerabilities:
+
+```bash
+# Install cargo-audit (one-time)
+cargo install cargo-audit
+
+# Run rust-cola with dependency audit
+cargo-cola --crate-path . --report --with-audit
+```
+
+When `--with-audit` is enabled:
+- cargo-audit scans `Cargo.lock` against the RustSec Advisory Database
+- Known CVEs and security advisories are included in the report
+- Findings from both static analysis and dependency audit are merged
+
+This provides comprehensive security coverage:
+- **cargo-audit**: Are my dependencies safe?
+- **rust-cola**: Is my own code safe?
 
 ## Documentation
 

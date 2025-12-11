@@ -1887,6 +1887,256 @@ impl BinaryDeserializationAnalyzer {
     }
 }
 
+/// Advanced rule that detects uncontrolled allocation sizes from untrusted sources.
+/// Flags allocations (Vec::with_capacity, reserve, HashMap::with_capacity, etc.)
+/// that use sizes derived from untrusted external sources (env vars, CLI args,
+/// stdin, network) without upper bound validation.
+pub struct UncontrolledAllocationSizeRule;
+
+impl AdvancedRule for UncontrolledAllocationSizeRule {
+    fn id(&self) -> &'static str {
+        "ADV008"
+    }
+
+    fn description(&self) -> &'static str {
+        "Detects allocations sized from untrusted sources without upper bound validation."
+    }
+
+    fn evaluate(&self, mir: &str) -> Vec<String> {
+        AllocationSizeAnalyzer::default().analyze(mir)
+    }
+}
+
+#[derive(Default)]
+struct AllocationSizeAnalyzer {
+    tainted: HashSet<String>,
+    taint_roots: HashMap<String, String>,
+    sanitized_roots: HashSet<String>,
+    sources: HashMap<String, String>,
+    findings: Vec<String>,
+}
+
+impl AllocationSizeAnalyzer {
+    /// Allocation API sinks that take a capacity/size argument
+    const ALLOCATION_SINKS: &'static [&'static str] = &[
+        "Vec::<",
+        ">::with_capacity",
+        "::with_capacity(",
+        "with_capacity(",
+        ">::reserve(",
+        "::reserve(",
+        ">::reserve_exact(",
+        "::reserve_exact(",
+        "HashMap::<",
+        "HashSet::<",
+        "BTreeMap::<",
+        "BTreeSet::<",
+        "VecDeque::<",
+        "String::with_capacity",
+        "BytesMut::with_capacity",
+        "Bytes::with_capacity",
+        "Box::new_uninit_slice",
+        "Vec::from_raw_parts",
+        "slice::from_raw_parts",
+    ];
+
+    /// Untrusted external input sources
+    const UNTRUSTED_SOURCES: &'static [&'static str] = &[
+        "env::var",
+        "env::var_os",
+        "env::args",
+        "std::env::var",
+        "std::env::args",
+        "stdin",
+        "Stdin",
+        "TcpStream",
+        "UdpSocket",
+        "UnixStream",
+        "read_to_string",
+        "read_to_end",
+        "read_line",
+        "BufRead",
+        "content_length",
+        "Content-Length",
+        "CONTENT_LENGTH",
+    ];
+
+    /// Safe bound-limiting patterns (sanitizers)
+    const SANITIZER_PATTERNS: &'static [&'static str] = &[
+        ".min(",
+        "::min(",
+        "cmp::min",
+        ".clamp(",
+        "::clamp(",
+        ".saturating_",
+        "::saturating_",
+        ".checked_",
+        "::checked_",
+        "MAX_",
+        "_MAX",
+        "_LIMIT",
+        "LIMIT_",
+        "max_size",
+        "max_capacity",
+        "max_len",
+    ];
+
+    fn analyze(mut self, mir: &str) -> Vec<String> {
+        let lines: Vec<&str> = mir.lines().collect();
+
+        // First pass: identify untrusted sources and track taint propagation
+        for line in &lines {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            if let Some(dest) = detect_assignment(trimmed) {
+                if Self::is_untrusted_source(trimmed) {
+                    self.mark_source(&dest, trimmed);
+                } else if let Some(source) = self.find_tainted_in_line(trimmed) {
+                    self.mark_alias(&dest, &source);
+                }
+            }
+
+            // Track sanitization patterns that bound the value
+            self.track_sanitization(trimmed);
+        }
+
+        // Second pass: detect allocation sinks with tainted capacity
+        for line in &lines {
+            let trimmed = line.trim();
+            if !Self::is_allocation_sink(trimmed) {
+                continue;
+            }
+
+            // Extract capacity argument from allocation call
+            if let Some(capacity_var) = Self::extract_capacity_arg(trimmed) {
+                if let Some(root) = self.taint_roots.get(&capacity_var).cloned() {
+                    // Skip if sanitized
+                    if self.sanitized_roots.contains(&root) {
+                        continue;
+                    }
+
+                    let mut message = format!(
+                        "Uncontrolled allocation size: untrusted input flows to allocation capacity.\n  allocation: `{}`",
+                        trimmed
+                    );
+
+                    if let Some(origin) = self.sources.get(&root) {
+                        message.push_str(&format!("\n  source: `{}`", origin));
+                    }
+
+                    self.findings.push(message);
+                }
+            }
+        }
+
+        self.findings
+    }
+
+    fn mark_source(&mut self, var: &str, origin: &str) {
+        let var = var.to_string();
+        self.tainted.insert(var.clone());
+        self.taint_roots.insert(var.clone(), var.clone());
+        self.sources
+            .entry(var)
+            .or_insert_with(|| origin.trim().to_string());
+    }
+
+    fn mark_alias(&mut self, dest: &str, source: &str) {
+        if !self.tainted.contains(source) {
+            return;
+        }
+
+        if let Some(root) = self.taint_roots.get(source).cloned() {
+            self.tainted.insert(dest.to_string());
+            self.taint_roots.insert(dest.to_string(), root.clone());
+        }
+    }
+
+    fn track_sanitization(&mut self, line: &str) {
+        // Check for comparison guards (Lt, Le, Gt, Ge) - these act as implicit bounds
+        if line.contains("= Lt(") || line.contains("= Le(")
+            || line.contains("= Gt(") || line.contains("= Ge(")
+        {
+            // Find tainted variables in the comparison
+            for var in self.tainted.clone() {
+                if contains_var(line, &var) {
+                    if let Some(root) = self.taint_roots.get(&var).cloned() {
+                        self.sanitized_roots.insert(root);
+                    }
+                }
+            }
+        }
+
+        // Check if line contains an explicit sanitization pattern
+        if !Self::SANITIZER_PATTERNS.iter().any(|p| line.contains(p)) {
+            return;
+        }
+
+        // Find which tainted variable is being sanitized
+        if let Some(dest) = detect_assignment(line) {
+            // If this assignment uses a tainted source and applies a bound, mark as sanitized
+            if let Some(source) = self.find_tainted_in_line(line) {
+                if let Some(root) = self.taint_roots.get(&source).cloned() {
+                    self.sanitized_roots.insert(root.clone());
+                    // Also mark the destination as having a sanitized root
+                    self.tainted.insert(dest.clone());
+                    self.taint_roots.insert(dest, root);
+                }
+            }
+        }
+    }
+
+    fn is_untrusted_source(line: &str) -> bool {
+        Self::UNTRUSTED_SOURCES
+            .iter()
+            .any(|pattern| line.contains(pattern))
+    }
+
+    fn is_allocation_sink(line: &str) -> bool {
+        Self::ALLOCATION_SINKS
+            .iter()
+            .any(|pattern| line.contains(pattern))
+    }
+
+    fn extract_capacity_arg(line: &str) -> Option<String> {
+        // Look for with_capacity, reserve, etc. and extract the capacity argument
+        let capacity_keywords = ["with_capacity(", "reserve(", "reserve_exact("];
+        
+        for keyword in capacity_keywords {
+            if let Some(start) = line.find(keyword) {
+                let after_keyword = &line[start + keyword.len()..];
+                // Find the closing paren
+                if let Some(close) = after_keyword.find(')') {
+                    let inside = &after_keyword[..close];
+                    // Extract variable references (copy _N, move _N, or just _N)
+                    let args = extract_call_args(&format!("({}", inside));
+                    // For reserve/reserve_exact, capacity is second arg; for with_capacity, it's first
+                    if keyword.contains("reserve") {
+                        return args.into_iter().nth(1).or_else(|| {
+                            // Fallback: try first arg
+                            extract_call_args(&format!("({}", inside)).into_iter().next()
+                        });
+                    } else {
+                        return args.into_iter().next();
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    fn find_tainted_in_line(&self, line: &str) -> Option<String> {
+        self.tainted
+            .iter()
+            .find(|var| contains_var(line, var))
+            .cloned()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2586,6 +2836,257 @@ bb0: {
 
         let findings = run_rule(mir);
         assert!(findings.is_empty(), "disjoint copy_nonoverlapping should not be flagged");
+    }
+
+    // ==================== ADV008: Uncontrolled Allocation Size Tests ====================
+
+    fn run_allocation_rule(mir: &str) -> Vec<String> {
+        let rule = UncontrolledAllocationSizeRule;
+        rule.evaluate(mir)
+    }
+
+    #[test]
+    fn detects_env_var_to_with_capacity() {
+        let mir = r#"
+fn example() -> () {
+    let mut _0: ();
+    let _1: Result<String, VarError>;
+    let _2: String;
+    let _3: usize;
+    let _4: Vec<u8>;
+
+    bb0: {
+        StorageLive(_1);
+        _1 = std::env::var(const "SIZE") -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        StorageLive(_2);
+        _2 = Result::unwrap(move _1) -> [return: bb2, unwind continue];
+    }
+
+    bb2: {
+        StorageLive(_3);
+        _3 = str::parse::<usize>(move _2) -> [return: bb3, unwind continue];
+    }
+
+    bb3: {
+        StorageLive(_4);
+        _4 = Vec::with_capacity(move _3) -> [return: bb4, unwind continue];
+    }
+
+    bb4: {
+        return;
+    }
+}
+"#;
+
+        let findings = run_allocation_rule(mir);
+        assert!(!findings.is_empty(), "env var to with_capacity should be flagged");
+        assert!(findings[0].contains("with_capacity") || findings[0].contains("allocation"));
+    }
+
+    #[test]
+    fn detects_stdin_to_reserve() {
+        let mir = r#"
+fn example() -> () {
+    let mut _0: ();
+    let _1: Stdin;
+    let _2: String;
+    let _3: usize;
+    let mut _4: Vec<u8>;
+
+    bb0: {
+        StorageLive(_1);
+        _1 = std::io::stdin() -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        StorageLive(_2);
+        _2 = BufRead::read_line(move _1) -> [return: bb2, unwind continue];
+    }
+
+    bb2: {
+        StorageLive(_3);
+        _3 = str::parse::<usize>(move _2) -> [return: bb3, unwind continue];
+    }
+
+    bb3: {
+        StorageLive(_4);
+        _4 = Vec::new() -> [return: bb4, unwind continue];
+    }
+
+    bb4: {
+        Vec::reserve(&mut _4, move _3) -> [return: bb5, unwind continue];
+    }
+
+    bb5: {
+        return;
+    }
+}
+"#;
+
+        let findings = run_allocation_rule(mir);
+        assert!(!findings.is_empty(), "stdin to reserve should be flagged");
+    }
+
+    #[test]
+    fn allows_constant_allocation_size() {
+        let mir = r#"
+fn example() -> () {
+    let mut _0: ();
+    let _1: Vec<u8>;
+
+    bb0: {
+        StorageLive(_1);
+        _1 = Vec::with_capacity(const 1024_usize) -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        return;
+    }
+}
+"#;
+
+        let findings = run_allocation_rule(mir);
+        assert!(findings.is_empty(), "constant allocation size should not be flagged");
+    }
+
+    #[test]
+    fn allows_min_bounded_allocation() {
+        let mir = r#"
+fn example() -> () {
+    let mut _0: ();
+    let _1: Result<String, VarError>;
+    let _2: String;
+    let _3: usize;
+    let _4: usize;
+    let _5: Vec<u8>;
+
+    bb0: {
+        StorageLive(_1);
+        _1 = std::env::var(const "SIZE") -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        StorageLive(_2);
+        _2 = Result::unwrap(move _1) -> [return: bb2, unwind continue];
+    }
+
+    bb2: {
+        StorageLive(_3);
+        _3 = str::parse::<usize>(move _2) -> [return: bb3, unwind continue];
+    }
+
+    bb3: {
+        StorageLive(_4);
+        _4 = usize::min(move _3, const 1024_usize) -> [return: bb4, unwind continue];
+    }
+
+    bb4: {
+        StorageLive(_5);
+        _5 = Vec::with_capacity(move _4) -> [return: bb5, unwind continue];
+    }
+
+    bb5: {
+        return;
+    }
+}
+"#;
+
+        let findings = run_allocation_rule(mir);
+        assert!(findings.is_empty(), "min-bounded allocation should not be flagged");
+    }
+
+    #[test]
+    fn allows_comparison_guarded_allocation() {
+        let mir = r#"
+fn example() -> () {
+    let mut _0: ();
+    let _1: Result<String, VarError>;
+    let _2: String;
+    let _3: usize;
+    let _4: bool;
+    let _5: Vec<u8>;
+
+    bb0: {
+        StorageLive(_1);
+        _1 = std::env::var(const "SIZE") -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        StorageLive(_2);
+        _2 = Result::unwrap(move _1) -> [return: bb2, unwind continue];
+    }
+
+    bb2: {
+        StorageLive(_3);
+        _3 = str::parse::<usize>(move _2) -> [return: bb3, unwind continue];
+    }
+
+    bb3: {
+        StorageLive(_4);
+        _4 = Lt(copy _3, const 1024_usize);
+        switchInt(move _4) -> [0: bb5, otherwise: bb4];
+    }
+
+    bb4: {
+        StorageLive(_5);
+        _5 = Vec::with_capacity(move _3) -> [return: bb6, unwind continue];
+    }
+
+    bb5: {
+        return;
+    }
+
+    bb6: {
+        return;
+    }
+}
+"#;
+
+        let findings = run_allocation_rule(mir);
+        assert!(findings.is_empty(), "comparison-guarded allocation should not be flagged");
+    }
+
+    #[test]
+    fn detects_file_read_to_hashmap_capacity() {
+        let mir = r#"
+fn example() -> () {
+    let mut _0: ();
+    let _1: File;
+    let _2: String;
+    let _3: usize;
+    let _4: HashMap<String, String>;
+
+    bb0: {
+        StorageLive(_1);
+        _1 = File::open(const "config.txt") -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        StorageLive(_2);
+        _2 = std::io::read_to_string(move _1) -> [return: bb2, unwind continue];
+    }
+
+    bb2: {
+        StorageLive(_3);
+        _3 = str::parse::<usize>(move _2) -> [return: bb3, unwind continue];
+    }
+
+    bb3: {
+        StorageLive(_4);
+        _4 = HashMap::with_capacity(move _3) -> [return: bb4, unwind continue];
+    }
+
+    bb4: {
+        return;
+    }
+}
+"#;
+
+        let findings = run_allocation_rule(mir);
+        assert!(!findings.is_empty(), "file read to HashMap::with_capacity should be flagged");
     }
 
 }

@@ -66,7 +66,7 @@ Binary: `target/release/cargo-cola`
 
 ## What It Detects
 
-103 rules covering:
+104 rules covering:
 
 - Memory safety (transmute, uninitialized memory, Box leaks, dangling pointer escapes)
 - Input validation (SQL injection, path traversal, command injection, SSRF, unsafe JSON/TOML/binary deserialization, template injection, regex catastrophic backtracking)
@@ -84,6 +84,7 @@ Includes inter-procedural taint analysis: tracks data flow across function calls
 - **ADV005 – Template injection**: Surfaces unescaped user input flowing into HTML/template response constructors such as `warp::reply::html`.
 - **ADV006 – Unsafe Send across async boundaries**: Finds `Rc`/`RefCell` captures crossing thread-boundary executors (e.g., `tokio::spawn`) while allowing `Arc` and `spawn_local`.
 - **ADV007 – Span guard awaiting**: Warns when tracing span guards remain live across `.await`, requiring explicit drops before suspension points.
+- **ADV008 – Uncontrolled allocation size**: Detects untrusted input flowing to allocation APIs (`Vec::with_capacity`, `HashMap::with_capacity`, etc.) without bounds checking. Recognizes sanitizers like `.min()`, `.clamp()`, and comparison guards.
 
 
 ## Why It Requires Compilation

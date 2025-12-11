@@ -58,9 +58,10 @@ This plan outlines the approach for implementing the remaining advanced rules in
   - *Technical*: Control flow analysis in async functions.
 
 ### Resource Management & DoS
-- **54. Uncontrolled allocation size**
+- **54. Uncontrolled allocation size** *(implemented 2025-12-11)*
   - Taint to `Vec::with_capacity` etc.
   - *Technical*: Taint tracking from untrusted sources to allocation APIs.
+  - *Status notes*: Added `UncontrolledAllocationSizeRule` (ADV008) detecting untrusted input flowing to allocation APIs (Vec::with_capacity, HashMap::with_capacity, etc.) without bounds checking. Recognizes sanitizers like .min(), .clamp(), comparison guards, and MAX_* constants. 6 regression tests added.
 - **56. I/O buffers not fully processed**
   - Detect incomplete buffer processing.
   - *Technical*: Dataflow analysis on buffer usage.

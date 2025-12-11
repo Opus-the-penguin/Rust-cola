@@ -79,8 +79,8 @@ Feasibility legend:
 ## Concurrency & Async
 
 47. **Non-thread-safe calls in tests** *(shipped — RUSTCOLA074)* – Parity for external lint on `#[test]` using non-`Send` APIs. **Feasibility:** Heuristic.
-48. **Unsafe `Send` across async boundaries** – Detect `Send` requirements violated in futures. **Feasibility:** Advanced.
-49. **Await while holding span guard** – Avoid locking instrumentation across `.await`. **Feasibility:** Advanced.
+48. **Unsafe `Send` across async boundaries** *(shipped — ADV006)* – Flags non-Send types (Rc/RefCell) captured by multi-threaded async executors such as `tokio::spawn`, while permitting safe cases like `Arc` and `spawn_local`. **Feasibility:** Advanced.
+49. **Await while holding span guard** *(shipped — ADV007)* – Detects tracing span guards (e.g., `tracing::Span::enter`) that remain live across `.await`, flagging missing drops while allowing guards released before suspension points. **Feasibility:** Advanced.
 50. **Mutex guard dropped prematurely** – Public security rule guidance
 51. **panic! inside Drop** *(shipped — RUSTCOLA040)* – Prevent unwinding in destructors. **Feasibility:** Heuristic.
 52. **unwrap in Drop/Poll** *(shipped — RUSTCOLA041)* – Avoid `unwrap()` in critical lifecycle methods, particularly Future::poll implementations that can stall async executors. **Feasibility:** Heuristic.

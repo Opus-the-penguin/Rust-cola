@@ -47,21 +47,32 @@ First versioned release of Rust-cola, an LLM-integrated static application secur
 
 ## [Unreleased]
 
-### Added - December 10, 2025
+_No changes yet._
+
+## [0.1.1] - 2025-12-10
+
+### Highlights
+- **103 security rules** across memory safety, cryptography, injection, concurrency, and FFI (up from 87 in 0.1.0).
+- **Six new advanced MIR rules** (ADV002–ADV007) covering unsafe JSON/TOML and binary deserialization, regex catastrophic backtracking, template injection, async `Send` violations, and span guards held across awaits.
+- **30 regression tests** in `mir-advanced-rules`, ensuring coverage for the new analyzers alongside existing flows.
+
+### Added
 
 #### Advanced Rules
 - **ADV002 – Insecure JSON/TOML deserialization**: Tracks untrusted sources flowing into `serde_json::from_*` and `toml::from_*` sinks, exempting flows with explicit size checks. Shipped with dedicated MIR analyzer and regression coverage for env-based, constant, and sanitized scenarios.
 - **ADV003 – Insecure binary deserialization**: Flags tainted data reaching `bincode::deserialize*` and `postcard::from_bytes*` sinks while recognizing length guards. Includes postcard socket coverage and len-check sanitization tests.
 - **ADV004 – Regex denial-of-service**: Detects catastrophic backtracking patterns (nested quantifiers, dot-star loops) compiled via `regex::Regex::new`, with regression tests for `(a+)+` and `(.*)+` cases.
 - **ADV005 – Template injection**: Taints environment/request-derived strings through response builders (`warp::reply::html`, `axum::response::Html`) and flags flows lacking HTML escaping, while permitting sanitizers like `html_escape::encode_safe` and constant bodies.
+- **ADV006 – Unsafe Send across async boundaries**: Tracks non-Send allocations (Rc/RefCell) flowing into multi-threaded async executors such as `tokio::spawn` / `async_std::task::spawn`, emitting findings when captured values are not sanitized by `Arc` or confined to `spawn_local`.
+- **ADV007 – Span guard awaiting**: Flags tracing span guards that remain live across `.await`, ensuring instrumentation scopes end before suspension points while permitting guards dropped prior to awaiting.
 
 #### Testing
-- Expanded `mir-advanced-rules` unit suite to **25 tests**, adding coverage for regex DoS and template injection flows alongside the new JSON/TOML and binary cases (all passing).
+- Expanded `mir-advanced-rules` unit suite to **30 tests**, adding coverage for regex DoS, template injection, async Send boundary, and span guard await flows alongside the new JSON/TOML and binary cases (all passing).
 
 #### Documentation
-- Updated `README.md` to reflect **101 shipped rules** and highlight unsafe JSON/TOML/binary deserialization, regex DoS, and template injection detection.
-- Annotated `advanced_rule_implementation_plan.md` with completion notes for Rules 43–46.
-- Marked Rules 43–46 as shipped in `docs/security-rule-backlog.md` (ADV002 – ADV005 entries).
+- Updated `README.md` to reflect **103 shipped rules** and highlight unsafe JSON/TOML/binary deserialization, regex DoS, template injection, async Send boundary, and span guard await detection.
+- Annotated `advanced_rule_implementation_plan.md` with completion notes for Rules 43–49.
+- Marked Rules 43–49 as shipped in `docs/security-rule-backlog.md` (ADV002 – ADV007 entries).
 
 ### Added - November 12, 2025
 

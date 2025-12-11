@@ -66,15 +66,24 @@ Binary: `target/release/cargo-cola`
 
 ## What It Detects
 
-101 rules covering:
+103 rules covering:
 
 - Memory safety (transmute, uninitialized memory, Box leaks, dangling pointer escapes)
 - Input validation (SQL injection, path traversal, command injection, SSRF, unsafe JSON/TOML/binary deserialization, template injection, regex catastrophic backtracking)
 - Cryptography (weak hashes, weak ciphers, hardcoded keys)
-- Concurrency (mutex across await, blocking in async)
+- Concurrency (mutex across await, blocking in async, span guards held across await, non-Send futures crossing executor threads)
 - FFI (allocator mismatch, CString pointer misuse)
 
 Includes inter-procedural taint analysis: tracks data flow across function calls.
+
+### Latest advanced rules (December 2025)
+
+- **ADV002 – Insecure JSON/TOML deserialization**: Alerts when untrusted data is passed into `serde_json::from_*` / `toml::from_*` without validation.
+- **ADV003 – Insecure binary deserialization**: Flags tainted inputs reaching `bincode::deserialize*` / `postcard::from_bytes*` sinks lacking size checks.
+- **ADV004 – Regex denial-of-service**: Detects catastrophic backtracking patterns like nested quantifiers and dot-star loops.
+- **ADV005 – Template injection**: Surfaces unescaped user input flowing into HTML/template response constructors such as `warp::reply::html`.
+- **ADV006 – Unsafe Send across async boundaries**: Finds `Rc`/`RefCell` captures crossing thread-boundary executors (e.g., `tokio::spawn`) while allowing `Arc` and `spawn_local`.
+- **ADV007 – Span guard awaiting**: Warns when tracing span guards remain live across `.await`, requiring explicit drops before suspension points.
 
 
 ## Why It Requires Compilation

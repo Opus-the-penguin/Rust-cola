@@ -1054,6 +1054,28 @@ fn detect_var_alias(line: &str) -> Option<(String, String)> {
         .map(|caps| (caps[1].to_string(), caps[2].to_string()))
 }
 
+fn detect_drop_calls(line: &str) -> Vec<String> {
+    static RE_DROP: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"drop\(\s*(?:move\s+)?(_\d+)\s*\)").expect("drop call regex")
+    });
+
+    RE_DROP
+        .captures_iter(line)
+        .map(|caps| caps[1].to_string())
+        .collect()
+}
+
+fn detect_storage_dead_vars(line: &str) -> Vec<String> {
+    static RE_DEAD: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"StorageDead\(\s*(_\d+)\s*\)").expect("storage dead regex")
+    });
+
+    RE_DEAD
+        .captures_iter(line)
+        .map(|caps| caps[1].to_string())
+        .collect()
+}
+
 fn extract_const_literals(line: &str) -> Vec<String> {
     static RE_LITERAL: Lazy<Regex> = Lazy::new(|| {
         Regex::new(r#"const\s*\"((?:\\.|[^\"])*)\""#).expect("literal regex")
@@ -1241,6 +1263,333 @@ struct TemplateInjectionAnalyzer {
     sanitized_roots: HashSet<String>,
     sources: HashMap<String, String>,
     findings: Vec<String>,
+}
+
+/// Advanced rule detecting non-Send types moved into multi-threaded async
+/// executors, which requires captured values to be `Send`.
+pub struct UnsafeSendAcrossAsyncBoundaryRule;
+
+impl AdvancedRule for UnsafeSendAcrossAsyncBoundaryRule {
+    fn id(&self) -> &'static str {
+        "ADV006"
+    }
+
+    fn description(&self) -> &'static str {
+        "Detects non-Send types captured by multi-threaded async executors like `tokio::spawn`."
+    }
+
+    fn evaluate(&self, mir: &str) -> Vec<String> {
+        AsyncSendAnalyzer::default().analyze(mir)
+    }
+}
+
+#[derive(Default)]
+struct AsyncSendAnalyzer {
+    roots: HashMap<String, String>,
+    unsafe_roots: HashSet<String>,
+    safe_roots: HashSet<String>,
+    sources: HashMap<String, String>,
+    findings: Vec<String>,
+}
+
+impl AsyncSendAnalyzer {
+    const NON_SEND_PATTERNS: &'static [&'static str] = &[
+        "alloc::rc::Rc",
+        "std::rc::Rc",
+        "core::cell::RefCell",
+        "std::cell::RefCell",
+        "alloc::rc::Weak",
+        "std::rc::Weak",
+    ];
+
+    const SAFE_PATTERNS: &'static [&'static str] = &[
+        "std::sync::Arc",
+        "alloc::sync::Arc",
+        "std::sync::Mutex",
+        "tokio::sync::Mutex",
+    ];
+
+    const SPAWN_PATTERNS: &'static [&'static str] = &[
+        "tokio::spawn",
+        "tokio::task::spawn",
+        "tokio::task::spawn_blocking",
+        "async_std::task::spawn",
+        "async_std::task::spawn_blocking",
+        "smol::spawn",
+        "futures::executor::ThreadPool::spawn",
+        "std::thread::spawn",
+    ];
+
+    const SPAWN_LOCAL_PATTERNS: &'static [&'static str] = &[
+        "tokio::task::spawn_local",
+        "async_std::task::spawn_local",
+        "smol::spawn_local",
+        "futures::task::SpawnExt::spawn_local",
+    ];
+
+    fn analyze(mut self, mir: &str) -> Vec<String> {
+        for line in mir.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            if let Some(dest) = detect_assignment(trimmed) {
+                self.clear_var(&dest);
+
+                if Self::is_non_send_origin(trimmed) {
+                    self.mark_non_send(&dest, trimmed);
+                } else if Self::is_safe_origin(trimmed) {
+                    self.mark_safe(&dest);
+                } else if let Some(source) = self.find_tracked_in_line(trimmed) {
+                    self.mark_alias(&dest, &source);
+                }
+            }
+
+            if let Some(spawn) = Self::detect_spawn(trimmed) {
+                if Self::is_spawn_local(trimmed) {
+                    continue;
+                }
+
+                let args = extract_call_args(trimmed);
+                for arg in args {
+                    if let Some(root) = self.roots.get(&arg).cloned() {
+                        if self.safe_roots.contains(&root) {
+                            continue;
+                        }
+
+                        if !self.unsafe_roots.contains(&root) {
+                            continue;
+                        }
+
+                        let mut message = format!(
+                            "Non-Send type captured in `{}` may cross thread boundary.
+  call: `{}`",
+                            spawn,
+                            trimmed
+                        );
+
+                        if let Some(origin) = self.sources.get(&root) {
+                            message.push_str(&format!("\n  source: `{}`", origin));
+                        }
+
+                        self.findings.push(message);
+                        break;
+                    }
+                }
+            }
+        }
+
+        self.findings
+    }
+
+    fn mark_non_send(&mut self, var: &str, origin: &str) {
+        let var = var.to_string();
+        self.roots.insert(var.clone(), var.clone());
+        self.unsafe_roots.insert(var.clone());
+        self.safe_roots.remove(&var);
+        self.sources
+            .entry(var)
+            .or_insert_with(|| origin.trim().to_string());
+    }
+
+    fn mark_safe(&mut self, var: &str) {
+        let var = var.to_string();
+        self.roots.insert(var.clone(), var.clone());
+        self.safe_roots.insert(var.clone());
+        self.unsafe_roots.remove(&var);
+    }
+
+    fn mark_alias(&mut self, dest: &str, source: &str) {
+        if let Some(root) = self.roots.get(source).cloned() {
+            self.roots.insert(dest.to_string(), root);
+        }
+    }
+
+    fn clear_var(&mut self, var: &str) {
+        self.roots.remove(var);
+    }
+
+    fn find_tracked_in_line(&self, line: &str) -> Option<String> {
+        self.roots
+            .keys()
+            .find(|var| contains_var(line, var))
+            .cloned()
+    }
+
+    fn is_non_send_origin(line: &str) -> bool {
+        Self::NON_SEND_PATTERNS
+            .iter()
+            .any(|pattern| line.contains(pattern))
+    }
+
+    fn is_safe_origin(line: &str) -> bool {
+        Self::SAFE_PATTERNS
+            .iter()
+            .any(|pattern| line.contains(pattern))
+    }
+
+    fn detect_spawn(line: &str) -> Option<&'static str> {
+        Self::SPAWN_PATTERNS
+            .iter()
+            .copied()
+            .find(|pattern| line.contains(pattern))
+    }
+
+    fn is_spawn_local(line: &str) -> bool {
+        Self::SPAWN_LOCAL_PATTERNS
+            .iter()
+            .any(|pattern| line.contains(pattern))
+    }
+}
+
+/// Advanced rule detecting span guards that remain live across `.await`, which can
+/// lead to incorrect tracing due to spans outliving their intended scope.
+pub struct AwaitSpanGuardRule;
+
+impl AdvancedRule for AwaitSpanGuardRule {
+    fn id(&self) -> &'static str {
+        "ADV007"
+    }
+
+    fn description(&self) -> &'static str {
+        "Detects tracing span guards held across await points." 
+    }
+
+    fn evaluate(&self, mir: &str) -> Vec<String> {
+        AwaitSpanGuardAnalyzer::default().analyze(mir)
+    }
+}
+
+#[derive(Default)]
+struct AwaitSpanGuardAnalyzer {
+    var_to_root: HashMap<String, String>,
+    guard_states: HashMap<String, GuardState>,
+    findings: Vec<String>,
+    reported: HashSet<String>,
+}
+
+#[derive(Clone)]
+struct GuardState {
+    origin: String,
+    count: usize,
+}
+
+impl AwaitSpanGuardAnalyzer {
+    const GUARD_PATTERNS: &'static [&'static str] = &[
+        "tracing::Span::enter",
+        "tracing::span::Span::enter",
+        "tracing::dispatcher::DefaultGuard::new",
+    ];
+
+    fn analyze(mut self, mir: &str) -> Vec<String> {
+        for line in mir.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            if let Some((dest, source)) = detect_var_alias(trimmed) {
+                self.clear_var(&dest);
+                self.mark_alias(&dest, &source);
+                continue;
+            }
+
+            if let Some(dest) = detect_assignment(trimmed) {
+                self.clear_var(&dest);
+                if Self::is_guard_creation(trimmed) {
+                    self.mark_guard(&dest, trimmed);
+                }
+            }
+
+            for var in detect_drop_calls(trimmed) {
+                self.release_guard(&var);
+            }
+
+            for var in detect_storage_dead_vars(trimmed) {
+                self.release_guard(&var);
+            }
+
+            if Self::contains_await(trimmed) {
+                self.check_await(trimmed);
+            }
+        }
+
+        self.findings
+    }
+
+    fn mark_guard(&mut self, var: &str, origin: &str) {
+        let var = var.to_string();
+        self.var_to_root.insert(var.clone(), var.clone());
+        self.guard_states.insert(
+            var,
+            GuardState {
+                origin: origin.trim().to_string(),
+                count: 1,
+            },
+        );
+    }
+
+    fn mark_alias(&mut self, dest: &str, source: &str) {
+        if let Some(root) = self.var_to_root.get(source).cloned() {
+            self.var_to_root.insert(dest.to_string(), root.clone());
+            if let Some(state) = self.guard_states.get_mut(&root) {
+                state.count += 1;
+            }
+        }
+    }
+
+    fn clear_var(&mut self, var: &str) {
+        if let Some(root) = self.var_to_root.remove(var) {
+            self.decrement_root(&root);
+        }
+    }
+
+    fn release_guard(&mut self, var: &str) {
+        self.clear_var(var);
+    }
+
+    fn decrement_root(&mut self, root: &str) {
+        if let Some(state) = self.guard_states.get_mut(root) {
+            if state.count > 1 {
+                state.count -= 1;
+            } else {
+                self.guard_states.remove(root);
+            }
+        }
+    }
+
+    fn check_await(&mut self, await_line: &str) {
+        if self.guard_states.is_empty() {
+            return;
+        }
+
+        for (root, state) in self.guard_states.iter() {
+            let key = format!("{}::{}", root, await_line.trim());
+            if !self.reported.insert(key) {
+                continue;
+            }
+
+            let message = format!(
+                "Span guard held across await: guard `{}` created at `{}` remains active.
+  await: `{}`",
+                root,
+                state.origin,
+                await_line.trim()
+            );
+            self.findings.push(message);
+        }
+    }
+
+    fn is_guard_creation(line: &str) -> bool {
+        Self::GUARD_PATTERNS
+            .iter()
+            .any(|pattern| line.contains(pattern))
+    }
+
+    fn contains_await(line: &str) -> bool {
+        line.contains(".await") || line.contains("Await") || line.contains("await ")
+    }
 }
 
 impl TemplateInjectionAnalyzer {
@@ -1564,6 +1913,16 @@ mod tests {
 
     fn run_template_rule(mir: &str) -> Vec<String> {
         let rule = TemplateInjectionRule;
+        rule.evaluate(mir)
+    }
+
+    fn run_async_send_rule(mir: &str) -> Vec<String> {
+        let rule = UnsafeSendAcrossAsyncBoundaryRule;
+        rule.evaluate(mir)
+    }
+
+    fn run_span_guard_rule(mir: &str) -> Vec<String> {
+        let rule = AwaitSpanGuardRule;
         rule.evaluate(mir)
     }
 
@@ -2080,6 +2439,138 @@ bb1: {
 
         let findings = run_template_rule(mir);
         assert!(findings.is_empty(), "expected constant template to be allowed");
+    }
+
+    #[test]
+    fn detects_rc_in_tokio_spawn() {
+        let mir = r#"
+bb0: {
+    StorageLive(_1);
+    _1 = alloc::rc::Rc::<Data>::clone(move _0) -> [return: bb1, unwind continue];
+}
+
+bb1: {
+    StorageLive(_2);
+    _2 = tokio::spawn(move _1) -> [return: bb2, unwind continue];
+}
+
+bb2: {
+    return;
+}
+"#;
+
+        let findings = run_async_send_rule(mir);
+        assert!(!findings.is_empty(), "expected tokio::spawn to flag non-Send Rc");
+        assert!(findings[0].contains("tokio::spawn"));
+    }
+
+    #[test]
+    fn allows_arc_in_tokio_spawn() {
+        let mir = r#"
+bb0: {
+    StorageLive(_1);
+    _1 = std::sync::Arc::<Data>::clone(move _0) -> [return: bb1, unwind continue];
+}
+
+bb1: {
+    StorageLive(_2);
+    _2 = tokio::spawn(move _1) -> [return: bb2, unwind continue];
+}
+
+bb2: {
+    return;
+}
+"#;
+
+        let findings = run_async_send_rule(mir);
+        assert!(findings.is_empty(), "Arc should satisfy Send in tokio::spawn");
+    }
+
+    #[test]
+    fn allows_rc_with_spawn_local() {
+        let mir = r#"
+bb0: {
+    StorageLive(_1);
+    _1 = std::rc::Rc::<Data>::clone(move _0) -> [return: bb1, unwind continue];
+}
+
+bb1: {
+    StorageLive(_2);
+    _2 = tokio::task::spawn_local(move _1) -> [return: bb2, unwind continue];
+}
+
+bb2: {
+    return;
+}
+"#;
+
+        let findings = run_async_send_rule(mir);
+        assert!(findings.is_empty(), "spawn_local should allow Rc");
+    }
+
+    #[test]
+    fn detects_span_guard_across_await() {
+        let mir = r#"
+bb0: {
+    StorageLive(_1);
+    _1 = tracing::Span::current() -> [return: bb1, unwind continue];
+}
+
+bb1: {
+    StorageLive(_2);
+    _2 = tracing::Span::enter(move _1) -> [return: bb2, unwind continue];
+}
+
+bb2: {
+    StorageLive(_3);
+    _3 = external_future() -> [return: bb3, unwind continue];
+}
+
+bb3: {
+    _4 = external_future::poll.await(move _3) -> [return: bb4, unwind continue];
+}
+
+bb4: {
+    StorageDead(_2);
+    return;
+}
+"#;
+
+        let findings = run_span_guard_rule(mir);
+        assert!(!findings.is_empty(), "span guard across await should be flagged");
+        assert!(findings[0].contains("await"));
+    }
+
+    #[test]
+    fn allows_span_guard_dropped_before_await() {
+        let mir = r#"
+bb0: {
+    StorageLive(_1);
+    _1 = tracing::Span::current() -> [return: bb1, unwind continue];
+}
+
+bb1: {
+    StorageLive(_2);
+    _2 = tracing::Span::enter(move _1) -> [return: bb2, unwind continue];
+}
+
+bb2: {
+    drop(_2);
+    StorageLive(_3);
+    _3 = external_future() -> [return: bb3, unwind continue];
+}
+
+bb3: {
+    _4 = external_future::poll.await(move _3) -> [return: bb4, unwind continue];
+}
+
+bb4: {
+    return;
+}
+"#;
+
+        let findings = run_span_guard_rule(mir);
+        assert!(findings.is_empty(), "guard dropped before await should be allowed");
     }
 
     #[test]

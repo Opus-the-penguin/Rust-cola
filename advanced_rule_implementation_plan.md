@@ -42,12 +42,14 @@ This plan outlines the approach for implementing the remaining advanced rules in
   - *Status notes*: Added `TemplateInjectionRule` covering `warp::reply::html` and similar templating sinks, recognizing sanitizers like `html_escape::encode_safe` and constant bodies. Regression tests ensure tainted env var flows are flagged while escaped and constant cases are allowed.
 
 ### Concurrency & Async
-- **48. Unsafe Send across async boundaries**
+- **48. Unsafe Send across async boundaries** *(implemented 2025-12-10)*
   - Detect `Send` requirements violated in futures.
-  - *Technical*: Type analysis, async context tracking.
-- **49. Await while holding span guard**
+  - *Technical*: MIR-based tracking of non-Send allocations (Rc/RefCell) propagating into multi-threaded executor spawns.
+  - *Status notes*: Added `UnsafeSendAcrossAsyncBoundaryRule` (ADV006) flagging `tokio::spawn` / `async_std::task::spawn` calls that capture `Rc`/`RefCell` inputs while allowing safe patterns like `Arc` and `spawn_local`. Regression tests cover Rc, Arc, and spawn_local scenarios.
+- **49. Await while holding span guard** *(implemented 2025-12-10)*
   - Avoid locking instrumentation across `.await`.
-  - *Technical*: Lifetime and lock analysis across await points.
+  - *Technical*: MIR analysis tracking tracing span guard lifetimes relative to await points.
+  - *Status notes*: Added `AwaitSpanGuardRule` (ADV007) to detect `tracing::Span::enter()` guards that remain live across `.await` calls, while allowing cases where guards are dropped before the await. Regression coverage includes positive (guard held) and negative (guard dropped) scenarios.
 - **50. Mutex guard dropped prematurely**
   - Detect premature dropping of mutex guards.
   - *Technical*: Lifetime analysis, drop tracking.

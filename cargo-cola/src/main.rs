@@ -18,6 +18,7 @@ use mir_advanced_rules::{
     RegexBacktrackingDosRule, TemplateInjectionRule, UncontrolledAllocationSizeRule,
     UnsafeSendAcrossAsyncBoundaryRule,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::fs::{self, File};
@@ -69,14 +70,27 @@ struct Args {
     clear_cache: bool,
 
     #[cfg(feature = "hir-driver")]
-    /// Optional path to emit HIR JSON (single crate -> file, workspace -> directory)
+    /// Optional path to emit HIR JSON (defaults to <out_dir>/hir.json)
     #[arg(long)]
     hir_json: Option<PathBuf>,
+
+    #[cfg(feature = "hir-driver")]
+    /// Suppress HIR JSON output (default: HIR is generated when hir-driver feature is enabled)
+    #[arg(long = "no-hir", action = ArgAction::SetTrue)]
+    no_hir: bool,
 
     #[cfg(feature = "hir-driver")]
     /// Control whether HIR snapshots are persisted alongside MIR cache entries (default true)
     #[arg(long, value_parser = BoolishValueParser::new())]
     hir_cache: Option<bool>,
+
+    /// Optional path to emit AST JSON (defaults to <out_dir>/ast.json)
+    #[arg(long)]
+    ast_json: Option<PathBuf>,
+
+    /// Suppress AST JSON output (default: AST is generated)
+    #[arg(long = "no-ast", action = ArgAction::SetTrue)]
+    no_ast: bool,
 
     /// Generate LLM-optimized output with prompt template for AI-assisted security analysis
     #[arg(long)]
@@ -352,7 +366,8 @@ fn main() -> Result<()> {
         #[cfg(feature = "hir-driver")]
         let mut hir_summary_path: Option<PathBuf> = None;
         #[cfg(feature = "hir-driver")]
-        if let Some(hir_path) = args.hir_json.clone() {
+        if !args.no_hir {
+            let hir_path = args.hir_json.clone().unwrap_or_else(|| args.out_dir.join("hir.json"));
             if let Some(hir_package) = &output.hir {
                 mir_extractor::write_hir_json(&hir_path, hir_package)?;
                 hir_summary_path = Some(hir_path);
@@ -366,6 +381,20 @@ fn main() -> Result<()> {
         #[cfg(not(feature = "hir-driver"))]
         let hir_summary_path: Option<PathBuf> = None;
 
+        // Write AST JSON (automatic unless --no-ast)
+        let ast_summary_path: Option<PathBuf> = if !args.no_ast {
+            let ast_path = args.ast_json.clone().unwrap_or_else(|| args.out_dir.join("ast.json"));
+            let crate_root = PathBuf::from(&output.package.crate_root);
+            if let Ok(ast_package) = collect_ast_package(&crate_root, &output.package.crate_name) {
+                write_ast_json(&ast_path, &ast_package)?;
+                Some(ast_path)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         print_summary_single(
             &mir_json_path,
             &findings_path,
@@ -374,6 +403,7 @@ fn main() -> Result<()> {
             &output.analysis.findings,
             &output.analysis.rules,
             hir_summary_path.as_deref(),
+            ast_summary_path.as_deref(),
         );
 
         if output.analysis.findings.is_empty() {
@@ -545,6 +575,7 @@ fn print_summary_single(
     findings: &[Finding],
     rules: &[mir_extractor::RuleMetadata],
     hir_path: Option<&Path>,
+    ast_path: Option<&Path>,
 ) {
     println!(
         "Analysis complete: {} functions processed, {} findings.",
@@ -556,6 +587,9 @@ fn print_summary_single(
     println!("- SARIF: {}", sarif_path.display());
     if let Some(path) = hir_path {
         println!("- HIR JSON: {}", path.display());
+    }
+    if let Some(path) = ast_path {
+        println!("- AST JSON: {}", path.display());
     }
 
     if let Some(rendered) = format_findings_output(findings, rules) {
@@ -2163,4 +2197,228 @@ fn severity_for_advanced_rule(rule_id: &str) -> Severity {
         "ADV009" => Severity::Medium, // Integer overflow
         _ => Severity::Medium,
     }
+}
+
+// ============================================================================
+// AST Extraction and Output
+// ============================================================================
+
+/// Represents the AST package for a crate
+#[derive(Clone, Debug, Serialize)]
+struct AstPackage {
+    crate_name: String,
+    files: Vec<AstFile>,
+}
+
+/// Represents a single source file's AST
+#[derive(Clone, Debug, Serialize)]
+struct AstFile {
+    path: String,
+    items: Vec<AstItem>,
+}
+
+/// Simplified AST item representation
+#[derive(Clone, Debug, Serialize)]
+struct AstItem {
+    kind: String,
+    name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    visibility: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    attributes: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    signature: Option<String>,
+}
+
+/// Collect AST from all source files in a crate
+fn collect_ast_package(crate_root: &Path, crate_name: &str) -> Result<AstPackage> {
+    use walkdir::WalkDir;
+    
+    let mut files = Vec::new();
+    
+    for entry in WalkDir::new(crate_root)
+        .into_iter()
+        .filter_entry(|e| {
+            let file_name = e.file_name().to_string_lossy();
+            !file_name.starts_with('.') && file_name != "target" && file_name != "out"
+        })
+        .filter_map(|e| e.ok())
+    {
+        if entry.file_type().is_file() {
+            if let Some(ext) = entry.path().extension() {
+                if ext == "rs" {
+                    if let Ok(ast_file) = parse_ast_file(entry.path(), crate_root) {
+                        files.push(ast_file);
+                    }
+                }
+            }
+        }
+    }
+    
+    Ok(AstPackage {
+        crate_name: crate_name.to_string(),
+        files,
+    })
+}
+
+/// Parse a single source file into AST items
+fn parse_ast_file(path: &Path, crate_root: &Path) -> Result<AstFile> {
+    let content = fs::read_to_string(path)
+        .with_context(|| format!("Failed to read {}", path.display()))?;
+    
+    let syntax = syn::parse_file(&content)
+        .with_context(|| format!("Failed to parse {}", path.display()))?;
+    
+    let relative_path = path.strip_prefix(crate_root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .to_string();
+    
+    let items: Vec<AstItem> = syntax.items.iter().filter_map(|item| {
+        extract_ast_item(item)
+    }).collect();
+    
+    Ok(AstFile {
+        path: relative_path,
+        items,
+    })
+}
+
+/// Extract simplified AST item information
+fn extract_ast_item(item: &syn::Item) -> Option<AstItem> {
+    use syn::*;
+    
+    let (kind, name, visibility, signature) = match item {
+        Item::Fn(f) => (
+            "function".to_string(),
+            Some(f.sig.ident.to_string()),
+            Some(vis_to_string(&f.vis)),
+            Some(format!("fn {}({})", f.sig.ident, format_fn_args(&f.sig))),
+        ),
+        Item::Struct(s) => (
+            "struct".to_string(),
+            Some(s.ident.to_string()),
+            Some(vis_to_string(&s.vis)),
+            None,
+        ),
+        Item::Enum(e) => (
+            "enum".to_string(),
+            Some(e.ident.to_string()),
+            Some(vis_to_string(&e.vis)),
+            None,
+        ),
+        Item::Trait(t) => (
+            "trait".to_string(),
+            Some(t.ident.to_string()),
+            Some(vis_to_string(&t.vis)),
+            None,
+        ),
+        Item::Impl(i) => (
+            "impl".to_string(),
+            i.trait_.as_ref().map(|(_, path, _)| {
+                path.segments.last().map(|s| s.ident.to_string()).unwrap_or_default()
+            }),
+            None,
+            Some(format!("impl {}", type_to_string(&i.self_ty))),
+        ),
+        Item::Mod(m) => (
+            "mod".to_string(),
+            Some(m.ident.to_string()),
+            Some(vis_to_string(&m.vis)),
+            None,
+        ),
+        Item::Use(u) => (
+            "use".to_string(),
+            None,
+            Some(vis_to_string(&u.vis)),
+            None,
+        ),
+        Item::Const(c) => (
+            "const".to_string(),
+            Some(c.ident.to_string()),
+            Some(vis_to_string(&c.vis)),
+            None,
+        ),
+        Item::Static(s) => (
+            "static".to_string(),
+            Some(s.ident.to_string()),
+            Some(vis_to_string(&s.vis)),
+            None,
+        ),
+        Item::Type(t) => (
+            "type".to_string(),
+            Some(t.ident.to_string()),
+            Some(vis_to_string(&t.vis)),
+            None,
+        ),
+        Item::Macro(m) => (
+            "macro".to_string(),
+            m.ident.as_ref().map(|i| i.to_string()),
+            None,
+            None,
+        ),
+        _ => return None,
+    };
+    
+    let attributes: Vec<String> = match item {
+        Item::Fn(f) => extract_attrs(&f.attrs),
+        Item::Struct(s) => extract_attrs(&s.attrs),
+        Item::Enum(e) => extract_attrs(&e.attrs),
+        Item::Trait(t) => extract_attrs(&t.attrs),
+        Item::Impl(i) => extract_attrs(&i.attrs),
+        Item::Mod(m) => extract_attrs(&m.attrs),
+        _ => Vec::new(),
+    };
+    
+    Some(AstItem {
+        kind,
+        name,
+        visibility,
+        attributes,
+        signature,
+    })
+}
+
+fn vis_to_string(vis: &syn::Visibility) -> String {
+    match vis {
+        syn::Visibility::Public(_) => "pub".to_string(),
+        syn::Visibility::Restricted(r) => format!("pub({})", quote::quote!(#r).to_string()),
+        syn::Visibility::Inherited => "private".to_string(),
+    }
+}
+
+fn format_fn_args(sig: &syn::Signature) -> String {
+    sig.inputs.iter().map(|arg| {
+        match arg {
+            syn::FnArg::Receiver(r) => {
+                if r.reference.is_some() {
+                    if r.mutability.is_some() { "&mut self" } else { "&self" }
+                } else {
+                    "self"
+                }.to_string()
+            }
+            syn::FnArg::Typed(t) => {
+                format!("{}: {}", quote::quote!(#t.pat), quote::quote!(#t.ty))
+            }
+        }
+    }).collect::<Vec<_>>().join(", ")
+}
+
+fn type_to_string(ty: &syn::Type) -> String {
+    quote::quote!(#ty).to_string()
+}
+
+fn extract_attrs(attrs: &[syn::Attribute]) -> Vec<String> {
+    attrs.iter().filter_map(|attr| {
+        attr.path().get_ident().map(|i| i.to_string())
+    }).collect()
+}
+
+/// Write AST package to JSON file
+fn write_ast_json(path: &Path, ast_package: &AstPackage) -> Result<()> {
+    let json = serde_json::to_string_pretty(ast_package)
+        .context("serialize AST package")?;
+    fs::write(path, json)
+        .with_context(|| format!("write AST JSON to {}", path.display()))?;
+    Ok(())
 }

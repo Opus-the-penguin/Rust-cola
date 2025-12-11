@@ -2137,6 +2137,290 @@ impl AllocationSizeAnalyzer {
     }
 }
 
+/// Advanced rule that detects integer overflow from untrusted sources.
+/// Flags arithmetic operations (Add, Sub, Mul, etc.) where operands come from
+/// untrusted external sources (env vars, CLI args, stdin, network) without
+/// overflow protection (checked_*, saturating_*, etc.).
+pub struct IntegerOverflowRule;
+
+impl AdvancedRule for IntegerOverflowRule {
+    fn id(&self) -> &'static str {
+        "ADV009"
+    }
+
+    fn description(&self) -> &'static str {
+        "Detects arithmetic operations on untrusted input without overflow protection."
+    }
+
+    fn evaluate(&self, mir: &str) -> Vec<String> {
+        IntegerOverflowAnalyzer::default().analyze(mir)
+    }
+}
+
+#[derive(Default)]
+struct IntegerOverflowAnalyzer {
+    tainted: HashSet<String>,
+    taint_roots: HashMap<String, String>,
+    sanitized_roots: HashSet<String>,
+    sources: HashMap<String, String>,
+    findings: Vec<String>,
+}
+
+impl IntegerOverflowAnalyzer {
+    /// Unsafe arithmetic operations in MIR (can overflow/panic)
+    const UNSAFE_ARITHMETIC_OPS: &'static [&'static str] = &[
+        "= Add(",
+        "= Sub(",
+        "= Mul(",
+        "= Div(",
+        "= Rem(",
+        "= Shl(",
+        "= Shr(",
+        "= Neg(",
+    ];
+
+    /// Safe arithmetic patterns (already have overflow protection)
+    const SAFE_ARITHMETIC_PATTERNS: &'static [&'static str] = &[
+        "CheckedAdd",
+        "CheckedSub",
+        "CheckedMul",
+        "CheckedDiv",
+        "CheckedRem",
+        "CheckedShl",
+        "CheckedShr",
+        "checked_add",
+        "checked_sub",
+        "checked_mul",
+        "checked_div",
+        "checked_rem",
+        "saturating_add",
+        "saturating_sub",
+        "saturating_mul",
+        "saturating_div",
+        "saturating_pow",
+        "overflowing_add",
+        "overflowing_sub",
+        "overflowing_mul",
+        "overflowing_div",
+        "wrapping_add",
+        "wrapping_sub",
+        "wrapping_mul",
+        "wrapping_div",
+        "wrapping_shl",
+        "wrapping_shr",
+    ];
+
+    /// Untrusted external input sources
+    const UNTRUSTED_SOURCES: &'static [&'static str] = &[
+        "env::var",
+        "env::var_os",
+        "env::args",
+        "std::env::var",
+        "std::env::args",
+        "stdin",
+        "Stdin",
+        "TcpStream",
+        "UdpSocket",
+        "UnixStream",
+        "read_to_string",
+        "read_to_end",
+        "read_line",
+        "BufRead",
+        "content_length",
+        "Content-Length",
+        "CONTENT_LENGTH",
+    ];
+
+    fn analyze(mut self, mir: &str) -> Vec<String> {
+        let lines: Vec<&str> = mir.lines().collect();
+
+        // First pass: identify untrusted sources and track taint propagation
+        for line in &lines {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            if let Some(dest) = detect_assignment(trimmed) {
+                if Self::is_untrusted_source(trimmed) {
+                    self.mark_source(&dest, trimmed);
+                } else if let Some(source) = self.find_tainted_in_line(trimmed) {
+                    self.mark_alias(&dest, &source);
+                }
+            }
+
+            // Track safe arithmetic patterns that protect against overflow
+            self.track_safe_arithmetic(trimmed);
+        }
+
+        // Second pass: detect unsafe arithmetic with tainted operands
+        for line in &lines {
+            let trimmed = line.trim();
+            
+            // Skip if line uses safe arithmetic patterns
+            if Self::is_safe_arithmetic(trimmed) {
+                continue;
+            }
+
+            // Check for unsafe arithmetic operations
+            if !Self::is_unsafe_arithmetic(trimmed) {
+                continue;
+            }
+
+            // Extract operands from arithmetic operation
+            if let Some((op, operands)) = Self::extract_arithmetic_operands(trimmed) {
+                for operand in operands {
+                    if let Some(root) = self.taint_roots.get(&operand).cloned() {
+                        // Skip if this root has been sanitized
+                        if self.sanitized_roots.contains(&root) {
+                            continue;
+                        }
+
+                        let mut message = format!(
+                            "Integer overflow risk: untrusted input used in {} operation without overflow protection.\n  operation: `{}`",
+                            op, trimmed
+                        );
+
+                        if let Some(origin) = self.sources.get(&root) {
+                            message.push_str(&format!("\n  source: `{}`", origin));
+                        }
+
+                        message.push_str("\n  suggestion: Use checked_*, saturating_*, or wrapping_* arithmetic");
+
+                        self.findings.push(message);
+                        break; // Only report once per operation
+                    }
+                }
+            }
+        }
+
+        self.findings
+    }
+
+    fn mark_source(&mut self, var: &str, origin: &str) {
+        let var = var.to_string();
+        self.tainted.insert(var.clone());
+        self.taint_roots.insert(var.clone(), var.clone());
+        self.sources
+            .entry(var)
+            .or_insert_with(|| origin.trim().to_string());
+    }
+
+    fn mark_alias(&mut self, dest: &str, source: &str) {
+        if !self.tainted.contains(source) {
+            return;
+        }
+
+        if let Some(root) = self.taint_roots.get(source).cloned() {
+            self.tainted.insert(dest.to_string());
+            self.taint_roots.insert(dest.to_string(), root.clone());
+        }
+    }
+
+    fn track_safe_arithmetic(&mut self, line: &str) {
+        // If line contains safe arithmetic patterns, mark the tainted source as sanitized
+        if !Self::is_safe_arithmetic(line) {
+            return;
+        }
+
+        // Find which tainted variable is being protected
+        if let Some(dest) = detect_assignment(line) {
+            if let Some(source) = self.find_tainted_in_line(line) {
+                if let Some(root) = self.taint_roots.get(&source).cloned() {
+                    self.sanitized_roots.insert(root.clone());
+                    // Also propagate taint to dest (but it's now safe)
+                    self.tainted.insert(dest.clone());
+                    self.taint_roots.insert(dest, root);
+                }
+            }
+        }
+    }
+
+    fn is_untrusted_source(line: &str) -> bool {
+        Self::UNTRUSTED_SOURCES
+            .iter()
+            .any(|pattern| line.contains(pattern))
+    }
+
+    fn is_unsafe_arithmetic(line: &str) -> bool {
+        Self::UNSAFE_ARITHMETIC_OPS
+            .iter()
+            .any(|pattern| line.contains(pattern))
+    }
+
+    fn is_safe_arithmetic(line: &str) -> bool {
+        Self::SAFE_ARITHMETIC_PATTERNS
+            .iter()
+            .any(|pattern| line.contains(pattern))
+    }
+
+    fn extract_arithmetic_operands(line: &str) -> Option<(&'static str, Vec<String>)> {
+        // Map MIR ops to human-readable names
+        let ops = [
+            ("= Add(", "addition"),
+            ("= Sub(", "subtraction"),
+            ("= Mul(", "multiplication"),
+            ("= Div(", "division"),
+            ("= Rem(", "remainder"),
+            ("= Shl(", "left shift"),
+            ("= Shr(", "right shift"),
+            ("= Neg(", "negation"),
+        ];
+
+        for (pattern, name) in ops {
+            if let Some(start) = line.find(pattern) {
+                let after_op = &line[start + pattern.len()..];
+                if let Some(close) = after_op.find(')') {
+                    let inside = &after_op[..close];
+                    // Parse operands: "copy _1, copy _2" or "move _1, const 5_i32"
+                    let mut operands = Vec::new();
+                    for part in inside.split(',') {
+                        let part = part.trim();
+                        // Extract variable references
+                        if let Some(var) = extract_var_from_operand(part) {
+                            operands.push(var);
+                        }
+                    }
+                    return Some((name, operands));
+                }
+            }
+        }
+        None
+    }
+
+    fn find_tainted_in_line(&self, line: &str) -> Option<String> {
+        self.tainted
+            .iter()
+            .find(|var| contains_var(line, var))
+            .cloned()
+    }
+}
+
+/// Extract variable name from MIR operand like "copy _1" or "move _2"
+fn extract_var_from_operand(operand: &str) -> Option<String> {
+    let operand = operand.trim();
+    
+    // Handle "copy _N" or "move _N"
+    if operand.starts_with("copy ") {
+        return Some(operand[5..].trim().to_string());
+    }
+    if operand.starts_with("move ") {
+        return Some(operand[5..].trim().to_string());
+    }
+    
+    // Handle bare "_N"
+    if operand.starts_with('_') && operand.chars().skip(1).all(|c| c.is_ascii_digit()) {
+        return Some(operand.to_string());
+    }
+    
+    // Skip constants
+    if operand.starts_with("const ") {
+        return None;
+    }
+    
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3087,6 +3371,266 @@ fn example() -> () {
 
         let findings = run_allocation_rule(mir);
         assert!(!findings.is_empty(), "file read to HashMap::with_capacity should be flagged");
+    }
+
+    // ==================== ADV009: Integer Overflow Tests ====================
+
+    fn run_overflow_rule(mir: &str) -> Vec<String> {
+        let rule = IntegerOverflowRule;
+        rule.evaluate(mir)
+    }
+
+    #[test]
+    fn detects_env_var_to_addition() {
+        let mir = r#"
+fn example() -> () {
+    let mut _0: ();
+    let _1: Result<String, VarError>;
+    let _2: String;
+    let _3: i32;
+    let _4: i32;
+
+    bb0: {
+        StorageLive(_1);
+        _1 = std::env::var(const "VALUE") -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        StorageLive(_2);
+        _2 = Result::unwrap(move _1) -> [return: bb2, unwind continue];
+    }
+
+    bb2: {
+        StorageLive(_3);
+        _3 = str::parse::<i32>(move _2) -> [return: bb3, unwind continue];
+    }
+
+    bb3: {
+        StorageLive(_4);
+        _4 = Add(copy _3, const 100_i32);
+        return;
+    }
+}
+"#;
+
+        let findings = run_overflow_rule(mir);
+        assert!(!findings.is_empty(), "env var to addition should be flagged");
+        assert!(findings[0].contains("addition") || findings[0].contains("overflow"));
+    }
+
+    #[test]
+    fn detects_stdin_to_multiplication() {
+        let mir = r#"
+fn example() -> () {
+    let mut _0: ();
+    let _1: Stdin;
+    let _2: String;
+    let _3: i64;
+    let _4: i64;
+
+    bb0: {
+        StorageLive(_1);
+        _1 = std::io::stdin() -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        StorageLive(_2);
+        _2 = BufRead::read_line(move _1) -> [return: bb2, unwind continue];
+    }
+
+    bb2: {
+        StorageLive(_3);
+        _3 = str::parse::<i64>(move _2) -> [return: bb3, unwind continue];
+    }
+
+    bb3: {
+        StorageLive(_4);
+        _4 = Mul(copy _3, const 1000_i64);
+        return;
+    }
+}
+"#;
+
+        let findings = run_overflow_rule(mir);
+        assert!(!findings.is_empty(), "stdin to multiplication should be flagged");
+        assert!(findings[0].contains("multiplication") || findings[0].contains("overflow"));
+    }
+
+    #[test]
+    fn allows_constant_arithmetic() {
+        let mir = r#"
+fn example() -> () {
+    let mut _0: ();
+    let _1: i32;
+
+    bb0: {
+        StorageLive(_1);
+        _1 = Add(const 10_i32, const 20_i32);
+        return;
+    }
+}
+"#;
+
+        let findings = run_overflow_rule(mir);
+        assert!(findings.is_empty(), "constant arithmetic should not be flagged");
+    }
+
+    #[test]
+    fn allows_checked_add() {
+        let mir = r#"
+fn example() -> () {
+    let mut _0: ();
+    let _1: Result<String, VarError>;
+    let _2: String;
+    let _3: i32;
+    let _4: Option<i32>;
+
+    bb0: {
+        StorageLive(_1);
+        _1 = std::env::var(const "VALUE") -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        StorageLive(_2);
+        _2 = Result::unwrap(move _1) -> [return: bb2, unwind continue];
+    }
+
+    bb2: {
+        StorageLive(_3);
+        _3 = str::parse::<i32>(move _2) -> [return: bb3, unwind continue];
+    }
+
+    bb3: {
+        StorageLive(_4);
+        _4 = i32::checked_add(move _3, const 100_i32) -> [return: bb4, unwind continue];
+    }
+
+    bb4: {
+        return;
+    }
+}
+"#;
+
+        let findings = run_overflow_rule(mir);
+        assert!(findings.is_empty(), "checked_add should not be flagged");
+    }
+
+    #[test]
+    fn allows_saturating_mul() {
+        let mir = r#"
+fn example() -> () {
+    let mut _0: ();
+    let _1: Result<String, VarError>;
+    let _2: String;
+    let _3: u64;
+    let _4: u64;
+
+    bb0: {
+        StorageLive(_1);
+        _1 = std::env::var(const "COUNT") -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        StorageLive(_2);
+        _2 = Result::unwrap(move _1) -> [return: bb2, unwind continue];
+    }
+
+    bb2: {
+        StorageLive(_3);
+        _3 = str::parse::<u64>(move _2) -> [return: bb3, unwind continue];
+    }
+
+    bb3: {
+        StorageLive(_4);
+        _4 = u64::saturating_mul(move _3, const 1024_u64) -> [return: bb4, unwind continue];
+    }
+
+    bb4: {
+        return;
+    }
+}
+"#;
+
+        let findings = run_overflow_rule(mir);
+        assert!(findings.is_empty(), "saturating_mul should not be flagged");
+    }
+
+    #[test]
+    fn detects_network_input_to_subtraction() {
+        let mir = r#"
+fn example() -> () {
+    let mut _0: ();
+    let _1: TcpStream;
+    let _2: String;
+    let _3: usize;
+    let _4: usize;
+
+    bb0: {
+        StorageLive(_1);
+        _1 = TcpStream::connect(const "127.0.0.1:8080") -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        StorageLive(_2);
+        _2 = read_to_string(move _1) -> [return: bb2, unwind continue];
+    }
+
+    bb2: {
+        StorageLive(_3);
+        _3 = str::parse::<usize>(move _2) -> [return: bb3, unwind continue];
+    }
+
+    bb3: {
+        StorageLive(_4);
+        _4 = Sub(copy _3, const 1_usize);
+        return;
+    }
+}
+"#;
+
+        let findings = run_overflow_rule(mir);
+        assert!(!findings.is_empty(), "network input to subtraction should be flagged");
+        assert!(findings[0].contains("subtraction") || findings[0].contains("overflow"));
+    }
+
+    #[test]
+    fn allows_wrapping_operations() {
+        let mir = r#"
+fn example() -> () {
+    let mut _0: ();
+    let _1: Result<String, VarError>;
+    let _2: String;
+    let _3: u32;
+    let _4: u32;
+
+    bb0: {
+        StorageLive(_1);
+        _1 = std::env::var(const "OFFSET") -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        StorageLive(_2);
+        _2 = Result::unwrap(move _1) -> [return: bb2, unwind continue];
+    }
+
+    bb2: {
+        StorageLive(_3);
+        _3 = str::parse::<u32>(move _2) -> [return: bb3, unwind continue];
+    }
+
+    bb3: {
+        StorageLive(_4);
+        _4 = u32::wrapping_add(move _3, const 1_u32) -> [return: bb4, unwind continue];
+    }
+
+    bb4: {
+        return;
+    }
+}
+"#;
+
+        let findings = run_overflow_rule(mir);
+        assert!(findings.is_empty(), "wrapping_add should not be flagged (intentional)");
     }
 
 }

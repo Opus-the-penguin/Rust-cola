@@ -62,6 +62,10 @@ This plan outlines the approach for implementing the remaining advanced rules in
   - Taint to `Vec::with_capacity` etc.
   - *Technical*: Taint tracking from untrusted sources to allocation APIs.
   - *Status notes*: Added `UncontrolledAllocationSizeRule` (ADV008) detecting untrusted input flowing to allocation APIs (Vec::with_capacity, HashMap::with_capacity, etc.) without bounds checking. Recognizes sanitizers like .min(), .clamp(), comparison guards, and MAX_* constants. 6 regression tests added.
+- **Integer overflow in arithmetic** *(implemented 2025-12-11)*
+  - Detect untrusted input used in arithmetic operations without overflow protection.
+  - *Technical*: Taint tracking from untrusted sources to MIR arithmetic ops (Add, Sub, Mul, Div, etc.).
+  - *Status notes*: Added `IntegerOverflowRule` (ADV009) detecting untrusted input flowing to arithmetic operations without overflow protection. Recognizes safe patterns: checked_add, saturating_mul, wrapping_*, overflowing_*. 7 regression tests added.
 - **56. I/O buffers not fully processed**
   - Detect incomplete buffer processing.
   - *Technical*: Dataflow analysis on buffer usage.

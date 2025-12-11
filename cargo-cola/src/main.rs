@@ -8,10 +8,16 @@ use mir_extractor::extract_with_cache;
 use mir_extractor::{
     analyze_with_engine, load_cached_analysis, sarif_report, store_cached_analysis,
     write_findings_json, write_mir_json, write_sarif_json, AnalysisResult, CacheConfig,
-    CacheMissReason, CacheStatus, Finding, MirPackage, RuleEngine, SourceSpan,
+    CacheMissReason, CacheStatus, Finding, MirPackage, RuleEngine, Severity, SourceSpan,
 };
 #[cfg(feature = "hir-driver")]
 use mir_extractor::{extract_with_cache_full_opts, HirOptions, HirPackage};
+use mir_advanced_rules::{
+    AdvancedRule, AwaitSpanGuardRule, DanglingPointerUseAfterFreeRule,
+    InsecureBinaryDeserializationRule, InsecureJsonTomlDeserializationRule, IntegerOverflowRule,
+    RegexBacktrackingDosRule, TemplateInjectionRule, UncontrolledAllocationSizeRule,
+    UnsafeSendAcrossAsyncBoundaryRule,
+};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::fs::{self, File};
@@ -244,7 +250,7 @@ fn main() -> Result<()> {
 
         let cached_analysis = load_cached_analysis(&cache_config, &cache_status, &engine)?;
 
-        let analysis = if let Some(analysis) = cached_analysis {
+        let mut analysis = if let Some(analysis) = cached_analysis {
             println!("Using cached analysis results.");
             analysis
         } else {
@@ -252,6 +258,16 @@ fn main() -> Result<()> {
             store_cached_analysis(&cache_config, &cache_status, &engine, &fresh)?;
             fresh
         };
+
+        // Run advanced MIR-based rules (ADV001-ADV009) and merge findings
+        let advanced_findings = run_advanced_rules(&package);
+        if !advanced_findings.is_empty() {
+            println!(
+                "Advanced rules (ADV001-ADV009): {} additional findings",
+                advanced_findings.len()
+            );
+            analysis.findings.extend(advanced_findings);
+        }
 
         println!(
             "crate {}: processed {} functions, {} findings",
@@ -2083,4 +2099,68 @@ fn format_audit_section(vulnerabilities: &[AuditVulnerability]) -> String {
     writeln!(output).unwrap();
 
     output
+}
+
+/// Run all advanced MIR-based security rules on a package and return findings.
+///
+/// This integrates the `mir-advanced-rules` crate into the standard cargo-cola scan,
+/// enabling ADV001-ADV009 rules for advanced security analysis.
+fn run_advanced_rules(package: &MirPackage) -> Vec<Finding> {
+    let rules: Vec<Box<dyn AdvancedRule>> = vec![
+        Box::new(DanglingPointerUseAfterFreeRule),
+        Box::new(InsecureJsonTomlDeserializationRule),
+        Box::new(RegexBacktrackingDosRule),
+        Box::new(TemplateInjectionRule),
+        Box::new(UnsafeSendAcrossAsyncBoundaryRule),
+        Box::new(AwaitSpanGuardRule),
+        Box::new(InsecureBinaryDeserializationRule),
+        Box::new(UncontrolledAllocationSizeRule),
+        Box::new(IntegerOverflowRule),
+    ];
+
+    let mut findings = Vec::new();
+
+    for func in &package.functions {
+        // Reconstruct MIR text from the function body
+        let mir_text = format!(
+            "fn {}() {{\n{}\n}}",
+            func.name,
+            func.body.join("\n")
+        );
+
+        for rule in &rules {
+            let rule_findings = rule.evaluate(&mir_text);
+            
+            for msg in rule_findings {
+                findings.push(Finding {
+                    rule_id: rule.id().to_string(),
+                    rule_name: format!("{}: {}", rule.id(), rule.description()),
+                    severity: severity_for_advanced_rule(rule.id()),
+                    message: msg,
+                    function: func.name.clone(),
+                    function_signature: func.signature.clone(),
+                    evidence: func.body.clone(),
+                    span: func.span.clone(),
+                });
+            }
+        }
+    }
+
+    findings
+}
+
+/// Map advanced rule IDs to severity levels
+fn severity_for_advanced_rule(rule_id: &str) -> Severity {
+    match rule_id {
+        "ADV001" => Severity::High,   // Use-after-free
+        "ADV002" => Severity::Medium, // Insecure JSON/TOML deserialization
+        "ADV003" => Severity::Medium, // Regex backtracking DoS
+        "ADV004" => Severity::High,   // Template injection
+        "ADV005" => Severity::High,   // Unsafe Send across async
+        "ADV006" => Severity::Medium, // Await span guard
+        "ADV007" => Severity::High,   // Insecure binary deserialization
+        "ADV008" => Severity::High,   // Uncontrolled allocation size
+        "ADV009" => Severity::Medium, // Integer overflow
+        _ => Severity::Medium,
+    }
 }

@@ -2168,6 +2168,7 @@ struct IntegerOverflowAnalyzer {
 
 impl IntegerOverflowAnalyzer {
     /// Unsafe arithmetic operations in MIR (can overflow/panic)
+    /// Includes both release-mode (Add, Sub, etc.) and debug-mode (AddWithOverflow, etc.) patterns
     const UNSAFE_ARITHMETIC_OPS: &'static [&'static str] = &[
         "= Add(",
         "= Sub(",
@@ -2177,6 +2178,10 @@ impl IntegerOverflowAnalyzer {
         "= Shl(",
         "= Shr(",
         "= Neg(",
+        // Debug mode overflow-checked operations (panic on overflow in debug builds)
+        "AddWithOverflow(",
+        "SubWithOverflow(",
+        "MulWithOverflow(",
     ];
 
     /// Safe arithmetic patterns (already have overflow protection)
@@ -2208,6 +2213,13 @@ impl IntegerOverflowAnalyzer {
         "wrapping_div",
         "wrapping_shl",
         "wrapping_shr",
+        // Bounds-checking sanitizers
+        "::min(",
+        "::max(",
+        "::clamp(",
+        "Ord>::min(",
+        "Ord>::max(",
+        "Ord>::clamp(",
     ];
 
     /// Untrusted external input sources
@@ -2217,8 +2229,12 @@ impl IntegerOverflowAnalyzer {
         "env::args",
         "std::env::var",
         "std::env::args",
+        // MIR-specific patterns for env::var
+        "var::<&str>",
+        "var::<String>",
         "stdin",
         "Stdin",
+        "StdinLock",
         "TcpStream",
         "UdpSocket",
         "UnixStream",
@@ -2356,6 +2372,7 @@ impl IntegerOverflowAnalyzer {
 
     fn extract_arithmetic_operands(line: &str) -> Option<(&'static str, Vec<String>)> {
         // Map MIR ops to human-readable names
+        // Includes both release-mode and debug-mode (WithOverflow) patterns
         let ops = [
             ("= Add(", "addition"),
             ("= Sub(", "subtraction"),
@@ -2365,6 +2382,10 @@ impl IntegerOverflowAnalyzer {
             ("= Shl(", "left shift"),
             ("= Shr(", "right shift"),
             ("= Neg(", "negation"),
+            // Debug mode patterns (panic on overflow)
+            ("AddWithOverflow(", "addition"),
+            ("SubWithOverflow(", "subtraction"),
+            ("MulWithOverflow(", "multiplication"),
         ];
 
         for (pattern, name) in ops {

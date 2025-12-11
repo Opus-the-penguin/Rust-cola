@@ -78,6 +78,9 @@ Includes inter-procedural taint analysis: tracks data flow across function calls
 
 ### Latest advanced rules (December 2025)
 
+These advanced MIR-based rules (ADV001-ADV009) are automatically included in every scan:
+
+- **ADV001 – Use-after-free detection**: Detects use of pointers after their memory has been freed, focusing on unsafe blocks and FFI boundaries.
 - **ADV002 – Insecure JSON/TOML deserialization**: Alerts when untrusted data is passed into `serde_json::from_*` / `toml::from_*` without validation.
 - **ADV003 – Insecure binary deserialization**: Flags tainted inputs reaching `bincode::deserialize*` / `postcard::from_bytes*` sinks lacking size checks.
 - **ADV004 – Regex denial-of-service**: Detects catastrophic backtracking patterns like nested quantifiers and dot-star loops.

@@ -118,11 +118,17 @@ struct Args {
     #[arg(long, num_args = 0..=1, default_missing_value = "")]
     report: Option<PathBuf>,
 
-    /// Generate an LLM prompt file for use with IDE-integrated AI assistants (Copilot, Cursor, etc.)
-    /// The output is a markdown file with findings formatted as a prompt ready for analysis.
-    /// Defaults to <out_dir>/reports/llm-prompt.md if no path specified
-    #[arg(long, num_args = 0..=1, default_missing_value = "")]
+    /// Suppress standalone report generation
+    #[arg(long = "no-report", action = ArgAction::SetTrue)]
+    no_report: bool,
+
+    /// Custom path for LLM prompt file (defaults to <out_dir>/llm-prompt.md)
+    #[arg(long)]
     llm_prompt: Option<PathBuf>,
+
+    /// Suppress LLM prompt generation (default: LLM prompt is generated)
+    #[arg(long = "no-llm-prompt", action = ArgAction::SetTrue)]
+    no_llm_prompt: bool,
 
     /// Run cargo-audit to check dependencies for known vulnerabilities (requires cargo-audit installed)
     /// Findings are merged into the report output
@@ -337,9 +343,14 @@ fn main() -> Result<()> {
             println!("- LLM Report: {}", llm_path.display());
         }
 
-        // Generate standalone report if requested
-        if let Some(report_path) = &args.report {
-            let resolved_path = resolve_report_path(report_path, &args.out_dir, "report.md");
+        // Generate standalone report (automatic unless --no-report, or if explicitly requested with path)
+        let report_summary_path: Option<PathBuf> = if !args.no_report || args.report.is_some() {
+            let report_path = args.report.clone().unwrap_or_else(|| args.out_dir.join("report.md"));
+            let resolved_path = if report_path.as_os_str().is_empty() {
+                args.out_dir.join("report.md")
+            } else {
+                report_path
+            };
             generate_standalone_report(
                 &resolved_path,
                 &output.package.crate_name,
@@ -347,21 +358,25 @@ fn main() -> Result<()> {
                 &output.analysis.rules,
                 &audit_vulnerabilities,
             )?;
-            println!("- Standalone Report: {}", resolved_path.display());
-        }
+            Some(resolved_path)
+        } else {
+            None
+        };
 
-        // Generate LLM prompt for IDE-integrated assistants
-        if let Some(prompt_path) = &args.llm_prompt {
-            let resolved_path = resolve_report_path(prompt_path, &args.out_dir, "llm-prompt.md");
+        // Generate LLM prompt (automatic unless --no-llm-prompt)
+        let llm_prompt_summary_path: Option<PathBuf> = if !args.no_llm_prompt {
+            let prompt_path = args.llm_prompt.clone().unwrap_or_else(|| args.out_dir.join("llm-prompt.md"));
             generate_llm_prompt(
-                &resolved_path,
+                &prompt_path,
                 &output.package.crate_name,
                 &output.analysis.findings,
                 &output.analysis.rules,
                 &audit_vulnerabilities,
             )?;
-            println!("- LLM Prompt: {}", resolved_path.display());
-        }
+            Some(prompt_path)
+        } else {
+            None
+        };
 
         #[cfg(feature = "hir-driver")]
         let mut hir_summary_path: Option<PathBuf> = None;
@@ -395,6 +410,21 @@ fn main() -> Result<()> {
             None
         };
 
+        // Write manifest.json
+        write_manifest(
+            &args.out_dir,
+            &output.package.crate_name,
+            output.package.functions.len(),
+            output.analysis.findings.len(),
+            &mir_json_path,
+            &findings_path,
+            &sarif_path,
+            ast_summary_path.as_deref(),
+            hir_summary_path.as_deref(),
+            llm_prompt_summary_path.as_deref(),
+            report_summary_path.as_deref(),
+        )?;
+
         print_summary_single(
             &mir_json_path,
             &findings_path,
@@ -404,6 +434,8 @@ fn main() -> Result<()> {
             &output.analysis.rules,
             hir_summary_path.as_deref(),
             ast_summary_path.as_deref(),
+            report_summary_path.as_deref(),
+            llm_prompt_summary_path.as_deref(),
         );
 
         if output.analysis.findings.is_empty() {
@@ -467,13 +499,19 @@ fn main() -> Result<()> {
         )?;
     }
 
-    // Generate standalone report if requested (workspace mode)
-    if let Some(report_path) = &args.report {
-        let resolved_path = resolve_report_path(report_path, &args.out_dir, "report.md");
-        let project_name = workspace_root
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("workspace");
+    // Generate standalone report (automatic unless --no-report) (workspace mode)
+    let project_name = workspace_root
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("workspace");
+    
+    let workspace_report_path: Option<PathBuf> = if !args.no_report || args.report.is_some() {
+        let report_path = args.report.clone().unwrap_or_else(|| args.out_dir.join("report.md"));
+        let resolved_path = if report_path.as_os_str().is_empty() {
+            args.out_dir.join("report.md")
+        } else {
+            report_path
+        };
         generate_standalone_report(
             &resolved_path,
             project_name,
@@ -481,23 +519,27 @@ fn main() -> Result<()> {
             &aggregated_rules,
             &audit_vulnerabilities,
         )?;
-    }
+        println!("- Report: {}", resolved_path.display());
+        Some(resolved_path)
+    } else {
+        None
+    };
 
-    // Generate LLM prompt if requested (workspace mode)
-    if let Some(prompt_path) = &args.llm_prompt {
-        let resolved_path = resolve_report_path(prompt_path, &args.out_dir, "llm-prompt.md");
-        let project_name = workspace_root
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("workspace");
+    // Generate LLM prompt (automatic unless --no-llm-prompt) (workspace mode)
+    let workspace_llm_prompt_path: Option<PathBuf> = if !args.no_llm_prompt {
+        let prompt_path = args.llm_prompt.clone().unwrap_or_else(|| args.out_dir.join("llm-prompt.md"));
         generate_llm_prompt(
-            &resolved_path,
+            &prompt_path,
             project_name,
             &aggregated_findings,
             &aggregated_rules,
             &audit_vulnerabilities,
         )?;
-    }
+        println!("- LLM Prompt: {}", prompt_path.display());
+        Some(prompt_path)
+    } else {
+        None
+    };
 
     #[cfg(feature = "hir-driver")]
     let mut hir_summary_dir: Option<PathBuf> = None;
@@ -525,6 +567,23 @@ fn main() -> Result<()> {
             hir_summary_dir = Some(hir_base);
         }
     }
+    #[cfg(not(feature = "hir-driver"))]
+    let hir_summary_dir: Option<PathBuf> = None;
+
+    // Write manifest.json (workspace mode)
+    write_manifest(
+        &args.out_dir,
+        project_name,
+        total_functions,
+        aggregated_findings.len(),
+        &mir_json_path,
+        &findings_path,
+        &sarif_path,
+        None, // AST not yet supported in workspace mode
+        hir_summary_dir.as_deref(),
+        workspace_llm_prompt_path.as_deref(),
+        workspace_report_path.as_deref(),
+    )?;
 
     println!(
         "Analysis complete across {} crates: {} functions processed, {} findings.",
@@ -576,6 +635,8 @@ fn print_summary_single(
     rules: &[mir_extractor::RuleMetadata],
     hir_path: Option<&Path>,
     ast_path: Option<&Path>,
+    report_path: Option<&Path>,
+    llm_prompt_path: Option<&Path>,
 ) {
     println!(
         "Analysis complete: {} functions processed, {} findings.",
@@ -590,6 +651,12 @@ fn print_summary_single(
     }
     if let Some(path) = ast_path {
         println!("- AST JSON: {}", path.display());
+    }
+    if let Some(path) = report_path {
+        println!("- Report: {}", path.display());
+    }
+    if let Some(path) = llm_prompt_path {
+        println!("- LLM Prompt: {}", path.display());
     }
 
     if let Some(rendered) = format_findings_output(findings, rules) {
@@ -2421,4 +2488,86 @@ fn write_ast_json(path: &Path, ast_package: &AstPackage) -> Result<()> {
     fs::write(path, json)
         .with_context(|| format!("write AST JSON to {}", path.display()))?;
     Ok(())
+}
+
+// ============================================================================
+// Manifest Output
+// ============================================================================
+
+/// Manifest describing all generated artifacts from a scan
+#[derive(Clone, Debug, Serialize)]
+struct Manifest {
+    /// Rust-cola version
+    version: String,
+    /// Timestamp of scan completion (ISO 8601)
+    timestamp: String,
+    /// Target crate or workspace path
+    target: String,
+    /// Number of functions analyzed
+    functions_analyzed: usize,
+    /// Number of findings
+    findings_count: usize,
+    /// Generated artifact paths (relative to out_dir)
+    artifacts: ManifestArtifacts,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct ManifestArtifacts {
+    mir_json: String,
+    findings_json: String,
+    sarif: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ast_json: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hir_json: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    llm_prompt: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    report: Option<String>,
+}
+
+/// Write manifest.json describing all generated artifacts
+fn write_manifest(
+    out_dir: &Path,
+    target: &str,
+    functions_analyzed: usize,
+    findings_count: usize,
+    mir_json: &Path,
+    findings_json: &Path,
+    sarif: &Path,
+    ast_json: Option<&Path>,
+    hir_json: Option<&Path>,
+    llm_prompt: Option<&Path>,
+    report: Option<&Path>,
+) -> Result<()> {
+    let manifest = Manifest {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        target: target.to_string(),
+        functions_analyzed,
+        findings_count,
+        artifacts: ManifestArtifacts {
+            mir_json: path_to_relative(mir_json, out_dir),
+            findings_json: path_to_relative(findings_json, out_dir),
+            sarif: path_to_relative(sarif, out_dir),
+            ast_json: ast_json.map(|p| path_to_relative(p, out_dir)),
+            hir_json: hir_json.map(|p| path_to_relative(p, out_dir)),
+            llm_prompt: llm_prompt.map(|p| path_to_relative(p, out_dir)),
+            report: report.map(|p| path_to_relative(p, out_dir)),
+        },
+    };
+
+    let manifest_path = out_dir.join("manifest.json");
+    let json = serde_json::to_string_pretty(&manifest)
+        .context("serialize manifest")?;
+    fs::write(&manifest_path, json)
+        .with_context(|| format!("write manifest to {}", manifest_path.display()))?;
+    Ok(())
+}
+
+/// Convert absolute path to relative (from out_dir), or filename if outside
+fn path_to_relative(path: &Path, out_dir: &Path) -> String {
+    path.strip_prefix(out_dir)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| path.file_name().unwrap_or_default().to_string_lossy().to_string())
 }

@@ -1,57 +1,33 @@
 # Rust-cola
 
+Static security analyzer for Rust. Compiles source code to extract MIR (Mid-level Intermediate Representation) and HIR (High-level Intermediate Representation)—internal compiler formats that reveal issues invisible to source-level scanners. Optionally integrates with LLMs to filter false positives and suggest fixes.
 
-Static security analyzer for Rust. Compiles source code to access MIR (Mid-level Intermediate Representation) and HIR (High-level Intermediate Representation), which are internal compiler formats that reveal issues difficult to detect by source-level scanners. Integrates with your favorite Code LLM or Code Assistant to filter false positives and suggest fixes.
-
-Rust's compiler uses several intermediate representations (IRs) to analyze and transform code. HIR (High-level Intermediate Representation) is a structured form of the source code after parsing, while MIR (Mid-level Intermediate Representation) is a simplified, control-flow-oriented version used for borrow checking and optimization. These IRs allow Rust-cola to detect issues that are not visible in raw source code. To use Rust-cola, the environment must be able to compile the target Rust codebase, as analysis depends on successful compilation and extraction of these IRs. Note: Rust-cola requires the nightly Rust toolchain (not stable), as only nightly provides the developer tools needed to extract HIR and MIR for analysis.
+Requires the nightly Rust toolchain and a compilable target codebase.
 
 ## Usage
 
-Two methods for LLM analysis:
-
-### Method 1: Manual
-
-Run the scan, paste results into your LLM, copy the response.
+### Basic scan
 
 ```bash
-cargo-cola --crate-path /path/to/project --llm-prompt
+cargo-cola --crate-path /path/to/project
 ```
 
-Output: `out/reports/llm-prompt.md`
+Output is written to `out/cola/` by default. See [Output Artifacts](#output-artifacts) for details.
 
-Paste the contents of out/reports/llm-prompt.md into your LLM (ChatGPT, Claude, Copilot, etc.). The file includes analysis instructions. Save the LLM's response as your report.
+### With LLM analysis
 
-### Method 2: Automated
+**Manual:** Paste `out/cola/llm-prompt.md` into your LLM. The file includes analysis instructions.
 
+**Automated:** Call an LLM API directly:
 
-Calls the LLM API directly and writes the report to a file.
-
-**Note:** The OpenAI endpoint and `gpt-4` model below are just examples. You can use any compatible LLM API, including local models.
-
-Example with OpenAI API:
 ```bash
 export RUSTCOLA_LLM_API_KEY=sk-...
-cargo-cola --crate-path . --llm-report out/reports/report.md \
+cargo-cola --crate-path . --llm-report out/cola/report.md \
   --llm-endpoint https://api.openai.com/v1/chat/completions \
   --llm-model gpt-4
 ```
 
-Example with local Ollama LLM:
-```bash
-cargo-cola --crate-path . --llm-report out/reports/report.md \
-  --llm-endpoint http://localhost:11434/v1/chat/completions \
-  --llm-model llama3
-```
-
-Output: `out/reports/report.md`
-
-### Standalone (no LLM)
-
-```bash
-cargo-cola --crate-path . --report report.md
-```
-
-Generates a report with heuristic triage. Requires manual review.
+Works with any OpenAI-compatible API (Anthropic, Ollama, etc.).
 
 ## Installation
 
@@ -64,9 +40,26 @@ cargo build --release
 
 Binary: `target/release/cargo-cola`
 
+## Output Artifacts
+
+By default, all artifacts are written to `out/cola/`:
+
+| File | Description |
+|------|-------------|
+| `manifest.json` | Metadata and paths for all generated artifacts |
+| `mir.json` | MIR extraction (functions, blocks, statements) |
+| `ast.json` | AST extraction (modules, functions, structs) |
+| `hir.json` | HIR extraction (requires `--features hir-driver`) |
+| `findings.json` | Raw findings from all rules |
+| `cola.sarif` | SARIF 2.1.0 for CI integration |
+| `llm-prompt.md` | Prompt file for manual LLM submission |
+| `report.md` | Standalone report (when `--report` is used) |
+
+Use `--no-ast`, `--no-hir`, or `--no-llm-prompt` to suppress specific outputs.
+
 ## What It Detects
 
-105 rules covering:
+102 rules covering:
 
 - Memory safety (transmute, uninitialized memory, Box leaks, dangling pointer escapes)
 - Input validation (SQL injection, path traversal, command injection, SSRF, unsafe JSON/TOML/binary deserialization, template injection, regex catastrophic backtracking)
@@ -75,21 +68,6 @@ Binary: `target/release/cargo-cola`
 - FFI (allocator mismatch, CString pointer misuse)
 
 Includes inter-procedural taint analysis: tracks data flow across function calls.
-
-### Latest advanced rules (December 2025)
-
-These advanced MIR-based rules (ADV001-ADV009) are automatically included in every scan:
-
-- **ADV001 – Use-after-free detection**: Detects use of pointers after their memory has been freed, focusing on unsafe blocks and FFI boundaries.
-- **ADV002 – Insecure JSON/TOML deserialization**: Alerts when untrusted data is passed into `serde_json::from_*` / `toml::from_*` without validation.
-- **ADV003 – Insecure binary deserialization**: Flags tainted inputs reaching `bincode::deserialize*` / `postcard::from_bytes*` sinks lacking size checks.
-- **ADV004 – Regex denial-of-service**: Detects catastrophic backtracking patterns like nested quantifiers and dot-star loops.
-- **ADV005 – Template injection**: Surfaces unescaped user input flowing into HTML/template response constructors such as `warp::reply::html`.
-- **ADV006 – Unsafe Send across async boundaries**: Finds `Rc`/`RefCell` captures crossing thread-boundary executors (e.g., `tokio::spawn`) while allowing `Arc` and `spawn_local`.
-- **ADV007 – Span guard awaiting**: Warns when tracing span guards remain live across `.await`, requiring explicit drops before suspension points.
-- **ADV008 – Uncontrolled allocation size**: Detects untrusted input flowing to allocation APIs (`Vec::with_capacity`, `HashMap::with_capacity`, etc.) without bounds checking. Recognizes sanitizers like `.min()`, `.clamp()`, and comparison guards.
-- **ADV009 – Integer overflow in arithmetic**: Detects untrusted input used in arithmetic operations (`+`, `-`, `*`, `/`, etc.) without overflow protection. Recognizes safe patterns like `checked_add`, `saturating_mul`, and `wrapping_*`.
-
 
 ## Why It Requires Compilation
 
@@ -108,14 +86,19 @@ Source-level and AST-based scanners can only see the surface structure of the co
 | Flag | Description |
 |------|-------------|
 | `--crate-path <PATH>` | Target crate or workspace |
-| `--llm-prompt [PATH]` | Generate prompt file for manual LLM submission |
-| `--llm-report <PATH>` | Generate report (calls API if endpoint provided) |
+| `--out-dir <PATH>` | Output directory (default: `out/cola`) |
+| `--llm-prompt [PATH]` | Custom path for LLM prompt file |
+| `--no-llm-prompt` | Suppress LLM prompt generation |
+| `--llm-report <PATH>` | Generate report via LLM API |
 | `--llm-endpoint <URL>` | LLM API endpoint |
-| `--llm-model <NAME>` | Model name (must be specified; e.g., gpt-4, llama3, etc.) |
-| `--report <PATH>` | Standalone report without LLM |
-| `--sarif <PATH>` | SARIF output for CI |
+| `--llm-model <NAME>` | Model name (e.g., gpt-4, llama3) |
+| `--report [PATH]` | Standalone report without LLM |
+| `--no-report` | Suppress standalone report |
+| `--no-ast` | Suppress AST output |
+| `--no-hir` | Suppress HIR output (hir-driver feature) |
+| `--sarif <PATH>` | Custom SARIF output path |
 | `--rulepack <PATH>` | Additional rules from YAML |
-| `--with-audit` | Include cargo-audit dependency vulnerability scan |
+| `--with-audit` | Include cargo-audit dependency scan |
 
 ## Dependency Auditing
 

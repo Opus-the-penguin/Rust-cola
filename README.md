@@ -2,7 +2,9 @@
 
 Static security analyzer for Rust. Compiles source code to extract MIR (Mid-level Intermediate Representation) and HIR (High-level Intermediate Representation)—internal compiler formats that reveal issues invisible to source-level scanners.
 
-Requires the nightly Rust toolchain and a compilable target codebase.
+**Note:** The environment running cargo-cola must be able to compile the target code. This is required to extract the intermediate representations for deep analysis.
+
+Requires the nightly Rust toolchain.
 
 ## Usage
 
@@ -10,11 +12,19 @@ Requires the nightly Rust toolchain and a compilable target codebase.
 
 Rust-cola is designed to work with an LLM for best results. The LLM filters false positives, rates severity, assesses exploitability, and suggests remediations—turning raw findings into an actionable security report.
 
-**Manual:** Run the scan, then paste `out/cola/llm-prompt.md` into your LLM (ChatGPT, Claude, Copilot, etc.). The file includes analysis instructions. Save the response as your report.
+**Manual Workflow (Recommended):**
 
-```bash
-cargo-cola --crate-path /path/to/project
-```
+1. Run the scan on your target project:
+   ```bash
+   cargo-cola --crate-path /path/to/project --output-for-llm out/cola/security-analysis.md
+   ```
+
+2. Open the generated file `out/cola/security-analysis.md`.
+
+3. Copy the contents into your AI coding assistant (Claude, ChatGPT, Copilot) with a prompt like:
+   > "Analyze these security findings and generate a prioritized report."
+
+4. The LLM will classify findings, dismiss false positives, and provide remediation steps.
 
 **Automated:** Call an LLM API directly:
 
@@ -91,20 +101,21 @@ Source-level and AST-based scanners can only see the surface structure of the co
 
 | Flag | Description |
 |------|-------------|
-| `--crate-path <PATH>` | Target crate or workspace |
+| `--crate-path <PATH>` | Target crate or workspace (default: `.`) |
 | `--out-dir <PATH>` | Output directory (default: `out/cola`) |
-| `--llm-prompt [PATH]` | Custom path for LLM prompt file |
+| `--output-for-llm <PATH>` | Path for LLM prompt file (alias for `--llm-prompt`) |
+| `--llm-prompt <PATH>` | Path for LLM prompt file (default: `out/cola/llm-prompt.md`) |
 | `--no-llm-prompt` | Suppress LLM prompt generation |
 | `--llm-report <PATH>` | Generate report via LLM API |
 | `--llm-endpoint <URL>` | LLM API endpoint |
 | `--llm-model <NAME>` | Model name (e.g., gpt-4, llama3) |
-| `--report [PATH]` | Standalone report without LLM |
+| `--report <PATH>` | Generate standalone heuristic report |
 | `--no-report` | Suppress standalone report |
+| `--with-audit` | Run cargo-audit to check dependencies |
 | `--no-ast` | Suppress AST output |
 | `--no-hir` | Suppress HIR output (hir-driver feature) |
 | `--sarif <PATH>` | Custom SARIF output path |
 | `--rulepack <PATH>` | Additional rules from YAML |
-| `--with-audit` | Include cargo-audit dependency scan |
 
 ## Dependency Auditing
 

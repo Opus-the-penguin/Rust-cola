@@ -15518,7 +15518,7 @@ impl Rule for PathTraversalRule {
         //   fn read_file() { fs::read_to_string(get_user_file()); }
         if let Ok(mut inter_analysis) = interprocedural::InterProceduralAnalysis::new(package) {
             if inter_analysis.analyze(package).is_ok() {
-                let flows = inter_analysis.detect_inter_procedural_flows();
+                let flows = inter_analysis.detect_inter_procedural_flows(package);
                 
                 // Track already reported functions to avoid duplicates
                 let mut reported_functions: std::collections::HashSet<String> = findings
@@ -16111,7 +16111,7 @@ impl Rule for SsrfRule {
         // Phase 2: Inter-procedural analysis
         if let Ok(mut inter_analysis) = interprocedural::InterProceduralAnalysis::new(package) {
             if inter_analysis.analyze(package).is_ok() {
-                let flows = inter_analysis.detect_inter_procedural_flows();
+                let flows = inter_analysis.detect_inter_procedural_flows(package);
                 
                 let mut reported_functions: std::collections::HashSet<String> = findings
                     .iter()
@@ -17005,7 +17005,7 @@ impl Rule for SqlInjectionRule {
         // Phase 2: Inter-procedural analysis
         if let Ok(mut inter_analysis) = interprocedural::InterProceduralAnalysis::new(package) {
             if inter_analysis.analyze(package).is_ok() {
-                let flows = inter_analysis.detect_inter_procedural_flows();
+                let flows = inter_analysis.detect_inter_procedural_flows(package);
                 
                 let mut reported_functions: std::collections::HashSet<String> = findings
                     .iter()
@@ -17422,7 +17422,7 @@ impl Rule for InsecureYamlDeserializationRule {
         // Phase 2: Inter-procedural analysis
         if let Ok(mut inter_analysis) = interprocedural::InterProceduralAnalysis::new(package) {
             if inter_analysis.analyze(package).is_ok() {
-                let flows = inter_analysis.detect_inter_procedural_flows();
+                let flows = inter_analysis.detect_inter_procedural_flows(package);
                 
                 let mut reported_functions: std::collections::HashSet<String> = findings
                     .iter()
@@ -17480,6 +17480,292 @@ impl Rule for InsecureYamlDeserializationRule {
                     });
                     
                     reported_functions.insert(flow.sink_function.clone());
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA098: Inter-Procedural Command Injection
+// ============================================================================
+
+/// Detects command injection vulnerabilities where untrusted input flows to
+/// command execution through helper functions. Uses inter-procedural analysis
+/// to track taint across function boundaries.
+///
+/// **Sources:** env::var, env::args, stdin, file contents, network data
+/// **Sinks:** Command::new, Command::arg, Command::spawn, std::process::exec
+/// **Sanitizers:** parse::<T>(), allowlist validation, alphanumeric checks
+struct InterProceduralCommandInjectionRule {
+    metadata: RuleMetadata,
+}
+
+impl InterProceduralCommandInjectionRule {
+    fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA098".to_string(),
+                name: "interprocedural-command-injection".to_string(),
+                short_description: "Inter-procedural command injection".to_string(),
+                full_description: "Untrusted input flows through helper functions to \
+                    command execution without sanitization. Attackers can inject shell \
+                    metacharacters to execute arbitrary commands. Validate input against \
+                    an allowlist or use APIs that don't invoke a shell.".to_string(),
+                help_uri: Some("https://owasp.org/www-community/attacks/Command_Injection".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for InterProceduralCommandInjectionRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        // Use inter-procedural analysis to detect cross-function command injection
+        if let Ok(mut inter_analysis) = interprocedural::InterProceduralAnalysis::new(package) {
+            if inter_analysis.analyze(package).is_ok() {
+                let flows = inter_analysis.detect_inter_procedural_flows(package);
+                
+                let mut reported_functions: std::collections::HashSet<String> = 
+                    std::collections::HashSet::new();
+                
+                for flow in flows {
+                    // Only consider command execution sinks
+                    if !flow.sink_type.contains("command") {
+                        continue;
+                    }
+                    
+                    // Skip internal/toolchain functions
+                    let is_internal = flow.sink_function.contains("mir_extractor")
+                        || flow.sink_function.contains("mir-extractor")
+                        || flow.sink_function.contains("__")
+                        || flow.source_function.contains("mir_extractor")
+                        || flow.source_function.contains("mir-extractor");
+                    if is_internal {
+                        continue;
+                    }
+                    
+                    // Skip test functions
+                    if flow.sink_function.contains("test") && flow.sink_function.contains("::") {
+                        // Allow top-level test_ functions but skip nested test utilities
+                        if !flow.sink_function.starts_with("test_") {
+                            continue;
+                        }
+                    }
+                    
+                    // Skip if already reported
+                    if reported_functions.contains(&flow.sink_function) {
+                        continue;
+                    }
+                    
+                    // Skip if sanitized
+                    if flow.sanitized {
+                        continue;
+                    }
+                    
+                    // Get the sink function for span info
+                    let sink_func = package.functions.iter()
+                        .find(|f| f.name == flow.sink_function);
+                    
+                    let span = sink_func.map(|f| f.span.clone()).unwrap_or_default();
+                    let signature = sink_func.map(|f| f.signature.clone()).unwrap_or_default();
+                    
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: Severity::High,
+                        message: format!(
+                            "Inter-procedural command injection: untrusted input from `{}` \
+                            flows through {} to command execution in `{}`. \
+                            Attackers can inject shell metacharacters. \
+                            Validate against an allowlist or avoid shell invocation.",
+                            flow.source_function,
+                            if flow.call_chain.len() > 2 {
+                                format!("{} function calls", flow.call_chain.len() - 1)
+                            } else {
+                                "helper function".to_string()
+                            },
+                            flow.sink_function
+                        ),
+                        function: flow.sink_function.clone(),
+                        function_signature: signature,
+                        evidence: vec![flow.describe()],
+                        span,
+                    });
+                    
+                    reported_functions.insert(flow.sink_function.clone());
+                }
+                
+                // Phase 3.5.2: Closure capture detection
+                // Detect taint through closures that capture tainted variables
+                for closure in inter_analysis.closure_registry.get_all_closures() {
+                    // Skip if already reported
+                    if reported_functions.contains(&closure.name) {
+                        continue;
+                    }
+                    
+                    // Find parent function (may not exist if inlined)
+                    let parent_func = package.functions.iter()
+                        .find(|f| f.name == closure.parent_function);
+                    
+                    // Find closure function
+                    let closure_func = package.functions.iter()
+                        .find(|f| f.name == closure.name);
+                    
+                    if let Some(closure_fn) = closure_func {
+                        // Check if parent has source (if parent exists)
+                        let parent_has_source = if let Some(parent) = parent_func {
+                            parent.body.iter().any(|line| {
+                                line.contains("args()") || 
+                                line.contains("env::args") || 
+                                line.contains("env::var") ||
+                                line.contains("std::env::") ||
+                                line.contains("= args") ||
+                                line.contains("var(")
+                            })
+                        } else {
+                            // Parent is inlined - check if captured variable name suggests taint
+                            // Pattern: debug tainted => ... indicates captured var named "tainted"
+                            closure_fn.body.iter().any(|line| {
+                                let line_lower = line.to_lowercase();
+                                (line.contains("debug ") && line.contains("(*((*_1)")) &&
+                                (line_lower.contains("tainted") || 
+                                 line_lower.contains("user") ||
+                                 line_lower.contains("input") ||
+                                 line_lower.contains("cmd") ||
+                                 line_lower.contains("arg") ||
+                                 line_lower.contains("command"))
+                            })
+                        };
+                        
+                        // Check if closure has command sink
+                        let closure_has_sink = closure_fn.body.iter().any(|line| {
+                            line.contains("Command::new") ||
+                            line.contains("Command::") ||
+                            line.contains("::spawn") ||
+                            line.contains("::output") ||
+                            line.contains("process::Command")
+                        });
+                        
+                        // Check if closure captures variables
+                        // Method 1: From closure registry
+                        let has_captures_from_registry = !closure.captured_vars.is_empty();
+                        
+                        // Method 2: Direct MIR pattern check
+                        // Look for "debug <name> => (*((*_1)..." which indicates captured variable
+                        let has_captures_from_mir = closure_fn.body.iter().any(|line| {
+                            line.contains("debug ") && line.contains("(*((*_1)")
+                        });
+                        
+                        let has_captures = has_captures_from_registry || has_captures_from_mir;
+                        
+                        if parent_has_source && closure_has_sink && has_captures {
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: Severity::High,
+                                message: format!(
+                                    "Closure captures tainted data: `{}` captures untrusted input \
+                                    from parent function `{}` and passes it to command execution. \
+                                    Attackers can inject shell metacharacters. \
+                                    Validate input or avoid shell invocation.",
+                                    closure.name,
+                                    closure.parent_function
+                                ),
+                                function: closure.name.clone(),
+                                function_signature: closure_fn.signature.clone(),
+                                evidence: vec![
+                                    format!("Parent function {} contains taint source", closure.parent_function),
+                                    format!("Closure captures variable(s) from parent"),
+                                    "Closure body contains command execution".to_string(),
+                                ],
+                                span: closure_fn.span.clone(),
+                            });
+                            
+                            reported_functions.insert(closure.name.clone());
+                        }
+                    }
+                }
+                
+                // Phase 3.5.2b: Direct closure scan (fallback)
+                // Scan all functions for closure patterns, bypassing ClosureRegistry
+                for function in &package.functions {
+                    // Check if this is a closure function
+                    if !function.name.contains("::{closure#") {
+                        continue;
+                    }
+                    
+                    // Skip if already reported
+                    if reported_functions.contains(&function.name) {
+                        continue;
+                    }
+                    
+                    let body_str = function.body.join("\n");
+                    
+                    // Check if closure has command sink
+                    let has_command_sink = body_str.contains("Command::") ||
+                        body_str.contains("::spawn") ||
+                        body_str.contains("::output");
+                    
+                    if !has_command_sink {
+                        continue;
+                    }
+                    
+                    // Check for captured variables with taint-suggestive names
+                    // Pattern: "debug tainted => (*((*_1)..." 
+                    let has_tainted_capture = body_str.lines().any(|line| {
+                        if !line.contains("debug ") || !line.contains("(*((*_1)") {
+                            return false;
+                        }
+                        let line_lower = line.to_lowercase();
+                        line_lower.contains("tainted") ||
+                        line_lower.contains("user") ||
+                        line_lower.contains("input") ||
+                        line_lower.contains("cmd") ||
+                        line_lower.contains("arg") ||
+                        line_lower.contains("command")
+                    });
+                    
+                    if has_tainted_capture {
+                        // Extract parent function name from closure name
+                        let parent_name = if let Some(pos) = function.name.find("::{closure#") {
+                            function.name[..pos].to_string()
+                        } else {
+                            "unknown_parent".to_string()
+                        };
+                        
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: Severity::High,
+                            message: format!(
+                                "Closure captures tainted data: `{}` captures untrusted input \
+                                from parent function `{}` and passes it to command execution. \
+                                Attackers can inject shell metacharacters. \
+                                Validate input or avoid shell invocation.",
+                                function.name,
+                                parent_name
+                            ),
+                            function: function.name.clone(),
+                            function_signature: function.signature.clone(),
+                            evidence: vec![
+                                format!("Closure captures variable(s) named with taint indicators"),
+                                "Closure body contains command execution".to_string(),
+                            ],
+                            span: function.span.clone(),
+                        });
+                        
+                        reported_functions.insert(function.name.clone());
+                    }
                 }
             }
         }
@@ -18163,6 +18449,7 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     engine.register_rule(Box::new(TransmuteLifetimeChangeRule::new())); // RUSTCOLA095
     engine.register_rule(Box::new(RawPointerEscapeRule::new())); // RUSTCOLA096
     engine.register_rule(Box::new(BuildScriptNetworkRule::new())); // RUSTCOLA097
+    engine.register_rule(Box::new(InterProceduralCommandInjectionRule::new())); // RUSTCOLA098
     // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));

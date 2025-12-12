@@ -8,6 +8,21 @@ pub mod path_sensitive;
 pub mod closure;
 pub mod field;
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum TaintPropagation {
+    ParamToReturn(usize),
+    ParamToParam { from: usize, to: usize },
+    ParamToSink { param: usize, sink_type: String },
+    ParamSanitized(usize),
+}
+
+#[derive(Debug, Clone)]
+pub struct DataflowSummary {
+    pub name: String,
+    pub propagation: Vec<TaintPropagation>,
+    pub returns_tainted: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct Assignment {
     pub target: String,

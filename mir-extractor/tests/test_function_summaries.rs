@@ -99,7 +99,7 @@ fn test_summary_generation_on_interprocedural_examples() {
         
         // Should have param-to-sink flow
         let has_sink = summary.propagation_rules.iter().any(|rule| {
-            matches!(rule, mir_extractor::interprocedural::TaintPropagation::ParamToSink { .. })
+            matches!(rule, mir_extractor::dataflow::TaintPropagation::ParamToSink { .. })
         });
         assert!(has_sink, "execute_command should have a sink");
     }
@@ -111,7 +111,7 @@ fn test_summary_generation_on_interprocedural_examples() {
         
         // Should have sanitization
         let has_sanitizer = summary.propagation_rules.iter().any(|rule| {
-            matches!(rule, mir_extractor::interprocedural::TaintPropagation::ParamSanitized(_))
+            matches!(rule, mir_extractor::dataflow::TaintPropagation::ParamSanitized(_))
         });
         assert!(has_sanitizer, "validate_input should perform sanitization");
     }
@@ -290,7 +290,7 @@ fn test_inter_procedural_detection() {
     
     // Now detect inter-procedural flows
     println!("\n=== Inter-Procedural Flow Detection ===");
-    let flows = analysis.detect_inter_procedural_flows();
+    let flows = analysis.detect_inter_procedural_flows(&package);
     
     println!("Detected {} taint flows", flows.len());
     

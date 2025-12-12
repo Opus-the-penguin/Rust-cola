@@ -1,15 +1,15 @@
 # Rust-cola Current Status & Next Steps
 
-**Date:** December 1, 2025  
-**Version:** 89 security rules  
-**Recent Achievement:** ✅ Interprocedural dataflow rules shipped! RUSTCOLA086-089 (command injection, SQL injection, path traversal, YAML deserialization).
+**Date:** December 12, 2025  
+**Version:** 102 security rules  
+**Recent Achievement:** ✅ Phase 3.3 Inter-procedural Taint Propagation complete.
 
 ## Current State Summary
 
 ### ✅ What's Completed
 
-**89 Security Rules Shipped:**
-- **Tier 1 (MIR Heuristics):** 87 rules - Pattern matching on compiler IR
+**102 Security Rules Shipped:**
+- **Tier 1 (MIR Heuristics):** 93 rules - Pattern matching on compiler IR
   - Memory safety, crypto, concurrency, FFI, input validation, cloud security
   - Interprocedural dataflow rules (RUSTCOLA086-089)
   - 10-30% typical false positive rate (acceptable for heuristics)
@@ -19,6 +19,9 @@
   - RUSTCOLA092: Commented-out code (87.5% recall, 100% precision)
   - RUSTCOLA072: Overscoped allow attributes (100% recall, 100% precision)
   - Infrastructure operational and proven
+
+- **Advanced Rules:** 9 rules
+  - Complex dataflow analysis rules
 
 **New MIR Dataflow Rules (Nov 2025):**
 - ✅ RUSTCOLA075: Cleartext logging of secrets (86% recall, 67% precision)
@@ -41,6 +44,10 @@
 - ✅ RUSTCOLA067: Spawned child without wait (100% recall, 100% precision) - improved from 86% with per-spawn tracking
 
 **Advanced Dataflow:**
+- ✅ Phase 3.3: Inter-procedural Taint Propagation COMPLETE (Dec 12, 2025)
+  - Implemented taint tracking across function boundaries using function summaries.
+  - Refactored shared types for better modularity.
+  - Verified with path-sensitive analysis tests.
 - ✅ Phase 3.5.1: Branch-sensitive CFG analysis COMPLETE (Nov 25, 2025)
 - **100% recall** (11/11 vulnerable cases detected) ✅
 - **0% false positive rate** (maintained) ✅

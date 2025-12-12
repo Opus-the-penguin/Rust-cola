@@ -130,7 +130,7 @@ fn test_partial_sanitization_path_analysis() {
     // Run path-sensitive taint analysis
     use mir_extractor::dataflow::path_sensitive::PathSensitiveTaintAnalysis;
     let mut analysis = PathSensitiveTaintAnalysis::new(cfg);
-    let result = analysis.analyze(function);
+    let result = analysis.analyze(function, None);
     
     println!("\n=== Path-Sensitive Analysis Results ===");
     println!("Total paths analyzed: {}", result.total_paths);

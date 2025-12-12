@@ -1,6 +1,20 @@
 # Changelog
 
-All notable changes to Rust-COLA will be documented in this file.
+All notable changes to Rust-COLA w## [0.1.1] - 2025-12-12
+
+### Added
+- **Inter-procedural Taint Propagation**: Implemented Phase 3.3, enabling taint tracking across function boundaries using function summaries.
+- **ADV008**: Uncontrolled Allocation Size Rule (Advanced Dataflow) - Detects untrusted input flowing to allocation APIs without bounds checking.
+- **cargo-audit Integration**: New `--with-audit` flag to include dependency vulnerability scanning in reports.
+- **LLM Workflow Improvements**: Added `--output-for-llm` alias and enhanced LLM prompt with rigorous false negative prevention guidelines.
+
+### Changed
+- **Documentation**: Updated README with correct rule count (102 rules), manual LLM workflow instructions, and updated options table.
+- **Rule Count**: Corrected rule count to include 93 core rules + 9 advanced rules.
+
+---
+
+## [0.1.0] - 2025-12-08e documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).

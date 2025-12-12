@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use super::cfg::{ControlFlowGraph, BasicBlock, Terminator};
 use super::closure::ClosureInfo;
 use super::field::{FieldTaintMap, FieldTaint, FieldPath};
+use super::{DataflowSummary, TaintPropagation};
 use crate::MirFunction;
 
 /// Taint state for a variable
@@ -87,8 +88,12 @@ impl PathSensitiveTaintAnalysis {
     }
     
     /// Analyze all paths through the function
-    pub fn analyze(&mut self, function: &MirFunction) -> PathSensitiveResult {
-        self.analyze_with_initial_taint(function, HashMap::new())
+    pub fn analyze(
+        &mut self, 
+        function: &MirFunction,
+        callee_summaries: Option<&HashMap<String, DataflowSummary>>
+    ) -> PathSensitiveResult {
+        self.analyze_with_initial_taint(function, HashMap::new(), callee_summaries)
     }
     
     /// Analyze all paths through a closure function with captured variable taint
@@ -96,9 +101,10 @@ impl PathSensitiveTaintAnalysis {
         &mut self,
         function: &MirFunction,
         closure_info: &ClosureInfo,
+        callee_summaries: Option<&HashMap<String, DataflowSummary>>
     ) -> PathSensitiveResult {
         let initial_taint = self.build_initial_taint_from_captures(closure_info);
-        self.analyze_with_initial_taint(function, initial_taint)
+        self.analyze_with_initial_taint(function, initial_taint, callee_summaries)
     }
     
     /// Build initial taint state from captured variables
@@ -136,6 +142,7 @@ impl PathSensitiveTaintAnalysis {
         &mut self,
         function: &MirFunction,
         initial_taint: HashMap<String, TaintState>,
+        callee_summaries: Option<&HashMap<String, DataflowSummary>>
     ) -> PathSensitiveResult {
         let paths = self.cfg.get_all_paths();
         
@@ -144,7 +151,7 @@ impl PathSensitiveTaintAnalysis {
         
         for path in paths {
             // Use field-sensitive analysis by default
-            let result = self.analyze_path_field_sensitive(&path, function, &initial_taint);
+            let result = self.analyze_path_field_sensitive(&path, function, &initial_taint, callee_summaries);
             
             if result.has_vulnerable_sink {
                 has_any_vulnerable_path = true;
@@ -168,6 +175,7 @@ impl PathSensitiveTaintAnalysis {
         path: &[String],
         _function: &MirFunction,
         initial_taint: &HashMap<String, TaintState>,
+        callee_summaries: Option<&HashMap<String, DataflowSummary>>
     ) -> PathAnalysisResult {
         // Initialize field-sensitive taint state
         let mut field_map = FieldTaintMap::new();
@@ -190,6 +198,7 @@ impl PathSensitiveTaintAnalysis {
                     &mut sink_calls,
                     &mut source_calls,
                     &mut sanitizer_calls,
+                    callee_summaries
                 );
             }
         }
@@ -257,6 +266,7 @@ impl PathSensitiveTaintAnalysis {
         sink_calls: &mut Vec<SinkCall>,
         source_calls: &mut Vec<SourceCall>,
         sanitizer_calls: &mut Vec<SanitizerCall>,
+        callee_summaries: Option<&HashMap<String, DataflowSummary>>
     ) {
         // Process statements in the block
         for statement in &block.statements {
@@ -267,17 +277,20 @@ impl PathSensitiveTaintAnalysis {
                 sink_calls,
                 source_calls,
                 sanitizer_calls,
+                callee_summaries
             );
         }
         
         // Process terminator (for function calls)
         self.process_terminator_field_sensitive(
             &block.id,
+            &block.statements,
             &block.terminator,
             field_map,
             sink_calls,
             source_calls,
             sanitizer_calls,
+            callee_summaries
         );
     }
     
@@ -322,6 +335,7 @@ impl PathSensitiveTaintAnalysis {
         sink_calls: &mut Vec<SinkCall>,
         source_calls: &mut Vec<SourceCall>,
         sanitizer_calls: &mut Vec<SanitizerCall>,
+        callee_summaries: Option<&HashMap<String, DataflowSummary>>
     ) {
         use super::field::parser;
         
@@ -436,29 +450,128 @@ impl PathSensitiveTaintAnalysis {
             else if rhs.contains('(') && rhs.contains(')') 
                 && !Self::is_source_call(&rhs) 
                 && !Self::is_sanitizer_call(&rhs) {
-                // Conservative approach: check if RHS contains any tainted variables
-                // This works even for complex MIR expressions we can't fully parse
-                let mut has_tainted_arg = false;
                 
-                // Try to extract all _N variables from the RHS
-                for word in rhs.split(|c: char| !c.is_alphanumeric() && c != '_') {
-                    if word.starts_with('_') && word[1..].chars().all(|c| c.is_numeric()) {
-                        // This is a variable like _1, _2, etc.
-                        let var_path = super::field::FieldPath::whole_var(word.to_string());
-                        if matches!(field_map.get_field_taint(&var_path), super::field::FieldTaint::Tainted { .. }) {
-                            has_tainted_arg = true;
-                            break;
+                let mut summary_applied = false;
+                
+                // Try to apply summary if available
+                if let Some(summaries) = callee_summaries {
+                    if let Some(paren_start) = rhs.find('(') {
+                        let func_name = rhs[..paren_start].trim();
+                        // Clean up function name (remove "move ", "copy ", etc if present, though unlikely for function name)
+                        // But MIR often has fully qualified names like `std::ops::Add::add`
+                        
+                        if let Some(summary) = summaries.get(func_name) {
+                            summary_applied = true;
+                            
+                            // Parse arguments
+                            let args_str = &rhs[paren_start + 1..rhs.len()-1];
+                            let args: Vec<&str> = args_str.split(',').map(|s| s.trim()).collect();
+                            
+                            // Apply propagation rules
+                            for prop in &summary.propagation {
+                                match prop {
+                                    TaintPropagation::ParamToReturn(param_idx) => {
+                                        if *param_idx < args.len() {
+                                            let arg = args[*param_idx];
+                                            if let Some(arg_var) = parser::extract_base_var(arg) {
+                                                let arg_path = super::field::FieldPath::whole_var(arg_var);
+                                                if matches!(field_map.get_field_taint(&arg_path), super::field::FieldTaint::Tainted { .. }) {
+                                                    let taint = TaintState::Tainted {
+                                                        source_type: "propagated".to_string(),
+                                                        source_location: format!("via {}", func_name),
+                                                    };
+                                                    Self::set_field_taint_state(field_map, &lhs, &taint);
+                                                }
+                                            }
+                                        }
+                                    },
+                                    TaintPropagation::ParamToParam { from, to } => {
+                                        if *from < args.len() && *to < args.len() {
+                                            let from_arg = args[*from];
+                                            let to_arg = args[*to];
+                                            
+                                            if let Some(from_var) = parser::extract_base_var(from_arg) {
+                                                let from_path = super::field::FieldPath::whole_var(from_var);
+                                                if matches!(field_map.get_field_taint(&from_path), super::field::FieldTaint::Tainted { .. }) {
+                                                    if let Some(to_var) = parser::extract_base_var(to_arg) {
+                                                        let taint = TaintState::Tainted {
+                                                            source_type: "propagated".to_string(),
+                                                            source_location: format!("via {}", func_name),
+                                                        };
+                                                        Self::set_field_taint_state(field_map, &to_var, &taint);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    TaintPropagation::ParamToSink { param, sink_type } => {
+                                        if *param < args.len() {
+                                            let arg = args[*param];
+                                            if let Some(arg_var) = parser::extract_base_var(arg) {
+                                                let arg_path = super::field::FieldPath::whole_var(arg_var.clone());
+                                                if matches!(field_map.get_field_taint(&arg_path), super::field::FieldTaint::Tainted { .. }) {
+                                                    sink_calls.push(SinkCall {
+                                                        block_id: block_id.to_string(),
+                                                        statement: statement.to_string(),
+                                                        sink_function: sink_type.clone(),
+                                                        tainted_args: vec![arg_var],
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    },
+                                    TaintPropagation::ParamSanitized(param_idx) => {
+                                         if *param_idx < args.len() {
+                                            let arg = args[*param_idx];
+                                            if let Some(arg_var) = parser::extract_base_var(arg) {
+                                                // Mark as sanitized
+                                                let taint = TaintState::Sanitized {
+                                                    sanitizer: func_name.to_string(),
+                                                };
+                                                Self::set_field_taint_state(field_map, &arg_var, &taint);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // If returns_tainted is true, taint the return value regardless of inputs
+                            if summary.returns_tainted {
+                                let taint = TaintState::Tainted {
+                                    source_type: "source".to_string(),
+                                    source_location: format!("from {}", func_name),
+                                };
+                                Self::set_field_taint_state(field_map, &lhs, &taint);
+                            }
                         }
                     }
                 }
-                
-                // Conservative taint propagation: if function receives tainted input, output is tainted
-                if has_tainted_arg {
-                    let taint = TaintState::Tainted {
-                        source_type: "propagated".to_string(),
-                        source_location: format!("via function call"),
-                    };
-                    Self::set_field_taint_state(field_map, &lhs, &taint);
+
+                if !summary_applied {
+                    // Conservative approach: check if RHS contains any tainted variables
+                    // This works even for complex MIR expressions we can't fully parse
+                    let mut has_tainted_arg = false;
+                    
+                    // Try to extract all _N variables from the RHS
+                    for word in rhs.split(|c: char| !c.is_alphanumeric() && c != '_') {
+                        if word.starts_with('_') && word[1..].chars().all(|c| c.is_numeric()) {
+                            // This is a variable like _1, _2, etc.
+                            let var_path = super::field::FieldPath::whole_var(word.to_string());
+                            if matches!(field_map.get_field_taint(&var_path), super::field::FieldTaint::Tainted { .. }) {
+                                has_tainted_arg = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Conservative taint propagation: if function receives tainted input, output is tainted
+                    if has_tainted_arg {
+                        let taint = TaintState::Tainted {
+                            source_type: "propagated".to_string(),
+                            source_location: format!("via function call"),
+                        };
+                        Self::set_field_taint_state(field_map, &lhs, &taint);
+                    }
                 }
             }
         }
@@ -579,20 +692,22 @@ impl PathSensitiveTaintAnalysis {
     fn process_terminator_field_sensitive(
         &self,
         _block_id: &str,
+        _statements: &[String],
         terminator: &Terminator,
         _field_map: &mut FieldTaintMap,
         _sink_calls: &mut Vec<SinkCall>,
         _source_calls: &mut Vec<SourceCall>,
         _sanitizer_calls: &mut Vec<SanitizerCall>,
+        _callee_summaries: Option<&HashMap<String, DataflowSummary>>
     ) {
         // For Call terminators, we need to look at the preceding statement
         // to determine what function is being called and with what arguments
         // This is simplified for now - real implementation would parse call syntax
         
         if let Terminator::Call { .. } = terminator {
-            // Look for sink patterns in the block's statements
-            // (In real MIR, function calls appear before the Call terminator)
-            // For now, we'll use a simplified heuristic
+            // Logic for call terminators is currently handled in process_statement_field_sensitive
+            // which sees the assignment statement corresponding to the call.
+            // Future improvements could handle calls that are not assignments here.
         }
     }
     

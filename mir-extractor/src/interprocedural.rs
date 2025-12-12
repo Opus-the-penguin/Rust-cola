@@ -24,6 +24,7 @@ use anyhow::Result;
 use crate::{MirPackage, MirFunction};
 use crate::dataflow::cfg::ControlFlowGraph;
 use crate::dataflow::closure::{ClosureRegistry, ClosureRegistryBuilder};
+use crate::dataflow::{TaintPropagation, DataflowSummary};
 
 /// Call graph representing function call relationships
 #[derive(Debug, Clone)]
@@ -81,22 +82,6 @@ pub struct FunctionSummary {
     
     /// Does the return value carry taint?
     pub return_taint: ReturnTaint,
-}
-
-/// Describes how taint propagates through a function
-#[derive(Debug, Clone)]
-pub enum TaintPropagation {
-    /// Parameter N flows to return value
-    ParamToReturn(usize),
-    
-    /// Parameter N flows to parameter M (for &mut parameters)
-    ParamToParam { from: usize, to: usize },
-    
-    /// Parameter N flows to a sink
-    ParamToSink { param: usize, sink_type: String },
-    
-    /// Parameter N is sanitized by this function
-    ParamSanitized(usize),
 }
 
 /// Describes the taint state of a function's return value
@@ -394,6 +379,13 @@ impl FunctionSummary {
         let cfg = ControlFlowGraph::from_mir_function(function);
         if cfg.has_branching() || closure_registry.is_some() {
             use crate::dataflow::path_sensitive::PathSensitiveTaintAnalysis;
+            use crate::dataflow::DataflowSummary;
+            
+            // Convert FunctionSummary to DataflowSummary for path-sensitive analysis
+            let dataflow_summaries: HashMap<String, DataflowSummary> = callee_summaries
+                .iter()
+                .map(|(k, v)| (k.clone(), v.to_dataflow_summary()))
+                .collect();
             
             let mut path_analysis = PathSensitiveTaintAnalysis::new(cfg);
             
@@ -401,14 +393,14 @@ impl FunctionSummary {
             let result = if let Some(registry) = closure_registry {
                 if let Some(closure_info) = registry.get_closure(&function.name) {
                     // This is a closure - analyze with captured variable context
-                    path_analysis.analyze_closure(function, closure_info)
+                    path_analysis.analyze_closure(function, closure_info, Some(&dataflow_summaries))
                 } else {
                     // Not a closure - use regular analysis
-                    path_analysis.analyze(function)
+                    path_analysis.analyze(function, Some(&dataflow_summaries))
                 }
             } else {
                 // No closure registry - use regular analysis
-                path_analysis.analyze(function)
+                path_analysis.analyze(function, Some(&dataflow_summaries))
             };
             
             // If ANY path has a vulnerable flow (source -> sink without sanitization),
@@ -783,6 +775,40 @@ impl FunctionSummary {
                 self.propagation_rules.push(TaintPropagation::ParamToReturn(*param));
             }
             _ => {}
+        }
+    }
+    
+    pub fn to_dataflow_summary(&self) -> DataflowSummary {
+        let mut propagation = self.propagation_rules.clone();
+        let mut returns_tainted = false;
+
+        match &self.return_taint {
+            ReturnTaint::Clean => {},
+            ReturnTaint::FromParameter(idx) => {
+                propagation.push(TaintPropagation::ParamToReturn(*idx));
+            },
+            ReturnTaint::FromSource { .. } => {
+                returns_tainted = true;
+            },
+            ReturnTaint::Merged(taints) => {
+                for taint in taints {
+                    match taint {
+                        ReturnTaint::FromParameter(idx) => {
+                            propagation.push(TaintPropagation::ParamToReturn(*idx));
+                        },
+                        ReturnTaint::FromSource { .. } => {
+                            returns_tainted = true;
+                        },
+                        _ => {}
+                    }
+                }
+            },
+        }
+
+        DataflowSummary {
+            name: self.function_name.clone(),
+            propagation,
+            returns_tainted,
         }
     }
 }

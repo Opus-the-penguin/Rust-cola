@@ -1,22 +1,20 @@
 # Rust-cola
 
-Static security analyzer for Rust. Compiles source code to extract MIR (Mid-level Intermediate Representation) and HIR (High-level Intermediate Representation)—internal compiler formats that reveal issues invisible to source-level scanners. Optionally integrates with LLMs to filter false positives and suggest fixes.
+Static security analyzer for Rust. Compiles source code to extract MIR (Mid-level Intermediate Representation) and HIR (High-level Intermediate Representation)—internal compiler formats that reveal issues invisible to source-level scanners.
 
 Requires the nightly Rust toolchain and a compilable target codebase.
 
 ## Usage
 
-### Basic scan
+### Recommended: LLM-assisted analysis
+
+Rust-cola is designed to work with an LLM for best results. The LLM filters false positives, rates severity, assesses exploitability, and suggests remediations—turning raw findings into an actionable security report.
+
+**Manual:** Run the scan, then paste `out/cola/llm-prompt.md` into your LLM (ChatGPT, Claude, Copilot, etc.). The file includes analysis instructions. Save the response as your report.
 
 ```bash
 cargo-cola --crate-path /path/to/project
 ```
-
-Output is written to `out/cola/` by default. See [Output Artifacts](#output-artifacts) for details.
-
-### With LLM analysis
-
-**Manual:** Paste `out/cola/llm-prompt.md` into your LLM. The file includes analysis instructions.
 
 **Automated:** Call an LLM API directly:
 
@@ -27,7 +25,15 @@ cargo-cola --crate-path . --llm-report out/cola/report.md \
   --llm-model gpt-4
 ```
 
-Works with any OpenAI-compatible API (Anthropic, Ollama, etc.).
+Works with any OpenAI-compatible API (Anthropic, Ollama, local models via Ollama, etc.).
+
+### Standalone (no LLM)
+
+```bash
+cargo-cola --crate-path . --report out/cola/report.md
+```
+
+Generates a report with heuristic triage. Useful for CI integration or when LLM access is unavailable, but requires manual review of findings.
 
 ## Installation
 

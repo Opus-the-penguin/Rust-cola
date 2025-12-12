@@ -1,6 +1,20 @@
 # Changelog
 
-All notable changes to Rust-COLA w## [0.1.1] - 2025-12-12
+All notable changes to Rust-COLA will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.2.0] - 2025-12-12
+
+### Added
+- **Async Taint Propagation**: Major improvement to taint analysis (Phase 3.6). Now correctly tracks data flow through `async` functions and generators by resolving state machine aliases. This enables accurate security analysis for async-heavy frameworks like Tokio, Axum, and Actix.
+- **ADV009**: Integer Overflow Rule - Detects untrusted input flowing to arithmetic operations without overflow protection.
+
+### Changed
+- **Analysis Engine**: Enhanced `path_sensitive.rs` with alias tracking for MIR generator lowering.
+
+## [0.1.1] - 2025-12-12
 
 ### Added
 - **Inter-procedural Taint Propagation**: Implemented Phase 3.3, enabling taint tracking across function boundaries using function summaries.
@@ -13,11 +27,6 @@ All notable changes to Rust-COLA w## [0.1.1] - 2025-12-12
 - **Rule Count**: Corrected rule count to include 93 core rules + 9 advanced rules.
 
 ---
-
-## [0.1.0] - 2025-12-08e documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.1.0] - 2025-12-08
 

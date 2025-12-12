@@ -80,7 +80,7 @@ Use `--no-ast`, `--no-hir`, or `--no-llm-prompt` to suppress specific outputs.
 - Memory safety (transmute, uninitialized memory, Box leaks, dangling pointer escapes)
 - Input validation (SQL injection, path traversal, command injection, SSRF, unsafe JSON/TOML/binary deserialization, template injection, regex catastrophic backtracking)
 - Cryptography (weak hashes, weak ciphers, hardcoded keys)
-- Concurrency (mutex across await, blocking in async, span guards held across await, non-Send futures crossing executor threads)
+- Concurrency (mutex across await, blocking in async, span guards held across await, non-Send futures crossing executor threads, unsafe data flow in async state machines)
 - FFI (allocator mismatch, CString pointer misuse)
 
 Includes inter-procedural taint analysis: tracks data flow across function calls.

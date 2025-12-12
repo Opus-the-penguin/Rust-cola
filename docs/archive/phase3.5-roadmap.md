@@ -682,3 +682,11 @@ fn is_async(&self, function: &MirFunction) -> bool {
 **Created:** 2024  
 **Target Start:** After Phase 3.4 completion  
 **Owner:** Rust-Cola Team
+
+## Implementation Status (2025-12-11)
+- **Completed**: Implemented heuristic resolution in `CallGraph::from_mir_package`.
+- **Completed**: Updated `CallSite` to store `resolved_targets`.
+- **Completed**: Updated `analyze` to merge summaries from all resolved targets.
+- **Completed**: Updated `path_sensitive.rs` to clean function names for reliable lookup.
+- **Completed**: Added `has_internal_vulnerability` to `FunctionSummary` to track internal flows.
+- **Verified**: `test_trait_method` passes and detects the vulnerability.

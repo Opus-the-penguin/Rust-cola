@@ -359,12 +359,14 @@ impl ControlFlowGraph {
     /// Enumerate all paths from entry to exit blocks
     /// Returns paths as sequences of block IDs
     pub fn get_all_paths(&self) -> Vec<Vec<String>> {
+        println!("[DEBUG] get_all_paths: entry={}, exit_blocks={:?}, blocks={}", self.entry_block, self.exit_blocks, self.blocks.len());
         let mut paths = Vec::new();
         let mut current_path = Vec::new();
         let mut visited = HashSet::new();
         
         self.dfs_paths(&self.entry_block, &mut current_path, &mut visited, &mut paths, 0, 20);
         
+        println!("[DEBUG] Found {} paths", paths.len());
         paths
     }
     

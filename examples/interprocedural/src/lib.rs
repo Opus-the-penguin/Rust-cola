@@ -301,9 +301,9 @@ impl Executor for ShellExecutor {
 /// VULNERABLE: Taint through trait method
 #[allow(dead_code)]
 pub fn test_trait_method() {
-    let tainted = std::env::args().nth(1).unwrap_or_default();
+    let input = std::env::args().nth(1).unwrap_or_default();
     let executor: Box<dyn Executor> = Box::new(ShellExecutor);
-    executor.execute(&tainted);
+    executor.execute(&input);
 }
 
 // =============================================================================

@@ -337,9 +337,18 @@ impl ClosureRegistryBuilder {
     
     /// Process a single function to find closure creations
     fn process_function(&mut self, function: &MirFunction) {
+        if function.name.contains("execute_async") {
+            eprintln!("[DEBUG] Processing function: {}", function.name);
+        }
         for line in &function.body {
+            if function.name.contains("execute_async") {
+                eprintln!("[DEBUG] Line: {}", line);
+            }
             // Look for closure creation
             if let Some((closure_var, location, captures)) = parse_closure_creation(line) {
+                if function.name.contains("execute_async") {
+                    eprintln!("[DEBUG] Found closure creation: var={}, loc={}, captures={:?}", closure_var, location, captures);
+                }
                 // Try to find which closure this refers to based on parent function
                 // The location string contains file:line:col, which we can use to match
                 // For now, we'll use a simpler approach: look for closures with this parent
@@ -509,7 +518,8 @@ pub fn parse_closure_name(name: &str) -> Option<(String, usize)> {
 /// `_5 = {closure@examples/interprocedural/src/lib.rs:278:19: 278:21} { tainted: move _6 };`
 pub fn parse_closure_creation(statement: &str) -> Option<(String, String, Vec<(String, String)>)> {
     // Pattern: _X = {closure@<location>} { <captures> }
-    if !statement.contains("{closure@") {
+    //      OR: _X = {coroutine@<location>} { <captures> }
+    if !statement.contains("{closure@") && !statement.contains("{coroutine@") {
         return None;
     }
     
@@ -520,8 +530,14 @@ pub fn parse_closure_creation(statement: &str) -> Option<(String, String, Vec<(S
         return None;
     };
     
-    // Extract closure location
+    // Extract closure/coroutine location
     let location = if let Some(start) = statement.find("{closure@") {
+        if let Some(end) = statement[start..].find('}') {
+            statement[start..start + end + 1].to_string()
+        } else {
+            return None;
+        }
+    } else if let Some(start) = statement.find("{coroutine@") {
         if let Some(end) = statement[start..].find('}') {
             statement[start..start + end + 1].to_string()
         } else {

@@ -58,6 +58,9 @@ pub struct CallSite {
     /// Name of the called function
     pub callee: String,
     
+    /// Resolved target functions
+    pub resolved_targets: Vec<String>,
+    
     /// Location in the caller's MIR (for error reporting)
     pub location: String,
     
@@ -82,6 +85,9 @@ pub struct FunctionSummary {
     
     /// Does the return value carry taint?
     pub return_taint: ReturnTaint,
+    
+    /// Does the function contain an internal vulnerability (source -> sink)?
+    pub has_internal_vulnerability: bool,
 }
 
 /// Describes the taint state of a function's return value
@@ -124,14 +130,60 @@ impl CallGraph {
             }
         }
         
-        // Phase 3: Build caller relationships (reverse edges)
+        // Build a map of short names to full names for resolution
+        let mut short_name_map: HashMap<String, Vec<String>> = HashMap::new();
+        for function in &package.functions {
+            let short_name = Self::extract_function_name(&function.name);
+            short_name_map.entry(short_name).or_default().push(function.name.clone());
+        }
+
+        // Phase 3: Resolve calls and build caller relationships
         let mut caller_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut resolved_callees_map: HashMap<String, Vec<CallSite>> = HashMap::new();
+        
         for (caller_name, node) in &nodes {
+            let mut resolved_callees = Vec::new();
+            
             for call_site in &node.callees {
-                caller_map
-                    .entry(call_site.callee.clone())
-                    .or_default()
-                    .push(caller_name.clone());
+                // Try direct match first
+                if nodes.contains_key(&call_site.callee) {
+                    let mut new_site = call_site.clone();
+                    new_site.resolved_targets.push(call_site.callee.clone());
+                    resolved_callees.push(new_site);
+                    
+                    caller_map
+                        .entry(call_site.callee.clone())
+                        .or_default()
+                        .push(caller_name.clone());
+                } else {
+                    // Try to resolve via short name (e.g. trait methods)
+                    let short_name = Self::extract_function_name(&call_site.callee);
+                    
+                    if let Some(candidates) = short_name_map.get(&short_name) {
+                        // Resolved match (trait method, etc.)
+                        let mut new_site = call_site.clone();
+                        for candidate in candidates {
+                            new_site.resolved_targets.push(candidate.clone());
+                            
+                            caller_map
+                                .entry(candidate.clone())
+                                .or_default()
+                                .push(caller_name.clone());
+                        }
+                        resolved_callees.push(new_site);
+                    } else {
+                        // Unresolved - keep as is (maybe external function)
+                        resolved_callees.push(call_site.clone());
+                    }
+                }
+            }
+            resolved_callees_map.insert(caller_name.clone(), resolved_callees);
+        }
+
+        // Apply resolved callees
+        for (caller_name, callees) in resolved_callees_map {
+            if let Some(node) = nodes.get_mut(&caller_name) {
+                node.callees = callees;
             }
         }
         
@@ -168,9 +220,40 @@ impl CallGraph {
             if let Some(call_site) = Self::parse_call_from_mir_line(line, line_idx) {
                 callees.push(call_site);
             }
+
+            // Check for closure/coroutine creation
+            if let Some(closure_callee) = Self::parse_closure_creation(line, &function.name, line_idx) {
+                callees.push(closure_callee);
+            }
         }
         
         Ok(callees)
+    }
+
+    /// Parse closure or coroutine creation as a "call" (dependency)
+    fn parse_closure_creation(line: &str, parent_name: &str, line_idx: usize) -> Option<CallSite> {
+        // _0 = {coroutine@... (#0)} ...
+        if let Some(eq_pos) = line.find('=') {
+            let rhs = line[eq_pos+1..].trim();
+            if rhs.starts_with("{closure@") || rhs.starts_with("{coroutine@") {
+                // Extract index (#N)
+                if let Some(hash_pos) = rhs.find("(#") {
+                    if let Some(close_paren) = rhs[hash_pos..].find(')') {
+                        let index_str = &rhs[hash_pos+2..hash_pos+close_paren];
+                        if let Ok(index) = index_str.parse::<usize>() {
+                            let callee = format!("{}::{{closure#{}}}", parent_name, index);
+                            return Some(CallSite {
+                                callee,
+                                resolved_targets: Vec::new(),
+                                location: format!("line {}", line_idx),
+                                arg_count: 0,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        None
     }
     
     /// Parse a single MIR line to detect function calls
@@ -185,6 +268,7 @@ impl CallGraph {
             if let Some(closure_name) = Self::extract_closure_call(line) {
                 return Some(CallSite {
                     callee: closure_name,
+                    resolved_targets: Vec::new(),
                     location: format!("line {}", line_idx),
                     arg_count: 1, // Closure takes the closure env as arg
                 });
@@ -196,7 +280,13 @@ impl CallGraph {
                     let func_part = &line[eq_pos+1..eq_pos+paren_pos].trim();
                     
                     // Clean up the function name
-                    let func_name = Self::extract_function_name(func_part);
+                    // We want the full name here, but cleaned of MIR artifacts
+                    let func_name = func_part
+                        .replace("const ", "")
+                        .replace("move ", "")
+                        .replace("copy ", "")
+                        .trim()
+                        .to_string();
                     
                     if !func_name.is_empty() && !Self::is_builtin_operation(&func_name) {
                         // Count arguments (rough estimate)
@@ -205,6 +295,7 @@ impl CallGraph {
                         
                         return Some(CallSite {
                             callee: func_name,
+                            resolved_targets: Vec::new(),
                             location: format!("line {}", line_idx),
                             arg_count,
                         });
@@ -295,17 +386,23 @@ impl CallGraph {
         let mut in_degree: HashMap<String, usize> = HashMap::new();
         let mut order = Vec::new();
         
-        // Calculate in-degrees (number of callees)
+        // Calculate in-degrees (number of internal callees)
         for (name, node) in nodes {
-            in_degree.insert(name.clone(), node.callees.len());
+            let internal_callees = node.callees.iter()
+                .filter(|c| nodes.contains_key(&c.callee))
+                .count();
+            in_degree.insert(name.clone(), internal_callees);
+            println!("[DEBUG] In-degree for {}: {}", name, internal_callees);
         }
         
-        // Start with leaf functions (no callees)
+        // Start with leaf functions (no internal callees)
         let mut queue: VecDeque<String> = nodes
             .iter()
-            .filter(|(_, node)| node.callees.is_empty())
+            .filter(|(name, _)| in_degree.get(*name).copied().unwrap_or(0) == 0)
             .map(|(name, _)| name.clone())
             .collect();
+            
+        println!("[DEBUG] Initial queue size: {}", queue.len());
         
         // Process nodes in bottom-up order
         while let Some(current) = queue.pop_front() {
@@ -313,11 +410,14 @@ impl CallGraph {
             
             // For each function that calls this one
             if let Some(node) = nodes.get(&current) {
+                println!("[DEBUG] Processed {}, notifying callers: {:?}", current, node.callers);
                 for caller in &node.callers {
                     if let Some(degree) = in_degree.get_mut(caller) {
-                        *degree -= 1;
-                        if *degree == 0 {
-                            queue.push_back(caller.clone());
+                        if *degree > 0 {
+                            *degree -= 1;
+                            if *degree == 0 {
+                                queue.push_back(caller.clone());
+                            }
                         }
                     }
                 }
@@ -363,6 +463,7 @@ impl FunctionSummary {
             sink_parameters: HashSet::new(),
             propagation_rules: Vec::new(),
             return_taint: ReturnTaint::Clean,
+            has_internal_vulnerability: false,
         }
     }
     
@@ -377,7 +478,8 @@ impl FunctionSummary {
         // Phase 3.5.1: Use CFG-based path-sensitive analysis for branching functions
         // Phase 3.5.2: Use closure context if available
         let cfg = ControlFlowGraph::from_mir_function(function);
-        if cfg.has_branching() || closure_registry.is_some() {
+        // Always use path-sensitive analysis for better precision
+        if true {
             use crate::dataflow::path_sensitive::PathSensitiveTaintAnalysis;
             use crate::dataflow::DataflowSummary;
             
@@ -390,36 +492,98 @@ impl FunctionSummary {
             let mut path_analysis = PathSensitiveTaintAnalysis::new(cfg);
             
             // Check if this is a closure function
-            let result = if let Some(registry) = closure_registry {
-                if let Some(closure_info) = registry.get_closure(&function.name) {
-                    // This is a closure - analyze with captured variable context
-                    path_analysis.analyze_closure(function, closure_info, Some(&dataflow_summaries))
-                } else {
-                    // Not a closure - use regular analysis
-                    path_analysis.analyze(function, Some(&dataflow_summaries))
+            let closure_info = closure_registry.and_then(|r| r.get_closure(&function.name));
+            
+            if let Some(info) = closure_info {
+                // This is a closure - analyze with captured variable context
+                // Run 1: Analyze with actual capture states (from registry)
+                let result = path_analysis.analyze_closure(function, info, Some(&dataflow_summaries));
+                
+                if result.has_any_vulnerable_path {
+                    if info.has_tainted_captures() {
+                        summary.propagation_rules.push(TaintPropagation::ParamToSink {
+                            param: 0,
+                            sink_type: "command_execution".to_string(),
+                        });
+                    } else {
+                        // No tainted captures, but found a vulnerability -> must be internal
+                        summary.has_internal_vulnerability = true;
+                    }
+                }
+
+                // Run 2: Analyze assuming captures are tainted (to detect propagation)
+                // This is crucial for async functions where captures are initially clean but become tainted at runtime
+                use crate::dataflow::path_sensitive::TaintState;
+                let mut initial_taint = HashMap::new();
+                
+                for capture in &info.captured_vars {
+                    let env_var = format!("((*_1).{})", capture.field_index);
+                    initial_taint.insert(env_var.clone(), TaintState::Tainted {
+                        source_type: "captured_variable".to_string(),
+                        source_location: format!("capture_{}", capture.field_index),
+                    });
+                    
+                    // For async/coroutines (Pin<&mut T>), the path is deeper: ((*((*_1).0)).N)
+                    // _1 is Pin<&mut Coroutine>, _1.0 is &mut Coroutine, *(_1.0) is Coroutine
+                    let async_env_var = format!("((*((*_1).0)).{})", capture.field_index);
+                    initial_taint.insert(async_env_var, TaintState::Tainted {
+                        source_type: "captured_variable".to_string(),
+                        source_location: format!("capture_{}", capture.field_index),
+                    });
+                }
+                
+                if !initial_taint.is_empty() {
+                    let result_propagated = path_analysis.analyze_with_initial_taint(function, initial_taint, Some(&dataflow_summaries));
+                    if result_propagated.has_any_vulnerable_path {
+                        summary.propagation_rules.push(TaintPropagation::ParamToSink {
+                            param: 0,
+                            sink_type: "command_execution".to_string(),
+                        });
+                    }
                 }
             } else {
-                // No closure registry - use regular analysis
-                path_analysis.analyze(function, Some(&dataflow_summaries))
-            };
-            
-            // If ANY path has a vulnerable flow (source -> sink without sanitization),
-            // mark the function as having a param-to-sink propagation
-            if result.has_any_vulnerable_path {
-                summary.propagation_rules.push(TaintPropagation::ParamToSink {
-                    param: 0,
-                    sink_type: "command_execution".to_string(),
-                });
+                // Not a closure - analyze parameters
                 
-                // DO NOT add ParamSanitized - the function is vulnerable!
-                // Even if some paths are safe, one vulnerable path is enough.
+                // Run 1: Check for internal sources (no initial taint)
+                let result_internal = path_analysis.analyze(function, Some(&dataflow_summaries));
+                if result_internal.has_any_vulnerable_path {
+                    summary.has_internal_vulnerability = true;
+                }
                 
-                return Ok(summary);
+                // Check if return value is tainted
+                if result_internal.path_results.iter().any(|p| p.return_tainted) {
+                    summary.return_taint = ReturnTaint::FromSource {
+                        source_type: "propagated".to_string(),
+                    };
+                }
+
+                // Run 2: Check parameters _1 to _5
+                use crate::dataflow::path_sensitive::TaintState;
+                
+                for i in 1..=5 {
+                    let param_name = format!("_{}", i);
+                    let mut initial_taint = HashMap::new();
+                    initial_taint.insert(param_name.clone(), TaintState::Tainted {
+                        source_type: "parameter".to_string(),
+                        source_location: format!("param_{}", i),
+                    });
+                    
+                    let result = path_analysis.analyze_with_initial_taint(function, initial_taint, Some(&dataflow_summaries));
+                    
+                    if result.has_any_vulnerable_path {
+                        summary.propagation_rules.push(TaintPropagation::ParamToSink {
+                            param: i - 1,
+                            sink_type: "command_execution".to_string(),
+                        });
+                    }
+                    
+                    if result.path_results.iter().any(|p| !p.sanitizer_calls.is_empty()) {
+                        summary.propagation_rules.push(TaintPropagation::ParamSanitized(i - 1));
+                    }
+                }
             }
             
-            // If ALL paths are safe and some have sanitization, mark as sanitized
-            if result.path_results.iter().any(|p| !p.sanitizer_calls.is_empty()) {
-                summary.propagation_rules.push(TaintPropagation::ParamSanitized(0));
+            if !summary.propagation_rules.is_empty() || summary.has_internal_vulnerability {
                 return Ok(summary);
             }
         }
@@ -540,6 +704,9 @@ impl FunctionSummary {
                 // String operations on parameters  
                 || line.contains("to_string(move _1")
                 || line.contains("String::from(_1")
+                // Move or copy of parameter (common in closures/async)
+                || line.contains("move _1")
+                || line.contains("copy _1")
         });
         
         // Check if function returns a value (not unit type)
@@ -850,15 +1017,60 @@ impl InterProceduralAnalysis {
         // Analyze functions in bottom-up order (callees before callers)
         for function_name in self.call_graph.analysis_order.clone() {
             if let Some(function) = function_map.get(&function_name) {
+                
+                // Construct callee summaries map for this function
+                // Start with all available summaries to support indirect calls (like async poll)
+                let mut callee_summaries = self.summaries.clone();
+                
+                if let Some(node) = self.call_graph.nodes.get(&function_name) {
+                    for call_site in &node.callees {
+                        // Map raw callee name to summary
+                        // If resolved_targets is not empty, merge their summaries
+                        if !call_site.resolved_targets.is_empty() {
+                            let mut merged_summary: Option<FunctionSummary> = None;
+                            
+                            for target in &call_site.resolved_targets {
+                                if let Some(target_summary) = self.summaries.get(target) {
+                                    if let Some(current) = &mut merged_summary {
+                                        current.merge_callee_summary(target_summary);
+                                    } else {
+                                        // Create a new summary with the raw callee name
+                                        let mut new_summary = target_summary.clone();
+                                        new_summary.function_name = call_site.callee.clone();
+                                        merged_summary = Some(new_summary);
+                                    }
+                                }
+                            }
+                            
+                            if let Some(summary) = merged_summary {
+                                callee_summaries.insert(call_site.callee.clone(), summary);
+                            }
+                        } else {
+                            // Try direct lookup (for unresolved or direct calls)
+                            if let Some(summary) = self.summaries.get(&call_site.callee) {
+                                callee_summaries.insert(call_site.callee.clone(), summary.clone());
+                            }
+                        }
+                    }
+                }
+
+
                 // Generate summary using summaries of callees and closure registry
                 let summary = FunctionSummary::from_mir_function(
                     function,
-                    &self.summaries,
+                    &callee_summaries,
                     Some(&self.closure_registry),
                 )?;
                 
                 // Store summary
                 self.summaries.insert(function_name.clone(), summary.clone());
+                println!("[DEBUG] Stored summary for: {}", function_name);
+                if !summary.propagation_rules.is_empty() {
+                    println!("[DEBUG]   Propagation: {:?}", summary.propagation_rules);
+                }
+                if !matches!(summary.return_taint, ReturnTaint::Clean) {
+                    println!("[DEBUG]   Return: {:?}", summary.return_taint);
+                }
                 
                 // Update call graph node
                 if let Some(node) = self.call_graph.get_node_mut(&function_name) {
@@ -903,6 +1115,27 @@ impl InterProceduralAnalysis {
         
         // For each function with REAL sources, try to find paths to sinks
         for (source_func, source_summary) in &self.summaries {
+            
+            // Case 1: Function has internal vulnerability (source -> sink within function)
+            if source_summary.has_internal_vulnerability {
+                // If this is a closure, report the flow for the parent function
+                let reported_source = if let Some(closure) = self.closure_registry.get_closure(source_func) {
+                    closure.parent_function.clone()
+                } else {
+                    source_func.clone()
+                };
+
+                flows.push(TaintPath {
+                    source_function: reported_source,
+                    sink_function: source_func.clone(),
+                    sink_type: "internal_sink".to_string(),
+                    call_chain: vec![source_func.clone()],
+                    source_type: "environment".to_string(),
+                    sanitized: false,
+                });
+            }
+
+            // Case 2: Function returns tainted data (source -> return)
             // Only start from functions that have actual sources (not just propagation)
             if matches!(source_summary.return_taint, ReturnTaint::FromSource { .. }) {
                 // This function has a real taint source
@@ -918,6 +1151,7 @@ impl InterProceduralAnalysis {
                     
                     // Filter out intra-procedural flows (same source and sink)
                     // Those should be caught by Phase 2's analysis
+                    // UNLESS it's a complex flow that Phase 2 missed but Phase 3 caught via internal vulnerability check
                     for flow in all_flows {
                         if flow.source_function != flow.sink_function || flow.call_chain.len() > 1 {
                             flows.push(flow);
@@ -966,7 +1200,7 @@ impl InterProceduralAnalysis {
         let has_test_closure = all_closures.iter().any(|c| c.name.contains("test_closure"));
         if has_test_closure {
             eprintln!("[DEBUG] Found test_closure in {} closures", all_closures.len());
-            for c in all_closures.iter().filter(|c| c.name.contains("test_closure")) {
+            for c in all_closures.iter().filter(|c| c.name.contains("test_closure") || c.name.contains("async")) {
                 eprintln!("[DEBUG] Closure: {} -> parent: {}", c.name, c.parent_function);
                 eprintln!("[DEBUG]   has_tainted_captures: {}", c.has_tainted_captures());
                 eprintln!("[DEBUG]   captured_vars: {:?}", c.captured_vars);
@@ -1581,6 +1815,7 @@ mod tests {
     fn test_call_site_creation() {
         let site = CallSite {
             callee: "execute_command".to_string(),
+            resolved_targets: Vec::new(),
             location: "test.rs:42".to_string(),
             arg_count: 1,
         };

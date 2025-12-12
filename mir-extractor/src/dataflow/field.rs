@@ -279,6 +279,7 @@ pub mod parser {
     /// - `(_1.0: Type)` → FieldPath { base_var: "_1", indices: [0] }
     /// - `(_1.1: Type)` → FieldPath { base_var: "_1", indices: [1] }
     /// - `((_1.1: Type).2: Type2)` → FieldPath { base_var: "_1", indices: [1, 2] }
+    /// - `((_2 as Ready).0: String)` → FieldPath { base_var: "_2", indices: [0] }
     ///
     /// Returns None if the expression is not a field access.
     pub fn parse_field_access(expr: &str) -> Option<FieldPath> {
@@ -294,8 +295,79 @@ pub mod parser {
             return Some(path);
         }
         
+        // Try parsing as downcast field access
+        if let Some(path) = parse_downcast_field_access(expr) {
+            return Some(path);
+        }
+        
         // Try parsing as simple field access
         parse_simple_field_access(expr)
+    }
+    
+    /// Parse downcast field access: ((_VAR as Variant).INDEX: TYPE)
+    fn parse_downcast_field_access(expr: &str) -> Option<FieldPath> {
+        let expr = expr.trim();
+        
+        // Pattern: ((_VAR as Variant).INDEX: TYPE)
+        // Example: ((_2 as Ready).0: std::string::String)
+        
+        if !expr.starts_with("((") {
+            return None;
+        }
+        
+        // Find " as "
+        let as_pos = expr.find(" as ")?;
+        
+        // Extract base var: "_2"
+        // Skip "((" (2 chars)
+        if as_pos <= 2 { return None; }
+        let base_var_raw = expr[2..as_pos].trim();
+        
+        // Handle dereference (*_25) or parens
+        let mut clean_base = base_var_raw;
+        while clean_base.starts_with('(') && clean_base.ends_with(')') {
+            clean_base = &clean_base[1..clean_base.len()-1].trim();
+        }
+        
+        let base_var = if clean_base.starts_with('*') {
+            clean_base[1..].trim().to_string()
+        } else {
+            clean_base.to_string()
+        };
+        
+        if !base_var.starts_with('_') {
+            return None;
+        }
+        
+        // Find closing paren of downcast followed by dot
+        // We search from as_pos
+        let downcast_end = expr[as_pos..].find(").")?;
+        let absolute_downcast_end = as_pos + downcast_end;
+        
+        // Extract index part: ".0: String)"
+        // The dot is at absolute_downcast_end + 1
+        let remaining = &expr[absolute_downcast_end + 1..];
+        
+        // Should start with dot
+        if !remaining.starts_with('.') {
+            return None;
+        }
+        
+        // Find colon
+        let colon_pos = remaining.find(':')?;
+        
+        // Extract index: "0"
+        // Skip dot (1 char)
+        let index_str = remaining[1..colon_pos].trim();
+        
+        if let Ok(index) = index_str.parse::<usize>() {
+            // For downcasts, we treat it as accessing field 0 of the base variable
+            // This is an approximation, but sufficient for taint tracking
+            // If _2 is tainted, then ((_2 as Ready).0) is tainted
+            return Some(FieldPath::new(base_var, vec![index]));
+        }
+        
+        None
     }
     
     /// Parse a simple field access: (_VAR.INDEX: TYPE)
@@ -402,7 +474,9 @@ pub mod parser {
     
     /// Check if an expression contains a field access
     pub fn contains_field_access(expr: &str) -> bool {
-        expr.contains("(_") && expr.contains(".") && expr.contains(":")
+        // Check for characteristic elements of MIR field access
+        // (_1.0: Type) or ((_1 as Variant).0: Type) or dereferenced (*_1.0)
+        expr.contains(':') && expr.contains('.') && (expr.contains("(_") || expr.contains("(*_"))
     }
     
     /// Extract the base variable from an expression

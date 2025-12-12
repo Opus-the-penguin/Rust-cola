@@ -123,7 +123,8 @@ struct Args {
     no_report: bool,
 
     /// Custom path for LLM prompt file (defaults to <out_dir>/llm-prompt.md)
-    #[arg(long)]
+    /// Alias: --output-for-llm
+    #[arg(long, visible_alias = "output-for-llm")]
     llm_prompt: Option<PathBuf>,
 
     /// Suppress LLM prompt generation (default: LLM prompt is generated)
@@ -1561,6 +1562,37 @@ fn generate_llm_prompt(
     writeln!(&mut content, "Below are {} findings from static analysis. Your task is to transform this raw output into an actionable security report.", findings.len())?;
     writeln!(&mut content)?;
     
+    // CRITICAL: False Negative Prevention
+    writeln!(&mut content, "## ⚠️ CRITICAL: Avoiding False Negatives")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "**Your primary obligation is to avoid dismissing real vulnerabilities.**")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "A FALSE NEGATIVE (incorrectly dismissing a real vulnerability) is significantly more harmful than a FALSE POSITIVE (flagging benign code). When in doubt, classify as TRUE POSITIVE and note your uncertainty.")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "**Before classifying ANY finding as a False Positive, you MUST:**")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "1. **State your burden of proof**: Provide concrete evidence why this is NOT exploitable")?;
+    writeln!(&mut content, "2. **Show the exculpatory evidence**: Quote specific code that proves safety")?;
+    writeln!(&mut content, "3. **Consider attacker perspective**: Explain why an attacker cannot abuse this")?;
+    writeln!(&mut content, "4. **Document your reasoning chain**: Step-by-step logic for dismissal")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "**Evidence requirements for False Positive classification:**")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "| Dismissal Reason | Required Evidence |")?;
+    writeln!(&mut content, "|------------------|-------------------|")?;
+    writeln!(&mut content, "| \"Test code only\" | Show file path contains `/tests/`, `#[test]`, or `#[cfg(test)]` |")?;
+    writeln!(&mut content, "| \"Constant/hardcoded\" | Show the value is a literal string, not from env/args/stdin |")?;
+    writeln!(&mut content, "| \"Sanitized elsewhere\" | Quote the exact sanitization code and show data flow |")?;
+    writeln!(&mut content, "| \"No relevant imports\" | Show Cargo.toml dependencies AND confirm no FFI/unsafe paths |")?;
+    writeln!(&mut content, "| \"Intentional pattern\" | Quote code comment or API contract proving intent |")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "**If MORE THAN 50% of findings are classified as False Positives:**")?;
+    writeln!(&mut content, "1. Pause and reconsider your analysis threshold")?;
+    writeln!(&mut content, "2. Verify you are not being overly dismissive")?;
+    writeln!(&mut content, "3. Consider whether the crate's architecture provides unexpected attack surfaces")?;
+    writeln!(&mut content, "4. Document your meta-reasoning for the high FP rate")?;
+    writeln!(&mut content)?;
+    
     // Phase 1: False Positive Elimination
     writeln!(&mut content, "## Phase 1: False Positive Analysis")?;
     writeln!(&mut content)?;
@@ -1568,7 +1600,7 @@ fn generate_llm_prompt(
     writeln!(&mut content)?;
     writeln!(&mut content, "### Common False Positive Patterns")?;
     writeln!(&mut content)?;
-    writeln!(&mut content, "**Dismiss as FALSE POSITIVE if:**")?;
+    writeln!(&mut content, "**Dismiss as FALSE POSITIVE only with clear evidence:**")?;
     writeln!(&mut content, "- **Test code**: Function path contains `test`, `tests/`, `_test`, `mock`, `bench` - test vulnerabilities don't affect production")?;
     writeln!(&mut content, "- **Build scripts**: In `build.rs` - executes at compile time on developer machines only")?;
     writeln!(&mut content, "- **Macro-generated code**: Evidence shows derive macros (`#[derive(...)]`) or procedural macros generating the flagged pattern")?;
@@ -1585,7 +1617,19 @@ fn generate_llm_prompt(
     writeln!(&mut content, "- **HTTP URLs (RUSTCOLA011)**: URL is localhost default, documentation example, or configuration placeholder")?;
     writeln!(&mut content, "- **Unsafe code (RUSTCOLA003)**: Required for FFI, signal handlers, or performance-critical code with proper safety documentation")?;
     writeln!(&mut content)?;
-    writeln!(&mut content, "For each false positive, provide a ONE-LINE rationale citing the specific dismissal pattern.")?;
+    writeln!(&mut content, "### False Positive Evidence Template (REQUIRED for each FP)")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "For each finding classified as False Positive, provide:")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "| Field | Your Response |")?;
+    writeln!(&mut content, "|-------|---------------|")?;
+    writeln!(&mut content, "| **Finding** | [RULE_ID] - [Function/Location] |")?;
+    writeln!(&mut content, "| **Dismissal Category** | Test code / Hardcoded value / Sanitized / No imports / Intentional |")?;
+    writeln!(&mut content, "| **Evidence** | Quote the exact path or code proving safety |")?;
+    writeln!(&mut content, "| **Attacker Cannot Exploit Because** | Explain why exploitation is impossible |")?;
+    writeln!(&mut content, "| **Confidence Level** | High (>90%) / Medium (70-90%) / Low (<70%) |")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "**If confidence is below 90%, escalate to True Positive with a note about uncertainty.**")?;
     writeln!(&mut content)?;
     
     // Phase 2: True Positive Deep Analysis
@@ -1691,8 +1735,21 @@ fn generate_llm_prompt(
     writeln!(&mut content, "## Low/Informational (P3)")?;
     writeln!(&mut content, "[Brief descriptions]")?;
     writeln!(&mut content)?;
-    writeln!(&mut content, "## False Positives")?;
-    writeln!(&mut content, "[Table: Finding | Dismissal Reason]")?;
+    writeln!(&mut content, "## False Positives (with Evidence)")?;
+    writeln!(&mut content, "[Table: Finding | Dismissal Category | Evidence | Confidence]")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "## False Negative Risk Assessment")?;
+    writeln!(&mut content, "[REQUIRED if any findings classified as FP]")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "| Metric | Value |")?;
+    writeln!(&mut content, "|--------|-------|")?;
+    writeln!(&mut content, "| Total Findings | N |")?;
+    writeln!(&mut content, "| True Positives | N (X%) |")?;
+    writeln!(&mut content, "| False Positives | N (X%) |")?;
+    writeln!(&mut content, "| FP Rate Justification | [If >30%, explain why] |")?;
+    writeln!(&mut content)?;
+    writeln!(&mut content, "**Highest-Risk Dismissals** (top 3 FPs you're least confident about):")?;
+    writeln!(&mut content, "1. [RULE_ID]: [Why uncertain] - Recommend: [Manual review / Accept risk]")?;
     writeln!(&mut content)?;
     writeln!(&mut content, "## Recommendations")?;
     writeln!(&mut content, "[Prioritized action items]")?;

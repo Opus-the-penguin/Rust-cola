@@ -14,6 +14,7 @@ permissions:
 jobs:
   analyze:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -49,11 +50,11 @@ jobs:
         run: |
           # Create a production-only workspace configuration
           # This prevents cargo metadata from discovering test crates with intentional vulnerabilities
+          # NOTE: mir-extractor is excluded as it's 28k+ lines and analyzing the analysis tool is redundant
           cat > Cargo.toml.production <<'EOF'
           [workspace]
           members = [
               "cargo-cola",
-              "mir-extractor",
               "mir-advanced-rules",
           ]
           resolver = "2"

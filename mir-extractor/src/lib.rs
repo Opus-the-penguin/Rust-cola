@@ -270,6 +270,7 @@ fn collect_matches(lines: &[String], patterns: &[&str]) -> Vec<String> {
         .collect()
 }
 
+#[allow(dead_code)]
 fn collect_case_insensitive_matches(lines: &[String], patterns: &[&str]) -> Vec<String> {
     let lowered_patterns: Vec<String> = patterns.iter().map(|p| p.to_lowercase()).collect();
     lines
@@ -554,6 +555,7 @@ fn looks_like_zst_pointer_arithmetic(line: &str) -> bool {
     false
 }
 
+#[allow(dead_code)]
 fn looks_like_cleartext_env_var(line: &str) -> bool {
     let lower = line.to_lowercase();
     
@@ -1964,16 +1966,7 @@ impl Rule for UntrustedEnvInputRule {
         let mut findings = Vec::new();
 
         for function in &package.functions {
-            let is_target = function.name.contains("sanitized_parse") || function.name.contains("sanitized_allowlist");
             let (_tainted_vars, flows) = taint_analysis.analyze(function);
-            
-            if is_target {
-                eprintln!("\n===== RUSTCOLA006 EVALUATION FOR: {} =====", function.name);
-                eprintln!("Flows found: {}", flows.len());
-                for (i, flow) in flows.iter().enumerate() {
-                    eprintln!("  Flow {}: sanitized={}", i, flow.sanitized);
-                }
-            }
             
             // Convert each taint flow into a finding
             for flow in flows {
@@ -3860,6 +3853,7 @@ fn strip_string_literals(
     (result, state)
 }
 
+#[allow(dead_code)]
 fn collect_sanitized_matches(lines: &[String], patterns: &[&str]) -> Vec<String> {
     let mut state = StringLiteralState::default();
 
@@ -6949,10 +6943,12 @@ impl Rule for UnwrapInPollRule {
     }
 }
 
+#[allow(dead_code)]
 struct AllocatorMismatchRule {
     metadata: RuleMetadata,
 }
 
+#[allow(dead_code)]
 impl AllocatorMismatchRule {
     fn new() -> Self {
         Self {
@@ -9425,8 +9421,8 @@ impl InfiniteIteratorRule {
             || body_str.contains(">::position::<");
         let has_zip = body_str.contains("::zip"); // zip with finite iterator terminates
         let has_nth = body_str.contains("::nth(") || body_str.contains(">::nth::<");
-        let has_last = body_str.contains("::last"); // last would hang but it's clear intent
-        let has_fold = body_str.contains("::fold"); // fold on infinite = hang, but usually with early return
+        let _has_last = body_str.contains("::last"); // last would hang but it's clear intent
+        let _has_fold = body_str.contains("::fold"); // fold on infinite = hang, but usually with early return
         
         // Check for break statement in the function (manual loop termination)
         // In MIR, break in a for loop appears as a conditional jump that exits the loop
@@ -9621,7 +9617,7 @@ impl OpenOptionsInconsistentFlagsRule {
         }
         
         let has_write = body_str.contains(".write(true)") || body_str.contains("OpenOptions::write") && body_str.contains("const true");
-        let has_read = body_str.contains(".read(true)") || body_str.contains("OpenOptions::read") && body_str.contains("const true");
+        let _has_read = body_str.contains(".read(true)") || body_str.contains("OpenOptions::read") && body_str.contains("const true");
         let has_create = body_str.contains(".create(true)") || body_str.contains("OpenOptions::create") && body_str.contains("const true");
         let has_create_new = body_str.contains(".create_new(true)") || body_str.contains("OpenOptions::create_new") && body_str.contains("const true");
         let has_truncate = body_str.contains(".truncate(true)") || body_str.contains("OpenOptions::truncate") && body_str.contains("const true");
@@ -16243,6 +16239,7 @@ impl SqlInjectionRule {
     ];
     
     /// SQL keywords that indicate query construction (for secondary validation)
+    #[allow(dead_code)]
     const SQL_KEYWORDS: &'static [&'static str] = &[
         "SELECT",
         "INSERT",
@@ -16567,6 +16564,7 @@ impl SqlInjectionRule {
     }
     
     /// Check if a string looks like a SQL query using strict patterns
+    #[allow(dead_code)]
     fn looks_like_sql(&self, s: &str) -> bool {
         let upper = s.to_uppercase();
         // Use strict statement patterns, not just keywords
@@ -16575,6 +16573,7 @@ impl SqlInjectionRule {
     
     /// Check if a string contains actual SQL statement structure
     /// This is stricter than just keyword matching - requires statement syntax
+    #[allow(dead_code)]
     fn is_sql_statement(line: &str) -> bool {
         let upper = line.to_uppercase();
         Self::SQL_STATEMENT_PATTERNS.iter().any(|pattern| upper.contains(pattern))
@@ -19009,6 +19008,7 @@ pub(crate) fn detect_cargo_binary() -> Option<PathBuf> {
     None
 }
 
+#[allow(dead_code)]
 fn detect_rustup_path() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("RUSTUP").map(PathBuf::from) {
         if let Some(resolved) = ensure_executable(path) {
@@ -19037,6 +19037,7 @@ fn detect_rustup_path() -> Option<PathBuf> {
     None
 }
 
+#[allow(dead_code)]
 fn find_rust_toolchain_file() -> Option<PathBuf> {
     let mut candidates = Vec::new();
     if let Ok(dir) = std::env::var("CARGO_MANIFEST_DIR") {
@@ -19067,6 +19068,7 @@ fn find_rust_toolchain_file() -> Option<PathBuf> {
     None
 }
 
+#[allow(dead_code)]
 fn detect_toolchain() -> String {
     if let Ok(toolchain) = std::env::var("RUSTUP_TOOLCHAIN") {
         if !toolchain.is_empty() {

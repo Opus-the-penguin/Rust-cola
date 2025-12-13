@@ -17,7 +17,7 @@ struct BasicBlock {
 /// Control flow graph for a MIR function
 struct ControlFlowGraph {
     blocks: HashMap<String, BasicBlock>,
-    entry_block: String, // Usually "bb0"
+    _entry_block: String, // Usually "bb0"
 }
 
 impl ControlFlowGraph {
@@ -68,7 +68,7 @@ impl ControlFlowGraph {
             blocks.insert(block.id.clone(), block);
         }
 
-        Self { blocks, entry_block }
+        Self { blocks, _entry_block: entry_block }
     }
 
     /// Extract successor block IDs from a terminator
@@ -101,7 +101,7 @@ impl ControlFlowGraph {
     /// Returns true if the block is only reachable when the guard variable is true/non-zero
     fn is_guarded_by(&self, sink_block_id: &str, guard_var: &str) -> bool {
         // Find the block that contains the switchInt on the guard variable
-        for (block_id, block) in &self.blocks {
+        for (_block_id, block) in &self.blocks {
             if let Some(ref terminator) = block.terminator {
                 // Look for: switchInt(move _3) -> [0: bbX, otherwise: bbY]
                 // where _3 is the guard variable
@@ -200,7 +200,7 @@ pub struct SourceRegistry {
 struct SourcePattern {
     kind: TaintSourceKind,
     function_patterns: Vec<&'static str>,
-    severity: Severity,
+    _severity: Severity,
 }
 
 impl SourceRegistry {
@@ -217,7 +217,7 @@ impl SourceRegistry {
                         "core::env::var(",
                         "core::env::var_os(",
                     ],
-                    severity: Severity::Medium,
+                    _severity: Severity::Medium,
                 },
                 // Future: Add NetworkInput, FileInput, etc.
             ],

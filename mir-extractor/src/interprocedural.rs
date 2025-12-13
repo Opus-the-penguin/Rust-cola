@@ -769,6 +769,7 @@ impl FunctionSummary {
     }
     
     /// Check if function contains a taint sink
+    #[allow(dead_code)]
     fn contains_sink(function: &MirFunction) -> bool {
         Self::contains_command_sink(function) || Self::contains_filesystem_sink(function) || Self::contains_http_sink(function) || Self::contains_yaml_sink(function)
     }
@@ -878,6 +879,7 @@ impl FunctionSummary {
     
     /// Check if function has validation guard that protects a sink
     /// Returns true if there's an if-condition checking safety before calling a sink
+    #[allow(dead_code)]
     fn has_validation_guard(function: &MirFunction) -> bool {
         let has_sink = Self::contains_sink(function);
         if !has_sink {
@@ -900,6 +902,7 @@ impl FunctionSummary {
     
     /// Check if function calls a sanitization helper on tainted data before using it
     /// This handles patterns like: let safe = validate_input(&tainted); use(safe);
+    #[allow(dead_code)]
     fn has_sanitization_helper_call(function: &MirFunction) -> bool {
         // Look for calls to functions with sanitization-related names
         let sanitization_patterns = [

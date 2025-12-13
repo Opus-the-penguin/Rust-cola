@@ -54,8 +54,7 @@ jobs:
           members = [
               "cargo-cola",
               "mir-extractor",
-              "examples/simple",
-              "examples/hir-typeck-repro",
+              "mir-advanced-rules",
           ]
           resolver = "2"
           EOF

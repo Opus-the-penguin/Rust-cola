@@ -71,4 +71,8 @@ members = [
     "examples/raw-pointer-escape",
     "examples/build-script-network",
 ]
+exclude = [
+    # ci-test-crate must be standalone for CI self-analysis to avoid analyzing entire workspace
+    "ci-test-crate",
+]
 resolver = "2"

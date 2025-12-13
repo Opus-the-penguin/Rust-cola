@@ -1,0 +1,8 @@
+[package]
+name = "ci-test-crate"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Minimal test crate for CI self-analysis - contains sample patterns for rule testing"
+
+[dependencies]

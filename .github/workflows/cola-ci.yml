@@ -46,38 +46,16 @@ jobs:
               raise SystemExit("cargo-auditable metadata marker not found in binary")
           PY
 
-      - name: Temporarily exclude test examples from workspace
+      - name: Run cargo-cola on CI test crate
         run: |
-          # Create a production-only workspace configuration
-          # This prevents cargo metadata from discovering test crates with intentional vulnerabilities
-          # NOTE: mir-extractor excluded (28k+ LOC - analyzing the analysis tool is redundant)
-          # NOTE: mir-advanced-rules temporarily excluded (causes CI hang - debugging in progress)
-          cat > Cargo.toml.production <<'EOF'
-          [workspace]
-          members = [
-              "cargo-cola",
-          ]
-          resolver = "2"
-          EOF
-          cp Cargo.toml Cargo.toml.original
-          mv Cargo.toml.production Cargo.toml
-
-      - name: Run cargo-cola on production code only
-        run: |
-          # Only analyze production packages, not test examples with intentional vulnerabilities
-          # Use the binary built in the previous step to avoid recompilation
+          # Analyze the minimal CI test crate instead of cargo-cola itself
+          # cargo-cola depends on mir-extractor (22K+ lines) which makes MIR extraction too slow
+          # The ci-test-crate is a tiny crate that verifies the tool works without timeout
           ./target/auditable/release/cargo-cola \
-            --crate-path . \
+            --crate-path ci-test-crate \
             --out-dir target/cola \
             --sarif target/cola/cola.sarif \
             --fail-on-findings false
-
-      - name: Restore original workspace configuration
-        if: always()
-        run: |
-          if [ -f Cargo.toml.original ]; then
-            mv Cargo.toml.original Cargo.toml
-          fi
 
       - name: Upload SARIF results from Rust-cola
         uses: github/codeql-action/upload-sarif@v3

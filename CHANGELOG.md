@@ -5,6 +5,21 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2025-12-13
+
+### Changed
+- **Major Refactoring**: Restructured codebase for maintainability and modularity.
+  - Created `mir-extractor/src/rules/` module hierarchy with categorized rule files.
+  - `rules/crypto.rs`: 8 cryptographic rules (MD5, SHA1, weak hashing, hardcoded keys, timing attacks, weak ciphers, predictable randomness).
+  - `rules/memory.rs`: 10 memory safety rules (transmute, uninit, set_len, raw pointers, null pointer transmute, ZST arithmetic).
+  - `rules/injection.rs`, `rules/concurrency.rs`, `rules/ffi.rs`, `rules/input.rs`, `rules/resource.rs`, `rules/code_quality.rs`: Module structure for ongoing rule migration.
+- **CI Improvements**: Added 30-minute timeout and excluded `mir-extractor` (28k LOC) from self-analysis to prevent CI hangs.
+
+### Technical
+- Reduced `lib.rs` from 23k LOC monolith toward modular architecture.
+- Added shared helper functions in `rules/mod.rs` for pattern matching and string processing.
+- Preserved backward compatibility - existing rules continue to function during incremental migration.
+
 ## [0.3.1] - 2025-12-13
 
 ### Changed

@@ -42,6 +42,7 @@ mod hir_query;
 mod type_analyzer;
 mod prototypes;
 pub mod interprocedural;
+pub mod rules;
 
 pub use dataflow::{Assignment, MirDataflow};
 #[cfg(feature = "hir-driver")]

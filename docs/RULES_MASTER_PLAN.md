@@ -1,7 +1,7 @@
 # Rust-Cola Rules Master Plan
 
 **Date:** December 13, 2025
-**Version:** 0.3.1
+**Version:** 0.5.0
 **Status:** Active
 
 This document serves as the single source of truth for Rust-cola's rule implementation status, roadmap, and backlog. It consolidates previous planning documents into a unified view.
@@ -11,7 +11,7 @@ This document serves as the single source of truth for Rust-cola's rule implemen
 **Current Status:**
 - **Total Rules:** 102
 - **Architecture:** Three-Tier Analysis Engine
-- **Latest Release:** v0.3.1 (December 13, 2025)
+- **Latest Release:** v0.5.0 (December 13, 2025)
 
 Rust-cola has reached a high level of maturity with a robust set of 102 security rules covering memory safety, cryptography, injection, concurrency, and FFI. The system leverages a hybrid approach combining fast heuristics with deep semantic analysis.
 
@@ -111,6 +111,7 @@ Prioritized list of new rules requiring advanced analysis infrastructure.
 
 ## 4. Completed Milestones (2025)
 
+*   **Dec 13:** v0.5.0 Release (Major refactoring - modular rules architecture).
 *   **Dec 13:** v0.3.1 Release (Version standardization, CI/CD improvements, legacy cleanup).
 *   **Dec 13:** v0.3.0 Release (YAML Suppression).
 *   **Dec 12:** Phase 3.3 Inter-procedural Taint Propagation complete.

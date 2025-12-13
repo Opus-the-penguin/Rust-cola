@@ -5,6 +5,11 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-12-13
+
+### Added
+- **YAML Suppression**: Added support for suppressing findings via YAML configuration files (loaded with `--rulepack`), allowing suppressions without modifying source code.
+
 ## [0.2.3] - 2025-12-12
 
 ### Fixed

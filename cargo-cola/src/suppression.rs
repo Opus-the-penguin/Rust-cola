@@ -1,12 +1,45 @@
-use mir_extractor::Finding;
+use mir_extractor::{Finding, SuppressionRule};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-pub fn filter_suppressed_findings(findings: &mut Vec<Finding>, crate_root: &Path) {
+pub fn filter_suppressed_findings(findings: &mut Vec<Finding>, crate_root: &Path, suppressions: &[SuppressionRule]) {
     let mut file_cache: HashMap<String, Vec<String>> = HashMap::new();
     
     findings.retain(|finding| {
+        // Check YAML suppressions first
+        for suppression in suppressions {
+            if suppression.rule_id == finding.rule_id {
+                let mut matches = true;
+
+                // Check file match
+                if let Some(file_pattern) = &suppression.file {
+                    if let Some(span) = &finding.span {
+                        if !span.file.contains(file_pattern) {
+                            matches = false;
+                        }
+                    } else {
+                        matches = false;
+                    }
+                }
+
+                // Check function match
+                if let Some(function_pattern) = &suppression.function {
+                    if let Some(finding_function) = &finding.function {
+                        if !finding_function.contains(function_pattern) {
+                            matches = false;
+                        }
+                    } else {
+                        matches = false;
+                    }
+                }
+
+                if matches {
+                    return false; // Suppressed
+                }
+            }
+        }
+
         if let Some(span) = &finding.span {
             let file_path_str = &span.file;
             let file_path = if Path::new(file_path_str).is_absolute() {

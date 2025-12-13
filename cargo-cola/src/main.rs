@@ -293,7 +293,7 @@ fn main() -> Result<()> {
         }
 
         // Filter suppressed findings
-        suppression::filter_suppressed_findings(&mut analysis.findings, &crate_root);
+        suppression::filter_suppressed_findings(&mut analysis.findings, &crate_root, &engine.suppressions);
 
         println!(
             "crate {}: processed {} functions, {} findings",

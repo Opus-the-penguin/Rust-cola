@@ -654,13 +654,22 @@ fn strip_comments(line: &str, in_block_comment: &mut bool) -> String {
     result
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct SuppressionRule {
+    pub rule_id: String,
+    pub file: Option<String>, // Glob pattern
+    pub function: Option<String>, // Function name pattern
+    pub reason: Option<String>,
+}
+
 pub struct RuleEngine {
     rules: Vec<Box<dyn Rule>>,
+    pub suppressions: Vec<SuppressionRule>,
 }
 
 impl RuleEngine {
     pub fn new() -> Self {
-        Self { rules: Vec::new() }
+        Self { rules: Vec::new(), suppressions: Vec::new() }
     }
 
     pub fn with_builtin_rules() -> Self {
@@ -726,6 +735,8 @@ impl RuleEngine {
             self.register_rule(Box::new(declarative));
         }
 
+        self.suppressions.extend(document.suppressions);
+
         Ok(())
     }
 
@@ -742,6 +753,8 @@ impl RuleEngine {
 struct RulePackDocument {
     #[serde(default)]
     rules: Vec<RulePackRuleConfig>,
+    #[serde(default)]
+    suppressions: Vec<SuppressionRule>,
 }
 
 #[derive(Debug, Deserialize)]

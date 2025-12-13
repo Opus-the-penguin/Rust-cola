@@ -59,7 +59,7 @@ jobs:
           ]
           resolver = "2"
           EOF
-          mv Cargo.toml Cargo.toml.original
+          cp Cargo.toml Cargo.toml.original
           mv Cargo.toml.production Cargo.toml
 
       - name: Run cargo-cola on production code only
@@ -74,7 +74,9 @@ jobs:
       - name: Restore original workspace configuration
         if: always()
         run: |
-          mv Cargo.toml.original Cargo.toml
+          if [ -f Cargo.toml.original ]; then
+            mv Cargo.toml.original Cargo.toml
+          fi
 
       - name: Upload SARIF results from Rust-cola
         uses: github/codeql-action/upload-sarif@v3

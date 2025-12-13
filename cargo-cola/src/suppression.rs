@@ -25,10 +25,8 @@ pub fn filter_suppressed_findings(findings: &mut Vec<Finding>, crate_root: &Path
 
                 // Check function match
                 if let Some(function_pattern) = &suppression.function {
-                    if let Some(finding_function) = &finding.function {
-                        if !finding_function.contains(function_pattern) {
-                            matches = false;
-                        }
+                    if finding.function.contains(function_pattern) {
+                        // Match found
                     } else {
                         matches = false;
                     }

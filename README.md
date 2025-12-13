@@ -59,6 +59,7 @@ Binary: `target/release/cargo-cola`
 ## Documentation
 
 - [User Guide](docs/USER_GUIDE.md): Detailed instructions on features like False Positive Suppression.
+- [Rules Master Plan](docs/RULES_MASTER_PLAN.md): Current status, roadmap, and backlog of security rules.
 - [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md): How to write new security rules.
 
 ## Output Artifacts
@@ -146,8 +147,8 @@ This provides comprehensive security coverage:
 ## Documentation
 
 - `docs/RULE_DEVELOPMENT_GUIDE.md` - Writing rules
-- `docs/phase3-interprocedural-design.md` - Taint analysis
-- `docs/security-rule-backlog.md` - Planned rules
+- `docs/RULES_MASTER_PLAN.md` - Rules status and roadmap
+- `docs/design/phase3-interprocedural-design.md` - Taint analysis
 
 ## License
 

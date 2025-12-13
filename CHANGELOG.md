@@ -5,6 +5,17 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2025-12-13
+
+### Changed
+- **Version Standardization**: Unified version numbers across all crates (cargo-cola, mir-extractor, mir-advanced-rules) to 0.3.1.
+- **CI/CD Improvements**: Optimized `cola-ci.yml` workflow to use pre-built binary, eliminating double compilation.
+- **CodeQL Configuration**: Simplified path exclusions with blanket `examples/**` pattern.
+
+### Removed
+- **Legacy Examples**: Deleted obsolete `examples/hir-typeck-repro/` and `examples/parse-pattern-test/` directories.
+- **Generated Artifacts**: Cleaned up stale MIR dump files from `examples/suppression-test/mir_dump/`.
+
 ## [0.3.0] - 2025-12-13
 
 ### Added

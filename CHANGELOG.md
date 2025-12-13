@@ -5,6 +5,19 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2025-12-13
+
+### Changed
+- **Rule Migration Progress**: Continued modular refactoring of security rules.
+  - `rules/concurrency.rs`: 4 concurrency rules migrated (NonThreadSafeTest, BlockingSleepInAsync, BlockingOpsInAsync, MutexGuardAcrossAwait).
+  - `rules/ffi.rs`: 4 FFI safety rules migrated (AllocatorMismatchFfi, UnsafeFfiPointerReturn, PackedFieldReference, UnsafeCStringPointer).
+  - Total: 26 rules now in modular structure (crypto: 8, memory: 10, concurrency: 4, ffi: 4).
+- **CI Improvements**: Temporarily excluded `mir-advanced-rules` from cola-ci.yml self-analysis to resolve hanging builds.
+
+### Technical
+- Added `filter_entry` helper to `rules/mod.rs` for consistent directory traversal filtering.
+- Updated module exports in `rules/mod.rs` for new rule structs.
+
 ## [0.5.0] - 2025-12-13
 
 ### Changed

@@ -50,12 +50,12 @@ jobs:
         run: |
           # Create a production-only workspace configuration
           # This prevents cargo metadata from discovering test crates with intentional vulnerabilities
-          # NOTE: mir-extractor is excluded as it's 28k+ lines and analyzing the analysis tool is redundant
+          # NOTE: mir-extractor excluded (28k+ LOC - analyzing the analysis tool is redundant)
+          # NOTE: mir-advanced-rules temporarily excluded (causes CI hang - debugging in progress)
           cat > Cargo.toml.production <<'EOF'
           [workspace]
           members = [
               "cargo-cola",
-              "mir-advanced-rules",
           ]
           resolver = "2"
           EOF

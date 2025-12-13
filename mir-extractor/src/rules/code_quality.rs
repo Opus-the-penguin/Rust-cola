@@ -1,36 +1,72 @@
 //! Code quality and miscellaneous rules.
 //!
 //! Rules detecting code quality issues:
-//! - Commented-out code
-//! - Dead stores in arrays
-//! - Misordered assert_eq arguments
-//! - Crate-wide allow lint
-//! - Overscoped allow
-//! - Non-HTTPS URLs
-//! - Hardcoded home paths
+//! - Commented-out code (RUSTCOLA066)
+//! - Dead stores in arrays (RUSTCOLA067)
+//! - Misordered assert_eq arguments (RUSTCOLA050)
+//! - Crate-wide allow lint (RUSTCOLA049)
+//! - Overscoped allow (RUSTCOLA065)
+//! - Non-HTTPS URLs (RUSTCOLA012)
+//! - Hardcoded home paths (RUSTCOLA013)
+//! - Invisible unicode (RUSTCOLA048)
+//! - ctor/dtor std API usage (RUSTCOLA059)
+//! - Local RefCell patterns (RUSTCOLA058)
+//!
+//! These rules are implemented in lib.rs and registered via register_builtin_rules().
+
+#![allow(unused_imports)]
 
 use crate::{Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 
-// Placeholder - rules will be migrated from lib.rs
-// This file will contain:
-// - RUSTCOLA047: Env var literal
-// - RUSTCOLA048: Invisible unicode
-// - RUSTCOLA049: Crate-wide allow
-// - RUSTCOLA050: Misordered assert_eq
-// - RUSTCOLA051: Try IO result
-// - RUSTCOLA052: Local RefCell
-// - RUSTCOLA057: Unnecessary borrow_mut
-// - RUSTCOLA058: Absolute path in join
-// - RUSTCOLA059: ctor/dtor std API
-// - RUSTCOLA060: Connection string password
-// - RUSTCOLA061: Password field masking
-// - RUSTCOLA065: Overscoped allow
-// - RUSTCOLA066: Commented out code
-// - RUSTCOLA067: Dead store array
-// - RUSTCOLA012: Non-HTTPS URL
-// - RUSTCOLA013: Hardcoded home path
+// ============================================================================
+// Code Quality Rules Summary
+// ============================================================================
+//
+// RUSTCOLA012 - NonHttpsUrlRule
+//   Detects non-HTTPS URLs in code
+//
+// RUSTCOLA013 - HardcodedHomePathRule
+//   Detects hardcoded home directory paths
+//
+// RUSTCOLA048 - InvisibleUnicodeRule
+//   Detects invisible/confusable Unicode characters
+//
+// RUSTCOLA049 - CrateWideAllowRule
+//   Detects crate-wide #![allow(...)] attributes
+//
+// RUSTCOLA050 - MisorderedAssertEqRule
+//   Detects swapped expected/actual in assert_eq!
+//
+// RUSTCOLA051 - TryIoResultRule
+//   Detects try operator on IO results without context
+//
+// RUSTCOLA057 - UnnecessaryBorrowMutRule
+//   Detects unnecessary borrow_mut() calls
+//
+// RUSTCOLA058 - LocalRefCellRule
+//   Detects function-local RefCell patterns
+//
+// RUSTCOLA059 - CtorDtorStdApiRule
+//   Detects ctor/dtor crate with std API in callbacks
+//
+// RUSTCOLA060 - ConnectionStringPasswordRule
+//   Detects passwords in connection strings
+//
+// RUSTCOLA061 - PasswordFieldMaskingRule
+//   Detects password fields without Debug masking
+//
+// RUSTCOLA065 - OverscopedAllowRule
+//   Detects overly scoped allow attributes
+//
+// RUSTCOLA066 - CommentedOutCodeRule
+//   Detects commented-out code blocks
+//
+// RUSTCOLA067 - DeadStoreArrayRule
+//   Detects dead stores to array elements
+//
+// ============================================================================
 
 /// Register all code quality rules with the rule engine.
 pub fn register_code_quality_rules(_engine: &mut crate::RuleEngine) {
-    // Rules will be registered here after migration
+    // Rules are registered in lib.rs register_builtin_rules()
 }

@@ -39,8 +39,17 @@ pub use memory::{
     ZSTPointerArithmeticRule, VecSetLenRule, MaybeUninitAssumeInitRule, MemUninitZeroedRule,
     NonNullNewUncheckedRule, MemForgetGuardRule,
 };
+pub use concurrency::{
+    NonThreadSafeTestRule, BlockingSleepInAsyncRule, BlockingOpsInAsyncRule,
+    MutexGuardAcrossAwaitRule,
+};
+pub use ffi::{
+    AllocatorMismatchFfiRule, UnsafeFfiPointerReturnRule, PackedFieldReferenceRule,
+    UnsafeCStringPointerRule,
+};
 
-use crate::{Finding, MirFunction, MirPackage, RuleMetadata, Severity, RuleOrigin, SourceSpan};
+use crate::{MirFunction, MirPackage};
+use walkdir::DirEntry;
 
 /// Helper function to collect MIR lines matching any of the given patterns.
 pub(crate) fn collect_matches(lines: &[String], patterns: &[&str]) -> Vec<String> {
@@ -49,6 +58,25 @@ pub(crate) fn collect_matches(lines: &[String], patterns: &[&str]) -> Vec<String
         .filter(|line| patterns.iter().any(|needle| line.contains(needle)))
         .map(|line| line.trim().to_string())
         .collect()
+}
+
+/// Helper function to filter directory entries for source file scanning.
+/// Excludes target, .git, .cola-cache, out, and node_modules directories.
+pub(crate) fn filter_entry(entry: &DirEntry) -> bool {
+    if entry.depth() == 0 {
+        return true;
+    }
+
+    let name = entry.file_name().to_string_lossy();
+    if entry.file_type().is_dir()
+        && matches!(
+            name.as_ref(),
+            "target" | ".git" | ".cola-cache" | "out" | "node_modules"
+        )
+    {
+        return false;
+    }
+    true
 }
 
 /// Helper function to check if text contains a word (case-insensitive, word boundary aware).

@@ -1,0 +1,20 @@
+// MIR for `std::ptr::drop_in_place` after AddCallGuards
+
+fn drop_in_place(_1: *mut std::io::error::ErrorData<Box<std::io::error::Custom>>) -> () {
+    let mut _0: ();
+    let mut _2: isize;
+    let mut _3: isize;
+
+    bb0: {
+        _2 = discriminant((*_1));
+        switchInt(move _2) -> [0: bb1, 1: bb1, 2: bb1, otherwise: bb2];
+    }
+
+    bb1: {
+        return;
+    }
+
+    bb2: {
+        drop((((*_1) as Custom).0: std::boxed::Box<std::io::error::Custom>)) -> [return: bb1, unwind continue];
+    }
+}

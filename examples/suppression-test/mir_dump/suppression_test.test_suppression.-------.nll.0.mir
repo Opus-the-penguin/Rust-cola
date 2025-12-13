@@ -1,0 +1,228 @@
+// MIR for `test_suppression` 0 nll
+
+| Free Region Mapping
+| '?0 | Global | ['?0, '?1]
+| '?1 | Local | ['?1]
+|
+| Inferred Region Values
+| '?0 | U0 | {bb0[0..=2], bb1[0], bb2[0..=10], bb3[0..=1], bb4[0..=4], bb5[0..=3], bb6[0..=1], bb7[0..=1], bb8[0], bb9[0..=5], bb10[0..=1], bb11[0], bb12[0], bb13[0], bb14[0], bb15[0], bb16[0], '?0, '?1}
+| '?1 | U0 | {bb0[0..=2], bb1[0], bb2[0..=10], bb3[0..=1], bb4[0..=4], bb5[0..=3], bb6[0..=1], bb7[0..=1], bb8[0], bb9[0..=5], bb10[0..=1], bb11[0], bb12[0], bb13[0], bb14[0], bb15[0], bb16[0], '?1}
+| '?2 | U0 | {bb0[2]}
+| '?3 | U0 | {bb0[2]}
+| '?4 | U0 | {bb2[10]}
+| '?5 | U0 | {bb2[10]}
+| '?6 | U0 | {bb3[0..=1], bb4[0..=4], bb5[0..=3]}
+| '?7 | U0 | {bb3[1]}
+| '?8 | U0 | {bb3[1]}
+| '?9 | U0 | {bb4[0..=4], bb5[0..=3]}
+| '?10 | U0 | {bb5[0..=3]}
+| '?11 | U0 | {bb5[1..=3]}
+| '?12 | U0 | {bb5[0..=3]}
+| '?13 | U0 | {bb4[1..=4], bb5[0..=3]}
+| '?14 | U0 | {bb4[0..=4], bb5[0..=3]}
+| '?15 | U0 | {bb3[1], bb4[0..=4], bb5[0..=3]}
+| '?16 | U0 | {bb2[10]}
+| '?17 | U0 | {bb3[1], bb4[0..=4], bb5[0..=3]}
+| '?18 | U0 | {bb4[4], bb5[0..=3]}
+| '?19 | U0 | {bb5[3]}
+|
+| Inference Constraints
+| '?0 live at {bb0[0..=2], bb1[0], bb2[0..=10], bb3[0..=1], bb4[0..=4], bb5[0..=3], bb6[0..=1], bb7[0..=1], bb8[0], bb9[0..=5], bb10[0..=1], bb11[0], bb12[0], bb13[0], bb14[0], bb15[0], bb16[0]}
+| '?1 live at {bb0[0..=2], bb1[0], bb2[0..=10], bb3[0..=1], bb4[0..=4], bb5[0..=3], bb6[0..=1], bb7[0..=1], bb8[0], bb9[0..=5], bb10[0..=1], bb11[0], bb12[0], bb13[0], bb14[0], bb15[0], bb16[0]}
+| '?2 live at {bb0[2]}
+| '?3 live at {bb0[2]}
+| '?4 live at {bb2[10]}
+| '?5 live at {bb2[10]}
+| '?6 live at {bb3[0]}
+| '?7 live at {bb3[1]}
+| '?8 live at {bb3[1]}
+| '?9 live at {bb4[0]}
+| '?10 live at {bb5[0]}
+| '?11 live at {bb5[1..=3]}
+| '?12 live at {bb5[0]}
+| '?13 live at {bb4[1..=4]}
+| '?14 live at {bb4[0]}
+| '?15 live at {bb3[1]}
+| '?17 live at {bb3[1]}
+| '?18 live at {bb4[4]}
+| '?19 live at {bb5[3]}
+| '?3: '?2 due to CallArgument(Some(FnDef(DefId(1:1985 ~ std[40d4]::env::var), [&'{erased} str]))) at Single(bb0[2]) (src/lib.rs:4:15: 4:35 (#0)
+| '?4: '?16 due to TypeAnnotation(GenericArg) at Single(bb2[10]) (src/lib.rs:6:5: 6:23 (#0)
+| '?5: '?4 due to CallArgument(Some(FnDef(DefId(1:5875 ~ std[40d4]::process::{impl#22}::new), [&'{erased} str]))) at Single(bb2[10]) (src/lib.rs:6:5: 6:23 (#0)
+| '?6: '?15 due to Boring at Single(bb3[0]) (src/lib.rs:6:5: 6:23 (#0)
+| '?8: '?7 due to CallArgument(Some(FnDef(DefId(1:5877 ~ std[40d4]::process::{impl#22}::arg), [&'{erased} str]))) at Single(bb3[1]) (src/lib.rs:6:5: 6:33 (#0)
+| '?9: '?13 due to Boring at Single(bb4[0]) (src/lib.rs:6:5: 6:33 (#0)
+| '?10: '?11 due to Boring at Single(bb5[0]) (src/lib.rs:6:5: 6:42 (#0)
+| '?11: '?19 due to CallArgument(Some(FnDef(DefId(1:5901 ~ std[40d4]::process::{impl#22}::output), []))) at Single(bb5[3]) (src/lib.rs:6:5: 6:51 (#0)
+| '?12: '?10 due to Boring at Single(bb5[0]) (src/lib.rs:6:5: 6:42 (#0)
+| '?13: '?18 due to CallArgument(Some(FnDef(DefId(1:5877 ~ std[40d4]::process::{impl#22}::arg), [std::string::String]))) at Single(bb4[4]) (src/lib.rs:6:5: 6:42 (#0)
+| '?14: '?9 due to Boring at Single(bb4[0]) (src/lib.rs:6:5: 6:33 (#0)
+| '?15: '?17 due to CallArgument(Some(FnDef(DefId(1:5877 ~ std[40d4]::process::{impl#22}::arg), [&'{erased} str]))) at Single(bb3[1]) (src/lib.rs:6:5: 6:33 (#0)
+| '?16: '?4 due to TypeAnnotation(GenericArg) at Single(bb2[10]) (src/lib.rs:6:5: 6:23 (#0)
+| '?17: '?14 due to Boring at Single(bb3[1]) (src/lib.rs:6:5: 6:33 (#0)
+| '?18: '?12 due to Boring at Single(bb4[4]) (src/lib.rs:6:5: 6:42 (#0)
+|
+| Borrows
+| bw0: issued at bb3[0] in '?6
+| bw1: issued at bb4[0] in '?9
+| bw2: issued at bb5[0] in '?10
+|
+| User Type Annotations
+| 0: user_ty: Canonical { value: TypeOf(DefId(1:5875 ~ std[40d4]::process::{impl#22}::new), UserArgs { args: [^0], user_self_ty: Some(UserSelfTy { impl_def_id: DefId(1:5874 ~ std[40d4]::process::{impl#22}), self_ty: std::process::Command }) }), max_universe: U0, variables: [Ty { ui: U0, sub_root: 0 }] }, span: src/lib.rs:6:5: 6:17, inferred_ty: fn(&str) -> std::process::Command {std::process::Command::new::<&str>}
+|
+fn test_suppression() -> () {
+    let mut _0: ();                      // return place in scope 0 at src/lib.rs:3:26: 3:26
+    let _1: std::string::String;         // in scope 0 at src/lib.rs:4:9: 4:12
+    let mut _2: std::result::Result<std::string::String, std::env::VarError>; // in scope 0 at src/lib.rs:4:15: 4:35
+    let _3: std::process::Output;        // in scope 0 at src/lib.rs:6:5: 6:60
+    let mut _4: std::result::Result<std::process::Output, std::io::Error>; // in scope 0 at src/lib.rs:6:5: 6:51
+    let mut _5: &mut std::process::Command; // in scope 0 at src/lib.rs:6:5: 6:42
+    let mut _6: &mut std::process::Command; // in scope 0 at src/lib.rs:6:5: 6:42
+    let mut _7: &mut std::process::Command; // in scope 0 at src/lib.rs:6:5: 6:33
+    let mut _8: &mut std::process::Command; // in scope 0 at src/lib.rs:6:5: 6:33
+    let mut _9: &mut std::process::Command; // in scope 0 at src/lib.rs:6:5: 6:23
+    let mut _10: std::process::Command;  // in scope 0 at src/lib.rs:6:5: 6:23
+    let mut _11: std::string::String;    // in scope 0 at src/lib.rs:6:38: 6:41
+    scope 1 {
+        debug arg => _1;                 // in scope 1 at src/lib.rs:4:9: 4:12
+    }
+
+    bb0: {
+        StorageLive(_1);                 // scope 0 at src/lib.rs:4:9: 4:12
+        StorageLive(_2);                 // scope 0 at src/lib.rs:4:15: 4:35
+        _2 = var::<&str>(const "ARG") -> [return: bb1, unwind: bb16]; // scope 0 at src/lib.rs:4:15: 4:35
+                                         // mir::ConstOperand
+                                         // + span: src/lib.rs:4:15: 4:28
+                                         // + const_: Const { ty: fn(&str) -> Result<String, VarError> {var::<&str>}, val: Value(var::<&str>) }
+                                         // mir::ConstOperand
+                                         // + span: src/lib.rs:4:29: 4:34
+                                         // + const_: Const { ty: &str, val: Value("ARG") }
+    }
+
+    bb1: {
+        _1 = Result::<String, VarError>::unwrap(move _2) -> [return: bb2, unwind: bb15]; // scope 0 at src/lib.rs:4:15: 4:44
+                                         // mir::ConstOperand
+                                         // + span: src/lib.rs:4:36: 4:42
+                                         // + const_: Const { ty: fn(Result<String, VarError>) -> String {Result::<String, VarError>::unwrap}, val: Value(Result::<String, VarError>::unwrap) }
+    }
+
+    bb2: {
+        StorageDead(_2);                 // scope 0 at src/lib.rs:4:43: 4:44
+        FakeRead(ForLet(None), _1);      // scope 0 at src/lib.rs:4:9: 4:12
+        StorageLive(_3);                 // scope 1 at src/lib.rs:6:5: 6:60
+        StorageLive(_4);                 // scope 1 at src/lib.rs:6:5: 6:51
+        StorageLive(_5);                 // scope 1 at src/lib.rs:6:5: 6:42
+        StorageLive(_6);                 // scope 1 at src/lib.rs:6:5: 6:42
+        StorageLive(_7);                 // scope 1 at src/lib.rs:6:5: 6:33
+        StorageLive(_8);                 // scope 1 at src/lib.rs:6:5: 6:33
+        StorageLive(_9);                 // scope 1 at src/lib.rs:6:5: 6:23
+        StorageLive(_10);                // scope 1 at src/lib.rs:6:5: 6:23
+        _10 = Command::new::<&str>(const "sh") -> [return: bb3, unwind: bb14]; // scope 1 at src/lib.rs:6:5: 6:23
+                                         // mir::ConstOperand
+                                         // + span: src/lib.rs:6:5: 6:17
+                                         // + user_ty: UserType(0)
+                                         // + const_: Const { ty: fn(&str) -> Command {Command::new::<&str>}, val: Value(Command::new::<&str>) }
+                                         // mir::ConstOperand
+                                         // + span: src/lib.rs:6:18: 6:22
+                                         // + const_: Const { ty: &str, val: Value("sh") }
+    }
+
+    bb3: {
+        _9 = &mut _10;                   // scope 1 at src/lib.rs:6:5: 6:23
+        _8 = Command::arg::<&str>(move _9, const "-c") -> [return: bb4, unwind: bb13]; // scope 1 at src/lib.rs:6:5: 6:33
+                                         // mir::ConstOperand
+                                         // + span: src/lib.rs:6:24: 6:27
+                                         // + const_: Const { ty: for<'a> fn(&'a mut Command, &str) -> &'a mut Command {Command::arg::<&str>}, val: Value(Command::arg::<&str>) }
+                                         // mir::ConstOperand
+                                         // + span: src/lib.rs:6:28: 6:32
+                                         // + const_: Const { ty: &str, val: Value("-c") }
+    }
+
+    bb4: {
+        _7 = &mut (*_8);                 // scope 1 at src/lib.rs:6:5: 6:33
+        StorageDead(_9);                 // scope 1 at src/lib.rs:6:32: 6:33
+        StorageLive(_11);                // scope 1 at src/lib.rs:6:38: 6:41
+        _11 = move _1;                   // scope 1 at src/lib.rs:6:38: 6:41
+        _6 = Command::arg::<String>(move _7, move _11) -> [return: bb5, unwind: bb12]; // scope 1 at src/lib.rs:6:5: 6:42
+                                         // mir::ConstOperand
+                                         // + span: src/lib.rs:6:34: 6:37
+                                         // + const_: Const { ty: for<'a> fn(&'a mut Command, String) -> &'a mut Command {Command::arg::<String>}, val: Value(Command::arg::<String>) }
+    }
+
+    bb5: {
+        _5 = &mut (*_6);                 // scope 1 at src/lib.rs:6:5: 6:42
+        StorageDead(_11);                // scope 1 at src/lib.rs:6:41: 6:42
+        StorageDead(_7);                 // scope 1 at src/lib.rs:6:41: 6:42
+        _4 = Command::output(move _5) -> [return: bb6, unwind: bb13]; // scope 1 at src/lib.rs:6:5: 6:51
+                                         // mir::ConstOperand
+                                         // + span: src/lib.rs:6:43: 6:49
+                                         // + const_: Const { ty: for<'a> fn(&'a mut Command) -> Result<Output, std::io::Error> {Command::output}, val: Value(Command::output) }
+    }
+
+    bb6: {
+        StorageDead(_5);                 // scope 1 at src/lib.rs:6:50: 6:51
+        _3 = Result::<Output, std::io::Error>::unwrap(move _4) -> [return: bb7, unwind: bb11]; // scope 1 at src/lib.rs:6:5: 6:60
+                                         // mir::ConstOperand
+                                         // + span: src/lib.rs:6:52: 6:58
+                                         // + const_: Const { ty: fn(Result<Output, std::io::Error>) -> Output {Result::<Output, std::io::Error>::unwrap}, val: Value(Result::<Output, std::io::Error>::unwrap) }
+    }
+
+    bb7: {
+        StorageDead(_4);                 // scope 1 at src/lib.rs:6:59: 6:60
+        drop(_3) -> [return: bb8, unwind: bb13]; // scope 1 at src/lib.rs:6:60: 6:61
+    }
+
+    bb8: {
+        drop(_10) -> [return: bb9, unwind: bb14]; // scope 1 at src/lib.rs:6:60: 6:61
+    }
+
+    bb9: {
+        StorageDead(_10);                // scope 1 at src/lib.rs:6:60: 6:61
+        StorageDead(_8);                 // scope 1 at src/lib.rs:6:60: 6:61
+        StorageDead(_6);                 // scope 1 at src/lib.rs:6:60: 6:61
+        StorageDead(_3);                 // scope 1 at src/lib.rs:6:60: 6:61
+        _0 = const ();                   // scope 0 at src/lib.rs:3:27: 7:2
+        drop(_1) -> [return: bb10, unwind: bb16]; // scope 0 at src/lib.rs:7:1: 7:2
+    }
+
+    bb10: {
+        StorageDead(_1);                 // scope 0 at src/lib.rs:7:1: 7:2
+        return;                          // scope 0 at src/lib.rs:7:2: 7:2
+    }
+
+    bb11 (cleanup): {
+        drop(_4) -> [return: bb13, unwind terminate(cleanup)]; // scope 1 at src/lib.rs:6:59: 6:60
+    }
+
+    bb12 (cleanup): {
+        drop(_11) -> [return: bb13, unwind terminate(cleanup)]; // scope 1 at src/lib.rs:6:41: 6:42
+    }
+
+    bb13 (cleanup): {
+        drop(_10) -> [return: bb14, unwind terminate(cleanup)]; // scope 1 at src/lib.rs:6:60: 6:61
+    }
+
+    bb14 (cleanup): {
+        drop(_1) -> [return: bb16, unwind terminate(cleanup)]; // scope 0 at src/lib.rs:7:1: 7:2
+    }
+
+    bb15 (cleanup): {
+        drop(_2) -> [return: bb16, unwind terminate(cleanup)]; // scope 0 at src/lib.rs:4:43: 4:44
+    }
+
+    bb16 (cleanup): {
+        resume;                          // scope 0 at src/lib.rs:3:1: 7:2
+    }
+}
+
+alloc3 (size: 2, align: 1) {
+    2d 63                                           │ -c
+}
+
+alloc2 (size: 2, align: 1) {
+    73 68                                           │ sh
+}
+
+alloc1 (size: 3, align: 1) {
+    41 52 47                                        │ ARG
+}

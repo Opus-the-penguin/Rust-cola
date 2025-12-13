@@ -1,0 +1,13 @@
+// MIR for `std::ptr::drop_in_place` after AbortUnwindingCalls
+
+fn drop_in_place(_1: *mut OsString) -> () {
+    let mut _0: ();
+
+    bb0: {
+        drop(((*_1).0: std::sys::os_str::bytes::Buf)) -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        return;
+    }
+}

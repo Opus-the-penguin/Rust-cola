@@ -1,0 +1,13 @@
+// MIR for `std::ptr::drop_in_place` after SimplifyCfg-make_shim
+
+fn drop_in_place(_1: *mut std::io::default_write_fmt::Adapter<'_, std::sys::stdio::unix::Stderr>) -> () {
+    let mut _0: ();
+
+    bb0: {
+        drop(((*_1).1: std::result::Result<(), std::io::Error>)) -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        return;
+    }
+}

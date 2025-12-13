@@ -24,6 +24,7 @@ use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use chrono::Local;
 
 mod suppression;
 
@@ -147,8 +148,43 @@ struct PackageOutput {
     hir: Option<HirPackage>,
 }
 
+fn resolve_output_path(
+    user_path: Option<PathBuf>,
+    out_dir: &Path,
+    base_name: &str,
+    timestamp: &str,
+) -> PathBuf {
+    let path = match user_path {
+        Some(p) if p.as_os_str().is_empty() => None,
+        Some(p) => Some(p),
+        None => None,
+    };
+
+    if let Some(p) = path {
+        return p;
+    }
+
+    let default_path = out_dir.join(base_name);
+    if default_path.exists() {
+        let stem = Path::new(base_name)
+            .file_stem()
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let ext = Path::new(base_name)
+            .extension()
+            .unwrap()
+            .to_str()
+            .unwrap();
+        out_dir.join(format!("{}_{}.{}", stem, timestamp, ext))
+    } else {
+        default_path
+    }
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
+    let timestamp = Local::now().format("%Y%m%d-%H%M%S").to_string();
 
     fs::create_dir_all(&args.out_dir).context("create analysis output directory")?;
 
@@ -312,18 +348,24 @@ fn main() -> Result<()> {
         });
     }
 
-    let mir_json_path = args
-        .mir_json
-        .clone()
-        .unwrap_or_else(|| args.out_dir.join("mir.json"));
-    let findings_path = args
-        .findings_json
-        .clone()
-        .unwrap_or_else(|| args.out_dir.join("findings.json"));
-    let sarif_path = args
-        .sarif
-        .clone()
-        .unwrap_or_else(|| args.out_dir.join("cola.sarif"));
+    let mir_json_path = resolve_output_path(
+        args.mir_json.clone(),
+        &args.out_dir,
+        "mir.json",
+        &timestamp,
+    );
+    let findings_path = resolve_output_path(
+        args.findings_json.clone(),
+        &args.out_dir,
+        "findings.json",
+        &timestamp,
+    );
+    let sarif_path = resolve_output_path(
+        args.sarif.clone(),
+        &args.out_dir,
+        "cola.sarif",
+        &timestamp,
+    );
 
     if package_outputs.len() == 1 {
         let output = &package_outputs[0];
@@ -351,12 +393,12 @@ fn main() -> Result<()> {
 
         // Generate standalone report (automatic unless --no-report, or if explicitly requested with path)
         let report_summary_path: Option<PathBuf> = if !args.no_report || args.report.is_some() {
-            let report_path = args.report.clone().unwrap_or_else(|| args.out_dir.join("report.md"));
-            let resolved_path = if report_path.as_os_str().is_empty() {
-                args.out_dir.join("report.md")
-            } else {
-                report_path
-            };
+            let resolved_path = resolve_output_path(
+                args.report.clone(),
+                &args.out_dir,
+                "report.md",
+                &timestamp,
+            );
             generate_standalone_report(
                 &resolved_path,
                 &output.package.crate_name,
@@ -371,7 +413,12 @@ fn main() -> Result<()> {
 
         // Generate LLM prompt (automatic unless --no-llm-prompt)
         let llm_prompt_summary_path: Option<PathBuf> = if !args.no_llm_prompt {
-            let prompt_path = args.llm_prompt.clone().unwrap_or_else(|| args.out_dir.join("llm-prompt.md"));
+            let prompt_path = resolve_output_path(
+                args.llm_prompt.clone(),
+                &args.out_dir,
+                "llm-prompt.md",
+                &timestamp,
+            );
             generate_llm_prompt(
                 &prompt_path,
                 &output.package.crate_name,
@@ -388,7 +435,12 @@ fn main() -> Result<()> {
         let mut hir_summary_path: Option<PathBuf> = None;
         #[cfg(feature = "hir-driver")]
         if !args.no_hir {
-            let hir_path = args.hir_json.clone().unwrap_or_else(|| args.out_dir.join("hir.json"));
+            let hir_path = resolve_output_path(
+                args.hir_json.clone(),
+                &args.out_dir,
+                "hir.json",
+                &timestamp,
+            );
             if let Some(hir_package) = &output.hir {
                 mir_extractor::write_hir_json(&hir_path, hir_package)?;
                 hir_summary_path = Some(hir_path);
@@ -404,7 +456,12 @@ fn main() -> Result<()> {
 
         // Write AST JSON (automatic unless --no-ast)
         let ast_summary_path: Option<PathBuf> = if !args.no_ast {
-            let ast_path = args.ast_json.clone().unwrap_or_else(|| args.out_dir.join("ast.json"));
+            let ast_path = resolve_output_path(
+                args.ast_json.clone(),
+                &args.out_dir,
+                "ast.json",
+                &timestamp,
+            );
             let crate_root = PathBuf::from(&output.package.crate_root);
             if let Ok(ast_package) = collect_ast_package(&crate_root, &output.package.crate_name) {
                 write_ast_json(&ast_path, &ast_package)?;
@@ -510,14 +567,14 @@ fn main() -> Result<()> {
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("workspace");
-    
+
     let workspace_report_path: Option<PathBuf> = if !args.no_report || args.report.is_some() {
-        let report_path = args.report.clone().unwrap_or_else(|| args.out_dir.join("report.md"));
-        let resolved_path = if report_path.as_os_str().is_empty() {
-            args.out_dir.join("report.md")
-        } else {
-            report_path
-        };
+        let resolved_path = resolve_output_path(
+            args.report.clone(),
+            &args.out_dir,
+            "report.md",
+            &timestamp,
+        );
         generate_standalone_report(
             &resolved_path,
             project_name,
@@ -533,7 +590,12 @@ fn main() -> Result<()> {
 
     // Generate LLM prompt (automatic unless --no-llm-prompt) (workspace mode)
     let workspace_llm_prompt_path: Option<PathBuf> = if !args.no_llm_prompt {
-        let prompt_path = args.llm_prompt.clone().unwrap_or_else(|| args.out_dir.join("llm-prompt.md"));
+        let prompt_path = resolve_output_path(
+            args.llm_prompt.clone(),
+            &args.out_dir,
+            "llm-prompt.md",
+            &timestamp,
+        );
         generate_llm_prompt(
             &prompt_path,
             project_name,
@@ -2552,10 +2614,6 @@ fn write_ast_json(path: &Path, ast_package: &AstPackage) -> Result<()> {
         .with_context(|| format!("write AST JSON to {}", path.display()))?;
     Ok(())
 }
-
-// ============================================================================
-// Manifest Output
-// ============================================================================
 
 /// Manifest describing all generated artifacts from a scan
 #[derive(Clone, Debug, Serialize)]

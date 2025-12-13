@@ -1,0 +1,45 @@
+// MIR for `std::ptr::drop_in_place` before SimplifyCfg-make_shim
+
+fn drop_in_place(_1: *mut Option<Box<[u32]>>) -> () {
+    let mut _0: ();
+    let mut _2: isize;
+    let mut _3: isize;
+
+    bb0: {
+        goto -> bb7;
+    }
+
+    bb1: {
+        return;
+    }
+
+    bb2 (cleanup): {
+        resume;
+    }
+
+    bb3: {
+        goto -> bb1;
+    }
+
+    bb4 (cleanup): {
+        drop((((*_1) as Some).0: std::boxed::Box<[u32]>)) -> [return: bb2, unwind terminate(cleanup)];
+    }
+
+    bb5 (cleanup): {
+        drop((((*_1) as Some).0: std::boxed::Box<[u32]>)) -> [return: bb2, unwind terminate(cleanup)];
+    }
+
+    bb6: {
+        drop((((*_1) as Some).0: std::boxed::Box<[u32]>)) -> [return: bb3, unwind continue];
+    }
+
+    bb7: {
+        _2 = discriminant((*_1));
+        switchInt(move _2) -> [0: bb3, otherwise: bb6];
+    }
+
+    bb8 (cleanup): {
+        _3 = discriminant((*_1));
+        switchInt(move _3) -> [0: bb2, otherwise: bb4];
+    }
+}

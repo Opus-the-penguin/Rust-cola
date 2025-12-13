@@ -1,0 +1,89 @@
+// MIR for `std::ptr::drop_in_place` after SimplifyCfg-make_shim
+
+fn drop_in_place(_1: *mut std::sys::process::unix::common::Command) -> () {
+    let mut _0: ();
+
+    bb0: {
+        drop(((*_1).0: std::ffi::CString)) -> [return: bb20, unwind: bb11];
+    }
+
+    bb1 (cleanup): {
+        resume;
+    }
+
+    bb2: {
+        return;
+    }
+
+    bb3 (cleanup): {
+        drop(((*_1).13: std::option::Option<std::sys::process::unix::common::Stdio>)) -> [return: bb1, unwind terminate(cleanup)];
+    }
+
+    bb4 (cleanup): {
+        drop(((*_1).12: std::option::Option<std::sys::process::unix::common::Stdio>)) -> [return: bb3, unwind terminate(cleanup)];
+    }
+
+    bb5 (cleanup): {
+        drop(((*_1).11: std::option::Option<std::sys::process::unix::common::Stdio>)) -> [return: bb4, unwind terminate(cleanup)];
+    }
+
+    bb6 (cleanup): {
+        drop(((*_1).10: std::option::Option<std::boxed::Box<[u32]>>)) -> [return: bb5, unwind terminate(cleanup)];
+    }
+
+    bb7 (cleanup): {
+        drop(((*_1).9: std::vec::Vec<std::boxed::Box<dyn std::ops::FnMut() -> std::result::Result<(), std::io::Error> + std::marker::Send + std::marker::Sync>>)) -> [return: bb6, unwind terminate(cleanup)];
+    }
+
+    bb8 (cleanup): {
+        drop(((*_1).5: std::option::Option<std::ffi::CString>)) -> [return: bb7, unwind terminate(cleanup)];
+    }
+
+    bb9 (cleanup): {
+        drop(((*_1).4: std::option::Option<std::ffi::CString>)) -> [return: bb8, unwind terminate(cleanup)];
+    }
+
+    bb10 (cleanup): {
+        drop(((*_1).2: std::sys::process::env::CommandEnv)) -> [return: bb9, unwind terminate(cleanup)];
+    }
+
+    bb11 (cleanup): {
+        drop(((*_1).1: std::sys::process::unix::common::cstring_array::CStringArray)) -> [return: bb10, unwind terminate(cleanup)];
+    }
+
+    bb12: {
+        drop(((*_1).13: std::option::Option<std::sys::process::unix::common::Stdio>)) -> [return: bb2, unwind continue];
+    }
+
+    bb13: {
+        drop(((*_1).12: std::option::Option<std::sys::process::unix::common::Stdio>)) -> [return: bb12, unwind: bb3];
+    }
+
+    bb14: {
+        drop(((*_1).11: std::option::Option<std::sys::process::unix::common::Stdio>)) -> [return: bb13, unwind: bb4];
+    }
+
+    bb15: {
+        drop(((*_1).10: std::option::Option<std::boxed::Box<[u32]>>)) -> [return: bb14, unwind: bb5];
+    }
+
+    bb16: {
+        drop(((*_1).9: std::vec::Vec<std::boxed::Box<dyn std::ops::FnMut() -> std::result::Result<(), std::io::Error> + std::marker::Send + std::marker::Sync>>)) -> [return: bb15, unwind: bb6];
+    }
+
+    bb17: {
+        drop(((*_1).5: std::option::Option<std::ffi::CString>)) -> [return: bb16, unwind: bb7];
+    }
+
+    bb18: {
+        drop(((*_1).4: std::option::Option<std::ffi::CString>)) -> [return: bb17, unwind: bb8];
+    }
+
+    bb19: {
+        drop(((*_1).2: std::sys::process::env::CommandEnv)) -> [return: bb18, unwind: bb9];
+    }
+
+    bb20: {
+        drop(((*_1).1: std::sys::process::unix::common::cstring_array::CStringArray)) -> [return: bb19, unwind: bb10];
+    }
+}

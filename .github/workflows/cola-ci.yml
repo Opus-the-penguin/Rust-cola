@@ -20,10 +20,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install nightly toolchain
-        uses: dtolnay/rust-toolchain@nightly
-
-      - name: Install specific nightly for MIR extraction
-        run: rustup toolchain install nightly-2025-09-14
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2025-09-14
+          components: rustc-dev, llvm-tools-preview
 
       - name: Install cargo-auditable
         run: cargo install --locked cargo-auditable
@@ -65,7 +65,8 @@ jobs:
       - name: Run cargo-cola on production code only
         run: |
           # Only analyze production packages, not test examples with intentional vulnerabilities
-          cargo run -p cargo-cola -- \
+          # Use the binary built in the previous step to avoid recompilation
+          ./target/auditable/release/cargo-cola \
             --crate-path . \
             --out-dir target/cola \
             --sarif target/cola/cola.sarif \

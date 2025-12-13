@@ -1,0 +1,49 @@
+// MIR for `std::ptr::drop_in_place` before RemoveNoopLandingPads
+
+fn drop_in_place(_1: *mut Result<(), std::io::Error>) -> () {
+    let mut _0: ();
+    let mut _2: isize;
+    let mut _3: isize;
+
+    bb0: {
+        goto -> bb8;
+    }
+
+    bb1: {
+        return;
+    }
+
+    bb2 (cleanup): {
+        resume;
+    }
+
+    bb3: {
+        goto -> bb1;
+    }
+
+    bb4 (cleanup): {
+        drop((((*_1) as Ok).0: ())) -> [return: bb2, unwind terminate(cleanup)];
+    }
+
+    bb5 (cleanup): {
+        drop((((*_1) as Err).0: std::io::Error)) -> [return: bb2, unwind terminate(cleanup)];
+    }
+
+    bb6 (cleanup): {
+        drop((((*_1) as Err).0: std::io::Error)) -> [return: bb2, unwind terminate(cleanup)];
+    }
+
+    bb7: {
+        drop((((*_1) as Err).0: std::io::Error)) -> [return: bb3, unwind: bb2];
+    }
+
+    bb8: {
+        _2 = discriminant((*_1));
+        switchInt(move _2) -> [0: bb3, otherwise: bb7];
+    }
+
+    bb9 (cleanup): {
+        _3 = discriminant((*_1));
+        switchInt(move _3) -> [0: bb4, otherwise: bb5];
+    }
+}

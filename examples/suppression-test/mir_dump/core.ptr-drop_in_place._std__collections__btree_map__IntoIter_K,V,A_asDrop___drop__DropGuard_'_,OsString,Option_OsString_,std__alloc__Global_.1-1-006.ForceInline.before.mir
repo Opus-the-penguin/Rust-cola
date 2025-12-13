@@ -1,0 +1,16 @@
+// MIR for `std::ptr::drop_in_place` before ForceInline
+
+fn drop_in_place(_1: *mut <std::collections::btree_map::IntoIter<K, V, A> as Drop>::drop::DropGuard<'_, OsString, Option<OsString>, std::alloc::Global>) -> () {
+    let mut _0: ();
+    let mut _2: &mut <std::collections::btree_map::IntoIter<K, V, A> as std::ops::Drop>::drop::DropGuard<'_, std::ffi::OsString, std::option::Option<std::ffi::OsString>, std::alloc::Global>;
+    let mut _3: ();
+
+    bb0: {
+        _2 = &mut (*_1);
+        _3 = <<std::collections::btree_map::IntoIter<K, V, A> as Drop>::drop::DropGuard<'_, OsString, Option<OsString>, std::alloc::Global> as Drop>::drop(move _2) -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        return;
+    }
+}

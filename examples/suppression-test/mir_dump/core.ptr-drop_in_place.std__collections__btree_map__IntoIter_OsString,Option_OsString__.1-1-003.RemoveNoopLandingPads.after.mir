@@ -1,0 +1,28 @@
+// MIR for `std::ptr::drop_in_place` after RemoveNoopLandingPads
+
+fn drop_in_place(_1: *mut std::collections::btree_map::IntoIter<OsString, Option<OsString>>) -> () {
+    let mut _0: ();
+    let mut _2: &mut std::collections::btree_map::IntoIter<std::ffi::OsString, std::option::Option<std::ffi::OsString>>;
+    let mut _3: ();
+
+    bb0: {
+        goto -> bb4;
+    }
+
+    bb1: {
+        return;
+    }
+
+    bb2 (cleanup): {
+        resume;
+    }
+
+    bb3: {
+        goto -> bb1;
+    }
+
+    bb4: {
+        _2 = &mut (*_1);
+        _3 = <std::collections::btree_map::IntoIter<OsString, Option<OsString>> as Drop>::drop(move _2) -> [return: bb3, unwind continue];
+    }
+}

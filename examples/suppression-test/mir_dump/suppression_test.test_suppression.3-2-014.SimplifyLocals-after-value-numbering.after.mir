@@ -1,0 +1,96 @@
+// MIR for `test_suppression` after SimplifyLocals-after-value-numbering
+
+fn test_suppression() -> () {
+    let mut _0: ();
+    let _1: std::string::String;
+    let mut _2: std::result::Result<std::string::String, std::env::VarError>;
+    let _3: std::process::Output;
+    let mut _4: std::result::Result<std::process::Output, std::io::Error>;
+    let mut _5: &mut std::process::Command;
+    let mut _6: &mut std::process::Command;
+    let mut _7: &mut std::process::Command;
+    let mut _8: &mut std::process::Command;
+    let mut _9: &mut std::process::Command;
+    let mut _10: std::process::Command;
+    let mut _11: std::string::String;
+    let mut _12: bool;
+    scope 1 {
+        debug arg => _1;
+    }
+
+    bb0: {
+        _12 = const false;
+        _2 = var::<&str>(const "ARG") -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        _1 = Result::<String, VarError>::unwrap(move _2) -> [return: bb2, unwind: bb11];
+    }
+
+    bb2: {
+        _12 = const true;
+        _10 = Command::new::<&str>(const "sh") -> [return: bb3, unwind: bb13];
+    }
+
+    bb3: {
+        _9 = &mut _10;
+        _8 = Command::arg::<&str>(move _9, const "-c") -> [return: bb4, unwind: bb10];
+    }
+
+    bb4: {
+        _7 = copy _8;
+        _12 = const false;
+        _11 = move _1;
+        _6 = Command::arg::<String>(move _7, move _11) -> [return: bb5, unwind: bb10];
+    }
+
+    bb5: {
+        _5 = copy _6;
+        _4 = Command::output(move _5) -> [return: bb6, unwind: bb10];
+    }
+
+    bb6: {
+        _3 = Result::<Output, std::io::Error>::unwrap(move _4) -> [return: bb7, unwind: bb10];
+    }
+
+    bb7: {
+        drop(_3) -> [return: bb8, unwind: bb10];
+    }
+
+    bb8: {
+        drop(_10) -> [return: bb9, unwind: bb13];
+    }
+
+    bb9: {
+        _12 = const false;
+        return;
+    }
+
+    bb10 (cleanup): {
+        drop(_10) -> [return: bb13, unwind terminate(cleanup)];
+    }
+
+    bb11 (cleanup): {
+        resume;
+    }
+
+    bb12 (cleanup): {
+        drop(_1) -> [return: bb11, unwind terminate(cleanup)];
+    }
+
+    bb13 (cleanup): {
+        switchInt(copy _12) -> [0: bb11, otherwise: bb12];
+    }
+}
+
+alloc3 (size: 2, align: 1) {
+    2d 63                                           │ -c
+}
+
+alloc2 (size: 2, align: 1) {
+    73 68                                           │ sh
+}
+
+alloc1 (size: 3, align: 1) {
+    41 52 47                                        │ ARG
+}

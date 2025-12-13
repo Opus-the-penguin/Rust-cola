@@ -1,0 +1,13 @@
+// MIR for `std::ptr::drop_in_place` after SimplifyCfg-make_shim
+
+fn drop_in_place(_1: *mut String) -> () {
+    let mut _0: ();
+
+    bb0: {
+        drop(((*_1).0: std::vec::Vec<u8>)) -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        return;
+    }
+}

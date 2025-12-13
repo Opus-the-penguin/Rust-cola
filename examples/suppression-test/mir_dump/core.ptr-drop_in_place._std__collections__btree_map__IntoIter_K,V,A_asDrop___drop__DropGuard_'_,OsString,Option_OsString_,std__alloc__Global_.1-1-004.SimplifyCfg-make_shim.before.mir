@@ -1,0 +1,28 @@
+// MIR for `std::ptr::drop_in_place` before SimplifyCfg-make_shim
+
+fn drop_in_place(_1: *mut <std::collections::btree_map::IntoIter<K, V, A> as Drop>::drop::DropGuard<'_, OsString, Option<OsString>, std::alloc::Global>) -> () {
+    let mut _0: ();
+    let mut _2: &mut <std::collections::btree_map::IntoIter<K, V, A> as std::ops::Drop>::drop::DropGuard<'_, std::ffi::OsString, std::option::Option<std::ffi::OsString>, std::alloc::Global>;
+    let mut _3: ();
+
+    bb0: {
+        goto -> bb4;
+    }
+
+    bb1: {
+        return;
+    }
+
+    bb2 (cleanup): {
+        resume;
+    }
+
+    bb3: {
+        goto -> bb1;
+    }
+
+    bb4: {
+        _2 = &mut (*_1);
+        _3 = <<std::collections::btree_map::IntoIter<K, V, A> as Drop>::drop::DropGuard<'_, OsString, Option<OsString>, std::alloc::Global> as Drop>::drop(move _2) -> [return: bb3, unwind continue];
+    }
+}

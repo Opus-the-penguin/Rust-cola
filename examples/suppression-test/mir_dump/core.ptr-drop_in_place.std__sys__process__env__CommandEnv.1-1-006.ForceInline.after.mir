@@ -1,0 +1,13 @@
+// MIR for `std::ptr::drop_in_place` after ForceInline
+
+fn drop_in_place(_1: *mut std::sys::process::env::CommandEnv) -> () {
+    let mut _0: ();
+
+    bb0: {
+        drop(((*_1).2: std::collections::BTreeMap<std::ffi::OsString, std::option::Option<std::ffi::OsString>>)) -> [return: bb1, unwind continue];
+    }
+
+    bb1: {
+        return;
+    }
+}

@@ -1,0 +1,37 @@
+digraph RegionInferenceContext {
+    r0[label="\'?0 (\'static)"][shape="box"];
+    r1[label="\'?1"][shape="box"];
+    r2[label="\'?2 (ex<\'_>)"][shape="box"];
+    r3[label="\'?3 (ex<\'_>)"][shape="box"];
+    r4[label="\'?4 (ex<\'_>)"][shape="box"];
+    r5[label="\'?5 (ex<\'_>)"][shape="box"];
+    r6[label="\'?6 (ex<\'_>)"][shape="box"];
+    r7[label="\'?7 (ex<\'_>)"][shape="box"];
+    r8[label="\'?8 (ex<\'_>)"][shape="box"];
+    r9[label="\'?9 (ex<\'_>)"][shape="box"];
+    r10[label="\'?10 (ex<\'_>)"][shape="box"];
+    r11[label="\'?11 (ex<\'_>)"][shape="box"];
+    r12[label="\'?12 (ex<\'_>)"][shape="box"];
+    r13[label="\'?13 (ex<\'_>)"][shape="box"];
+    r14[label="\'?14 (ex<\'_>)"][shape="box"];
+    r15[label="\'?15 (ex<\'_>)"][shape="box"];
+    r16[label="\'?16 (ex<\'_>)"][shape="box"];
+    r17[label="\'?17 (ex<\'_>)"][shape="box"];
+    r18[label="\'?18 (ex<\'_>)"][shape="box"];
+    r19[label="\'?19 (ex<\'_>)"][shape="box"];
+    r3 -> r2[label="bb0[2]"];
+    r16 -> r4[label="bb2[10]"];
+    r4 -> r16[label="bb2[10]"];
+    r5 -> r4[label="bb2[10]"];
+    r6 -> r15[label="bb3[0]"];
+    r17 -> r14[label="bb3[1]"];
+    r15 -> r17[label="bb3[1]"];
+    r8 -> r7[label="bb3[1]"];
+    r14 -> r9[label="bb4[0]"];
+    r9 -> r13[label="bb4[0]"];
+    r18 -> r12[label="bb4[4]"];
+    r13 -> r18[label="bb4[4]"];
+    r12 -> r10[label="bb5[0]"];
+    r10 -> r11[label="bb5[0]"];
+    r11 -> r19[label="bb5[3]"];
+}

@@ -1,0 +1,130 @@
+// MIR for `test_suppression` before PromoteTemps
+
+| User Type Annotations
+| 0: user_ty: Canonical { value: TypeOf(DefId(1:5875 ~ std[40d4]::process::{impl#22}::new), UserArgs { args: [^0], user_self_ty: Some(UserSelfTy { impl_def_id: DefId(1:5874 ~ std[40d4]::process::{impl#22}), self_ty: std::process::Command }) }), max_universe: U0, variables: [Ty { ui: U0, sub_root: 0 }] }, span: src/lib.rs:6:5: 6:17, inferred_ty: fn(&str) -> std::process::Command {std::process::Command::new::<&str>}
+|
+fn test_suppression() -> () {
+    let mut _0: ();
+    let _1: std::string::String;
+    let mut _2: std::result::Result<std::string::String, std::env::VarError>;
+    let _3: std::process::Output;
+    let mut _4: std::result::Result<std::process::Output, std::io::Error>;
+    let mut _5: &mut std::process::Command;
+    let mut _6: &mut std::process::Command;
+    let mut _7: &mut std::process::Command;
+    let mut _8: &mut std::process::Command;
+    let mut _9: &mut std::process::Command;
+    let mut _10: std::process::Command;
+    let mut _11: std::string::String;
+    scope 1 {
+        debug arg => _1;
+    }
+
+    bb0: {
+        StorageLive(_1);
+        StorageLive(_2);
+        _2 = var::<&str>(const "ARG") -> [return: bb1, unwind: bb16];
+    }
+
+    bb1: {
+        _1 = Result::<String, VarError>::unwrap(move _2) -> [return: bb2, unwind: bb15];
+    }
+
+    bb2: {
+        StorageDead(_2);
+        FakeRead(ForLet(None), _1);
+        StorageLive(_3);
+        StorageLive(_4);
+        StorageLive(_5);
+        StorageLive(_6);
+        StorageLive(_7);
+        StorageLive(_8);
+        StorageLive(_9);
+        StorageLive(_10);
+        _10 = Command::new::<&str>(const "sh") -> [return: bb3, unwind: bb14];
+    }
+
+    bb3: {
+        _9 = &mut _10;
+        _8 = Command::arg::<&str>(move _9, const "-c") -> [return: bb4, unwind: bb13];
+    }
+
+    bb4: {
+        _7 = &mut (*_8);
+        StorageDead(_9);
+        StorageLive(_11);
+        _11 = move _1;
+        _6 = Command::arg::<String>(move _7, move _11) -> [return: bb5, unwind: bb12];
+    }
+
+    bb5: {
+        _5 = &mut (*_6);
+        StorageDead(_11);
+        StorageDead(_7);
+        _4 = Command::output(move _5) -> [return: bb6, unwind: bb13];
+    }
+
+    bb6: {
+        StorageDead(_5);
+        _3 = Result::<Output, std::io::Error>::unwrap(move _4) -> [return: bb7, unwind: bb11];
+    }
+
+    bb7: {
+        StorageDead(_4);
+        drop(_3) -> [return: bb8, unwind: bb13];
+    }
+
+    bb8: {
+        drop(_10) -> [return: bb9, unwind: bb14];
+    }
+
+    bb9: {
+        StorageDead(_10);
+        StorageDead(_8);
+        StorageDead(_6);
+        StorageDead(_3);
+        _0 = const ();
+        drop(_1) -> [return: bb10, unwind: bb16];
+    }
+
+    bb10: {
+        StorageDead(_1);
+        return;
+    }
+
+    bb11 (cleanup): {
+        drop(_4) -> [return: bb13, unwind terminate(cleanup)];
+    }
+
+    bb12 (cleanup): {
+        drop(_11) -> [return: bb13, unwind terminate(cleanup)];
+    }
+
+    bb13 (cleanup): {
+        drop(_10) -> [return: bb14, unwind terminate(cleanup)];
+    }
+
+    bb14 (cleanup): {
+        drop(_1) -> [return: bb16, unwind terminate(cleanup)];
+    }
+
+    bb15 (cleanup): {
+        drop(_2) -> [return: bb16, unwind terminate(cleanup)];
+    }
+
+    bb16 (cleanup): {
+        resume;
+    }
+}
+
+alloc3 (size: 2, align: 1) {
+    2d 63                                           │ -c
+}
+
+alloc2 (size: 2, align: 1) {
+    73 68                                           │ sh
+}
+
+alloc1 (size: 3, align: 1) {
+    41 52 47                                        │ ARG
+}

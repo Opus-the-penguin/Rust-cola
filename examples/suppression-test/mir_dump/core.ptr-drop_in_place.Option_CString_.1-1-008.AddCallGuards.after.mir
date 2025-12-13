@@ -1,0 +1,20 @@
+// MIR for `std::ptr::drop_in_place` after AddCallGuards
+
+fn drop_in_place(_1: *mut Option<CString>) -> () {
+    let mut _0: ();
+    let mut _2: isize;
+    let mut _3: isize;
+
+    bb0: {
+        _2 = discriminant((*_1));
+        switchInt(move _2) -> [0: bb1, otherwise: bb2];
+    }
+
+    bb1: {
+        return;
+    }
+
+    bb2: {
+        drop((((*_1) as Some).0: std::ffi::CString)) -> [return: bb1, unwind continue];
+    }
+}

@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI/CD Stability**: Removed excessive debug logging that was causing CI build failures.
 - **Code Cleanup**: Fixed numerous unused code warnings in `mir-extractor` to ensure clean builds.
 
+### Documentation
+- **User Guide**: Added `docs/USER_GUIDE.md` with concise instructions on features like False Positive Suppression.
+
 ## [0.2.2] - 2025-12-12
 
 ### Added

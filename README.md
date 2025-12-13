@@ -56,6 +56,11 @@ cargo build --release
 
 Binary: `target/release/cargo-cola`
 
+## Documentation
+
+- [User Guide](docs/USER_GUIDE.md): Detailed instructions on features like False Positive Suppression.
+- [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md): How to write new security rules.
+
 ## Output Artifacts
 
 By default, all artifacts are written to `out/cola/`:

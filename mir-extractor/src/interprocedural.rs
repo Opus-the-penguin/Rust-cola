@@ -1238,17 +1238,6 @@ impl InterProceduralAnalysis {
         // Debug: print all closures being analyzed
         let all_closures = self.closure_registry.get_all_closures();
         
-        // Check if this is the interprocedural crate (has test_closure_capture)
-        let has_test_closure = all_closures.iter().any(|c| c.name.contains("test_closure"));
-        if has_test_closure {
-            // eprintln!("[DEBUG] Found test_closure in {} closures", all_closures.len());
-            for c in all_closures.iter().filter(|c| c.name.contains("test_closure") || c.name.contains("async")) {
-                // eprintln!("[DEBUG] Closure: {} -> parent: {}", c.name, c.parent_function);
-                // eprintln!("[DEBUG]   has_tainted_captures: {}", c.has_tainted_captures());
-                // eprintln!("[DEBUG]   captured_vars: {:?}", c.captured_vars);
-            }
-        }
-        
         for closure_info in all_closures {
             // Skip if already found flow for this closure
             if flows.iter().any(|f| f.sink_function == closure_info.name) {

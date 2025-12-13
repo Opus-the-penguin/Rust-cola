@@ -1978,11 +1978,15 @@ impl Rule for UntrustedEnvInputRule {
             // Convert each taint flow into a finding
             for flow in flows {
                 if !flow.sanitized {
+                    // Try to extract span from sink line
+                    let sink_span = extract_span_from_mir_line(&flow.sink.sink_line);
+                    let span = sink_span.or(function.span.clone());
+                    
                     let finding = flow.to_finding(
                         &self.metadata,
                         &function.name,
                         &function.signature,
-                        function.span.clone(),
+                        span,
                     );
                     findings.push(finding);
                 }
@@ -8728,7 +8732,7 @@ impl Rule for EnvVarLiteralRule {
                         function: function.name.clone(),
                         function_signature: function.signature.clone(),
                         evidence: vec![line.clone()],
-                        span: None,
+                        span: extract_span_from_mir_line(line).or(function.span.clone()),
                     });
                     break; // One finding per function is enough
                 }
@@ -19312,7 +19316,7 @@ fn run_cargo_rustc(crate_path: &Path, target: &RustcTarget) -> Result<String> {
     cmd.current_dir(crate_path);
     cmd.arg("rustc");
     target.apply_to(&mut cmd);
-    cmd.args(["--", "-Zunpretty=mir"]);
+    cmd.args(["--", "-Zunpretty=mir", "-Zmir-include-spans"]);
 
     let output = cmd
         .output()
@@ -19402,6 +19406,13 @@ fn extract_artifacts(
 fn attach_hir_metadata_to_mir(mir: &mut MirPackage, hir: &HirPackage) {
     let mut metadata_by_path = HashMap::with_capacity(hir.functions.len());
     let mut metadata_by_simple_name: HashMap<String, Vec<String>> = HashMap::new();
+    let mut span_by_path = HashMap::new();
+
+    for item in &hir.items {
+        if let Some(span) = &item.span {
+            span_by_path.insert(item.def_path.clone(), span.clone());
+        }
+    }
 
     for body in &hir.functions {
         metadata_by_path.insert(
@@ -19429,18 +19440,30 @@ fn attach_hir_metadata_to_mir(mir: &mut MirPackage, hir: &HirPackage) {
             continue;
         }
 
+        let mut matched_def_path = None;
+
         if let Some(def_path) = extract_def_path_from_signature(&function.signature) {
             if let Some(meta) = metadata_by_path.remove(&def_path) {
                 function.hir = Some(meta);
-                continue;
+                matched_def_path = Some(def_path.clone());
             }
         }
 
-        if let Some(candidates) = metadata_by_simple_name.get(function.name.as_str()) {
-            if candidates.len() == 1 {
-                if let Some(meta) = metadata_by_path.remove(&candidates[0]) {
-                    function.hir = Some(meta);
+        if function.hir.is_none() {
+            if let Some(candidates) = metadata_by_simple_name.get(function.name.as_str()) {
+                if candidates.len() == 1 {
+                    let def_path = candidates[0].clone();
+                    if let Some(meta) = metadata_by_path.remove(&def_path) {
+                        function.hir = Some(meta);
+                        matched_def_path = Some(def_path.clone());
+                    }
                 }
+            }
+        }
+
+        if let Some(def_path) = matched_def_path {
+            if let Some(span) = span_by_path.get(&def_path) {
+                function.span = Some(span.clone());
             }
         }
     }
@@ -19845,6 +19868,45 @@ fn extract_def_path_from_signature(signature: &str) -> Option<String> {
         return None;
     }
     Some(path.to_string())
+}
+
+pub fn extract_span_from_mir_line(line: &str) -> Option<SourceSpan> {
+    // Example: ... // scope 0 at src/lib.rs:4:15: 4:35
+    if let Some(idx) = line.rfind("// scope ") {
+        let comment = &line[idx..];
+        if let Some(at_idx) = comment.find(" at ") {
+            let location = comment[at_idx + 4..].trim();
+            // location is like "src/lib.rs:4:15: 4:35"
+            
+            // Parse backwards: end_column, end_line, start_column, start_line, file
+            // Format: file:start_line:start_column: end_line:end_column
+            
+            if let Some((rest, end_column_str)) = location.rsplit_once(':') {
+                if let Ok(end_column) = end_column_str.trim().parse::<u32>() {
+                    if let Some((rest, end_line_str)) = rest.rsplit_once(':') {
+                        if let Ok(end_line) = end_line_str.trim().parse::<u32>() {
+                            if let Some((rest, start_column_str)) = rest.rsplit_once(':') {
+                                if let Ok(start_column) = start_column_str.trim().parse::<u32>() {
+                                    if let Some((file_path, start_line_str)) = rest.rsplit_once(':') {
+                                        if let Ok(start_line) = start_line_str.trim().parse::<u32>() {
+                                            return Some(SourceSpan {
+                                                file: file_path.trim().replace('\\', "/"),
+                                                start_line,
+                                                start_column,
+                                                end_line,
+                                                end_column,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 fn extract_span(signature: &str) -> Option<SourceSpan> {

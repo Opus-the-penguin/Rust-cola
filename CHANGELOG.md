@@ -5,6 +5,15 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2025-12-12
+
+### Added
+- **False Positive Suppression**: Added support for `// rust-cola:ignore RuleID` comments to suppress findings. This works by matching the finding's location with the ignore comment on the same or previous line.
+- **MIR Span Extraction**: Improved MIR extraction to include source code spans (`-Zmir-include-spans`), enabling accurate mapping of findings to source lines for suppression and reporting.
+
+### Fixed
+- **macOS Dynamic Linking**: Resolved `dyld` library path issues when running with the `hir-driver` feature on macOS.
+
 ## [0.2.1] - 2025-12-12
 
 ### Added

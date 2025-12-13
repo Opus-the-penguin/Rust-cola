@@ -17,62 +17,19 @@ query-filters:
 # All other paths, especially examples/* with test vulnerabilities, are excluded by default
 paths:
   - mir-extractor
+  - mir-advanced-rules
   - cargo-cola
   - docs
-  - examples/simple
-  - examples/hir-typeck-repro
 
 # Additional exclusions to ensure test crates are never analyzed
+# These directories contain intentional vulnerabilities for testing Rust-cola detection rules
 paths-ignore:
-  - 'examples/allocator-mismatch-ffi/**'
-  - 'examples/blocking-sleep-async/**'
-  - 'examples/cstring-pointer-use/**'
-  - 'examples/hardcoded-crypto-keys/**'
-  - 'examples/openoptions-truncate/**'
-  - 'examples/packed-field-reference/**'
-  - 'examples/panic-in-drop/**'
-  - 'examples/send-sync-bounds/**'
-  - 'examples/unsafe-cstring-pointer/**'
-  - 'examples/vec-set-len-misuse/**'
-  - 'examples/predictable-randomness/**'
-  - 'examples/env-var-literals/**'
-  - 'examples/invisible-unicode/**'
-  - 'examples/crate-wide-allow/**'
-  - 'examples/misordered-assert-eq/**'
-  - 'examples/io-result-try/**'
-  - 'examples/local-refcell/**'
-  - 'examples/untrimmed-stdin/**'
-  - 'examples/infinite-iterators/**'
-  - 'examples/unix-permissions-octal/**'
-  - 'examples/openoptions-inconsistent/**'
-  - 'examples/unnecessary-borrow-mut/**'
-  - 'examples/absolute-path-join/**'
-  - 'examples/ctor-dtor-std/**'
-  - 'examples/connection-string-password/**'
+  - 'examples/**'
+  - 'mir_dump/**'
+  - 'test_output/**'
+  - 'out/**'
+  - 'target/**'
 
-# Note: The following examples are intentionally excluded (not listed above):
-# - examples/allocator-mismatch-ffi (RUSTCOLA017 test cases)
-# - examples/blocking-sleep-async (RUSTCOLA037 test cases)
-# - examples/cstring-pointer-use (RUSTCOLA036 test cases)
-# - examples/hardcoded-crypto-keys (RUSTCOLA039 test cases)
-# - examples/openoptions-truncate (RUSTCOLA032 test cases)
-# - examples/packed-field-reference (RUSTCOLA035 test cases)
-# - examples/panic-in-drop (RUSTCOLA040 test cases)
-# - examples/send-sync-bounds (RUSTCOLA015 test cases)
-# - examples/unsafe-cstring-pointer (RUSTCOLA036 test cases)
-# - examples/vec-set-len-misuse (RUSTCOLA038 test cases)
-# - examples/predictable-randomness (RUSTCOLA046 test cases)
-# - examples/env-var-literals (RUSTCOLA047 test cases)
-# - examples/invisible-unicode (RUSTCOLA048 test cases)
-# - examples/crate-wide-allow (RUSTCOLA049 test cases)
-# - examples/misordered-assert-eq (RUSTCOLA050 test cases)
-# - examples/io-result-try (RUSTCOLA051 test cases)
-# - examples/local-refcell (RUSTCOLA052 test cases)
-# - examples/untrimmed-stdin (RUSTCOLA053 test cases)
-# - examples/infinite-iterators (RUSTCOLA054 test cases)
-# - examples/unix-permissions-octal (RUSTCOLA055 test cases)
-# - examples/openoptions-inconsistent (RUSTCOLA056 test cases)
-# - examples/unnecessary-borrow-mut (RUSTCOLA057 test cases)
-# - examples/absolute-path-join (RUSTCOLA058 test cases)
-# - examples/ctor-dtor-std (RUSTCOLA059 test cases)
-# - examples/connection-string-password (RUSTCOLA060 test cases)
+# Note: The examples/ directory contains test crates with intentional vulnerabilities
+# for testing Rust-cola security detection rules. These are excluded from CodeQL
+# analysis to prevent false positives in the security dashboard.

@@ -541,6 +541,36 @@ fn main() -> Result<()> {
     write_findings_json(&findings_path, &aggregated_findings)?;
     write_sarif_json(&sarif_path, &aggregated_sarif)?;
 
+    // Write AST JSON (workspace mode - automatic unless --no-ast)
+    let workspace_ast_path: Option<PathBuf> = if !args.no_ast {
+        let ast_path = resolve_output_path(
+            args.ast_json.clone(),
+            &args.out_dir,
+            "ast.json",
+            &timestamp,
+        );
+        let mut ast_packages = Vec::new();
+        for output in &package_outputs {
+            let crate_root = PathBuf::from(&output.package.crate_root);
+            if let Ok(ast_package) = collect_ast_package(&crate_root, &output.package.crate_name) {
+                ast_packages.push(ast_package);
+            }
+        }
+        if !ast_packages.is_empty() {
+            let workspace_ast = WorkspaceAst {
+                workspace_root: workspace_root.display().to_string(),
+                packages: ast_packages,
+            };
+            write_workspace_ast_json(&ast_path, &workspace_ast)?;
+            println!("- AST JSON: {}", ast_path.display());
+            Some(ast_path)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     // Generate LLM report if requested (workspace mode)
     if let Some(llm_path) = &args.llm_report {
         let project_name = workspace_root
@@ -609,34 +639,43 @@ fn main() -> Result<()> {
         None
     };
 
+    // Write HIR JSON (workspace mode - automatic when hir-driver feature is enabled)
     #[cfg(feature = "hir-driver")]
-    let mut hir_summary_dir: Option<PathBuf> = None;
-    #[cfg(feature = "hir-driver")]
-    if let Some(hir_base) = args.hir_json.clone() {
-        if package_outputs.len() > 1 {
-            if hir_base.extension().is_some() {
-                return Err(anyhow!(
-                    "--hir-json must point to a directory when analyzing multiple crates"
-                ));
+    let hir_summary_path: Option<PathBuf> = {
+        // For workspaces, create a combined HIR file similar to AST
+        let hir_path = resolve_output_path(
+            args.hir_json.clone(),
+            &args.out_dir,
+            "hir.json",
+            &timestamp,
+        );
+        
+        let mut hir_packages = Vec::new();
+        for output in &package_outputs {
+            if let Some(hir_package) = &output.hir {
+                hir_packages.push(hir_package.clone());
             }
-            fs::create_dir_all(&hir_base).context("create HIR output directory")?;
-            for output in &package_outputs {
-                if let Some(hir_package) = &output.hir {
-                    let file_path =
-                        hir_base.join(format!("{}.hir.json", output.package.crate_name));
-                    mir_extractor::write_hir_json(&file_path, hir_package)?;
-                } else {
-                    eprintln!(
-                        "cargo-cola: no HIR captured for crate {}; skipping serialization",
-                        output.package.crate_name
-                    );
-                }
-            }
-            hir_summary_dir = Some(hir_base);
         }
-    }
+        
+        if !hir_packages.is_empty() {
+            // Write combined HIR as array of packages
+            let combined = serde_json::json!({
+                "workspace_root": workspace_root.display().to_string(),
+                "packages": hir_packages
+            });
+            let json = serde_json::to_string_pretty(&combined)
+                .context("serialize workspace HIR")?;
+            fs::write(&hir_path, json)
+                .with_context(|| format!("write workspace HIR to {}", hir_path.display()))?;
+            println!("- HIR JSON: {}", hir_path.display());
+            Some(hir_path)
+        } else {
+            eprintln!("cargo-cola: no HIR captured for any crates in workspace");
+            None
+        }
+    };
     #[cfg(not(feature = "hir-driver"))]
-    let hir_summary_dir: Option<PathBuf> = None;
+    let hir_summary_path: Option<PathBuf> = None;
 
     // Write manifest.json (workspace mode)
     write_manifest(
@@ -647,8 +686,8 @@ fn main() -> Result<()> {
         &mir_json_path,
         &findings_path,
         &sarif_path,
-        None, // AST not yet supported in workspace mode
-        hir_summary_dir.as_deref(),
+        workspace_ast_path.as_deref(),
+        hir_summary_path.as_deref(),
         workspace_llm_prompt_path.as_deref(),
         workspace_report_path.as_deref(),
     )?;
@@ -672,10 +711,6 @@ fn main() -> Result<()> {
     if let Some(prompt_path) = &args.llm_prompt {
         let resolved = resolve_report_path(prompt_path, &args.out_dir, "llm-prompt.md");
         println!("- LLM Prompt: {}", resolved.display());
-    }
-    #[cfg(feature = "hir-driver")]
-    if let Some(dir) = hir_summary_dir {
-        println!("- HIR JSON dir: {} (one file per crate)", dir.display());
     }
 
     if let Some(rendered) = format_findings_output(&aggregated_findings, &aggregated_rules) {
@@ -2395,6 +2430,13 @@ fn severity_for_advanced_rule(rule_id: &str) -> Severity {
 // AST Extraction and Output
 // ============================================================================
 
+/// Represents the AST for an entire workspace (multiple crates)
+#[derive(Clone, Debug, Serialize)]
+struct WorkspaceAst {
+    workspace_root: String,
+    packages: Vec<AstPackage>,
+}
+
 /// Represents the AST package for a crate
 #[derive(Clone, Debug, Serialize)]
 struct AstPackage {
@@ -2612,6 +2654,15 @@ fn write_ast_json(path: &Path, ast_package: &AstPackage) -> Result<()> {
         .context("serialize AST package")?;
     fs::write(path, json)
         .with_context(|| format!("write AST JSON to {}", path.display()))?;
+    Ok(())
+}
+
+/// Write workspace AST (multiple crates) to JSON file
+fn write_workspace_ast_json(path: &Path, workspace_ast: &WorkspaceAst) -> Result<()> {
+    let json = serde_json::to_string_pretty(workspace_ast)
+        .context("serialize workspace AST")?;
+    fs::write(path, json)
+        .with_context(|| format!("write workspace AST JSON to {}", path.display()))?;
     Ok(())
 }
 

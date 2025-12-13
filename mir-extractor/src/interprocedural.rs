@@ -392,7 +392,7 @@ impl CallGraph {
                 .filter(|c| nodes.contains_key(&c.callee))
                 .count();
             in_degree.insert(name.clone(), internal_callees);
-            println!("[DEBUG] In-degree for {}: {}", name, internal_callees);
+            // println!("[DEBUG] In-degree for {}: {}", name, internal_callees);
         }
         
         // Start with leaf functions (no internal callees)
@@ -402,7 +402,7 @@ impl CallGraph {
             .map(|(name, _)| name.clone())
             .collect();
             
-        println!("[DEBUG] Initial queue size: {}", queue.len());
+        // println!("[DEBUG] Initial queue size: {}", queue.len());
         
         // Process nodes in bottom-up order
         while let Some(current) = queue.pop_front() {
@@ -410,7 +410,7 @@ impl CallGraph {
             
             // For each function that calls this one
             if let Some(node) = nodes.get(&current) {
-                println!("[DEBUG] Processed {}, notifying callers: {:?}", current, node.callers);
+                // println!("[DEBUG] Processed {}, notifying callers: {:?}", current, node.callers);
                 for caller in &node.callers {
                     if let Some(degree) = in_degree.get_mut(caller) {
                         if *degree > 0 {
@@ -1106,12 +1106,12 @@ impl InterProceduralAnalysis {
                 
                 // Store summary
                 self.summaries.insert(function_name.clone(), summary.clone());
-                println!("[DEBUG] Stored summary for: {}", function_name);
+                // println!("[DEBUG] Stored summary for: {}", function_name);
                 if !summary.propagation_rules.is_empty() {
-                    println!("[DEBUG]   Propagation: {:?}", summary.propagation_rules);
+                    // println!("[DEBUG]   Propagation: {:?}", summary.propagation_rules);
                 }
                 if !matches!(summary.return_taint, ReturnTaint::Clean) {
-                    println!("[DEBUG]   Return: {:?}", summary.return_taint);
+                    // println!("[DEBUG]   Return: {:?}", summary.return_taint);
                 }
                 
                 // Update call graph node
@@ -1241,11 +1241,11 @@ impl InterProceduralAnalysis {
         // Check if this is the interprocedural crate (has test_closure_capture)
         let has_test_closure = all_closures.iter().any(|c| c.name.contains("test_closure"));
         if has_test_closure {
-            eprintln!("[DEBUG] Found test_closure in {} closures", all_closures.len());
+            // eprintln!("[DEBUG] Found test_closure in {} closures", all_closures.len());
             for c in all_closures.iter().filter(|c| c.name.contains("test_closure") || c.name.contains("async")) {
-                eprintln!("[DEBUG] Closure: {} -> parent: {}", c.name, c.parent_function);
-                eprintln!("[DEBUG]   has_tainted_captures: {}", c.has_tainted_captures());
-                eprintln!("[DEBUG]   captured_vars: {:?}", c.captured_vars);
+                // eprintln!("[DEBUG] Closure: {} -> parent: {}", c.name, c.parent_function);
+                // eprintln!("[DEBUG]   has_tainted_captures: {}", c.has_tainted_captures());
+                // eprintln!("[DEBUG]   captured_vars: {:?}", c.captured_vars);
             }
         }
         
@@ -1268,14 +1268,14 @@ impl InterProceduralAnalysis {
                         source_patterns.iter().any(|pat| callee.callee.contains(pat))
                     });
                     if closure_info.name.contains("test_closure") {
-                        eprintln!("[DEBUG]   parent_calls_source: {}", result);
-                        eprintln!("[DEBUG]   parent callees: {:?}", node.callees.iter().map(|c| &c.callee).collect::<Vec<_>>());
+                        // eprintln!("[DEBUG]   parent_calls_source: {}", result);
+                        // eprintln!("[DEBUG]   parent callees: {:?}", node.callees.iter().map(|c| &c.callee).collect::<Vec<_>>());
                     }
                     result
                 })
                 .unwrap_or_else(|| {
                     if closure_info.name.contains("test_closure") {
-                        eprintln!("[DEBUG]   parent '{}' NOT found in call_graph", closure_info.parent_function);
+                        // eprintln!("[DEBUG]   parent '{}' NOT found in call_graph", closure_info.parent_function);
                     }
                     false
                 });

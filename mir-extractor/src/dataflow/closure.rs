@@ -338,16 +338,16 @@ impl ClosureRegistryBuilder {
     /// Process a single function to find closure creations
     fn process_function(&mut self, function: &MirFunction) {
         if function.name.contains("execute_async") {
-            eprintln!("[DEBUG] Processing function: {}", function.name);
+            // eprintln!("[DEBUG] Processing function: {}", function.name);
         }
         for line in &function.body {
             if function.name.contains("execute_async") {
-                eprintln!("[DEBUG] Line: {}", line);
+                // eprintln!("[DEBUG] Line: {}", line);
             }
             // Look for closure creation
             if let Some((closure_var, location, captures)) = parse_closure_creation(line) {
                 if function.name.contains("execute_async") {
-                    eprintln!("[DEBUG] Found closure creation: var={}, loc={}, captures={:?}", closure_var, location, captures);
+                    // eprintln!("[DEBUG] Found closure creation: var={}, loc={}, captures={:?}", closure_var, location, captures);
                 }
                 // Try to find which closure this refers to based on parent function
                 // The location string contains file:line:col, which we can use to match

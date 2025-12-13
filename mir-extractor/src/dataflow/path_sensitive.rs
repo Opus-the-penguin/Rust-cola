@@ -152,7 +152,7 @@ impl PathSensitiveTaintAnalysis {
         initial_taint: HashMap<String, TaintState>,
         callee_summaries: Option<&HashMap<String, DataflowSummary>>
     ) -> PathSensitiveResult {
-        println!("[DEBUG] Processing function: {}", function.name);
+        // println!("[DEBUG] Processing function: {}", function.name);
         let paths = self.cfg.get_all_paths();
         
         let mut path_results = Vec::new();
@@ -563,14 +563,14 @@ impl PathSensitiveTaintAnalysis {
                                 for (name, summary) in summaries {
                                     if name.ends_with(&suffix) {
                                         if summary.returns_tainted {
-                                            println!("[DEBUG] Closure/Coroutine {} returns tainted data, propagating to {}", name, lhs);
+                                            // println!("[DEBUG] Closure/Coroutine {} returns tainted data, propagating to {}", name, lhs);
                                             let taint = TaintState::Tainted {
                                                 source_type: "propagated".to_string(),
                                                 source_location: format!("via {}", name),
                                             };
                                             Self::set_field_taint_state(field_map, &lhs, &taint);
                                         } else {
-                                            println!("[DEBUG] Closure/Coroutine {} found but returns CLEAN", name);
+                                            // println!("[DEBUG] Closure/Coroutine {} found but returns CLEAN", name);
                                         }
                                         
                                         // Check for ParamToSink (closure environment flows to sink)
@@ -587,7 +587,7 @@ impl PathSensitiveTaintAnalysis {
                                         if has_sink_flow {
                                             // If closure reads from environment and sinks it, we need to check captured vars
                                             // This is handled in analyze_closure, but here we can flag the closure object
-                                            println!("[DEBUG] Closure {} has ParamToSink flow", name);
+                                            // println!("[DEBUG] Closure {} has ParamToSink flow", name);
                                         }
                                     }
                                 }
@@ -648,7 +648,7 @@ impl PathSensitiveTaintAnalysis {
                             if match_found {
                                 // Check explicit return taint
                                 if summary.returns_tainted {
-                                    println!("[DEBUG] Function call {} returns tainted data, propagating to {}", func_name_full, lhs);
+                                    // println!("[DEBUG] Function call {} returns tainted data, propagating to {}", func_name_full, lhs);
                                     propagated_taint = Some(TaintState::Tainted {
                                         source_type: "propagated".to_string(),
                                         source_location: format!("via {}", func_name_full),
@@ -692,7 +692,7 @@ impl PathSensitiveTaintAnalysis {
                                                 if let Some(dest_arg_str) = args.get(*to) {
                                                     // Destination might be "move _1" or "&mut _1"
                                                     if let Some(dest_var) = Self::extract_variable(dest_arg_str) {
-                                                        println!("[DEBUG] Function call {} propagates taint from arg {} to arg {}", func_name_full, from, to);
+                                                        // println!("[DEBUG] Function call {} propagates taint from arg {} to arg {}", func_name_full, from, to);
                                                         let taint = TaintState::Tainted {
                                                             source_type: "propagated".to_string(),
                                                             source_location: format!("via {} (arg {} -> arg {})", func_name_full, from, to),
@@ -740,10 +740,10 @@ impl PathSensitiveTaintAnalysis {
                                         source_location: format!("via {}", func_name_full),
                                     });
                                 } else if func_name_short == "into_future" {
-                                     println!("[DEBUG] Heuristic arg check failed for arg '{}' (var: {:?})", first_arg, Self::extract_variable(first_arg));
+                                     // println!("[DEBUG] Heuristic arg check failed for arg '{}' (var: {:?})", first_arg, Self::extract_variable(first_arg));
                                 }
                             } else if func_name_short == "into_future" {
-                                 println!("[DEBUG] Heuristic mismatch: '{}' not in list", func_name_short);
+                                 // println!("[DEBUG] Heuristic mismatch: '{}' not in list", func_name_short);
                             }
                         }
                     }
@@ -776,7 +776,7 @@ impl PathSensitiveTaintAnalysis {
                             if is_src_tainted {
                                 // Propagate to dest
                                 if let Some(dest_var) = Self::extract_variable(dest_arg) {
-                                    println!("[DEBUG] Heuristic: Function call {} propagates taint from arg 1 to arg 0 ({})", func_name_full, dest_var);
+                                    // println!("[DEBUG] Heuristic: Function call {} propagates taint from arg 1 to arg 0 ({})", func_name_full, dest_var);
                                     let taint = TaintState::Tainted {
                                         source_type: "propagated".to_string(),
                                         source_location: format!("via {}", func_name_full),

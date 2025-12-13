@@ -44,7 +44,7 @@ fn test_advanced_rules() {
     
     // Debug: Print all functions in the package
     for func in &package.functions {
-        println!("[DEBUG] Package contains function: {}", func.name);
+        // println!("[DEBUG] Package contains function: {}", func.name);
     }
 
     analysis.analyze(&package).expect("Analysis failed");

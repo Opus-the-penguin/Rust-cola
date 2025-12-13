@@ -48,6 +48,15 @@
   - Implemented taint tracking across function boundaries using function summaries.
   - Refactored shared types for better modularity.
   - Verified with path-sensitive analysis tests.
+- ✅ Phase 3.5.2: Mutable Reference Propagation COMPLETE (Dec 12, 2025)
+  - Implemented taint tracking for mutable references (e.g., `dest.push_str(src)`).
+  - Added `final_taint` tracking to `PathAnalysisResult`.
+  - Added `ParamToParam` propagation rules in function summaries.
+  - Added heuristics for standard library functions (`push_str`, `append`, etc.).
+- ✅ Phase 3.4: False Positive Reduction COMPLETE (Dec 12, 2025)
+  - Implemented validation guard detection (`is_safe_input`, `validate_input`).
+  - Reduced false positives in `test_validation_check` from 1 to 0.
+  - Maintained 100% recall on vulnerable cases.
 - ✅ Phase 3.5.1: Branch-sensitive CFG analysis COMPLETE (Nov 25, 2025)
 - **100% recall** (11/11 vulnerable cases detected) ✅
 - **0% false positive rate** (maintained) ✅

@@ -50,6 +50,9 @@ pub struct PathAnalysisResult {
     
     /// Whether the return value (_0) is tainted at the end of the path
     pub return_tainted: bool,
+    
+    /// Final taint state of variables at the end of the path
+    pub final_taint: HashMap<String, TaintState>,
 }
 
 #[derive(Debug, Clone)]
@@ -220,6 +223,16 @@ impl PathSensitiveTaintAnalysis {
             super::field::FieldTaint::Tainted { .. }
         );
         
+        // Extract final taint for parameters
+        let mut final_taint = HashMap::new();
+        for i in 1..=10 { // Check first 10 params
+            let var = format!("_{}", i);
+            let taint = field_map.get_field_taint(&super::field::FieldPath::whole_var(var.clone()));
+            if let super::field::FieldTaint::Tainted { source_type, source_location } = taint {
+                final_taint.insert(var, TaintState::Tainted { source_type, source_location });
+            }
+        }
+        
         PathAnalysisResult {
             path: path.to_vec(),
             has_vulnerable_sink,
@@ -227,6 +240,7 @@ impl PathSensitiveTaintAnalysis {
             source_calls,
             sanitizer_calls,
             return_tainted,
+            final_taint,
         }
     }
     
@@ -274,6 +288,7 @@ impl PathSensitiveTaintAnalysis {
             source_calls,
             sanitizer_calls,
             return_tainted,
+            final_taint: current_taint,
         }
     }
     
@@ -661,6 +676,32 @@ impl PathSensitiveTaintAnalysis {
                                                 });
                                             }
                                         }
+                                    } else if let TaintPropagation::ParamToParam { from, to } = prop {
+                                        // Check if source argument is tainted
+                                        if let Some(src_arg_str) = args.get(*from) {
+                                            let is_tainted = if parser::contains_field_access(src_arg_str) {
+                                                matches!(Self::get_field_taint_state(field_map, src_arg_str), TaintState::Tainted { .. })
+                                            } else if let Some(arg_var) = Self::extract_variable(src_arg_str) {
+                                                matches!(Self::get_field_taint_state(field_map, &arg_var), TaintState::Tainted { .. })
+                                            } else {
+                                                false
+                                            };
+
+                                            if is_tainted {
+                                                // Propagate to destination argument
+                                                if let Some(dest_arg_str) = args.get(*to) {
+                                                    // Destination might be "move _1" or "&mut _1"
+                                                    if let Some(dest_var) = Self::extract_variable(dest_arg_str) {
+                                                        println!("[DEBUG] Function call {} propagates taint from arg {} to arg {}", func_name_full, from, to);
+                                                        let taint = TaintState::Tainted {
+                                                            source_type: "propagated".to_string(),
+                                                            source_location: format!("via {} (arg {} -> arg {})", func_name_full, from, to),
+                                                        };
+                                                        Self::set_field_taint_state(field_map, &dest_var, &taint);
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -701,9 +742,48 @@ impl PathSensitiveTaintAnalysis {
                                 } else if func_name_short == "into_future" {
                                      println!("[DEBUG] Heuristic arg check failed for arg '{}' (var: {:?})", first_arg, Self::extract_variable(first_arg));
                                 }
+                            } else if func_name_short == "into_future" {
+                                 println!("[DEBUG] Heuristic mismatch: '{}' not in list", func_name_short);
                             }
-                        } else if func_name_short == "into_future" {
-                             println!("[DEBUG] Heuristic mismatch: '{}' not in list", func_name_short);
+                        }
+                    }
+
+                    // Heuristic: ParamToParam propagation (e.g. push_str)
+                    let param_to_param_methods = [
+                        "push_str",
+                        "push",
+                        "append",
+                        "extend",
+                        "insert_str"
+                    ];
+                    
+                    if param_to_param_methods.iter().any(|m| func_name_short == *m) {
+                        // Propagate from arg 1 (source) to arg 0 (dest)
+                        // Check if we have at least 2 args
+                        if args.len() >= 2 {
+                            let dest_arg = args[0];
+                            let src_arg = args[1];
+                            
+                            // Check if src is tainted
+                            let is_src_tainted = if parser::contains_field_access(src_arg) {
+                                matches!(Self::get_field_taint_state(field_map, src_arg), TaintState::Tainted { .. })
+                            } else if let Some(arg_var) = Self::extract_variable(src_arg) {
+                                matches!(Self::get_field_taint_state(field_map, &arg_var), TaintState::Tainted { .. })
+                            } else {
+                                false
+                            };
+                            
+                            if is_src_tainted {
+                                // Propagate to dest
+                                if let Some(dest_var) = Self::extract_variable(dest_arg) {
+                                    println!("[DEBUG] Heuristic: Function call {} propagates taint from arg 1 to arg 0 ({})", func_name_full, dest_var);
+                                    let taint = TaintState::Tainted {
+                                        source_type: "propagated".to_string(),
+                                        source_location: format!("via {}", func_name_full),
+                                    };
+                                    Self::set_field_taint_state(field_map, &dest_var, &taint);
+                                }
+                            }
                         }
                     }
 
@@ -1241,16 +1321,30 @@ mod tests {
             source_location: "test_source".to_string(),
         };
         
-        PathSensitiveTaintAnalysis::set_field_taint_state(&mut field_map, "(_1.0: String)", &taint);
+        PathSensitiveTaintAnalysis::set_field_taint_state(&mut field_map, "_1", &taint);
         
-        // Check that the field is tainted
-        assert!(PathSensitiveTaintAnalysis::is_field_tainted(&field_map, "(_1.0: String)"));
+        assert_eq!(
+            PathSensitiveTaintAnalysis::get_field_taint_state(&field_map, "_1"),
+            taint
+        );
         
-        // Check that a different field is not tainted
-        assert!(!PathSensitiveTaintAnalysis::is_field_tainted(&field_map, "(_1.1: i32)"));
-        
-        // Test whole variable taint
+        // Test aliasing
         PathSensitiveTaintAnalysis::set_field_taint_state(&mut field_map, "_2", &taint);
-        assert!(PathSensitiveTaintAnalysis::is_field_tainted(&field_map, "_2"));
+        assert_eq!(
+            PathSensitiveTaintAnalysis::get_field_taint_state(&field_map, "_2"),
+            taint
+        );
+        
+        // Test field sensitivity
+        PathSensitiveTaintAnalysis::set_field_taint_state(&mut field_map, "_3.0", &taint);
+        assert_eq!(
+            PathSensitiveTaintAnalysis::get_field_taint_state(&field_map, "_3.0"),
+            taint
+        );
+        
+        assert_eq!(
+            PathSensitiveTaintAnalysis::get_field_taint_state(&field_map, "_3.1"),
+            TaintState::Clean
+        );
     }
 }

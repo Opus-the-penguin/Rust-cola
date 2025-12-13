@@ -5,6 +5,16 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2025-12-12
+
+### Added
+- **Mutable Reference Propagation**: Implemented Phase 3.5.2. The analyzer now correctly tracks taint when a function modifies its arguments (e.g., `dest.push_str(tainted_src)`).
+- **ParamToParam Propagation**: Added support for generating and handling `ParamToParam` rules in function summaries, enabling detection of taint flow between function parameters.
+- **Standard Library Heuristics**: Added explicit taint propagation models for `String::push_str`, `Vec::push`, and `Vec::append` to handle these common patterns without requiring MIR for std.
+
+### Changed
+- **Analysis Engine**: Updated `PathAnalysisResult` to track `final_taint` states of variables at the end of function execution.
+
 ## [0.2.0] - 2025-12-12
 
 ### Added

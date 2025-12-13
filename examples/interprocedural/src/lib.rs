@@ -328,6 +328,22 @@ pub async fn test_async_flow() {
 }
 
 // =============================================================================
+// TEST CASE 18: Mutable Reference Propagation
+// =============================================================================
+
+/// VULNERABLE: Taint flows from src to dest via mutable reference
+pub fn test_mutable_ref_propagation() {
+    let source = std::env::var("BAD").unwrap_or_default();
+    let mut dest = String::new();
+    propagate_taint(&mut dest, &source);
+    execute_command(&dest);
+}
+
+fn propagate_taint(dest: &mut String, src: &str) {
+    dest.push_str(src);
+}
+
+// =============================================================================
 // Expected Results Summary
 // =============================================================================
 
@@ -342,6 +358,7 @@ pub fn expected_results() -> Vec<(&'static str, bool)> {
         ("test_pass_by_value", true),            // VULNERABLE
         ("test_pass_by_reference", true),        // VULNERABLE
         ("test_mutable_ref_flow", true),         // VULNERABLE
+        ("test_mutable_ref_propagation", true),  // VULNERABLE
         ("test_multiple_sources", true),         // VULNERABLE
         ("test_safe_constant", false),           // SAFE
         ("test_context_sensitive", true),        // VULNERABLE (one context)
@@ -359,7 +376,7 @@ mod tests {
     #[test]
     fn test_expected_results_count() {
         let results = expected_results();
-        assert_eq!(results.len(), 14); // 14 basic cases, 3 advanced for later
+        assert_eq!(results.len(), 15); // 14 basic cases, 3 advanced for later
         
         let vulnerable_count = results.iter().filter(|(_, vuln)| *vuln).count();
         let safe_count = results.iter().filter(|(_, vuln)| !*vuln).count();
@@ -368,6 +385,6 @@ mod tests {
         println!("Expected safe: {}", safe_count);
         
         assert_eq!(vulnerable_count, 11);
-        assert_eq!(safe_count, 3);
+        assert_eq!(safe_count, 4);
     }
 }

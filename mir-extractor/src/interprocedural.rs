@@ -557,10 +557,25 @@ impl FunctionSummary {
                     };
                 }
 
-                // Run 2: Check parameters _1 to _5
+                // Run 2: Check parameters
                 use crate::dataflow::path_sensitive::TaintState;
                 
-                for i in 1..=5 {
+                // Determine argument count from signature
+                let arg_count = if let Some(start) = function.signature.find('(') {
+                    if let Some(end) = function.signature.rfind(')') {
+                        let args = &function.signature[start+1..end];
+                        if args.trim().is_empty() {
+                            0
+                        } else {
+                            args.split(',').count()
+                        }
+                    } else { 0 }
+                } else { 0 };
+                
+                // Limit analysis to actual arguments (max 10)
+                let max_arg = std::cmp::min(arg_count, 10);
+                
+                for i in 1..=max_arg {
                     let param_name = format!("_{}", i);
                     let mut initial_taint = HashMap::new();
                     initial_taint.insert(param_name.clone(), TaintState::Tainted {
@@ -575,6 +590,30 @@ impl FunctionSummary {
                             param: i - 1,
                             sink_type: "command_execution".to_string(),
                         });
+                    }
+                    
+                    // Check ParamToReturn
+                    if result.path_results.iter().any(|p| p.return_tainted) {
+                        summary.propagation_rules.push(TaintPropagation::ParamToReturn(i - 1));
+                    }
+
+                    // Check ParamToParam
+                    // We need to check if any other parameter became tainted
+                    for j in 1..=max_arg {
+                        if i == j { continue; }
+                        let other_param = format!("_{}", j);
+                        
+                        // Check if other_param is tainted in any path
+                        let is_tainted = result.path_results.iter().any(|p| {
+                            matches!(p.final_taint.get(&other_param), Some(TaintState::Tainted { .. }))
+                        });
+                        
+                        if is_tainted {
+                            summary.propagation_rules.push(TaintPropagation::ParamToParam {
+                                from: i - 1,
+                                to: j - 1,
+                            });
+                        }
                     }
                     
                     if result.path_results.iter().any(|p| !p.sanitizer_calls.is_empty()) {
@@ -1395,11 +1434,14 @@ impl InterProceduralAnalysis {
             for func_name in &flow.call_chain {
                 if let Some(node) = self.call_graph.nodes.get(func_name) {
                     // Pattern 1: Function has BOTH source and (direct or indirect) sink
-                    let has_source = if let Some(summary) = &node.summary {
+                    let is_source_func = func_name == &flow.source_function;
+                    let returns_source = if let Some(summary) = &node.summary {
                         matches!(summary.return_taint, ReturnTaint::FromSource { .. })
                     } else {
                         false
                     };
+                    
+                    let has_source = is_source_func || returns_source;
                     
                     // Check if this function has a direct sink
                     let has_direct_sink = if let Some(summary) = &node.summary {
@@ -1575,14 +1617,23 @@ impl InterProceduralAnalysis {
                         let has_any_sink = caller_summary.propagation_rules.iter()
                             .any(|r| matches!(r, TaintPropagation::ParamToSink { .. }));
                         
-                        if has_filesystem_sink || has_any_sink {
+                        // Check if caller has internal vulnerability
+                        // This handles cases where caller consumes the source and sinks it locally
+                        // (possibly via ParamToParam propagation in a helper)
+                        let has_internal = caller_summary.has_internal_vulnerability;
+                        
+                        if has_filesystem_sink || has_any_sink || has_internal {
                             // Caller has a sink and receives tainted data from current_func
-                            let sink_type = caller_summary.propagation_rules.iter()
-                                .find_map(|r| match r {
-                                    TaintPropagation::ParamToSink { sink_type, .. } => Some(sink_type.clone()),
-                                    _ => None,
-                                })
-                                .unwrap_or_else(|| "unknown".to_string());
+                            let sink_type = if has_internal {
+                                "internal_sink".to_string()
+                            } else {
+                                caller_summary.propagation_rules.iter()
+                                    .find_map(|r| match r {
+                                        TaintPropagation::ParamToSink { sink_type, .. } => Some(sink_type.clone()),
+                                        _ => None,
+                                    })
+                                    .unwrap_or_else(|| "unknown".to_string())
+                            };
                             
                             flows.push(TaintPath {
                                 source_function: path[0].clone(),

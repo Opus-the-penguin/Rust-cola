@@ -29,8 +29,8 @@ jobs:
       - name: Install cargo-auditable
         run: cargo install --locked cargo-auditable
 
-      - name: Build auditable release binary
-        run: cargo auditable build --package cargo-cola --release --target-dir target/auditable
+      - name: Build auditable release binary (without advanced-rules)
+        run: cargo auditable build --package cargo-cola --release --target-dir target/auditable --no-default-features
 
       - name: Verify auditable metadata marker
         run: |

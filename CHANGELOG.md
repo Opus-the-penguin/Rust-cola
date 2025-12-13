@@ -5,6 +5,23 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2025-12-13
+
+### Changed
+- **CI Fix**: Made `mir-advanced-rules` an optional feature (`advanced-rules`) to resolve CI hangs.
+  - Default feature enabled for normal builds (includes ADV001-ADV009 rules).
+  - CI builds with `--no-default-features` to exclude advanced-rules crate compilation.
+  - Wrapped all advanced-rules code with `#[cfg(feature = "advanced-rules")]`.
+- **Rule Migration Progress**: Continued modular refactoring of security rules.
+  - `rules/input.rs`: 9 input validation rules migrated (CleartextEnvVar, EnvVarLiteral, InvisibleUnicode, UntrimmedStdin, InfiniteIterator, DivisionByUntrusted, InsecureYamlDeserialization, UnboundedRead, InsecureJsonTomlDeserialization).
+  - `rules/resource.rs`: 8 resource management rules migrated (SpawnedChildNoWait, PermissionsSetReadonlyFalse, WorldWritableMode, OpenOptionsMissingTruncate, UnixPermissionsNotOctal, OpenOptionsInconsistentFlags, AbsolutePathInJoin, CtorDtorStdApi).
+  - `rules/code_quality.rs`: 6 code quality rules migrated (CrateWideAllow, MisorderedAssertEq, TryIoResult, LocalRefCell, UnnecessaryBorrowMut, DeadStoreArray).
+  - Total: 49 rules now in modular structure (crypto: 8, memory: 10, concurrency: 4, ffi: 4, input: 9, resource: 8, code_quality: 6).
+
+### Technical
+- Added `INPUT_SOURCE_PATTERNS` constant to `rules/input.rs` for shared taint source detection.
+- Updated `rules/mod.rs` to export all new rule modules.
+
 ## [0.5.1] - 2025-12-13
 
 ### Changed

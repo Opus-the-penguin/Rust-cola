@@ -47,6 +47,20 @@ pub use ffi::{
     AllocatorMismatchFfiRule, UnsafeFfiPointerReturnRule, PackedFieldReferenceRule,
     UnsafeCStringPointerRule,
 };
+pub use input::{
+    CleartextEnvVarRule, EnvVarLiteralRule, InvisibleUnicodeRule, UntrimmedStdinRule,
+    InfiniteIteratorRule, DivisionByUntrustedRule, InsecureYamlDeserializationRule,
+    UnboundedReadRule, InsecureJsonTomlDeserializationRule,
+};
+pub use resource::{
+    SpawnedChildNoWaitRule, PermissionsSetReadonlyFalseRule, WorldWritableModeRule,
+    OpenOptionsMissingTruncateRule, UnixPermissionsNotOctalRule, OpenOptionsInconsistentFlagsRule,
+    AbsolutePathInJoinRule,
+};
+pub use code_quality::{
+    CrateWideAllowRule, MisorderedAssertEqRule, TryIoResultRule, LocalRefCellRule,
+    UnnecessaryBorrowMutRule, DeadStoreArrayRule,
+};
 
 use crate::{MirFunction, MirPackage};
 use walkdir::DirEntry;

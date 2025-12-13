@@ -12,6 +12,7 @@ use mir_extractor::{
 };
 #[cfg(feature = "hir-driver")]
 use mir_extractor::{extract_with_cache_full_opts, HirOptions, HirPackage};
+#[cfg(feature = "advanced-rules")]
 use mir_advanced_rules::{
     AdvancedRule, AwaitSpanGuardRule, DanglingPointerUseAfterFreeRule,
     InsecureBinaryDeserializationRule, InsecureJsonTomlDeserializationRule, IntegerOverflowRule,
@@ -319,13 +320,16 @@ fn main() -> Result<()> {
         };
 
         // Run advanced MIR-based rules (ADV001-ADV009) and merge findings
-        let advanced_findings = run_advanced_rules(&package);
-        if !advanced_findings.is_empty() {
-            println!(
-                "Advanced rules (ADV001-ADV009): {} additional findings",
-                advanced_findings.len()
-            );
-            analysis.findings.extend(advanced_findings);
+        #[cfg(feature = "advanced-rules")]
+        {
+            let advanced_findings = run_advanced_rules(&package);
+            if !advanced_findings.is_empty() {
+                println!(
+                    "Advanced rules (ADV001-ADV009): {} additional findings",
+                    advanced_findings.len()
+                );
+                analysis.findings.extend(advanced_findings);
+            }
         }
 
         // Filter suppressed findings
@@ -2366,6 +2370,7 @@ fn format_audit_section(vulnerabilities: &[AuditVulnerability]) -> String {
 ///
 /// This integrates the `mir-advanced-rules` crate into the standard cargo-cola scan,
 /// enabling ADV001-ADV009 rules for advanced security analysis.
+#[cfg(feature = "advanced-rules")]
 fn run_advanced_rules(package: &MirPackage) -> Vec<Finding> {
     let rules: Vec<Box<dyn AdvancedRule>> = vec![
         Box::new(DanglingPointerUseAfterFreeRule),
@@ -2411,6 +2416,7 @@ fn run_advanced_rules(package: &MirPackage) -> Vec<Finding> {
 }
 
 /// Map advanced rule IDs to severity levels
+#[cfg(feature = "advanced-rules")]
 fn severity_for_advanced_rule(rule_id: &str) -> Severity {
     match rule_id {
         "ADV001" => Severity::High,   // Use-after-free

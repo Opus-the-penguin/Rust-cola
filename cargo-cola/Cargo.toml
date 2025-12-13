@@ -1,12 +1,13 @@
 [package]
 name = "cargo-cola"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 authors = ["Opus-the-penguin"]
 
 [features]
-default = []
+default = ["advanced-rules"]
 hir-driver = ["mir-extractor/hir-driver"]
+advanced-rules = ["dep:mir-advanced-rules"]
 
 [dependencies]
 clap = { version = "4", features = ["derive", "env"] }
@@ -14,7 +15,7 @@ anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 mir-extractor = { path = "../mir-extractor" }
-mir-advanced-rules = { path = "../mir-advanced-rules" }
+mir-advanced-rules = { path = "../mir-advanced-rules", optional = true }
 cargo_metadata = "0.18"
 reqwest = { version = "0.11", features = ["blocking", "json"] }
 walkdir = "2.5"

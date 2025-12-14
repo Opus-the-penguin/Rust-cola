@@ -1205,6 +1205,338 @@ impl Rule for InsecureJsonTomlDeserializationRule {
 }
 
 // ============================================================================
+// RUSTCOLA081: Serde serialize_* length mismatch
+// ============================================================================
+
+/// Detects when the declared length argument to serialize_struct/serialize_tuple/etc
+/// doesn't match the actual number of serialize_field/serialize_element calls.
+pub struct SerdeLengthMismatchRule {
+    metadata: RuleMetadata,
+}
+
+impl SerdeLengthMismatchRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA081".to_string(),
+                name: "serde-length-mismatch".to_string(),
+                short_description: "Serde serialize_* length mismatch".to_string(),
+                full_description: "Detects when the declared field/element count in \
+                    serialize_struct/serialize_tuple/etc doesn't match the actual number \
+                    of serialize_field/serialize_element calls. This mismatch can cause \
+                    deserialization failures, data corruption, or panics in binary formats \
+                    like bincode, postcard, or MessagePack that rely on precise length hints."
+                    .to_string(),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+                help_uri: None,
+            },
+        }
+    }
+
+    fn find_serializer_declarations(body: &[String]) -> Vec<(String, String, usize, String)> {
+        let mut declarations = Vec::new();
+        
+        let mut var_values: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for line in body {
+            let trimmed = line.trim();
+            if trimmed.contains("Option::<usize>::Some(const ") {
+                if let Some(eq_pos) = trimmed.find(" = ") {
+                    let var_name = trimmed[..eq_pos].trim().to_string();
+                    if let Some(start) = trimmed.find("Some(const ") {
+                        let after = &trimmed[start + 11..];
+                        if let Some(end) = after.find("_usize") {
+                            if let Ok(val) = after[..end].trim().parse::<usize>() {
+                                var_values.insert(var_name, val);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        for line in body {
+            let trimmed = line.trim();
+            
+            if trimmed.contains("serialize_struct(") && !trimmed.contains("serialize_struct_variant") {
+                if let Some(decl) = Self::extract_struct_declaration(trimmed) {
+                    declarations.push(("struct".to_string(), decl.0, decl.1, trimmed.to_string()));
+                }
+            }
+            
+            if trimmed.contains("serialize_tuple(") && !trimmed.contains("serialize_tuple_struct") && !trimmed.contains("serialize_tuple_variant") {
+                if let Some(len) = Self::extract_tuple_length(trimmed) {
+                    declarations.push(("tuple".to_string(), "".to_string(), len, trimmed.to_string()));
+                }
+            }
+            
+            if trimmed.contains("serialize_tuple_struct(") {
+                if let Some(decl) = Self::extract_struct_declaration(trimmed) {
+                    declarations.push(("tuple_struct".to_string(), decl.0, decl.1, trimmed.to_string()));
+                }
+            }
+            
+            if trimmed.contains("serialize_seq(") {
+                if let Some(len) = Self::extract_seq_length(trimmed) {
+                    declarations.push(("seq".to_string(), "".to_string(), len, trimmed.to_string()));
+                } else if let Some(len) = Self::extract_seq_length_from_var(trimmed, &var_values) {
+                    declarations.push(("seq".to_string(), "".to_string(), len, trimmed.to_string()));
+                }
+            }
+            
+            if trimmed.contains("serialize_map(") {
+                if let Some(len) = Self::extract_map_length(trimmed) {
+                    declarations.push(("map".to_string(), "".to_string(), len, trimmed.to_string()));
+                } else if let Some(len) = Self::extract_map_length_from_var(trimmed, &var_values) {
+                    declarations.push(("map".to_string(), "".to_string(), len, trimmed.to_string()));
+                }
+            }
+        }
+        
+        declarations
+    }
+
+    fn extract_struct_declaration(line: &str) -> Option<(String, usize)> {
+        let name_start = line.find("const \"")? + 7;
+        let name_end = line[name_start..].find("\"")? + name_start;
+        let name = line[name_start..name_end].to_string();
+        
+        let after_name = &line[name_end..];
+        if let Some(const_pos) = after_name.find("const ") {
+            let len_start = const_pos + 6;
+            let len_str = &after_name[len_start..];
+            if let Some(usize_pos) = len_str.find("_usize") {
+                let num_str = &len_str[..usize_pos];
+                if let Ok(len) = num_str.trim().parse::<usize>() {
+                    return Some((name, len));
+                }
+            }
+        }
+        
+        None
+    }
+
+    fn extract_tuple_length(line: &str) -> Option<usize> {
+        if let Some(const_pos) = line.rfind("const ") {
+            let after_const = &line[const_pos + 6..];
+            if let Some(usize_pos) = after_const.find("_usize") {
+                let num_str = &after_const[..usize_pos];
+                if let Ok(len) = num_str.trim().parse::<usize>() {
+                    return Some(len);
+                }
+            }
+        }
+        None
+    }
+
+    fn extract_seq_length(line: &str) -> Option<usize> {
+        if line.contains("Option::<usize>::None") || line.contains("None::<usize>") {
+            return None;
+        }
+        
+        if let Some(const_pos) = line.rfind("const ") {
+            let after_const = &line[const_pos + 6..];
+            if let Some(usize_pos) = after_const.find("_usize") {
+                let num_str = &after_const[..usize_pos];
+                if let Ok(len) = num_str.trim().parse::<usize>() {
+                    return Some(len);
+                }
+            }
+        }
+        
+        None
+    }
+
+    fn extract_map_length(line: &str) -> Option<usize> {
+        Self::extract_seq_length(line)
+    }
+
+    fn extract_seq_length_from_var(line: &str, var_values: &std::collections::HashMap<String, usize>) -> Option<usize> {
+        if let Some(paren_start) = line.find("serialize_seq(") {
+            let after = &line[paren_start..];
+            for (var, val) in var_values {
+                if after.contains(&format!("move {}", var)) || after.contains(&format!(", {})", var)) {
+                    return Some(*val);
+                }
+            }
+        }
+        None
+    }
+
+    fn extract_map_length_from_var(line: &str, var_values: &std::collections::HashMap<String, usize>) -> Option<usize> {
+        if let Some(paren_start) = line.find("serialize_map(") {
+            let after = &line[paren_start..];
+            for (var, val) in var_values {
+                if after.contains(&format!("move {}", var)) || after.contains(&format!(", {})", var)) {
+                    return Some(*val);
+                }
+            }
+        }
+        None
+    }
+
+    fn count_serialize_fields(body: &[String]) -> usize {
+        body.iter()
+            .filter(|line| {
+                let trimmed = line.trim();
+                trimmed.contains("SerializeStruct>::serialize_field") ||
+                trimmed.contains("SerializeStructVariant>::serialize_field")
+            })
+            .count()
+    }
+
+    fn count_serialize_elements(body: &[String]) -> usize {
+        body.iter()
+            .filter(|line| {
+                let trimmed = line.trim();
+                trimmed.contains("SerializeTuple>::serialize_element") ||
+                trimmed.contains("SerializeTupleStruct>::serialize_field")
+            })
+            .count()
+    }
+
+    fn count_seq_elements(body: &[String]) -> usize {
+        body.iter()
+            .filter(|line| {
+                let trimmed = line.trim();
+                trimmed.contains("SerializeSeq>::serialize_element")
+            })
+            .count()
+    }
+
+    fn count_map_entries(body: &[String]) -> usize {
+        body.iter()
+            .filter(|line| {
+                let trimmed = line.trim();
+                trimmed.contains("SerializeMap>::serialize_entry") ||
+                trimmed.contains("SerializeMap>::serialize_key")
+            })
+            .count()
+    }
+
+    fn has_loop_serialization(body: &[String]) -> bool {
+        let body_str = body.join("\n");
+        
+        body_str.contains("switchInt") && 
+        (body_str.contains("IntoIterator") || 
+         body_str.contains("Iterator>::next") ||
+         body_str.contains("Range"))
+    }
+}
+
+impl Rule for SerdeLengthMismatchRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            if !function.name.contains("serialize") && !function.signature.contains("Serialize") {
+                continue;
+            }
+
+            let declarations = Self::find_serializer_declarations(&function.body);
+            
+            if declarations.is_empty() {
+                continue;
+            }
+
+            for (ser_type, name, declared_len, decl_line) in &declarations {
+                let has_loop = Self::has_loop_serialization(&function.body);
+                
+                let actual_count = match ser_type.as_str() {
+                    "struct" => Self::count_serialize_fields(&function.body),
+                    "tuple" | "tuple_struct" => Self::count_serialize_elements(&function.body),
+                    "seq" => {
+                        if has_loop {
+                            usize::MAX
+                        } else {
+                            Self::count_seq_elements(&function.body)
+                        }
+                    }
+                    "map" => {
+                        if has_loop {
+                            usize::MAX
+                        } else {
+                            Self::count_map_entries(&function.body)
+                        }
+                    }
+                    _ => continue,
+                };
+
+                if actual_count == usize::MAX {
+                    let type_desc = match ser_type.as_str() {
+                        "seq" => "sequence",
+                        "map" => "map",
+                        _ => "collection",
+                    };
+
+                    let name_info = if name.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" for `{}`", name)
+                    };
+
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: format!(
+                            "Serde serialize_{}{} declares constant length {} but uses loop-based serialization. \
+                            The hardcoded length hint will likely not match the actual number of {} entries. \
+                            Use `None` for dynamic-length collections or use `self.{}.len()` instead.",
+                            ser_type, name_info, declared_len, type_desc,
+                            if ser_type == "seq" { "data" } else { "items" }
+                        ),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence: vec![decl_line.clone()],
+                        span: function.span.clone(),
+                    });
+                    continue;
+                }
+
+                if actual_count != *declared_len {
+                    let type_desc = match ser_type.as_str() {
+                        "struct" => "struct fields",
+                        "tuple" | "tuple_struct" => "tuple elements",
+                        "seq" => "sequence elements",
+                        "map" => "map entries",
+                        _ => "elements",
+                    };
+
+                    let name_info = if name.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" for `{}`", name)
+                    };
+
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: format!(
+                            "Serde serialize_{}{} declares {} {} but actually serializes {}. \
+                            This mismatch can cause deserialization failures in binary formats. \
+                            Update the length argument to match the actual count.",
+                            ser_type, name_info, declared_len, type_desc, actual_count
+                        ),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence: vec![decl_line.clone()],
+                        span: function.span.clone(),
+                    });
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -1219,4 +1551,5 @@ pub fn register_input_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(InsecureYamlDeserializationRule::new()));
     engine.register_rule(Box::new(UnboundedReadRule::new()));
     engine.register_rule(Box::new(InsecureJsonTomlDeserializationRule::new()));
+    engine.register_rule(Box::new(SerdeLengthMismatchRule::new()));
 }

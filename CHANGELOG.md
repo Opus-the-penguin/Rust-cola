@@ -5,6 +5,23 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.5] - 2025-12-14
+
+### Changed
+- **Phase 1.3 Complete**: Migrated remaining 11 security rules from `lib.rs` to modular structure.
+  - `rules/memory.rs`: Added 8 rules - StaticMutGlobalRule (RUSTCOLA025), TransmuteLifetimeChangeRule (RUSTCOLA095), RawPointerEscapeRule (RUSTCOLA096), VecSetLenMisuseRule (RUSTCOLA038), LengthTruncationCastRule (RUSTCOLA022), MaybeUninitAssumeInitDataflowRule (RUSTCOLA078), SliceElementSizeMismatchRule (RUSTCOLA082), SliceFromRawPartsRule (RUSTCOLA083).
+  - `rules/web.rs`: Added ContentLengthAllocationRule (RUSTCOLA021).
+  - `rules/resource.rs`: Added UnboundedAllocationRule (RUSTCOLA024).
+  - `rules/input.rs`: Added SerdeLengthMismatchRule (RUSTCOLA081).
+- **Duplicate Cleanup**: Removed AllocatorMismatchRule (duplicate of AllocatorMismatchFfiRule in ffi.rs).
+- **Codebase Reduction**: `lib.rs` reduced from 8,253 to 5,542 lines (33% reduction; 68% total since start).
+- **Utility Consolidation**: Moved `filter_entry` helper to `rules/utils.rs`.
+
+### Technical
+- Only infrastructure rules remain in `lib.rs`: SuppressionRule, DeclarativeRule.
+- All 146 tests pass.
+- memory.rs now contains 18 rules (was 10).
+
 ## [0.7.1] - 2025-12-14
 
 ### Added

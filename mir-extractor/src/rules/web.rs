@@ -8,8 +8,10 @@
 //! - CORS wildcard configuration
 //! - Password field masking
 //! - TLS verification disabled
+//! - Content-Length based allocations
 
 use crate::{Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
+use crate::detect_content_length_allocations;
 use std::collections::HashSet;
 
 // ============================================================================
@@ -1124,6 +1126,72 @@ impl Rule for AwsS3UnscopedAccessRule {
     }
 }
 
+// ============================================================================
+// RUSTCOLA021: Content-Length based allocation (DoS risk)
+// ============================================================================
+
+pub struct ContentLengthAllocationRule {
+    metadata: RuleMetadata,
+}
+
+impl ContentLengthAllocationRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA021".to_string(),
+                name: "content-length-allocation".to_string(),
+                short_description:
+                    "Allocations sized from untrusted Content-Length header".to_string(),
+                full_description: "Flags allocations (`Vec::with_capacity`, `reserve*`) that trust HTTP Content-Length values without upper bounds, enabling attacker-controlled memory exhaustion. See RUSTSEC-2025-0015 for real-world examples.".to_string(),
+                help_uri: Some("https://rustsec.org/advisories/RUSTSEC-2025-0015.html".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for ContentLengthAllocationRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            let allocations = detect_content_length_allocations(function);
+
+            for allocation in allocations {
+                let mut evidence = vec![allocation.allocation_line.clone()];
+
+                let mut tainted: Vec<_> = allocation.tainted_vars.iter().cloned().collect();
+                tainted.sort();
+                tainted.dedup();
+                if !tainted.is_empty() {
+                    evidence.push(format!("tainted length symbols: {}", tainted.join(", ")));
+                }
+
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "Potential unbounded allocation from Content-Length in `{}`",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence,
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        findings
+    }
+}
+
 /// Register all web security rules with the rule engine.
 pub fn register_web_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(NonHttpsUrlRule::new()));
@@ -1136,4 +1204,5 @@ pub fn register_web_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(CleartextLoggingRule::new()));
     engine.register_rule(Box::new(TlsVerificationDisabledRule::new()));
     engine.register_rule(Box::new(AwsS3UnscopedAccessRule::new()));
+    engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
 }

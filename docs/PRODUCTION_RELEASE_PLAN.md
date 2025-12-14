@@ -1,7 +1,7 @@
 # Rust-cola Production Release Plan
 
 **Date:** December 14, 2025  
-**Current Version:** 0.7.4  
+**Current Version:** 0.7.5  
 **Target **Progress (v0.7.1):** ✅ **Major milestone achieved**
 - ✅ Created `rules/utils.rs` with shared utilities (`strip_string_literals`, `StringLiteralState`)
 - ✅ Migrated `UnsafeSendSyncBoundsRule` (RUSTCOLA015) → `concurrency.rs`
@@ -22,11 +22,21 @@
 - ✅ **Tests:** 146 passed
 - ✅ **Rules in lib.rs:** 77 → 13 (only unique advanced dataflow rules remain)
 
-**Remaining (~13 rules in lib.rs - all unique):**
-- Memory rules with dataflow analysis
-- Additional dataflow-dependent rules
-- Rules requiring core infrastructure access.0  
-**Status:** Phase 1.2 Major Milestone - Injection Rules Complete
+**Progress (v0.7.5):** ✅ **Phase 1.3 - Remaining rules migrated**
+- ✅ Migrated 8 memory rules → `memory.rs`: StaticMutGlobalRule (RUSTCOLA025), TransmuteLifetimeChangeRule (RUSTCOLA095), RawPointerEscapeRule (RUSTCOLA096), VecSetLenMisuseRule (RUSTCOLA038), LengthTruncationCastRule (RUSTCOLA022), MaybeUninitAssumeInitDataflowRule (RUSTCOLA078), SliceElementSizeMismatchRule (RUSTCOLA082), SliceFromRawPartsRule (RUSTCOLA083)
+- ✅ Migrated `ContentLengthAllocationRule` (RUSTCOLA021) → `web.rs`
+- ✅ Migrated `UnboundedAllocationRule` (RUSTCOLA024) → `resource.rs`
+- ✅ Migrated `SerdeLengthMismatchRule` (RUSTCOLA081) → `input.rs`
+- ✅ Removed duplicate `AllocatorMismatchRule` (already exists as `AllocatorMismatchFfiRule` in ffi.rs)
+- ✅ Moved `filter_entry` helper → `utils.rs`
+- 📊 **lib.rs reduced:** 8,253 → 5,542 lines (33% reduction; **68% total reduction from 17,360**)
+- ✅ **Tests:** 146 passed
+- ✅ **Only infrastructure rules remain in lib.rs:** SuppressionRule, DeclarativeRule
+
+**Remaining (~2 infrastructure rules in lib.rs):**
+- SuppressionRule (handles #[allow] and suppression comments)
+- DeclarativeRule (rule-pack/YAML-based rules).0  
+**Status:** Phase 1.3 Complete - All security rules modularized
 
 This document outlines the roadmap to achieve a production-ready release of Rust-cola. Completing these phases will yield a **Release Candidate (RC)** suitable for general availability.
 
@@ -43,13 +53,13 @@ Rust-cola v0.7.2 has reached significant maturity with 102 security rules and a 
 
 ---
 
-## Current State (v0.7.4)
+## Current State (v0.7.5)
 
 | Metric | Value |
 |--------|-------|
 | **Total Rules** | 102 |
 | **Test Status** | 146 passed, 0 failed ✅ |
-| **Core Codebase** | ~8.3K LOC (mir-extractor/lib.rs) |
+| **Core Codebase** | ~5.5K LOC (mir-extractor/lib.rs) |
 | **Rule Modules** | 10 categories + utils |
 
 ### Three-Tier Architecture
@@ -62,23 +72,23 @@ Rust-cola v0.7.2 has reached significant maturity with 102 security rules and a 
 
 ### Rule Distribution
 
-**Organized Modules (76 rules):**
+**Organized Modules (87 rules):**
 
 | Module | Rules | Coverage |
 |--------|-------|----------|
 | `crypto.rs` | 8 | MD5, SHA1, hardcoded keys, timing, weak ciphers, PRNG |
-| `memory.rs` | 10 | Transmute, uninit, set_len, raw pointers, Box::into_raw |
+| `memory.rs` | 18 | Transmute, uninit, set_len, raw pointers, Box::into_raw, slice safety |
 | `concurrency.rs` | 9 | Mutex guards, async blocking, Send/Sync, lock guards, panic safety |
 | `ffi.rs` | 6 | Allocator mismatch, CString, packed fields, repr(C), buffer leaks |
-| `input.rs` | 9 | Env vars, stdin, unicode, deserialization, division |
-| `resource.rs` | 9 | File permissions, open options, iterators, paths |
+| `input.rs` | 10 | Env vars, stdin, unicode, deserialization, division, serde |
+| `resource.rs` | 10 | File permissions, open options, iterators, paths, allocations |
 | `code_quality.rs` | 8 | Dead stores, assertions, crate-wide allow, RefCell, commented code |
-| `web.rs` | 10 | TLS, CORS, cookies, passwords, logging, AWS S3 |
+| `web.rs` | 11 | TLS, CORS, cookies, passwords, logging, AWS S3, content-length |
 | `supply_chain.rs` | 3 | RUSTSEC, yanked crates, auditable |
 | `injection.rs` | 10 | Command, SQL, path traversal, SSRF, regex, unchecked index, interprocedural |
-| `utils.rs` | - | Shared utilities (strip_string_literals, StringLiteralState) |
+| `utils.rs` | - | Shared utilities (strip_string_literals, filter_entry) |
 
-**Complex Rules in lib.rs:** 13 rules (unique advanced dataflow rules requiring inter-procedural context)
+**Infrastructure Rules in lib.rs:** 2 rules (SuppressionRule, DeclarativeRule)
 
 **Advanced Rules (mir-advanced-rules):** 9 rules (ADV001-ADV009)
 

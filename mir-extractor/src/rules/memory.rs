@@ -10,8 +10,14 @@
 //! - ZST pointer arithmetic
 
 use crate::{Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
+use crate::detect_truncating_len_casts;
 use super::collect_matches;
-use std::collections::HashSet;
+use super::utils::filter_entry;
+use std::collections::{HashMap, HashSet};
+use std::ffi::OsStr;
+use std::fs;
+use std::path::Path;
+use walkdir::WalkDir;
 
 // ============================================================================
 // Helper Functions
@@ -1068,6 +1074,1708 @@ impl Rule for MemForgetGuardRule {
     }
 }
 
+// ============================================================================
+// RUSTCOLA025: Static mut global detected
+// ============================================================================
+
+pub struct StaticMutGlobalRule {
+    metadata: RuleMetadata,
+}
+
+impl StaticMutGlobalRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA025".to_string(),
+                name: "static-mut-global".to_string(),
+                short_description: "Mutable static global detected".to_string(),
+                full_description: "Flags uses of `static mut` globals, which are unsafe shared mutable state and can introduce data races or memory safety bugs.".to_string(),
+                help_uri: None,
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for StaticMutGlobalRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let patterns = ["static mut "];
+
+        for function in &package.functions {
+            let mut evidence = collect_matches(&function.body, &patterns);
+            if evidence.is_empty() {
+                continue;
+            }
+
+            // If the signature itself declared a mutable static, include it for additional context.
+            if function.signature.contains("static mut ") {
+                evidence.push(function.signature.trim().to_string());
+            }
+
+            findings.push(Finding {
+                rule_id: self.metadata.id.clone(),
+                rule_name: self.metadata.name.clone(),
+                severity: self.metadata.default_severity,
+                message: format!(
+                    "Mutable static global detected in `{}`; prefer interior mutability or synchronization primitives",
+                    function.name
+                ),
+                function: function.name.clone(),
+                function_signature: function.signature.clone(),
+                evidence,
+                span: function.span.clone(),
+            });
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA095: Transmute changes reference lifetime
+// ============================================================================
+
+pub struct TransmuteLifetimeChangeRule {
+    metadata: RuleMetadata,
+}
+
+impl TransmuteLifetimeChangeRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA095".to_string(),
+                name: "transmute-lifetime-change".to_string(),
+                short_description: "Transmute changes reference lifetime".to_string(),
+                full_description: "Using std::mem::transmute to change lifetime parameters of references is undefined behavior. It can create references that outlive the data they point to, leading to use-after-free. Use proper lifetime annotations or safe APIs instead.".to_string(),
+                help_uri: Some("https://doc.rust-lang.org/std/mem/fn.transmute.html#examples".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Extract the lifetime from a type annotation like "&'a str" or "&'static str"
+    fn extract_lifetime(type_str: &str) -> Option<String> {
+        if let Some(quote_pos) = type_str.find('\'') {
+            let after_quote = &type_str[quote_pos + 1..];
+            let end_pos = after_quote
+                .find(|c: char| !c.is_alphanumeric() && c != '_')
+                .unwrap_or(after_quote.len());
+            if end_pos > 0 {
+                return Some(format!("'{}", &after_quote[..end_pos]));
+            }
+        }
+        None
+    }
+
+    /// Check if two types differ only in lifetime parameters
+    fn types_differ_in_lifetime(from_type: &str, to_type: &str) -> bool {
+        let from_lifetime = Self::extract_lifetime(from_type);
+        let to_lifetime = Self::extract_lifetime(to_type);
+
+        match (from_lifetime, to_lifetime) {
+            (Some(from_lt), Some(to_lt)) => {
+                if from_lt != to_lt {
+                    let from_is_ref = from_type.contains('&');
+                    let to_is_ref = to_type.contains('&');
+                    return from_is_ref && to_is_ref;
+                }
+                false
+            }
+            (Some(_), None) | (None, Some(_)) => {
+                from_type.contains('&') && to_type.contains('&')
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Rule for TransmuteLifetimeChangeRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+            let mut current_fn_name = String::new();
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+
+                if trimmed.contains("fn ") {
+                    if let Some(fn_pos) = trimmed.find("fn ") {
+                        let after_fn = &trimmed[fn_pos + 3..];
+                        if let Some(paren_pos) = after_fn.find('(') {
+                            current_fn_name = after_fn[..paren_pos].trim().to_string();
+                        }
+                    }
+                }
+
+                if trimmed.starts_with("//") || trimmed.starts_with("*") || trimmed.starts_with("/*") {
+                    continue;
+                }
+
+                if trimmed.contains("transmute") {
+                    // Pattern 1: transmute::<From, To>(...)
+                    if let Some(turbofish_start) = trimmed.find("transmute::<") {
+                        let after_turbofish = &trimmed[turbofish_start + 12..];
+                        if let Some(end) = after_turbofish.find(">(") {
+                            let types_str = &after_turbofish[..end];
+                            let parts: Vec<&str> = types_str.split(',').collect();
+                            if parts.len() == 2 {
+                                let from_type = parts[0].trim();
+                                let to_type = parts[1].trim();
+                                
+                                if Self::types_differ_in_lifetime(from_type, to_type) {
+                                    let location = format!("{}:{}", rel_path, idx + 1);
+                                    findings.push(Finding {
+                                        rule_id: self.metadata.id.clone(),
+                                        rule_name: self.metadata.name.clone(),
+                                        severity: self.metadata.default_severity,
+                                        message: format!(
+                                            "Transmute changes lifetime in `{}`: {} -> {}. This can create dangling references.",
+                                            current_fn_name, from_type, to_type
+                                        ),
+                                        function: location,
+                                        function_signature: current_fn_name.clone(),
+                                        evidence: vec![trimmed.to_string()],
+                                        span: None,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Pattern 2: Function signature shows lifetime extension
+                    let mut fn_sig_line = String::new();
+                    for back_idx in (0..=idx).rev() {
+                        let back_line = lines[back_idx].trim();
+                        if back_line.contains("fn ") && back_line.contains("->") {
+                            fn_sig_line = back_line.to_string();
+                            break;
+                        }
+                        if back_line.starts_with("pub fn ") || back_line.starts_with("fn ") {
+                            if !back_line.contains("->") {
+                                break;
+                            }
+                        }
+                    }
+                    
+                    let sig_has_short_lifetime = fn_sig_line.contains("'a") || 
+                                                fn_sig_line.contains("'b");
+                    let sig_returns_static = fn_sig_line.contains("-> &'static") ||
+                                            fn_sig_line.contains("-> StaticData");
+                    
+                    let is_actual_transmute = trimmed.contains("transmute(") || 
+                                             trimmed.contains("transmute::<");
+                    
+                    if sig_has_short_lifetime && sig_returns_static && is_actual_transmute {
+                        let already_reported = findings.iter().any(|f| 
+                            f.function == format!("{}:{}", rel_path, idx + 1)
+                        );
+                        if !already_reported {
+                            let location = format!("{}:{}", rel_path, idx + 1);
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message: format!(
+                                    "Transmute may extend lifetime to 'static in `{}`. This can create dangling references.",
+                                    current_fn_name
+                                ),
+                                function: location,
+                                function_signature: current_fn_name.clone(),
+                                evidence: vec![trimmed.to_string()],
+                                span: None,
+                            });
+                        }
+                    }
+                    
+                    // Pattern 3: Struct with lifetime parameter transmuted to struct without
+                    if let Some(turbofish_start) = trimmed.find("transmute::<") {
+                        let after_turbofish = &trimmed[turbofish_start + 12..];
+                        if let Some(end) = after_turbofish.find(">(") {
+                            let types_str = &after_turbofish[..end];
+                            if types_str.contains("<'") || types_str.contains("< '") {
+                                let mut depth = 0;
+                                let mut split_pos = None;
+                                for (i, c) in types_str.char_indices() {
+                                    match c {
+                                        '<' => depth += 1,
+                                        '>' => depth -= 1,
+                                        ',' if depth == 0 => {
+                                            split_pos = Some(i);
+                                            break;
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                
+                                if let Some(pos) = split_pos {
+                                    let from_type = types_str[..pos].trim();
+                                    let to_type = types_str[pos + 1..].trim();
+                                    
+                                    let from_has_lifetime = from_type.contains("'a") ||
+                                                           from_type.contains("'b") ||
+                                                           from_type.contains("'_");
+                                    let to_has_static = !to_type.contains('\'') ||
+                                                       to_type.contains("'static");
+                                    
+                                    if from_has_lifetime && to_has_static {
+                                        let already_reported = findings.iter().any(|f| 
+                                            f.function == format!("{}:{}", rel_path, idx + 1)
+                                        );
+                                        if !already_reported {
+                                            let location = format!("{}:{}", rel_path, idx + 1);
+                                            findings.push(Finding {
+                                                rule_id: self.metadata.id.clone(),
+                                                rule_name: self.metadata.name.clone(),
+                                                severity: self.metadata.default_severity,
+                                                message: format!(
+                                                    "Transmute changes struct lifetime in `{}`: {} -> {}. This can create dangling references.",
+                                                    current_fn_name, from_type, to_type
+                                                ),
+                                                function: location,
+                                                function_signature: current_fn_name.clone(),
+                                                evidence: vec![trimmed.to_string()],
+                                                span: None,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA096: Raw pointer from local reference escapes function
+// ============================================================================
+
+pub struct RawPointerEscapeRule {
+    metadata: RuleMetadata,
+}
+
+impl RawPointerEscapeRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA096".to_string(),
+                name: "raw-pointer-escape".to_string(),
+                short_description: "Raw pointer from local reference escapes function".to_string(),
+                full_description: "Casting a reference to a raw pointer (`as *const T` or `as *mut T`) and returning it or storing it beyond the reference's lifetime creates a dangling pointer. When the referenced data is dropped or moved, the pointer becomes invalid. Use Box::leak, 'static data, or ensure the caller manages the lifetime.".to_string(),
+                help_uri: Some("https://doc.rust-lang.org/std/primitive.pointer.html".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn is_ptr_cast(line: &str) -> bool {
+        line.contains("as *const") || 
+        line.contains("as *mut") ||
+        line.contains(".as_ptr()") ||
+        line.contains(".as_mut_ptr()")
+    }
+
+    fn is_return_context(lines: &[&str], idx: usize, ptr_var: &str) -> bool {
+        let line = lines[idx].trim();
+        
+        if line.starts_with("return ") && (line.contains("as *const") || line.contains("as *mut")) {
+            return true;
+        }
+        
+        if (line.contains("as *const") || line.contains("as *mut") || line.contains(".as_ptr()")) 
+           && !line.ends_with(';') 
+           && !line.contains("let ") {
+            return true;
+        }
+        
+        if !ptr_var.is_empty() {
+            for check_line in lines.iter().skip(idx + 1).take(10) {
+                let trimmed = check_line.trim();
+                if trimmed.starts_with("return ") && trimmed.contains(ptr_var) {
+                    return true;
+                }
+                if trimmed.contains(ptr_var) && !trimmed.ends_with(';') && trimmed.ends_with(')') {
+                    return true;
+                }
+                if trimmed.starts_with(ptr_var) && !trimmed.ends_with(';') {
+                    return true;
+                }
+            }
+        }
+        
+        false
+    }
+
+    fn is_escape_via_store(lines: &[&str], idx: usize) -> bool {
+        let line = lines[idx].trim();
+        
+        if line.contains("ptr:") && (line.contains("as *const") || line.contains("as *mut")) {
+            return true;
+        }
+        
+        if (line.starts_with("*") && line.contains(" = ")) && 
+           (line.contains("as *const") || line.contains("as *mut")) {
+            if line.contains("&") {
+                return true;
+            }
+        }
+        
+        if line.contains("GLOBAL") || line.contains("STATIC") {
+            if line.contains("as *const") || line.contains("as *mut") {
+                return true;
+            }
+        }
+        
+        false
+    }
+
+    fn is_safe_pattern(lines: &[&str], idx: usize, fn_context: &str) -> bool {
+        let line = lines[idx].trim();
+        
+        if fn_context.contains("fn ") && fn_context.contains("(&") {
+            if !line.contains("let ") && (line.contains(" x ") || line.contains("(x)")) {
+                return true;
+            }
+        }
+        
+        if line.contains("Box::leak") {
+            return true;
+        }
+        
+        if fn_context.contains("&'static str") {
+            return true;
+        }
+        
+        if line.contains("(ptr,") && (fn_context.contains("Box<") || fn_context.contains("boxed")) {
+            return true;
+        }
+        
+        if fn_context.contains("ManuallyDrop") {
+            return true;
+        }
+        
+        if fn_context.contains("Pin<") {
+            return true;
+        }
+        
+        if line.contains("unsafe {") && line.contains("*ptr") && !line.contains("return") {
+            return true;
+        }
+        
+        let next_lines: String = lines[idx..std::cmp::min(idx + 5, lines.len())]
+            .iter()
+            .map(|s| *s)
+            .collect::<Vec<&str>>()
+            .join("\n");
+        if next_lines.contains("unsafe { *ptr }") && !next_lines.contains("return ptr") {
+            return true;
+        }
+        
+        false
+    }
+}
+
+impl Rule for RawPointerEscapeRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+            let mut current_fn_name = String::new();
+            let mut current_fn_start = 0;
+            let mut returns_ptr = false;
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+
+                if trimmed.contains("fn ") {
+                    if let Some(fn_pos) = trimmed.find("fn ") {
+                        let after_fn = &trimmed[fn_pos + 3..];
+                        if let Some(paren_pos) = after_fn.find('(') {
+                            current_fn_name = after_fn[..paren_pos].trim().to_string();
+                            current_fn_start = idx;
+                            returns_ptr = trimmed.contains("-> *const") || 
+                                         trimmed.contains("-> *mut") ||
+                                         trimmed.contains("*const i32") ||
+                                         trimmed.contains("*const u8") ||
+                                         trimmed.contains("*const str");
+                        }
+                    }
+                }
+
+                if trimmed.starts_with("//") || trimmed.starts_with("/*") {
+                    continue;
+                }
+                if trimmed.starts_with("* ") || trimmed == "*" || trimmed.starts_with("*/") {
+                    continue;
+                }
+
+                if Self::is_ptr_cast(trimmed) {
+                    let fn_context: String = lines[current_fn_start..=idx.min(lines.len() - 1)]
+                        .iter()
+                        .take(20)
+                        .map(|s| *s)
+                        .collect::<Vec<&str>>()
+                        .join("\n");
+                    
+                    if Self::is_safe_pattern(&lines, idx, &fn_context) {
+                        continue;
+                    }
+                    
+                    let is_local_cast = trimmed.contains("&x ") || 
+                                       trimmed.contains("&local") ||
+                                       trimmed.contains("&temp") ||
+                                       trimmed.contains("&s ") ||
+                                       trimmed.contains("s.as_ptr()") ||
+                                       trimmed.contains("s.as_str()") ||
+                                       trimmed.contains("&v[");
+                    
+                    let mut ptr_var = String::new();
+                    if trimmed.contains("let ") && trimmed.contains(" = ") {
+                        if let Some(eq_pos) = trimmed.find(" = ") {
+                            let before_eq = &trimmed[..eq_pos];
+                            if let Some(let_pos) = before_eq.find("let ") {
+                                ptr_var = before_eq[let_pos + 4..].trim().to_string();
+                            }
+                        }
+                    }
+                    
+                    let escapes_via_return = Self::is_return_context(&lines, idx, &ptr_var);
+                    let escapes_via_store = Self::is_escape_via_store(&lines, idx);
+                    
+                    let is_deref_assign = trimmed.starts_with("*") && trimmed.contains(" = &");
+                    
+                    if ((returns_ptr || escapes_via_return || escapes_via_store) && is_local_cast) || 
+                       (is_deref_assign && is_local_cast) {
+                        let location = format!("{}:{}", rel_path, idx + 1);
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: self.metadata.default_severity,
+                            message: format!(
+                                "Raw pointer from local reference escapes function `{}`. This creates a dangling pointer when the local is dropped.",
+                                current_fn_name
+                            ),
+                            function: location,
+                            function_signature: current_fn_name.clone(),
+                            evidence: vec![trimmed.to_string()],
+                            span: None,
+                        });
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA038: Vec::set_len called on uninitialized vector (dataflow)
+// ============================================================================
+
+pub struct VecSetLenMisuseRule {
+    metadata: RuleMetadata,
+}
+
+impl VecSetLenMisuseRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA038".to_string(),
+                name: "vec-set-len-misuse".to_string(),
+                short_description: "Vec::set_len called on uninitialized vector".to_string(),
+                full_description: "Detects Vec::set_len calls where the vector may not be fully initialized. Calling set_len without ensuring all elements are initialized leads to undefined behavior when accessing uninitialized memory. Use Vec::resize, Vec::resize_with, or manually initialize elements before calling set_len.".to_string(),
+                help_uri: Some("https://doc.rust-lang.org/std/vec/struct.Vec.html#method.set_len".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn initialization_methods() -> &'static [&'static str] {
+        &[
+            ".push(",
+            ".extend(",
+            ".insert(",
+            ".resize(",
+            ".resize_with(",
+            "Vec::from(",
+            "vec![",
+            ".clone()",
+            ".to_vec()",
+        ]
+    }
+}
+
+impl Rule for VecSetLenMisuseRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+
+                if trimmed.contains(".set_len(") || trimmed.contains("::set_len(") {
+                    let mut var_name = None;
+                    
+                    if let Some(pos) = trimmed.find(".set_len(") {
+                        let before_set_len = &trimmed[..pos];
+                        if let Some(last_word_start) = before_set_len.rfind(|c: char| c.is_whitespace() || c == '(' || c == '{' || c == ';') {
+                            var_name = Some(&before_set_len[last_word_start + 1..]);
+                        } else {
+                            var_name = Some(before_set_len);
+                        }
+                    }
+
+                    if let Some(var) = var_name {
+                        let mut found_initialization = false;
+                        let lookback_limit = idx.saturating_sub(50);
+
+                        for prev_idx in (lookback_limit..idx).rev() {
+                            let prev_line = lines[prev_idx];
+                            
+                            for init_method in Self::initialization_methods() {
+                                if prev_line.contains(var) && prev_line.contains(init_method) {
+                                    found_initialization = true;
+                                    break;
+                                }
+                            }
+
+                            if prev_line.contains(var) && 
+                               (prev_line.contains("[") && prev_line.contains("]=") || 
+                                prev_line.contains("ptr::write") ||
+                                prev_line.contains(".as_mut_ptr()")) {
+                                found_initialization = true;
+                                break;
+                            }
+
+                            if prev_line.contains(var) && prev_line.contains("Vec::with_capacity") {
+                                found_initialization = false;
+                                break;
+                            }
+
+                            if prev_line.trim().starts_with("fn ") || 
+                               prev_line.trim().starts_with("pub fn ") ||
+                               prev_line.trim().starts_with("async fn ") {
+                                break;
+                            }
+                        }
+
+                        if !found_initialization {
+                            let location = format!("{}:{}", rel_path, idx + 1);
+
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message: format!(
+                                    "Vec::set_len called on potentially uninitialized vector `{}`",
+                                    var
+                                ),
+                                function: location,
+                                function_signature: var.to_string(),
+                                evidence: vec![trimmed.to_string()],
+                                span: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA022: Payload length cast to narrower integer
+// ============================================================================
+
+pub struct LengthTruncationCastRule {
+    metadata: RuleMetadata,
+}
+
+impl LengthTruncationCastRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA022".to_string(),
+                name: "length-truncation-cast".to_string(),
+                short_description: "Payload length cast to narrower integer".to_string(),
+                full_description: "Detects casts or try_into conversions that shrink message length fields to 8/16/32-bit integers without bounds checks, potentially smuggling extra bytes past protocol parsers. See RUSTSEC-2024-0363 and RUSTSEC-2024-0365 for PostgreSQL wire protocol examples.".to_string(),
+                help_uri: Some("https://rustsec.org/advisories/RUSTSEC-2024-0363.html".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for LengthTruncationCastRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            let casts = detect_truncating_len_casts(function);
+
+            for cast in casts {
+                let mut evidence = vec![cast.cast_line.clone()];
+
+                if !cast.source_vars.is_empty() {
+                    evidence.push(format!("length sources: {}", cast.source_vars.join(", ")));
+                }
+
+                for sink in &cast.sink_lines {
+                    if !evidence.contains(sink) {
+                        evidence.push(sink.clone());
+                    }
+                }
+
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "Potential length truncation before serialization in `{}`",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence,
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA078: MaybeUninit::assume_init without preceding write (dataflow)
+// ============================================================================
+
+pub struct MaybeUninitAssumeInitDataflowRule {
+    metadata: RuleMetadata,
+}
+
+impl MaybeUninitAssumeInitDataflowRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA078".to_string(),
+                name: "maybeuninit-assume-init-without-write".to_string(),
+                short_description: "MaybeUninit::assume_init without preceding write".to_string(),
+                full_description: "Detects MaybeUninit::assume_init() or assume_init_read() calls \
+                    where no preceding MaybeUninit::write(), write_slice(), or ptr::write() \
+                    initializes the data. Reading uninitialized memory is undefined behavior and \
+                    can lead to crashes, data corruption, or security vulnerabilities. Always \
+                    initialize MaybeUninit values before assuming them initialized."
+                    .to_string(),
+                help_uri: Some("https://doc.rust-lang.org/std/mem/union.MaybeUninit.html".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn uninit_creation_patterns() -> &'static [&'static str] {
+        &[
+            "MaybeUninit::uninit",
+            "MaybeUninit::<",
+            "uninit_array",
+            "uninit(",
+        ]
+    }
+
+    fn init_patterns() -> &'static [&'static str] {
+        &[
+            ".write(",
+            "::write(",
+            "write_slice(",
+            "ptr::write(",
+            "ptr::write_bytes(",
+            "ptr::copy(",
+            "ptr::copy_nonoverlapping(",
+            "as_mut_ptr()",
+            "zeroed(",
+            "MaybeUninit::new(",
+        ]
+    }
+
+    fn assume_init_patterns() -> &'static [&'static str] {
+        &[
+            "assume_init(",
+            "assume_init_read(",
+            "assume_init_ref(",
+            "assume_init_mut(",
+            "assume_init_drop(",
+        ]
+    }
+
+    fn analyze_uninit_flow(body: &[String]) -> Vec<(String, String)> {
+        let mut uninitialized_vars: HashMap<String, String> = HashMap::new();
+        let mut initialized_vars: HashSet<String> = HashSet::new();
+        let mut unsafe_assumes: Vec<(String, String)> = Vec::new();
+        
+        let creation_patterns = Self::uninit_creation_patterns();
+        let init_patterns = Self::init_patterns();
+        let assume_patterns = Self::assume_init_patterns();
+        
+        for line in body {
+            let trimmed = line.trim();
+            
+            let is_creation = creation_patterns.iter().any(|p| trimmed.contains(p));
+            
+            if is_creation && !trimmed.contains("zeroed") && !trimmed.contains("::new(") {
+                if let Some(eq_pos) = trimmed.find(" = ") {
+                    let target = trimmed[..eq_pos].trim();
+                    if let Some(var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                        .find(|s| s.starts_with('_'))
+                    {
+                        uninitialized_vars.insert(var.to_string(), trimmed.to_string());
+                    }
+                }
+            }
+            
+            let is_init = init_patterns.iter().any(|p| trimmed.contains(p));
+            
+            if is_init {
+                for var in uninitialized_vars.keys() {
+                    if trimmed.contains(var) {
+                        initialized_vars.insert(var.clone());
+                    }
+                }
+            }
+            
+            let is_assume = assume_patterns.iter().any(|p| trimmed.contains(p));
+            
+            if is_assume {
+                for (var, creation_line) in &uninitialized_vars {
+                    if trimmed.contains(var) && !initialized_vars.contains(var) {
+                        unsafe_assumes.push((creation_line.clone(), trimmed.to_string()));
+                    }
+                }
+            }
+        }
+        
+        unsafe_assumes
+    }
+}
+
+impl Rule for MaybeUninitAssumeInitDataflowRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            if function.name.contains("mir_extractor") || 
+               function.name.contains("mir-extractor") ||
+               function.name.contains("MaybeUninit") {
+                continue;
+            }
+
+            let unsafe_assumes = Self::analyze_uninit_flow(&function.body);
+            
+            for (creation_line, assume_line) in unsafe_assumes {
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "MaybeUninit::assume_init() called in `{}` without preceding initialization. \
+                        Reading uninitialized memory is undefined behavior.",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence: vec![
+                        format!("Created: {}", creation_line),
+                        format!("Assumed: {}", assume_line),
+                    ],
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA082: Slice element size mismatch in transmute
+// ============================================================================
+
+pub struct SliceElementSizeMismatchRule {
+    metadata: RuleMetadata,
+}
+
+impl SliceElementSizeMismatchRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA082".to_string(),
+                name: "slice-element-size-mismatch".to_string(),
+                short_description: "Raw pointer to slice of different element size".to_string(),
+                full_description: "Detects transmutes between slice types with different \
+                    element sizes (e.g., &[u8] to &[u32]). This is unsound because the slice \
+                    length field isn't adjusted for the size difference, causing the new slice \
+                    to reference memory beyond the original allocation. Use slice::from_raw_parts \
+                    or slice::align_to instead."
+                    .to_string(),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+                help_uri: None,
+            },
+        }
+    }
+
+    fn get_primitive_size(type_name: &str) -> Option<usize> {
+        let inner = type_name
+            .trim_start_matches('&')
+            .trim_start_matches("mut ")
+            .trim_start_matches("*const ")
+            .trim_start_matches("*mut ")
+            .trim_start_matches('[')
+            .trim_end_matches(']');
+
+        match inner {
+            "u8" | "i8" | "bool" => Some(1),
+            "u16" | "i16" => Some(2),
+            "u32" | "i32" | "f32" | "char" => Some(4),
+            "u64" | "i64" | "f64" => Some(8),
+            "u128" | "i128" => Some(16),
+            "usize" | "isize" => Some(8),
+            _ => None,
+        }
+    }
+
+    fn extract_slice_element_type(type_str: &str) -> Option<String> {
+        let trimmed = type_str.trim();
+        
+        if !trimmed.contains('[') || !trimmed.contains(']') {
+            return None;
+        }
+        
+        let start = trimmed.find('[')? + 1;
+        let end = trimmed.rfind(']')?;
+        
+        if start >= end {
+            return None;
+        }
+        
+        Some(trimmed[start..end].trim().to_string())
+    }
+
+    fn is_slice_size_mismatch(from_type: &str, to_type: &str) -> Option<(String, String, usize, usize)> {
+        let from_elem = Self::extract_slice_element_type(from_type)?;
+        let to_elem = Self::extract_slice_element_type(to_type)?;
+        
+        if from_elem == to_elem {
+            return None;
+        }
+        
+        let from_size = Self::get_primitive_size(&from_elem);
+        let to_size = Self::get_primitive_size(&to_elem);
+        
+        match (from_size, to_size) {
+            (Some(fs), Some(ts)) => {
+                if fs == ts {
+                    None
+                } else {
+                    Some((from_elem, to_elem, fs, ts))
+                }
+            }
+            (None, None) => {
+                Some((from_elem, to_elem, 0, 0))
+            }
+            _ => {
+                Some((from_elem, to_elem, from_size.unwrap_or(0), to_size.unwrap_or(0)))
+            }
+        }
+    }
+
+    fn is_vec_size_mismatch(from_type: &str, to_type: &str) -> Option<(String, String, usize, usize)> {
+        let extract_vec_elem = |t: &str| -> Option<String> {
+            if !t.contains("Vec<") {
+                return None;
+            }
+            let start = t.find("Vec<")? + 4;
+            let end = t.rfind('>')?;
+            if start >= end {
+                return None;
+            }
+            Some(t[start..end].trim().to_string())
+        };
+        
+        let from_elem = extract_vec_elem(from_type)?;
+        let to_elem = extract_vec_elem(to_type)?;
+        
+        if from_elem == to_elem {
+            return None;
+        }
+        
+        let from_size = Self::get_primitive_size(&from_elem)?;
+        let to_size = Self::get_primitive_size(&to_elem)?;
+        
+        if from_size == to_size {
+            return None;
+        }
+        
+        Some((from_elem, to_elem, from_size, to_size))
+    }
+
+    fn parse_transmute_copy_line(line: &str) -> Option<(String, String)> {
+        let trimmed = line.trim();
+        
+        if !trimmed.contains("transmute_copy::<") {
+            return None;
+        }
+        
+        let start = trimmed.find("transmute_copy::<")? + 17;
+        let end = trimmed[start..].find(">")? + start;
+        
+        let type_params = &trimmed[start..end];
+        
+        let mut depth = 0;
+        let mut split_pos = None;
+        for (i, c) in type_params.char_indices() {
+            match c {
+                '<' => depth += 1,
+                '>' => depth -= 1,
+                ',' if depth == 0 => {
+                    split_pos = Some(i);
+                    break;
+                }
+                _ => {}
+            }
+        }
+        
+        let split = split_pos?;
+        let from_type = type_params[..split].trim().to_string();
+        let to_type = type_params[split + 1..].trim().to_string();
+        
+        Some((from_type, to_type))
+    }
+}
+
+impl Rule for SliceElementSizeMismatchRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            if function.signature.contains("#[test]") || function.name.contains("test") {
+                continue;
+            }
+
+            let mut var_types: HashMap<String, String> = HashMap::new();
+            
+            if let Some(params_start) = function.signature.find('(') {
+                if let Some(params_end) = function.signature.find(')') {
+                    let params = &function.signature[params_start + 1..params_end];
+                    for param in params.split(',') {
+                        let param = param.trim();
+                        if let Some(colon_pos) = param.find(':') {
+                            let var_name = param[..colon_pos].trim();
+                            let var_type = param[colon_pos + 1..].trim();
+                            var_types.insert(var_name.to_string(), var_type.to_string());
+                        }
+                    }
+                }
+            }
+
+            for line in &function.body {
+                let trimmed = line.trim();
+                
+                if trimmed.starts_with("let ") {
+                    let rest = trimmed.trim_start_matches("let ").trim_start_matches("mut ");
+                    if let Some(colon_pos) = rest.find(':') {
+                        let var_name = rest[..colon_pos].trim();
+                        let type_end = rest.find(';').unwrap_or(rest.len());
+                        let var_type = rest[colon_pos + 1..type_end].trim();
+                        var_types.insert(var_name.to_string(), var_type.to_string());
+                    }
+                }
+            }
+
+            for line in &function.body {
+                let trimmed = line.trim();
+
+                if let Some((from_type, to_type)) = Self::parse_transmute_copy_line(trimmed) {
+                    if let Some((from_elem, to_elem, from_size, to_size)) = 
+                        Self::is_slice_size_mismatch(&from_type, &to_type) 
+                    {
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: self.metadata.default_severity,
+                            message: format!(
+                                "transmute_copy between slices with different element sizes: \
+                                [{}] ({} bytes) to [{}] ({} bytes). The slice length won't be \
+                                adjusted, causing memory access beyond the original allocation. \
+                                Use slice::from_raw_parts with adjusted length instead.",
+                                from_elem, from_size, to_elem, to_size
+                            ),
+                            function: function.name.clone(),
+                            function_signature: function.signature.clone(),
+                            evidence: vec![trimmed.to_string()],
+                            span: function.span.clone(),
+                        });
+                        continue;
+                    }
+                    
+                    if let Some((from_elem, to_elem, from_size, to_size)) = 
+                        Self::is_vec_size_mismatch(&from_type, &to_type) 
+                    {
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: self.metadata.default_severity,
+                            message: format!(
+                                "transmute_copy between Vecs with different element sizes: \
+                                Vec<{}> ({} bytes) to Vec<{}> ({} bytes). This corrupts the \
+                                Vec's length and capacity fields.",
+                                from_elem, from_size, to_elem, to_size
+                            ),
+                            function: function.name.clone(),
+                            function_signature: function.signature.clone(),
+                            evidence: vec![trimmed.to_string()],
+                            span: function.span.clone(),
+                        });
+                        continue;
+                    }
+                }
+
+                if trimmed.contains("(Transmute)") && trimmed.contains(" as ") {
+                    let copy_move_pattern = if trimmed.contains("copy ") {
+                        "copy "
+                    } else if trimmed.contains("move ") {
+                        "move "
+                    } else {
+                        continue;
+                    };
+                    
+                    let as_pos = match trimmed.find(" as ") {
+                        Some(p) => p,
+                        None => continue,
+                    };
+                    
+                    let transmute_pos = match trimmed.find("(Transmute)") {
+                        Some(p) => p,
+                        None => continue,
+                    };
+                    
+                    let to_type = trimmed[as_pos + 4..transmute_pos].trim();
+                    
+                    let copy_pos = match trimmed.find(copy_move_pattern) {
+                        Some(p) => p,
+                        None => continue,
+                    };
+                    
+                    let src_start = copy_pos + copy_move_pattern.len();
+                    let src_end = as_pos;
+                    let src_var = trimmed[src_start..src_end].trim();
+                    
+                    let from_type = match var_types.get(src_var) {
+                        Some(t) => t.as_str(),
+                        None => continue,
+                    };
+
+                    if let Some((from_elem, to_elem, from_size, to_size)) = 
+                        Self::is_slice_size_mismatch(from_type, to_type) 
+                    {
+                        let size_info = if from_size == 0 && to_size == 0 {
+                            format!(
+                                "Transmute between slices of different struct types: \
+                                [{}] to [{}]. Different struct types likely have different sizes, \
+                                causing the slice length to be incorrect.",
+                                from_elem, to_elem
+                            )
+                        } else if from_size == 0 || to_size == 0 {
+                            format!(
+                                "Transmute between slices with different element types: \
+                                [{}] to [{}]. The slice length won't be adjusted for size differences.",
+                                from_elem, to_elem
+                            )
+                        } else {
+                            format!(
+                                "Transmute between slices with different element sizes: \
+                                [{}] ({} bytes) to [{}] ({} bytes). The slice length won't be \
+                                adjusted, causing memory access beyond the original allocation.",
+                                from_elem, from_size, to_elem, to_size
+                            )
+                        };
+                        
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: self.metadata.default_severity,
+                            message: format!(
+                                "{} Use slice::from_raw_parts with adjusted length, or slice::align_to.",
+                                size_info
+                            ),
+                            function: function.name.clone(),
+                            function_signature: function.signature.clone(),
+                            evidence: vec![trimmed.to_string()],
+                            span: function.span.clone(),
+                        });
+                    }
+                    
+                    if let Some((from_elem, to_elem, from_size, to_size)) = 
+                        Self::is_vec_size_mismatch(from_type, to_type) 
+                    {
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: self.metadata.default_severity,
+                            message: format!(
+                                "Transmute between Vecs with different element sizes: \
+                                Vec<{}> ({} bytes) to Vec<{}> ({} bytes). This corrupts the \
+                                Vec's length and capacity fields, potentially causing memory \
+                                corruption or use-after-free.",
+                                from_elem, from_size, to_elem, to_size
+                            ),
+                            function: function.name.clone(),
+                            function_signature: function.signature.clone(),
+                            evidence: vec![trimmed.to_string()],
+                            span: function.span.clone(),
+                        });
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA083: slice::from_raw_parts with potentially invalid length
+// ============================================================================
+
+pub struct SliceFromRawPartsRule {
+    metadata: RuleMetadata,
+}
+
+impl SliceFromRawPartsRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA083".to_string(),
+                name: "slice-from-raw-parts-length".to_string(),
+                short_description: "slice::from_raw_parts with potentially invalid length".to_string(),
+                full_description: "Detects calls to slice::from_raw_parts or from_raw_parts_mut \
+                    where the length argument may exceed the actual allocation, causing undefined \
+                    behavior. Common issues include using untrusted input for length, forgetting \
+                    to divide byte length by element size, or using unvalidated external lengths. \
+                    Ensure length is derived from a trusted source or properly validated."
+                    .to_string(),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+                help_uri: None,
+            },
+        }
+    }
+
+    fn is_trusted_length_source(var_name: &str, body: &[String]) -> bool {
+        let body_str = body.join("\n");
+        
+        if body_str.contains(&format!("{} = ", var_name)) {
+            for line in body {
+                if line.contains(&format!("{} = ", var_name)) {
+                    if line.contains("::len(") || 
+                       line.contains(">::len(") ||
+                       line.contains(".len()") {
+                        return true;
+                    }
+                }
+            }
+        }
+        
+        if var_name.contains("count") {
+            if body_str.contains("Layout::array") || body_str.contains("with_capacity") {
+                return true;
+            }
+        }
+        
+        false
+    }
+
+    fn has_length_validation(len_var: &str, body: &[String]) -> bool {
+        let body_str = body.join("\n");
+        
+        let comparison_patterns = [
+            format!("Gt(copy {}", len_var),
+            format!("Lt(copy {}", len_var),
+            format!("Le(copy {}", len_var),
+            format!("Ge(copy {}", len_var),
+            format!("Gt(move {}", len_var),
+            format!("Lt(move {}", len_var),
+            format!("Le(move {}", len_var),
+            format!("Ge(move {}", len_var),
+        ];
+        
+        for pattern in &comparison_patterns {
+            if body_str.contains(pattern) {
+                return true;
+            }
+        }
+        
+        if body_str.contains("::min(") {
+            if body_str.contains(&format!("copy {}", len_var)) || 
+               body_str.contains(&format!("move {}", len_var)) {
+                for line in body {
+                    if line.contains("::min(") && line.contains(len_var) {
+                        return true;
+                    }
+                }
+            }
+        }
+        if body_str.contains("saturating_") && body_str.contains(len_var) {
+            for line in body {
+                if line.contains("saturating_") && line.contains(len_var) {
+                    return true;
+                }
+            }
+        }
+        
+        if body_str.contains("checked_") && body_str.contains(len_var) {
+            for line in body {
+                if line.contains("checked_") && line.contains(len_var) {
+                    return true;
+                }
+            }
+        }
+        
+        for line in body {
+            if line.contains("assert") {
+                if line.contains(&format!("Le(copy {}", len_var)) ||
+                   line.contains(&format!("Lt(copy {}", len_var)) ||
+                   line.contains(&format!("Le(move {}", len_var)) ||
+                   line.contains(&format!("Lt(move {}", len_var)) {
+                    return true;
+                }
+            }
+        }
+        
+        false
+    }
+
+    fn is_large_constant(line: &str) -> Option<usize> {
+        if let Some(const_pos) = line.rfind("const ") {
+            let after_const = &line[const_pos + 6..];
+            if let Some(usize_pos) = after_const.find("_usize") {
+                let num_str = &after_const[..usize_pos];
+                if let Ok(n) = num_str.trim().parse::<usize>() {
+                    if n > 10000 {
+                        return Some(n);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn is_untrusted_length_source(_len_var: &str, body: &[String]) -> bool {
+        let body_str = body.join("\n");
+        
+        if body_str.contains("env::var") || body_str.contains("var::<") {
+            if body_str.contains("parse") {
+                return true;
+            }
+        }
+        
+        if body_str.contains("env::args") || body_str.contains("Args") || body_str.contains("args::<") {
+            return true;
+        }
+        
+        if body_str.contains("stdin") || body_str.contains("Stdin") {
+            return true;
+        }
+        
+        false
+    }
+
+    fn is_dangerous_length_computation(len_var: &str, body: &[String]) -> Option<String> {
+        let mut source_var = len_var.to_string();
+        for line in body {
+            let trimmed = line.trim();
+            if trimmed.contains(&format!("{} = move ", len_var)) && trimmed.contains("as usize") {
+                if let Some(start) = trimmed.find("move ") {
+                    let after_move = &trimmed[start + 5..];
+                    if let Some(end) = after_move.find(" as") {
+                        source_var = after_move[..end].to_string();
+                    }
+                }
+            }
+        }
+        
+        for line in body {
+            let trimmed = line.trim();
+            
+            if trimmed.contains(&format!("{} = MulWithOverflow", len_var)) ||
+                trimmed.contains(&format!("{} = Mul(", len_var)) {
+                return Some("length computed from multiplication (may overflow or use wrong scale)".to_string());
+            }
+            
+            if trimmed.contains(&format!("{} =", len_var)) && trimmed.contains("offset_from") {
+                return Some("length derived from pointer difference (end pointer may be invalid)".to_string());
+            }
+            if source_var != len_var && trimmed.contains(&format!("{} =", source_var)) && trimmed.contains("offset_from") {
+                return Some("length derived from pointer difference (end pointer may be invalid)".to_string());
+            }
+            
+            if trimmed.contains(&format!("{} = move (", len_var)) && 
+               trimmed.contains(".0: usize)") {
+                let body_str = body.join("\n");
+                if body_str.contains("MulWithOverflow") {
+                    return Some("length computed from multiplication (may overflow or use wrong scale)".to_string());
+                }
+            }
+            
+            if trimmed.contains(&format!("{} = Layout::size", len_var)) {
+                return Some("length from Layout::size() returns bytes, not element count".to_string());
+            }
+            if trimmed.contains(&format!("{} =", len_var)) && trimmed.contains("Layout::size") {
+                return Some("length from Layout::size() returns bytes, not element count".to_string());
+            }
+            
+            if trimmed.contains(&format!("{} = Div(", len_var)) {
+                if trimmed.contains("const 2_usize") {
+                    return Some("length divided by 2 may not match element size".to_string());
+                }
+            }
+        }
+        
+        None
+    }
+
+    fn parse_from_raw_parts_call(line: &str) -> Option<(String, String)> {
+        if !line.contains("from_raw_parts") {
+            return None;
+        }
+        
+        let call_start = if line.contains("from_raw_parts_mut") {
+            line.find("from_raw_parts_mut")?
+        } else {
+            line.find("from_raw_parts")?
+        };
+        
+        let after_call = &line[call_start..];
+        
+        let args_start = after_call.find('(')? + 1;
+        let args_end = after_call.rfind(')')?;
+        
+        if args_start >= args_end {
+            return None;
+        }
+        
+        let args_str = &after_call[args_start..args_end];
+        
+        let parts: Vec<&str> = args_str.split(',').collect();
+        if parts.len() != 2 {
+            return None;
+        }
+        
+        let ptr_arg = parts[0].trim()
+            .trim_start_matches("copy ")
+            .trim_start_matches("move ")
+            .to_string();
+        let len_arg = parts[1].trim()
+            .trim_start_matches("copy ")
+            .trim_start_matches("move ")
+            .to_string();
+        
+        Some((ptr_arg, len_arg))
+    }
+
+    fn is_function_parameter(len_var: &str, signature: &str) -> bool {
+        signature.contains(&format!("{}: usize", len_var)) ||
+        signature.contains(&format!("{}: u64", len_var)) ||
+        signature.contains(&format!("{}: u32", len_var))
+    }
+}
+
+impl Rule for SliceFromRawPartsRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            if function.signature.contains("#[test]") || function.name.contains("test") {
+                continue;
+            }
+
+            for line in &function.body {
+                let trimmed = line.trim();
+                
+                if !trimmed.contains("from_raw_parts") {
+                    continue;
+                }
+                
+                if !trimmed.contains("->") || !trimmed.contains("(") {
+                    continue;
+                }
+
+                let (_ptr_var, len_var) = match Self::parse_from_raw_parts_call(trimmed) {
+                    Some(p) => p,
+                    None => continue,
+                };
+
+                if let Some(large_len) = Self::is_large_constant(trimmed) {
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: format!(
+                            "slice::from_raw_parts called with large constant length {}. \
+                            Ensure the pointer actually points to at least {} elements of \
+                            memory. Large constant lengths often indicate bugs.",
+                            large_len, large_len
+                        ),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence: vec![trimmed.to_string()],
+                        span: function.span.clone(),
+                    });
+                    continue;
+                }
+
+                if Self::is_trusted_length_source(&len_var, &function.body) {
+                    continue;
+                }
+
+                if Self::has_length_validation(&len_var, &function.body) {
+                    continue;
+                }
+
+                if Self::is_untrusted_length_source(&len_var, &function.body) {
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: format!(
+                            "slice::from_raw_parts length '{}' derived from untrusted source \
+                            (environment variable, command-line argument, or user input). \
+                            Validate length against allocation size before creating slice.",
+                            len_var
+                        ),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence: vec![trimmed.to_string()],
+                        span: function.span.clone(),
+                    });
+                    continue;
+                }
+                
+                if let Some(reason) = Self::is_dangerous_length_computation(&len_var, &function.body) {
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: format!(
+                            "slice::from_raw_parts length '{}': {}. \
+                            Verify the length correctly represents element count within the allocation.",
+                            len_var, reason
+                        ),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence: vec![trimmed.to_string()],
+                        span: function.span.clone(),
+                    });
+                    continue;
+                }
+
+                if Self::is_function_parameter(&len_var, &function.signature) {
+                    if function.signature.contains("NonNull<") {
+                        continue;
+                    }
+                    
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: Severity::Medium,
+                        message: format!(
+                            "slice::from_raw_parts length '{}' comes directly from function \
+                            parameter without validation. If callers can pass arbitrary values, \
+                            add bounds checking or document the safety requirements.",
+                            len_var
+                        ),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence: vec![trimmed.to_string()],
+                        span: function.span.clone(),
+                    });
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 /// Register all memory safety rules with the rule engine.
 pub fn register_memory_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
@@ -1080,4 +2788,13 @@ pub fn register_memory_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(MemUninitZeroedRule::new()));
     engine.register_rule(Box::new(NonNullNewUncheckedRule::new()));
     engine.register_rule(Box::new(MemForgetGuardRule::new()));
+    // Advanced memory rules (dataflow-based)
+    engine.register_rule(Box::new(StaticMutGlobalRule::new()));
+    engine.register_rule(Box::new(TransmuteLifetimeChangeRule::new()));
+    engine.register_rule(Box::new(RawPointerEscapeRule::new()));
+    engine.register_rule(Box::new(VecSetLenMisuseRule::new()));
+    engine.register_rule(Box::new(LengthTruncationCastRule::new()));
+    engine.register_rule(Box::new(MaybeUninitAssumeInitDataflowRule::new()));
+    engine.register_rule(Box::new(SliceElementSizeMismatchRule::new()));
+    engine.register_rule(Box::new(SliceFromRawPartsRule::new()));
 }

@@ -7,12 +7,15 @@
 //! - OpenOptions configuration issues
 //! - Hardcoded home paths
 //! - Build script network access
+//! - Unbounded allocations from untrusted input
 
 #![allow(dead_code)]
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use crate::{Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
+use crate::prototypes;
 use crate::line_has_world_writable_mode;
 
 // ============================================================================
@@ -927,6 +930,88 @@ impl Rule for BuildScriptNetworkRule {
 }
 
 // ============================================================================
+// RUSTCOLA024: Unbounded allocation from tainted input
+// ============================================================================
+
+pub struct UnboundedAllocationRule {
+    metadata: RuleMetadata,
+}
+
+impl UnboundedAllocationRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA024".to_string(),
+                name: "unbounded-allocation".to_string(),
+                short_description: "Allocation sized from tainted length without guard".to_string(),
+                full_description: "Detects allocations (`with_capacity`, `reserve*`) that rely on tainted length values (parameters, `.len()` on attacker data, etc.) without bounding them, enabling memory exhaustion.".to_string(),
+                help_uri: Some("https://github.com/Opus-the-penguin/Rust-cola/blob/main/docs/security-rule-backlog.md#resource-management--dos".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for UnboundedAllocationRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let options = prototypes::PrototypeOptions::default();
+
+        for function in &package.functions {
+            let specialized =
+                prototypes::detect_content_length_allocations_with_options(function, &options);
+            let specialized_lines: HashSet<_> = specialized
+                .iter()
+                .map(|alloc| alloc.allocation_line.clone())
+                .collect();
+
+            let allocations =
+                prototypes::detect_unbounded_allocations_with_options(function, &options);
+
+            for allocation in allocations {
+                if specialized_lines.contains(&allocation.allocation_line) {
+                    continue;
+                }
+
+                let mut evidence = vec![allocation.allocation_line.clone()];
+
+                let mut tainted: Vec<_> = allocation.tainted_vars.iter().cloned().collect();
+                tainted.sort();
+                tainted.dedup();
+                if !tainted.is_empty() {
+                    evidence.push(format!("tainted length symbols: {}", tainted.join(", ")));
+                }
+
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "Potential unbounded allocation from tainted input in `{}`",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence,
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -941,4 +1026,5 @@ pub fn register_resource_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(AbsolutePathInJoinRule::new()));
     engine.register_rule(Box::new(HardcodedHomePathRule::new()));
     engine.register_rule(Box::new(BuildScriptNetworkRule::new()));
+    engine.register_rule(Box::new(UnboundedAllocationRule::new()));
 }

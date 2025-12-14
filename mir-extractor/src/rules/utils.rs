@@ -3,6 +3,38 @@
 //! This module contains helper functions and types used across multiple rules,
 //! particularly for source code analysis that needs to handle string literals correctly.
 
+use walkdir::DirEntry;
+
+/// Filter function for WalkDir to skip common non-source directories.
+///
+/// Excludes: target, .git, .cola-cache, out, node_modules
+///
+/// # Example
+/// ```ignore
+/// for entry in WalkDir::new(crate_root)
+///     .into_iter()
+///     .filter_entry(|e| filter_entry(e))
+/// {
+///     // ...
+/// }
+/// ```
+pub fn filter_entry(entry: &DirEntry) -> bool {
+    if entry.depth() == 0 {
+        return true;
+    }
+
+    let name = entry.file_name().to_string_lossy();
+    if entry.file_type().is_dir()
+        && matches!(
+            name.as_ref(),
+            "target" | ".git" | ".cola-cache" | "out" | "node_modules"
+        )
+    {
+        return false;
+    }
+    true
+}
+
 /// State machine for tracking string literal boundaries across lines.
 ///
 /// Used by `strip_string_literals` to correctly handle multi-line strings

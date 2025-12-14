@@ -81,15 +81,22 @@ Use `--no-ast`, `--no-hir`, or `--no-llm-prompt` to suppress specific outputs.
 
 ## What It Detects
 
-102 rules covering:
+102 rules across 10 security categories:
 
-- Memory safety (transmute, uninitialized memory, Box leaks, dangling pointer escapes)
-- Input validation (SQL injection, path traversal, command injection, SSRF, unsafe JSON/TOML/binary deserialization, template injection, regex catastrophic backtracking)
-- Cryptography (weak hashes, weak ciphers, hardcoded keys)
-- Concurrency (mutex across await, blocking in async, span guards held across await, non-Send futures crossing executor threads, unsafe data flow in async state machines)
-- FFI (allocator mismatch, CString pointer misuse)
+| Category | Rules | Examples |
+|----------|-------|----------|
+| **Memory Safety** | 18 | Transmute misuse, uninitialized memory, Box leaks, raw pointer escapes, slice safety, set_len misuse |
+| **Injection** | 10 | SQL injection, command injection, path traversal, SSRF, template injection, regex DoS |
+| **Cryptography** | 8 | Weak hashes (MD5/SHA1), weak ciphers, hardcoded keys, timing attacks, PRNG bias |
+| **Concurrency** | 9 | Mutex across await, blocking in async, Send/Sync violations, lock guards, panic safety |
+| **FFI** | 6 | Allocator mismatch, CString pointer misuse, packed fields, repr(C), buffer leaks |
+| **Input Validation** | 10 | Env vars, stdin, unicode, deserialization, division by untrusted input |
+| **Web Security** | 11 | TLS validation, CORS, cookies, passwords in logs, Content-Length allocation |
+| **Resource Management** | 10 | File permissions, open options, infinite iterators, unbounded allocations |
+| **Code Quality** | 8 | Dead stores, assertions, crate-wide allow, RefCell, commented code |
+| **Supply Chain** | 3 | RUSTSEC advisories, yanked crates, auditable dependencies |
 
-Includes inter-procedural taint analysis: tracks data flow across function calls.
+Plus 9 advanced dataflow rules for inter-procedural taint analysis: tracks data flow across function calls, async boundaries, and closures.
 
 ## Why It Requires Compilation
 

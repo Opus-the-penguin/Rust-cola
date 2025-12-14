@@ -5,6 +5,28 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2025-12-14
+
+### Added
+- **Shared Utilities Module**: Created `rules/utils.rs` with reusable string literal handling utilities.
+  - `StringLiteralState`: State machine for tracking string literal boundaries across lines.
+  - `strip_string_literals()`: Replaces string content with spaces while preserving line length.
+  - `collect_sanitized_matches()`: Helper for pattern matching that ignores string literal content.
+  - 5 unit tests for utility functions.
+
+### Changed
+- **Rule Migration**: Migrated 8 additional rules from `lib.rs` to modular structure.
+  - `rules/concurrency.rs`: Added `UnsafeSendSyncBoundsRule` (RUSTCOLA015).
+  - `rules/ffi.rs`: Added `FfiBufferLeakRule` (RUSTCOLA016).
+  - `rules/code_quality.rs`: Added `OverscopedAllowRule` (RUSTCOLA072), `CommentedOutCodeRule` (RUSTCOLA092).
+  - Previously migrated: `UnderscoreLockGuardRule`, `BroadcastUnsyncPayloadRule`, `PanicInDropRule`, `UnwrapInPollRule`.
+- **Codebase Reduction**: `lib.rs` reduced from ~22,936 to ~21,236 lines (~1,700 lines removed).
+
+### Technical
+- Total rule modules: 10 categories + 1 utils module.
+- Test count increased from 138 to 143 (utils tests included).
+- Updated `PRODUCTION_RELEASE_PLAN.md` with Phase 1.2 progress notes.
+
 ## [0.7.0] - 2025-12-14
 
 ### Fixed

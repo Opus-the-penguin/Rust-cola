@@ -7,11 +7,14 @@
 //! - Local RefCell patterns (RUSTCOLA052)
 //! - Unnecessary borrow_mut (RUSTCOLA057)
 //! - Dead stores in arrays (RUSTCOLA068)
+//! - Overscoped allow attributes (RUSTCOLA072)
+//! - Commented-out code (RUSTCOLA092)
 
 #![allow(dead_code)]
 
-use crate::{Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
+use crate::{Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity, SourceFile};
 use std::collections::HashMap;
+use std::path::Path;
 
 // ============================================================================
 // RUSTCOLA049: Crate-Wide Allow Attribute
@@ -635,6 +638,312 @@ impl Rule for DeadStoreArrayRule {
 }
 
 // ============================================================================
+// RUSTCOLA072: Overscoped Allow Attributes
+// ============================================================================
+
+/// Detects crate-level #![allow(...)] that suppresses security-relevant lints.
+pub struct OverscopedAllowRule {
+    metadata: RuleMetadata,
+}
+
+impl OverscopedAllowRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA072".to_string(),
+                name: "overscoped-allow".to_string(),
+                short_description: "Crate-wide allow attribute suppresses security lints".to_string(),
+                full_description: "Detects #![allow(...)] attributes at crate level that suppress warnings across the entire crate. Such broad suppression can hide security issues that should be addressed. Prefer module-level or item-level allows that target specific warnings in specific contexts.".to_string(),
+                help_uri: None,
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Check if this attribute path is a security-relevant lint
+    fn is_security_relevant_lint(path: &str) -> bool {
+        matches!(path,
+            "warnings" |
+            "unsafe_code" |
+            "unused_must_use" |
+            "dead_code" |
+            "deprecated" |
+            "non_snake_case" |
+            "non_camel_case_types" |
+            "clippy::all" |
+            "clippy::pedantic" |
+            "clippy::restriction" |
+            "clippy::unwrap_used" |
+            "clippy::expect_used" |
+            "clippy::panic" |
+            "clippy::indexing_slicing" |
+            "clippy::mem_forget" |
+            "clippy::cast_ptr_alignment" |
+            "clippy::integer_arithmetic"
+        )
+    }
+}
+
+impl Rule for OverscopedAllowRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        let crate_root = Path::new(&package.crate_root);
+        let sources = match SourceFile::collect_crate_sources(crate_root) {
+            Ok(s) => s,
+            Err(_) => return findings,
+        };
+
+        for source in sources {
+            let syntax_tree = match syn::parse_file(&source.content) {
+                Ok(tree) => tree,
+                Err(_) => continue,
+            };
+
+            for attr in &syntax_tree.attrs {
+                match attr.style {
+                    syn::AttrStyle::Inner(_) => {},
+                    syn::AttrStyle::Outer => continue,
+                }
+
+                if !attr.path().is_ident("allow") {
+                    continue;
+                }
+
+                if let syn::Meta::List(meta_list) = &attr.meta {
+                    let nested = match meta_list.parse_args_with(
+                        syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated
+                    ) {
+                        Ok(n) => n,
+                        Err(_) => continue,
+                    };
+
+                    for meta in nested {
+                        if let syn::Meta::Path(path) = meta {
+                            let lint_name = path.segments.iter()
+                                .map(|s| s.ident.to_string())
+                                .collect::<Vec<_>>()
+                                .join("::");
+
+                            if Self::is_security_relevant_lint(&lint_name) {
+                                let relative_path = source.path.strip_prefix(crate_root)
+                                    .unwrap_or(&source.path)
+                                    .display()
+                                    .to_string();
+
+                                findings.push(Finding {
+                                    rule_id: self.metadata.id.clone(),
+                                    rule_name: self.metadata.name.clone(),
+                                    severity: self.metadata.default_severity,
+                                    message: format!(
+                                        "Crate-level #![allow({})] in {} suppresses warnings across entire crate. \
+                                        Consider module-level or item-level suppression instead.",
+                                        lint_name,
+                                        relative_path
+                                    ),
+                                    function: relative_path,
+                                    function_signature: String::new(),
+                                    evidence: vec![format!("#![allow({})]", lint_name)],
+                                    span: None,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA092: Commented-Out Code Detection
+// ============================================================================
+
+/// Detects commented-out code that should be removed.
+pub struct CommentedOutCodeRule {
+    metadata: RuleMetadata,
+}
+
+impl CommentedOutCodeRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA092".to_string(),
+                name: "commented-out-code".to_string(),
+                short_description: "Commented-out code detected".to_string(),
+                full_description: "Detects commented-out code that should be removed to maintain clean, analyzable codebases. Commented-out code creates maintenance burden, confuses readers about actual functionality, and should be removed in favor of version control for historical reference.".to_string(),
+                help_uri: None,
+                default_severity: Severity::Low,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Check if a comment line looks like commented-out code
+    fn looks_like_commented_code(line: &str) -> bool {
+        let trimmed = line.trim();
+        
+        if !trimmed.starts_with("//") {
+            return false;
+        }
+        
+        let content = trimmed.trim_start_matches('/').trim();
+        
+        if content.is_empty() {
+            return false;
+        }
+        
+        if trimmed.starts_with("///") || trimmed.starts_with("//!") {
+            return false;
+        }
+        
+        let lowercase = content.to_lowercase();
+        if lowercase.starts_with("todo:") 
+            || lowercase.starts_with("fixme:") 
+            || lowercase.starts_with("note:") 
+            || lowercase.starts_with("hack:")
+            || lowercase.starts_with("xxx:")
+            || lowercase.starts_with("see:")
+            || lowercase.starts_with("example")
+            || lowercase.starts_with("usage:")
+            || lowercase.contains("http://")
+            || lowercase.contains("https://")
+            || content.starts_with('=')
+            || content.starts_with('|')
+            || content.starts_with('-')
+            || content.chars().all(|c| c == '=' || c == '-' || c.is_whitespace()) {
+            return false;
+        }
+        
+        let code_keywords = [
+            "pub fn", "fn ", "let ", "let mut", "struct ", "enum ", "impl ", 
+            "use ", "mod ", "trait ", "const ", "static ", "match ", "if ", 
+            "for ", "while ", "loop ", "return ", "self.", "println!", "format!",
+            "=> ", ".unwrap()", ".expect(", "Vec<", "HashMap<", "Option<", "Result<",
+        ];
+        
+        for keyword in &code_keywords {
+            if content.contains(keyword) {
+                return true;
+            }
+        }
+        
+        if content.contains(" = ") && !content.ends_with(':') {
+            if !lowercase.contains("means") && !lowercase.contains("where") 
+                && !lowercase.contains("when") && !lowercase.contains("if ") {
+                return true;
+            }
+        }
+        
+        let has_semicolon = content.ends_with(';');
+        let has_braces = content.contains('{') || content.contains('}');
+        let has_brackets = content.contains('[') || content.contains(']');
+        
+        if has_semicolon || (has_braces && has_brackets) {
+            if !lowercase.starts_with("this ") && !lowercase.starts_with("the ") 
+                && !lowercase.starts_with("a ") && !lowercase.starts_with("an ") {
+                return true;
+            }
+        }
+        
+        false
+    }
+}
+
+impl Rule for CommentedOutCodeRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+        
+        let crate_root = Path::new(&package.crate_root);
+        let sources = match SourceFile::collect_crate_sources(crate_root) {
+            Ok(s) => s,
+            Err(_) => return findings,
+        };
+        
+        for source in sources {
+            let mut evidence = Vec::new();
+            let mut consecutive_code_lines = 0;
+            let mut first_code_line_num = 0;
+            
+            for (line_num, line) in source.content.lines().enumerate() {
+                if Self::looks_like_commented_code(line) {
+                    if consecutive_code_lines == 0 {
+                        first_code_line_num = line_num + 1;
+                    }
+                    consecutive_code_lines += 1;
+                    
+                    if evidence.len() < 3 {
+                        evidence.push(format!("Line {}: {}", line_num + 1, line.trim()));
+                    }
+                } else {
+                    if consecutive_code_lines >= 2 {
+                        let relative_path = source.path.strip_prefix(crate_root)
+                            .unwrap_or(&source.path)
+                            .display()
+                            .to_string();
+                        
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: self.metadata.default_severity,
+                            message: format!(
+                                "Commented-out code detected in {} starting at line {} ({} consecutive lines)",
+                                relative_path,
+                                first_code_line_num,
+                                consecutive_code_lines
+                            ),
+                            function: relative_path.clone(),
+                            function_signature: String::new(),
+                            evidence: evidence.clone(),
+                            span: None,
+                        });
+                        
+                        evidence.clear();
+                    }
+                    consecutive_code_lines = 0;
+                }
+            }
+            
+            if consecutive_code_lines >= 2 {
+                let relative_path = source.path.strip_prefix(crate_root)
+                    .unwrap_or(&source.path)
+                    .display()
+                    .to_string();
+                
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "Commented-out code detected in {} starting at line {} ({} consecutive lines)",
+                        relative_path,
+                        first_code_line_num,
+                        consecutive_code_lines
+                    ),
+                    function: relative_path,
+                    function_signature: String::new(),
+                    evidence,
+                    span: None,
+                });
+            }
+        }
+        
+        findings
+    }
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -646,4 +955,6 @@ pub fn register_code_quality_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(LocalRefCellRule::new()));
     engine.register_rule(Box::new(UnnecessaryBorrowMutRule::new()));
     engine.register_rule(Box::new(DeadStoreArrayRule::new()));
+    engine.register_rule(Box::new(OverscopedAllowRule::new()));
+    engine.register_rule(Box::new(CommentedOutCodeRule::new()));
 }

@@ -5,9 +5,16 @@
 //! - Blocking operations in async context (RUSTCOLA037, RUSTCOLA093)
 //! - Unsafe Send/Sync bounds (RUSTCOLA015)
 //! - Non-thread-safe test patterns (RUSTCOLA074)
+//! - Underscore lock guard (RUSTCOLA030)
+//! - Broadcast unsync payload (RUSTCOLA023)
+//! - Panic in Drop (RUSTCOLA040)
+//! - Unwrap in Poll (RUSTCOLA041)
 
+use crate::detect_broadcast_unsync_payloads;
 use crate::{Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use super::filter_entry;
+use super::utils::{StringLiteralState, strip_string_literals};
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
@@ -731,6 +738,952 @@ impl Rule for MutexGuardAcrossAwaitRule {
 }
 
 // ============================================================================
+// RUSTCOLA030: Underscore Lock Guard Rule
+// ============================================================================
+
+/// Detects lock guards assigned to `_`, which immediately drops the guard.
+pub struct UnderscoreLockGuardRule {
+    metadata: RuleMetadata,
+}
+
+impl UnderscoreLockGuardRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA030".to_string(),
+                name: "underscore-lock-guard".to_string(),
+                short_description: "Lock guard immediately discarded via underscore binding".to_string(),
+                full_description: "Detects lock guards (Mutex::lock, RwLock::read/write, etc.) assigned to `_`, which immediately drops the guard and releases the lock before the critical section executes, creating race conditions.".to_string(),
+                help_uri: Some("https://rust-lang.github.io/rust-clippy/master/index.html#/let_underscore_lock".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn lock_method_patterns() -> &'static [&'static str] {
+        &[
+            "::lock(",
+            "::read(",
+            "::write(",
+            "::try_lock(",
+            "::try_read(",
+            "::try_write(",
+            "::blocking_lock(",
+            "::blocking_read(",
+            "::blocking_write(",
+        ]
+    }
+}
+
+impl Rule for UnderscoreLockGuardRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Step 1: Collect all MIR variables that have debug mappings
+            // Variables with debug mappings are named bindings like "let guard = ..." or "let _guard = ..."
+            // Variables WITHOUT debug mappings are wildcard patterns like "let _ = ..."
+            let mut named_vars: HashSet<String> = HashSet::new();
+            
+            for line in &function.body {
+                let trimmed = line.trim();
+                // Pattern: "debug VAR_NAME => _N;"
+                if trimmed.starts_with("debug ") && trimmed.contains(" => ") {
+                    // Extract the _N part (MIR variable)
+                    if let Some(arrow_pos) = trimmed.find(" => ") {
+                        let var_part = trimmed[arrow_pos + 4..].trim().trim_end_matches(';').trim();
+                        if var_part.starts_with('_') && var_part.chars().nth(1).map_or(false, |c| c.is_ascii_digit()) {
+                            named_vars.insert(var_part.to_string());
+                        }
+                    }
+                }
+            }
+            
+            let body_lines: Vec<&str> = function.body.iter().map(|s| s.as_str()).collect();
+            
+            // Step 2: Find lock acquisitions and trace to guard type
+            // Track: lock_result -> guard_var (via unwrap/expect) -> drop
+            for (i, line) in body_lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Check if the RHS contains a lock acquisition
+                let has_lock_call = Self::lock_method_patterns()
+                    .iter()
+                    .any(|pattern| trimmed.contains(pattern));
+
+                if !has_lock_call {
+                    continue;
+                }
+                
+                // Parse the assignment: "_N = ..."
+                if !trimmed.contains(" = ") {
+                    continue;
+                }
+                
+                let lock_result_var = trimmed.split(" = ").next()
+                    .map(|s| s.trim())
+                    .unwrap_or("");
+                
+                // Skip if not a MIR variable (_N format)
+                if !lock_result_var.starts_with('_') || !lock_result_var.chars().nth(1).map_or(false, |c| c.is_ascii_digit()) {
+                    continue;
+                }
+                
+                // Case 1: Direct drop of lock result (no unwrap)
+                // Pattern: _N = mutex.lock() then drop(_N)
+                let drop_pattern = format!("drop({})", lock_result_var);
+                let has_direct_drop = body_lines.iter().skip(i + 1).take(15)
+                    .any(|future_line| future_line.trim().starts_with(&drop_pattern));
+                
+                if has_direct_drop && !named_vars.contains(lock_result_var) {
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: format!(
+                            "Lock guard assigned to `_` in `{}`, immediately releasing the lock",
+                            function.name
+                        ),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence: vec![trimmed.to_string()],
+                        span: function.span.clone(),
+                    });
+                    continue;
+                }
+                
+                // Case 2: Unwrap then drop
+                // Pattern: _N = mutex.lock() then _M = ...unwrap(move _N) then drop(_M)
+                let unwrap_source_pattern = format!("(move {})", lock_result_var);
+                for future_line in body_lines.iter().skip(i + 1).take(15) {
+                    let future_trimmed = future_line.trim();
+                    
+                    // Look for unwrap/expect of the lock result
+                    if (future_trimmed.contains("unwrap") || future_trimmed.contains("expect")) 
+                        && future_trimmed.contains(&unwrap_source_pattern)
+                        && future_trimmed.contains(" = ") 
+                    {
+                        let guard_var = future_trimmed.split(" = ").next()
+                            .map(|s| s.trim())
+                            .unwrap_or("");
+                        
+                        // Check if guard_var is unnamed and immediately dropped
+                        if guard_var.starts_with('_') 
+                            && guard_var.chars().nth(1).map_or(false, |c| c.is_ascii_digit())
+                            && !named_vars.contains(guard_var) 
+                        {
+                            let guard_drop_pattern = format!("drop({})", guard_var);
+                            let has_guard_drop = body_lines.iter()
+                                .any(|line| line.trim().starts_with(&guard_drop_pattern));
+                            
+                            if has_guard_drop {
+                                findings.push(Finding {
+                                    rule_id: self.metadata.id.clone(),
+                                    rule_name: self.metadata.name.clone(),
+                                    severity: self.metadata.default_severity,
+                                    message: format!(
+                                        "Lock guard assigned to `_` in `{}`, immediately releasing the lock",
+                                        function.name
+                                    ),
+                                    function: function.name.clone(),
+                                    function_signature: function.signature.clone(),
+                                    evidence: vec![trimmed.to_string(), future_trimmed.to_string()],
+                                    span: function.span.clone(),
+                                });
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA023: Broadcast Unsync Payload Rule
+// ============================================================================
+
+/// Detects tokio broadcast channels with !Sync payloads.
+pub struct BroadcastUnsyncPayloadRule {
+    metadata: RuleMetadata,
+}
+
+impl BroadcastUnsyncPayloadRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA023".to_string(),
+                name: "tokio-broadcast-unsync-payload".to_string(),
+                short_description: "Tokio broadcast carries !Sync payload".to_string(),
+                full_description: "Warns when `tokio::sync::broadcast` channels are instantiated for types like `Rc`/`RefCell` that are not Sync, enabling unsound clones to cross thread boundaries. See RUSTSEC-2025-0023 for details.".to_string(),
+                help_uri: Some("https://rustsec.org/advisories/RUSTSEC-2025-0023.html".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for BroadcastUnsyncPayloadRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            let usages = detect_broadcast_unsync_payloads(function);
+
+            for usage in usages {
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: self.metadata.default_severity,
+                    message: format!(
+                        "Broadcast channel instantiated with !Sync payload in `{}`",
+                        function.name
+                    ),
+                    function: function.name.clone(),
+                    function_signature: function.signature.clone(),
+                    evidence: vec![usage.line.clone()],
+                    span: function.span.clone(),
+                });
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA040: Panic In Drop Rule
+// ============================================================================
+
+/// Detects panic!, unwrap(), or expect() in Drop implementations.
+pub struct PanicInDropRule {
+    metadata: RuleMetadata,
+}
+
+impl PanicInDropRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA040".to_string(),
+                name: "panic-in-drop".to_string(),
+                short_description: "panic! or unwrap in Drop implementation".to_string(),
+                full_description: "Detects panic!, unwrap(), or expect() calls inside Drop trait implementations. Panicking during stack unwinding causes the process to abort, which can mask the original error and make debugging difficult. Drop implementations should handle errors gracefully or use logging instead of panicking.".to_string(),
+                help_uri: Some("https://doc.rust-lang.org/nomicon/exception-safety.html".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn panic_patterns() -> &'static [&'static str] {
+        &[
+            "panic!",
+            ".unwrap()",
+            ".expect(",
+            "unreachable!",
+            "unimplemented!",
+            "todo!",
+        ]
+    }
+}
+
+impl Rule for PanicInDropRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+
+            // Track Drop implementation boundaries
+            let mut in_drop_impl = false;
+            let mut drop_impl_start = 0;
+            let mut brace_depth = 0;
+            let mut drop_type_name = String::new();
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+
+                // Detect Drop impl start
+                if trimmed.contains("impl") && trimmed.contains("Drop") && trimmed.contains("for") {
+                    in_drop_impl = true;
+                    drop_impl_start = idx;
+                    brace_depth = 0;
+
+                    // Extract type name
+                    if let Some(for_pos) = trimmed.find("for ") {
+                        let after_for = &trimmed[for_pos + 4..];
+                        if let Some(space_pos) = after_for.find(|c: char| c.is_whitespace() || c == '{') {
+                            drop_type_name = after_for[..space_pos].trim().to_string();
+                        } else {
+                            drop_type_name = after_for.trim().to_string();
+                        }
+                    }
+                }
+
+                if in_drop_impl {
+                    brace_depth += trimmed.chars().filter(|&c| c == '{').count() as i32;
+                    brace_depth -= trimmed.chars().filter(|&c| c == '}').count() as i32;
+
+                    // Check for panic patterns
+                    for pattern in Self::panic_patterns() {
+                        if trimmed.contains(pattern) {
+                            // Skip commented lines
+                            if !trimmed.starts_with("//") {
+                                let location = format!("{}:{}", rel_path, idx + 1);
+
+                                findings.push(Finding {
+                                    rule_id: self.metadata.id.clone(),
+                                    rule_name: self.metadata.name.clone(),
+                                    severity: self.metadata.default_severity,
+                                    message: format!(
+                                        "Panic in Drop implementation for `{}` can cause abort during unwinding",
+                                        drop_type_name
+                                    ),
+                                    function: location,
+                                    function_signature: drop_type_name.clone(),
+                                    evidence: vec![trimmed.to_string()],
+                                    span: None,
+                                });
+                            }
+                        }
+                    }
+
+                    // If brace depth returns to 0, we've exited the Drop impl
+                    if brace_depth <= 0 && idx > drop_impl_start {
+                        in_drop_impl = false;
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA041: Unwrap In Poll Rule
+// ============================================================================
+
+/// Detects unwrap(), expect(), or panic! in Future::poll implementations.
+pub struct UnwrapInPollRule {
+    metadata: RuleMetadata,
+}
+
+impl UnwrapInPollRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA041".to_string(),
+                name: "unwrap-in-poll".to_string(),
+                short_description: "unwrap or panic in Future::poll implementation".to_string(),
+                full_description: "Detects unwrap(), expect(), or panic! calls inside Future::poll implementations. Panicking in poll() can stall async executors, cause runtime hangs, and make debugging async code difficult. Poll implementations should propagate errors using Poll::Ready(Err(...)) or use defensive patterns like match/if-let.".to_string(),
+                help_uri: Some("https://rust-lang.github.io/async-book/02_execution/03_wakeups.html".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn panic_patterns() -> &'static [&'static str] {
+        &[
+            "panic!",
+            ".unwrap()",
+            ".expect(",
+            "unreachable!",
+            "unimplemented!",
+            "todo!",
+        ]
+    }
+}
+
+impl Rule for UnwrapInPollRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+
+            // Track Future impl and poll method boundaries
+            let mut in_future_impl = false;
+            let mut in_poll_method = false;
+            let mut poll_start = 0;
+            let mut brace_depth = 0;
+            let mut impl_brace_depth = 0;
+            let mut future_type_name = String::new();
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+
+                // Detect Future impl start
+                if !in_future_impl && trimmed.contains("impl") && trimmed.contains("Future") && trimmed.contains("for") {
+                    in_future_impl = true;
+                    impl_brace_depth = 0;
+
+                    // Extract type name
+                    if let Some(for_pos) = trimmed.find("for ") {
+                        let after_for = &trimmed[for_pos + 4..];
+                        if let Some(space_pos) = after_for.find(|c: char| c.is_whitespace() || c == '{') {
+                            future_type_name = after_for[..space_pos].trim().to_string();
+                        } else {
+                            future_type_name = after_for.trim().to_string();
+                        }
+                    }
+                }
+
+                if in_future_impl {
+                    impl_brace_depth += trimmed.chars().filter(|&c| c == '{').count() as i32;
+                    impl_brace_depth -= trimmed.chars().filter(|&c| c == '}').count() as i32;
+
+                    // Detect poll method start
+                    if !in_poll_method && (trimmed.contains("fn poll") || trimmed.contains("fn poll(")) {
+                        in_poll_method = true;
+                        poll_start = idx;
+                        brace_depth = 0;
+                    }
+
+                    if in_poll_method {
+                        brace_depth += trimmed.chars().filter(|&c| c == '{').count() as i32;
+                        brace_depth -= trimmed.chars().filter(|&c| c == '}').count() as i32;
+
+                        // Check for panic patterns
+                        for pattern in Self::panic_patterns() {
+                            if trimmed.contains(pattern) {
+                                // Skip commented lines
+                                if !trimmed.starts_with("//") {
+                                    let location = format!("{}:{}", rel_path, idx + 1);
+
+                                    findings.push(Finding {
+                                        rule_id: self.metadata.id.clone(),
+                                        rule_name: self.metadata.name.clone(),
+                                        severity: self.metadata.default_severity,
+                                        message: format!(
+                                            "Panic in Future::poll for `{}` can stall async executor",
+                                            future_type_name
+                                        ),
+                                        function: location,
+                                        function_signature: future_type_name.clone(),
+                                        evidence: vec![trimmed.to_string()],
+                                        span: None,
+                                    });
+                                }
+                            }
+                        }
+
+                        // If brace depth returns to 0, we've exited the poll method
+                        if brace_depth <= 0 && idx > poll_start {
+                            in_poll_method = false;
+                        }
+                    }
+
+                    // If impl brace depth returns to 0, we've exited the Future impl
+                    if impl_brace_depth <= 0 && idx > 0 {
+                        in_future_impl = false;
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA015: Unsafe Send/Sync Bounds
+// ============================================================================
+
+/// Detects unsafe implementations of Send/Sync for generic types that do not
+/// constrain their generic parameters, which can reintroduce thread-safety bugs.
+pub struct UnsafeSendSyncBoundsRule {
+    metadata: RuleMetadata,
+}
+
+impl UnsafeSendSyncBoundsRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA015".to_string(),
+                name: "unsafe-send-sync-bounds".to_string(),
+                short_description: "Unsafe Send/Sync impl without generic bounds".to_string(),
+                full_description: "Detects unsafe implementations of Send/Sync for generic types that do not constrain their generic parameters, which can reintroduce thread-safety bugs.".to_string(),
+                help_uri: None,
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn has_required_bounds(block_text: &str, trait_name: &str) -> bool {
+        let trait_marker = format!(" {trait_name} for");
+        let Some(for_idx) = block_text.find(&trait_marker) else {
+            return true;
+        };
+        let before_for = &block_text[..for_idx];
+        let Some((generics_text, generic_names)) = Self::extract_generic_params(before_for) else {
+            return true;
+        };
+
+        if generic_names.is_empty() {
+            return true;
+        }
+
+        let generic_set: HashSet<String> = generic_names.iter().cloned().collect();
+        let mut satisfied: HashSet<String> = HashSet::new();
+
+        for (name, bounds) in Self::parse_inline_bounds(&generics_text) {
+            if !generic_set.contains(&name) {
+                continue;
+            }
+
+            if bounds
+                .iter()
+                .any(|bound| Self::bound_matches_trait(bound, trait_name))
+            {
+                satisfied.insert(name.clone());
+            }
+        }
+
+        if let Some(where_clauses) = Self::extract_where_clauses(block_text) {
+            for (name, bounds) in where_clauses {
+                if !generic_set.contains(&name) {
+                    continue;
+                }
+
+                if bounds
+                    .iter()
+                    .any(|bound| Self::bound_matches_trait(bound, trait_name))
+                {
+                    satisfied.insert(name);
+                }
+            }
+        }
+
+        generic_names
+            .into_iter()
+            .all(|name| satisfied.contains(&name))
+    }
+
+    fn extract_generic_params(before_for: &str) -> Option<(String, Vec<String>)> {
+        let start = before_for.find('<')?;
+        let end_offset = before_for[start..].find('>')?;
+        let generics_text = before_for[start + 1..start + end_offset].trim().to_string();
+
+        let mut names = Vec::new();
+        for param in generics_text.split(',') {
+            if let Some(name) = Self::normalize_generic_name(param) {
+                names.push(name);
+            }
+        }
+
+        Some((generics_text, names))
+    }
+
+    fn parse_inline_bounds(generics_text: &str) -> Vec<(String, Vec<String>)> {
+        generics_text
+            .split(',')
+            .filter_map(|param| {
+                let Some(name) = Self::normalize_generic_name(param) else {
+                    return None;
+                };
+
+                let trimmed = param.trim();
+                let mut parts = trimmed.splitn(2, ':');
+                parts.next()?;
+                let bounds = parts
+                    .next()
+                    .map(|rest| Self::split_bounds(rest))
+                    .unwrap_or_default();
+
+                Some((name, bounds))
+            })
+            .collect()
+    }
+
+    fn normalize_generic_name(token: &str) -> Option<String> {
+        let token = token.trim();
+        if token.is_empty() {
+            return None;
+        }
+
+        if token.starts_with("const ") {
+            return None;
+        }
+
+        if token.starts_with('\'') {
+            return None;
+        }
+
+        let ident = token
+            .split(|c: char| c == ':' || c == '=' || c.is_whitespace())
+            .next()
+            .unwrap_or("")
+            .trim();
+
+        if ident.is_empty() {
+            None
+        } else {
+            Some(ident.to_string())
+        }
+    }
+
+    fn extract_where_clauses(block_text: &str) -> Option<Vec<(String, Vec<String>)>> {
+        let where_idx = block_text.find(" where ")?;
+        let after_where = &block_text[where_idx + " where ".len()..];
+        let end_idx = after_where
+            .find('{')
+            .or_else(|| after_where.find(';'))
+            .unwrap_or(after_where.len());
+        let clauses = after_where[..end_idx].trim();
+        if clauses.is_empty() {
+            return Some(Vec::new());
+        }
+
+        let mut result = Vec::new();
+        for predicate in clauses.split(',') {
+            let pred = predicate.trim();
+            if pred.is_empty() {
+                continue;
+            }
+
+            let mut parts = pred.splitn(2, ':');
+            let ident = parts.next().unwrap_or("").trim();
+            if ident.is_empty() {
+                continue;
+            }
+
+            let bounds = parts
+                .next()
+                .map(|rest| Self::split_bounds(rest))
+                .unwrap_or_default();
+            result.push((ident.to_string(), bounds));
+        }
+
+        Some(result)
+    }
+
+    fn split_bounds(bounds: &str) -> Vec<String> {
+        bounds
+            .split('+')
+            .map(|part| {
+                part.trim()
+                    .trim_start_matches('?')
+                    .trim_start_matches("~const ")
+                    .trim_end_matches(|c| matches!(c, ',' | '{' | ';'))
+                    .to_string()
+            })
+            .filter(|part| !part.is_empty())
+            .collect()
+    }
+
+    fn scan_string_state(
+        state: StringLiteralState,
+        line: &str,
+    ) -> (bool, String, StringLiteralState) {
+        let (sanitized, state_after) = strip_string_literals(state, line);
+        let has_impl = sanitized.contains("unsafe impl")
+            && (sanitized.contains(" Send for") || sanitized.contains(" Sync for"));
+        (has_impl, sanitized, state_after)
+    }
+
+    fn bound_matches_trait(bound: &str, trait_name: &str) -> bool {
+        let normalized = bound.trim();
+        if normalized.is_empty() {
+            return false;
+        }
+
+        let normalized = normalized
+            .trim_start_matches("dyn ")
+            .trim_start_matches("impl ");
+
+        if normalized == trait_name {
+            return true;
+        }
+
+        if normalized.ends_with(trait_name)
+            && normalized
+                .trim_end_matches(trait_name)
+                .trim_end()
+                .ends_with("::")
+        {
+            return true;
+        }
+
+        if let Some(start) = normalized.find('<') {
+            let (path, generics) = normalized.split_at(start);
+            if Self::bound_matches_trait(path.trim_end_matches('<'), trait_name) {
+                return generics
+                    .trim_matches(|c| c == '<' || c == '>')
+                    .split(',')
+                    .any(|part| Self::bound_matches_trait(part, trait_name));
+            }
+        }
+
+        if let Some(idx) = normalized.find('<') {
+            let inner = normalized[idx + 1..].trim_end_matches('>').trim();
+            if inner.starts_with("*const") || inner.starts_with("*mut") || inner.starts_with('&') {
+                return true;
+            }
+        }
+
+        let tokens: Vec<_> = normalized
+            .split(|c: char| c == ':' || c == '+' || c == ',' || c.is_whitespace())
+            .filter(|token| !token.is_empty())
+            .collect();
+
+        if tokens.iter().any(|token| token == &trait_name) {
+            return true;
+        }
+
+        if trait_name == "Send"
+            && tokens
+                .iter()
+                .any(|token| *token == "Sync" || token.ends_with("::Sync"))
+        {
+            return true;
+        }
+
+        if trait_name == "Sync"
+            && tokens
+                .iter()
+                .any(|token| *token == "Send" || token.ends_with("::Send"))
+        {
+            return true;
+        }
+
+        false
+    }
+}
+
+impl Rule for UnsafeSendSyncBoundsRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            if entry.path().extension().and_then(OsStr::to_str) != Some("rs") {
+                continue;
+            }
+
+            let Ok(source) = fs::read_to_string(entry.path()) else {
+                continue;
+            };
+
+            let rel_path = entry
+                .path()
+                .strip_prefix(crate_root)
+                .unwrap_or_else(|_| entry.path())
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let lines: Vec<&str> = source.lines().collect();
+            let mut idx = 0usize;
+            let mut string_state = StringLiteralState::default();
+
+            while idx < lines.len() {
+                let line = lines[idx];
+                let (has_impl, sanitized_line, mut state_after_line) =
+                    Self::scan_string_state(string_state, line);
+                let trimmed_sanitized = sanitized_line.trim();
+
+                if !has_impl {
+                    string_state = state_after_line;
+                    idx += 1;
+                    continue;
+                }
+
+                let mut block_lines = Vec::new();
+                let trimmed_first = line.trim();
+                if !trimmed_first.is_empty() {
+                    block_lines.push(trimmed_first.to_string());
+                }
+
+                let mut block_complete =
+                    trimmed_sanitized.contains('{') || trimmed_sanitized.ends_with(';');
+
+                let mut j = idx;
+                while !block_complete && j + 1 < lines.len() {
+                    let next_line = lines[j + 1];
+                    let (next_has_impl, next_sanitized, next_state) =
+                        Self::scan_string_state(state_after_line, next_line);
+                    let trimmed_original = next_line.trim();
+                    let trimmed_sanitized_next = next_sanitized.trim();
+                    let mut appended = false;
+
+                    if !trimmed_original.is_empty() {
+                        block_lines.push(trimmed_original.to_string());
+                        appended = true;
+                    }
+
+                    state_after_line = next_state;
+                    block_complete = trimmed_sanitized_next.contains('{')
+                        || trimmed_sanitized_next.ends_with(';');
+
+                    if next_has_impl {
+                        if appended {
+                            block_lines.pop();
+                        }
+                        break;
+                    }
+
+                    j += 1;
+                }
+
+                let block_text = block_lines.join(" ");
+                let trait_name = if block_text.contains(" Send for") {
+                    "Send"
+                } else if block_text.contains(" Sync for") {
+                    "Sync"
+                } else {
+                    string_state = state_after_line;
+                    idx = j + 1;
+                    continue;
+                };
+
+                if !Self::has_required_bounds(&block_text, trait_name) {
+                    let location = format!("{}:{}", rel_path, idx + 1);
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: format!("Unsafe impl of {trait_name} without generic bounds"),
+                        function: location,
+                        function_signature: block_lines
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(|| trait_name.to_string()),
+                        evidence: block_lines.clone(),
+                        span: None,
+                    });
+                }
+
+                string_state = state_after_line;
+                idx = j + 1;
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -740,4 +1693,9 @@ pub fn register_concurrency_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(BlockingSleepInAsyncRule::new()));
     engine.register_rule(Box::new(BlockingOpsInAsyncRule::new()));
     engine.register_rule(Box::new(MutexGuardAcrossAwaitRule::new()));
+    engine.register_rule(Box::new(UnderscoreLockGuardRule::new()));
+    engine.register_rule(Box::new(BroadcastUnsyncPayloadRule::new()));
+    engine.register_rule(Box::new(PanicInDropRule::new()));
+    engine.register_rule(Box::new(UnwrapInPollRule::new()));
+    engine.register_rule(Box::new(UnsafeSendSyncBoundsRule::new()));
 }

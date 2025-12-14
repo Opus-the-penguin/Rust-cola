@@ -11,6 +11,7 @@
 //! - `code_quality`: Code quality issues (dead stores, commented code, assertions)
 //! - `web`: Web security issues (TLS, CORS, cookies, passwords)
 //! - `supply_chain`: Supply chain security (RUSTSEC, yanked crates, auditable)
+//! - `utils`: Shared utilities for rule implementations
 
 pub mod crypto;
 pub mod memory;
@@ -22,6 +23,7 @@ pub mod resource;
 pub mod code_quality;
 pub mod web;
 pub mod supply_chain;
+pub mod utils;
 
 // Re-export registration functions
 pub use crypto::register_crypto_rules;
@@ -47,11 +49,12 @@ pub use memory::{
 };
 pub use concurrency::{
     NonThreadSafeTestRule, BlockingSleepInAsyncRule, BlockingOpsInAsyncRule,
-    MutexGuardAcrossAwaitRule,
+    MutexGuardAcrossAwaitRule, UnderscoreLockGuardRule, BroadcastUnsyncPayloadRule,
+    PanicInDropRule, UnwrapInPollRule, UnsafeSendSyncBoundsRule,
 };
 pub use ffi::{
     AllocatorMismatchFfiRule, UnsafeFfiPointerReturnRule, PackedFieldReferenceRule,
-    UnsafeCStringPointerRule,
+    UnsafeCStringPointerRule, FfiBufferLeakRule,
 };
 pub use input::{
     CleartextEnvVarRule, EnvVarLiteralRule, InvisibleUnicodeRule, UntrimmedStdinRule,
@@ -65,7 +68,7 @@ pub use resource::{
 };
 pub use code_quality::{
     CrateWideAllowRule, MisorderedAssertEqRule, TryIoResultRule, LocalRefCellRule,
-    UnnecessaryBorrowMutRule, DeadStoreArrayRule,
+    UnnecessaryBorrowMutRule, DeadStoreArrayRule, OverscopedAllowRule, CommentedOutCodeRule,
 };
 pub use web::{
     NonHttpsUrlRule, DangerAcceptInvalidCertRule, OpensslVerifyNoneRule,

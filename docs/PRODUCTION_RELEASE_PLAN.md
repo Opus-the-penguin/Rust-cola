@@ -1,9 +1,9 @@
 # Rust-cola Production Release Plan
 
 **Date:** December 14, 2025  
-**Current Version:** 0.6.1  
+**Current Version:** 0.7.0  
 **Target Version:** 1.0.0  
-**Status:** Planning
+**Status:** Phase 1.2 In Progress
 
 This document outlines the roadmap to achieve a production-ready release of Rust-cola. Completing these phases will yield a **Release Candidate (RC)** suitable for general availability.
 
@@ -20,14 +20,14 @@ Rust-cola v0.6.1 has reached significant maturity with 102 security rules and a 
 
 ---
 
-## Current State (v0.6.1)
+## Current State (v0.7.0)
 
 | Metric | Value |
 |--------|-------|
 | **Total Rules** | 102 |
-| **Test Status** | 132 passed, 6 failed |
-| **Core Codebase** | ~23K LOC (mir-extractor/lib.rs) |
-| **Rule Modules** | 10 categories |
+| **Test Status** | 138 passed, 0 failed ✅ |
+| **Core Codebase** | ~22K LOC (mir-extractor/lib.rs) |
+| **Rule Modules** | 10 categories + utils |
 
 ### Three-Tier Architecture
 
@@ -106,6 +106,13 @@ All artifacts generated on every run:
 - Injection/dataflow rules → `injection.rs`
 - Memory/dataflow rules → `memory.rs`
 - Concurrency rules → `concurrency.rs`
+
+**Progress (v0.7.1):**
+- ✅ Created `rules/utils.rs` with shared utilities (`strip_string_literals`, `StringLiteralState`)
+- ✅ Migrated 4 concurrency rules: `UnderscoreLockGuardRule`, `BroadcastUnsyncPayloadRule`, `PanicInDropRule`, `UnwrapInPollRule`
+- ✅ Migrated 2 code quality rules: `OverscopedAllowRule`, `CommentedOutCodeRule`
+- 🔄 Remaining: `UnsafeSendSyncBoundsRule`, `FfiBufferLeakRule` (can now use utils.rs)
+- 🔄 Remaining: 10+ injection rules, 11+ memory rules (require further analysis)
 
 **Exit Criteria:** `lib.rs` contains only core infrastructure, all rules in modules
 

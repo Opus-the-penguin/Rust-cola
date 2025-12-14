@@ -9,6 +9,7 @@
 
 use crate::{Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use super::filter_entry;
+use super::utils::{StringLiteralState, strip_string_literals};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::fs;
@@ -671,6 +672,300 @@ impl Rule for CtorDtorStdApiRule {
 }
 
 // ============================================================================
+// RUSTCOLA016: FFI Buffer Leak Rule
+// ============================================================================
+
+/// Detects extern functions that hand out raw pointers or heap buffers and contain
+/// early-return code paths, risking leaks or dangling pointers when cleanup is skipped.
+pub struct FfiBufferLeakRule {
+    metadata: RuleMetadata,
+}
+
+impl FfiBufferLeakRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA016".to_string(),
+                name: "ffi-buffer-leak-early-return".to_string(),
+                short_description: "FFI buffer escapes with early return".to_string(),
+                full_description: "Detects extern functions that hand out raw pointers or heap buffers and contain early-return code paths, risking leaks or dangling pointers when cleanup is skipped.".to_string(),
+                help_uri: None,
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn pointer_escape_patterns() -> &'static [&'static str] {
+        &[
+            "Box::into_raw",
+            "Vec::into_raw_parts",
+            "Vec::with_capacity",
+            "CString::into_raw",
+            ".as_mut_ptr()",
+            ".as_ptr()",
+        ]
+    }
+
+    fn captures_early_exit(line: &str, position: usize, last_index: usize) -> bool {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            return false;
+        }
+
+        if trimmed.contains('?') {
+            return true;
+        }
+
+        if trimmed.contains("return Err") {
+            return true;
+        }
+
+        if (trimmed.starts_with("return ") || trimmed.contains(" return ")) && position < last_index
+        {
+            return true;
+        }
+
+        false
+    }
+
+    fn is_pointer_escape(line: &str) -> bool {
+        Self::pointer_escape_patterns()
+            .iter()
+            .any(|needle| line.contains(needle))
+    }
+}
+
+impl Rule for FfiBufferLeakRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            if entry.path().extension().and_then(OsStr::to_str) != Some("rs") {
+                continue;
+            }
+
+            let Ok(source) = fs::read_to_string(entry.path()) else {
+                continue;
+            };
+
+            let rel_path = entry
+                .path()
+                .strip_prefix(crate_root)
+                .unwrap_or_else(|_| entry.path())
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let lines: Vec<&str> = source.lines().collect();
+            let mut idx = 0usize;
+            let mut string_state = StringLiteralState::default();
+            let mut pending_no_mangle: Option<usize> = None;
+            let mut pending_extern: Option<usize> = None;
+
+            while idx < lines.len() {
+                let raw_line = lines[idx];
+                let (sanitized_line, state_after_line) =
+                    strip_string_literals(string_state, raw_line);
+                let trimmed = sanitized_line.trim();
+                let trimmed_original = raw_line.trim();
+
+                if trimmed.starts_with("#[no_mangle") {
+                    pending_no_mangle = Some(idx);
+                    string_state = state_after_line;
+                    idx += 1;
+                    continue;
+                }
+
+                if trimmed.contains("extern \"C\"") && !trimmed.contains("fn ") {
+                    pending_extern = Some(idx);
+                    string_state = state_after_line;
+                    idx += 1;
+                    continue;
+                }
+
+                let mut is_ffi_fn = false;
+                let mut start_idx = idx;
+
+                if trimmed.contains("extern \"C\"") && trimmed.contains("fn ") {
+                    is_ffi_fn = true;
+                } else if pending_extern.is_some() && trimmed.contains("fn ") {
+                    is_ffi_fn = true;
+                    start_idx = pending_extern.unwrap();
+                } else if pending_no_mangle.is_some() && trimmed.contains("fn ") {
+                    is_ffi_fn = true;
+                    start_idx = pending_no_mangle.unwrap();
+                }
+
+                if !is_ffi_fn {
+                    if !trimmed.is_empty() && !trimmed.starts_with("#[") {
+                        pending_no_mangle = None;
+                        pending_extern = None;
+                    }
+                    string_state = state_after_line;
+                    idx += 1;
+                    continue;
+                }
+
+                let mut block_lines: Vec<String> = Vec::new();
+                let mut sanitized_block: Vec<String> = Vec::new();
+                if start_idx < idx {
+                    for attr_idx in start_idx..idx {
+                        let attr_line = lines[attr_idx].trim();
+                        if !attr_line.is_empty() {
+                            block_lines.push(attr_line.to_string());
+                            sanitized_block.push(attr_line.to_string());
+                        }
+                    }
+                }
+
+                if !trimmed_original.is_empty() {
+                    block_lines.push(trimmed_original.to_string());
+                    sanitized_block.push(trimmed.to_string());
+                }
+
+                let mut brace_balance: i32 = 0;
+                let mut body_started = false;
+                let mut j = idx;
+                let mut current_state = state_after_line;
+                let mut current_sanitized = sanitized_line;
+
+                loop {
+                    let trimmed_sanitized = current_sanitized.trim();
+                    let opens = current_sanitized.chars().filter(|c| *c == '{').count() as i32;
+                    let closes = current_sanitized.chars().filter(|c| *c == '}').count() as i32;
+                    brace_balance += opens;
+                    if brace_balance > 0 {
+                        body_started = true;
+                    }
+                    brace_balance -= closes;
+
+                    let body_done = if body_started && brace_balance <= 0 {
+                        true
+                    } else if !body_started && trimmed_sanitized.ends_with(';') {
+                        true
+                    } else {
+                        false
+                    };
+
+                    if body_done {
+                        j += 1;
+                        break;
+                    }
+
+                    j += 1;
+                    if j >= lines.len() {
+                        break;
+                    }
+
+                    let next_line = lines[j];
+                    let (next_sanitized, next_state) =
+                        strip_string_literals(current_state, next_line);
+                    current_state = next_state;
+
+                    let trimmed_original_next = next_line.trim();
+                    if !trimmed_original_next.is_empty() {
+                        block_lines.push(trimmed_original_next.to_string());
+                        sanitized_block.push(next_sanitized.trim().to_string());
+                    }
+
+                    current_sanitized = next_sanitized;
+                }
+
+                let signature_line = block_lines
+                    .iter()
+                    .find(|line| line.contains("fn "))
+                    .cloned()
+                    .unwrap_or_else(|| block_lines.first().cloned().unwrap_or_default());
+
+                let last_index = sanitized_block
+                    .iter()
+                    .rposition(|line| !line.trim().is_empty())
+                    .unwrap_or(0);
+
+                let pointer_lines: Vec<String> = block_lines
+                    .iter()
+                    .zip(sanitized_block.iter())
+                    .filter_map(|(line, sanitized)| {
+                        if Self::is_pointer_escape(sanitized) {
+                            Some(line.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                let early_lines: Vec<(usize, String)> = sanitized_block
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(pos, sanitized)| {
+                        if Self::captures_early_exit(sanitized, pos, last_index) {
+                            Some((pos, block_lines[pos].clone()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                if !pointer_lines.is_empty() && !early_lines.is_empty() {
+                    let mut evidence = Vec::new();
+                    let mut seen = HashSet::new();
+
+                    for line in pointer_lines
+                        .iter()
+                        .chain(early_lines.iter().map(|(_, l)| l))
+                    {
+                        if seen.insert(line.clone()) {
+                            evidence.push(line.clone());
+                        }
+                    }
+
+                    let location = format!("{}:{}", rel_path, start_idx + 1);
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: "Potential FFI buffer leak due to early return before cleanup"
+                            .to_string(),
+                        function: location,
+                        function_signature: signature_line,
+                        evidence,
+                        span: None,
+                    });
+                }
+
+                pending_no_mangle = None;
+                pending_extern = None;
+                string_state = current_state;
+                idx = j;
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -681,5 +976,5 @@ pub fn register_ffi_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(PackedFieldReferenceRule::new()));
     engine.register_rule(Box::new(UnsafeCStringPointerRule::new()));
     engine.register_rule(Box::new(CtorDtorStdApiRule::new()));
-    // Note: FfiBufferLeakRule requires strip_string_literals helper and remains in lib.rs
+    engine.register_rule(Box::new(FfiBufferLeakRule::new()));
 }

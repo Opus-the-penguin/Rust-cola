@@ -202,12 +202,16 @@ struct OpensslVerifyNoneInvocation {
 
 fn detect_openssl_verify_none(function: &MirFunction) -> Vec<OpensslVerifyNoneInvocation> {
     let mut invocations = Vec::new();
+    let mut processed_indices = std::collections::HashSet::new();
     
     for (i, line) in function.body.iter().enumerate() {
+        if processed_indices.contains(&i) {
+            continue;
+        }
         let lower = line.to_lowercase();
         
-        // Check for set_verify with NONE
-        if lower.contains("set_verify") && lower.contains("none") {
+        // Check for set_verify with NONE or empty() directly in the call
+        if lower.contains("set_verify") && (lower.contains("none") || lower.contains("empty()")) {
             let mut supporting = Vec::new();
             // Look for context in nearby lines
             for j in i.saturating_sub(3)..=(i + 3).min(function.body.len() - 1) {
@@ -215,18 +219,29 @@ fn detect_openssl_verify_none(function: &MirFunction) -> Vec<OpensslVerifyNoneIn
                     supporting.push(function.body[j].trim().to_string());
                 }
             }
+            processed_indices.insert(i);
             invocations.push(OpensslVerifyNoneInvocation {
                 call_line: line.trim().to_string(),
                 supporting_lines: supporting,
             });
+            continue;
         }
         
-        // Check for SslVerifyMode::NONE
-        if lower.contains("sslverifymode::none") || lower.contains("ssl_verify_none") {
-            invocations.push(OpensslVerifyNoneInvocation {
-                call_line: line.trim().to_string(),
-                supporting_lines: Vec::new(),
-            });
+        // Check for SslVerifyMode::empty() that's used in a later set_verify call
+        if lower.contains("sslverifymode::empty()") || lower.contains("sslverifymode::none") {
+            // Look for a subsequent set_verify call that might use this
+            for j in (i + 1)..function.body.len().min(i + 5) {
+                if function.body[j].to_lowercase().contains("set_verify") {
+                    // Found correlation - report the set_verify with the mode assignment as evidence
+                    processed_indices.insert(i);
+                    processed_indices.insert(j);
+                    invocations.push(OpensslVerifyNoneInvocation {
+                        call_line: function.body[j].trim().to_string(),
+                        supporting_lines: vec![line.trim().to_string()],
+                    });
+                    break;
+                }
+            }
         }
     }
     
@@ -260,6 +275,11 @@ impl Rule for OpensslVerifyNoneRule {
     }
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        // Skip analyzer's own crate to avoid self-referential warnings
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
         let mut findings = Vec::new();
 
         for function in &package.functions {

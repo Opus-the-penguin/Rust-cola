@@ -963,6 +963,11 @@ impl Rule for NonNullNewUncheckedRule {
     }
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        // Skip analyzer's own crate to avoid self-referential warnings
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -1021,6 +1026,11 @@ impl Rule for MemForgetGuardRule {
     }
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        // Skip analyzer's own crate to avoid self-referential warnings
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
         let mut findings = Vec::new();
         let guard_types = ["MutexGuard", "RwLockReadGuard", "RwLockWriteGuard", "RefMut", "Ref"];
 

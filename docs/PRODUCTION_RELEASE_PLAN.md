@@ -1,8 +1,26 @@
 # Rust-cola Production Release Plan
 
 **Date:** December 14, 2025  
-**Current Version:** 0.7.1  
-**Target Version:** 1.0.0  
+**Current Version:** 0.7.2  
+**Target **Progress (v0.7.2):** ✅ **Major milestone achieved**
+- ✅ Created `rules/utils.rs` with shared utilities (`strip_string_literals`, `strip_comments`, `command_rule_should_skip`, `LOG_SINK_PATTERNS`, `INPUT_SOURCE_PATTERNS`)
+- ✅ Migrated `UnsafeSendSyncBoundsRule` (RUSTCOLA015) → `concurrency.rs`
+- ✅ Migrated `FfiBufferLeakRule` (RUSTCOLA016) → `ffi.rs`
+- ✅ Migrated `OverscopedAllowRule` (RUSTCOLA072) → `code_quality.rs`
+- ✅ Migrated `CommentedOutCodeRule` (RUSTCOLA092) → `code_quality.rs`
+- ✅ Migrated `UnderscoreLockGuardRule`, `BroadcastUnsyncPayloadRule`, `PanicInDropRule`, `UnwrapInPollRule` → `concurrency.rs`
+- ✅ **NEW:** Migrated `UntrustedEnvInputRule` (RUSTCOLA006) → `injection.rs`
+- ✅ **NEW:** Migrated `CommandInjectionRiskRule` (RUSTCOLA007) → `injection.rs`
+- ✅ **NEW:** Migrated `CommandArgConcatenationRule` (RUSTCOLA031) → `injection.rs`
+- ✅ **NEW:** Migrated `LogInjectionRule` (RUSTCOLA076) → `injection.rs`
+- 📊 **lib.rs reduced:** 22,936 → 20,666 lines (~2,270 lines removed, ~9.9% reduction)
+- 📊 **Tests:** 146 passed (up from 138)
+
+**Remaining (~17 rules in lib.rs):**
+- Injection rules with taint tracking dependencies (6 remaining)
+- Memory rules with dataflow analysis (11 remaining)
+
+**Exit Criteria:** `lib.rs` contains only core infrastructure, all rules in modules  
 **Status:** Phase 1.2 Nearing Completion
 
 This document outlines the roadmap to achieve a production-ready release of Rust-cola. Completing these phases will yield a **Release Candidate (RC)** suitable for general availability.
@@ -11,7 +29,7 @@ This document outlines the roadmap to achieve a production-ready release of Rust
 
 ## Executive Summary
 
-Rust-cola v0.7.1 has reached significant maturity with 102 security rules and a three-tier analysis architecture. To achieve production readiness, we must:
+Rust-cola v0.7.2 has reached significant maturity with 102 security rules and a three-tier analysis architecture. To achieve production readiness, we must:
 
 1. **Stabilize** - Fix failing tests and complete architectural refactoring
 2. **Close Gaps** - Implement Rust-specific vulnerability detection (async, lifetimes, panic safety)
@@ -20,13 +38,13 @@ Rust-cola v0.7.1 has reached significant maturity with 102 security rules and a 
 
 ---
 
-## Current State (v0.7.1)
+## Current State (v0.7.2)
 
 | Metric | Value |
 |--------|-------|
 | **Total Rules** | 102 |
-| **Test Status** | 143 passed, 0 failed ✅ |
-| **Core Codebase** | ~21K LOC (mir-extractor/lib.rs) |
+| **Test Status** | 146 passed, 0 failed ✅ |
+| **Core Codebase** | ~20.7K LOC (mir-extractor/lib.rs) |
 | **Rule Modules** | 10 categories + utils |
 
 ### Three-Tier Architecture

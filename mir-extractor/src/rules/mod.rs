@@ -54,6 +54,7 @@ pub use concurrency::{
 };
 pub use injection::{
     UntrustedEnvInputRule, CommandInjectionRiskRule, CommandArgConcatenationRule,
+    LogInjectionRule,
 };
 pub use ffi::{
     AllocatorMismatchFfiRule, UnsafeFfiPointerReturnRule, PackedFieldReferenceRule,

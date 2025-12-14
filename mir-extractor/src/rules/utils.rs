@@ -266,6 +266,36 @@ pub fn command_rule_should_skip(function: &crate::MirFunction, package: &crate::
     }
 }
 
+/// Log sink patterns in MIR (desugarings of print/log macros).
+/// Used by both CleartextLoggingRule and LogInjectionRule.
+pub const LOG_SINK_PATTERNS: &[&str] = &[
+    "_print(",           // println!, print! desugaring
+    "eprint",            // eprintln!, eprint!
+    "::fmt(",            // format! and Debug/Display impl calls
+    "Arguments::new",    // format_args! macro
+    "panic_fmt",         // panic! with formatting
+    "begin_panic",       // older panic desugaring
+    "::log(",            // log crate macros
+    "::info(",
+    "::warn(",
+    "::error(",
+    "::debug(",
+    "::trace(",
+];
+
+/// Input source patterns for untrusted data origins.
+/// Used by multiple injection rules.
+pub const INPUT_SOURCE_PATTERNS: &[&str] = &[
+    "= var::<",       // env::var::<T> - generic call (MIR format)
+    "= var(",         // env::var - standard call
+    "var_os(",        // env::var_os
+    "::args(",        // env::args
+    "args_os(",       // env::args_os
+    "::nth(",         // iterator nth (often on args)
+    "read_line(",     // stdin
+    "read_to_string(", // file/stdin reads
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;

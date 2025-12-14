@@ -5,9 +5,13 @@
 //! - Path traversal and absolute path issues
 //! - Child process management
 //! - OpenOptions configuration issues
+//! - Hardcoded home paths
+//! - Build script network access
 
 #![allow(dead_code)]
 
+use std::fs;
+use std::path::Path;
 use crate::{Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use crate::line_has_world_writable_mode;
 
@@ -657,6 +661,272 @@ impl Rule for AbsolutePathInJoinRule {
 }
 
 // ============================================================================
+// RUSTCOLA014: Hardcoded Home Path Rule
+// ============================================================================
+
+/// Detects hard-coded paths to user home directories.
+pub struct HardcodedHomePathRule {
+    metadata: RuleMetadata,
+}
+
+impl HardcodedHomePathRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA014".to_string(),
+                name: "hardcoded-home-path".to_string(),
+                short_description: "Hard-coded home directory path detected".to_string(),
+                full_description: "Detects absolute paths to user home directories hard-coded in string literals. Hard-coded home paths reduce portability and create security issues: (1) Code breaks when run under different users or in containers/CI, (2) Exposes username information in source code, (3) Prevents proper multi-user deployments, (4) Makes code non-portable across operating systems. Use environment variables (HOME, USERPROFILE), std::env::home_dir(), or the dirs crate instead. Detects patterns like /home/username, /Users/username, C:\\Users\\username, and ~username (with username).".to_string(),
+                help_uri: None,
+                default_severity: Severity::Low,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for HardcodedHomePathRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            // Self-exclusion
+            if function.name.contains("HardcodedHomePathRule") {
+                continue;
+            }
+
+            let body_str = function.body.join("\n");
+            
+            // Patterns for hard-coded home directory paths
+            // Unix/Linux: /home/username
+            // macOS: /Users/username  
+            // Windows: C:\Users\username or C:/Users/username
+            // Tilde with username: ~username (but not ~/something)
+            let home_patterns = [
+                "\"/home/",
+                "\"/Users/",
+                "\"C:\\\\Users\\\\",
+                "\"C:/Users/",
+            ];
+            
+            let mut found_hardcoded = false;
+            
+            for pattern in &home_patterns {
+                if body_str.contains(pattern) {
+                    found_hardcoded = true;
+                    break;
+                }
+            }
+            
+            // Check for ~username (tilde with username, not just ~/)
+            // Look for "~ followed by non-slash characters
+            if body_str.contains("\"~") && !body_str.contains("\"~/") {
+                found_hardcoded = true;
+            }
+            
+            if !found_hardcoded {
+                continue;
+            }
+
+            // Collect evidence lines
+            let evidence: Vec<String> = function
+                .body
+                .iter()
+                .filter(|line| {
+                    home_patterns.iter().any(|p| line.contains(p)) ||
+                    (line.contains("\"~") && !line.contains("\"~/"))
+                })
+                .take(5)
+                .map(|line| line.trim().to_string())
+                .collect();
+            
+            if evidence.is_empty() {
+                continue;
+            }
+
+            findings.push(Finding {
+                rule_id: self.metadata.id.clone(),
+                rule_name: self.metadata.name.clone(),
+                severity: self.metadata.default_severity,
+                message: format!(
+                    "Hard-coded home directory path in `{}` - use environment variables (HOME/USERPROFILE) or std::env::home_dir() instead",
+                    function.name
+                ),
+                function: function.name.clone(),
+                function_signature: function.signature.clone(),
+                evidence,
+                span: function.span.clone(),
+            });
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA097: Build Script Network Access Rule
+// ============================================================================
+
+/// Detects network access in build scripts, which is a supply-chain security risk.
+pub struct BuildScriptNetworkRule {
+    metadata: RuleMetadata,
+}
+
+impl BuildScriptNetworkRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA097".to_string(),
+                name: "build-script-network-access".to_string(),
+                short_description: "Network access detected in build script".to_string(),
+                full_description: "Build scripts (build.rs) should not perform network requests, download files, or spawn processes that contact external systems. This is a supply-chain security risk - malicious dependencies could exfiltrate data or download malware at build time. Use vendored dependencies or pre-downloaded assets instead.".to_string(),
+                help_uri: Some("https://doc.rust-lang.org/cargo/reference/build-scripts.html".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Network-related patterns to detect
+    fn network_patterns() -> &'static [(&'static str, &'static str)] {
+        &[
+            // HTTP client libraries
+            ("reqwest::blocking::get", "reqwest HTTP client"),
+            ("reqwest::get", "reqwest HTTP client"),
+            ("reqwest::Client", "reqwest HTTP client"),
+            ("ureq::get", "ureq HTTP client"),
+            ("ureq::post", "ureq HTTP client"),
+            ("ureq::Agent", "ureq HTTP client"),
+            ("hyper::Client", "hyper HTTP client"),
+            ("curl::easy::Easy", "curl library"),
+            ("attohttpc::", "attohttpc HTTP client"),
+            ("minreq::", "minreq HTTP client"),
+            ("isahc::", "isahc HTTP client"),
+            
+            // Network primitives
+            ("TcpStream::connect", "raw TCP connection"),
+            ("UdpSocket::bind", "raw UDP socket"),
+            ("std::net::TcpStream", "TCP network access"),
+            ("tokio::net::", "tokio network access"),
+            ("async_std::net::", "async-std network access"),
+            ("to_socket_addrs", "DNS lookup"),
+            
+            // Dangerous commands
+            ("Command::new(\"curl\")", "curl command"),
+            ("Command::new(\"wget\")", "wget command"),
+            ("Command::new(\"fetch\")", "fetch command"),
+            ("Command::new(\"git\")", "git command (may clone from network)"),
+            ("Command::new(\"npm\")", "npm command (network access)"),
+            ("Command::new(\"pip\")", "pip command (network access)"),
+            ("Command::new(\"cargo\")", "cargo command (may download crates)"),
+        ]
+    }
+
+    /// Safe patterns that shouldn't trigger even if they look like network access
+    fn safe_patterns() -> &'static [&'static str] {
+        &[
+            "// SAFE:",
+            "// Safe:",
+            "#[allow(",
+            "mock",
+            "test",
+            "localhost",
+            "127.0.0.1",
+            "::1",
+        ]
+    }
+}
+
+impl Rule for BuildScriptNetworkRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        // Only scan build.rs files
+        let build_rs = crate_root.join("build.rs");
+        if !build_rs.exists() {
+            return findings;
+        }
+
+        let content = match fs::read_to_string(&build_rs) {
+            Ok(c) => c,
+            Err(_) => return findings,
+        };
+
+        let lines: Vec<&str> = content.lines().collect();
+        let mut current_fn_name = String::new();
+
+        for (idx, line) in lines.iter().enumerate() {
+            let trimmed = line.trim();
+
+            // Track function names
+            if trimmed.contains("fn ") {
+                if let Some(fn_pos) = trimmed.find("fn ") {
+                    let after_fn = &trimmed[fn_pos + 3..];
+                    if let Some(paren_pos) = after_fn.find('(') {
+                        current_fn_name = after_fn[..paren_pos].trim().to_string();
+                    }
+                }
+            }
+
+            // Skip comments
+            if trimmed.starts_with("//") || trimmed.starts_with("/*") {
+                continue;
+            }
+
+            // Check for safe patterns first
+            let is_safe = Self::safe_patterns().iter().any(|p| line.contains(p));
+            if is_safe {
+                continue;
+            }
+
+            // Check for network patterns
+            for (pattern, description) in Self::network_patterns() {
+                if line.contains(pattern) {
+                    let location = format!("build.rs:{}", idx + 1);
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: format!(
+                            "{} detected in build script function `{}`. Build scripts should not perform network requests - this is a supply-chain security risk.",
+                            description, current_fn_name
+                        ),
+                        function: location,
+                        function_signature: current_fn_name.clone(),
+                        evidence: vec![trimmed.to_string()],
+                        span: None,
+                    });
+                    break; // Only report once per line
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -669,4 +939,6 @@ pub fn register_resource_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(UnixPermissionsNotOctalRule::new()));
     engine.register_rule(Box::new(OpenOptionsInconsistentFlagsRule::new()));
     engine.register_rule(Box::new(AbsolutePathInJoinRule::new()));
+    engine.register_rule(Box::new(HardcodedHomePathRule::new()));
+    engine.register_rule(Box::new(BuildScriptNetworkRule::new()));
 }

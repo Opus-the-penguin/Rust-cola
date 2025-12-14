@@ -6,7 +6,7 @@
 //! - Unsafe Send/Sync bounds (RUSTCOLA015)
 //! - Non-thread-safe test patterns (RUSTCOLA074)
 
-use crate::{Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
+use crate::{Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use super::filter_entry;
 use std::ffi::OsStr;
 use std::fs;

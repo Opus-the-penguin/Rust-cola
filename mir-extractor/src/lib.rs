@@ -1,4 +1,7 @@
 #![cfg_attr(feature = "hir-driver", feature(rustc_private))]
+// TODO: Remove this once legacy rule implementations are fully cleaned up
+// Legacy rules have been migrated to rules/ module but old implementations remain
+#![allow(dead_code)]
 
 #[cfg(feature = "hir-driver")]
 extern crate rustc_ast;
@@ -346,6 +349,12 @@ fn line_has_world_writable_mode(line: &str) -> bool {
         .any(|value| (value & 0o022) != 0)
 }
 
+// =============================================================================
+// LEGACY RULE IMPLEMENTATIONS
+// These rules have been migrated to the rules/ module but kept here temporarily
+// to avoid breaking changes. They will be removed in a future cleanup.
+// =============================================================================
+#[allow(dead_code)]
 fn line_contains_md5_usage(line: &str) -> bool {
     let lower = line.to_lowercase();
     let mut search_start = 0;
@@ -18381,101 +18390,57 @@ impl Rule for UnboundedReadRule {
 
 
 fn register_builtin_rules(engine: &mut RuleEngine) {
-    engine.register_rule(Box::new(BoxIntoRawRule::new()));
-    engine.register_rule(Box::new(TransmuteRule::new()));
-    engine.register_rule(Box::new(UnsafeUsageRule::new()));
-    engine.register_rule(Box::new(InsecureMd5Rule::new()));
-    engine.register_rule(Box::new(InsecureSha1Rule::new()));
-    engine.register_rule(Box::new(WeakHashingExtendedRule::new()));
-    engine.register_rule(Box::new(NullPointerTransmuteRule::new()));
-    engine.register_rule(Box::new(ZSTPointerArithmeticRule::new()));
-    engine.register_rule(Box::new(CleartextEnvVarRule::new()));
-    engine.register_rule(Box::new(ModuloBiasRandomRule::new()));
-    engine.register_rule(Box::new(SpawnedChildNoWaitRule::new()));
+    // Register rules from categorized modules
+    rules::register_crypto_rules(engine);
+    rules::register_memory_rules(engine);
+    rules::register_concurrency_rules(engine);
+    rules::register_ffi_rules(engine);
+    rules::register_input_rules(engine);
+    rules::register_resource_rules(engine);
+    rules::register_code_quality_rules(engine);
+    rules::register_web_rules(engine);
+    rules::register_supply_chain_rules(engine);
+
+    // Injection/dataflow rules (complex, require taint tracking - stay in lib.rs)
     engine.register_rule(Box::new(UntrustedEnvInputRule::new()));
     engine.register_rule(Box::new(CommandInjectionRiskRule::new()));
-    engine.register_rule(Box::new(VecSetLenRule::new()));
-    engine.register_rule(Box::new(MaybeUninitAssumeInitRule::new()));
-    engine.register_rule(Box::new(MemUninitZeroedRule::new()));
-    engine.register_rule(Box::new(NonHttpsUrlRule::new()));
-    engine.register_rule(Box::new(DangerAcceptInvalidCertRule::new()));
-    engine.register_rule(Box::new(OpensslVerifyNoneRule::new()));
-    engine.register_rule(Box::new(HardcodedHomePathRule::new()));
-    engine.register_rule(Box::new(StaticMutGlobalRule::new()));
-    engine.register_rule(Box::new(PermissionsSetReadonlyFalseRule::new()));
-    engine.register_rule(Box::new(WorldWritableModeRule::new()));
-    engine.register_rule(Box::new(NonNullNewUncheckedRule::new()));
-    engine.register_rule(Box::new(MemForgetGuardRule::new()));
-    engine.register_rule(Box::new(UnderscoreLockGuardRule::new()));
     engine.register_rule(Box::new(CommandArgConcatenationRule::new()));
-    engine.register_rule(Box::new(OpenOptionsMissingTruncateRule::new()));
-    engine.register_rule(Box::new(AllocatorMismatchFfiRule::new())); // RUSTCOLA017 (upgraded from source-level to MIR-based)
-    engine.register_rule(Box::new(UnsafeSendSyncBoundsRule::new()));
-    engine.register_rule(Box::new(FfiBufferLeakRule::new()));
-    engine.register_rule(Box::new(PackedFieldReferenceRule::new())); // RUSTCOLA035
-    engine.register_rule(Box::new(UnsafeCStringPointerRule::new())); // RUSTCOLA036
-    engine.register_rule(Box::new(BlockingSleepInAsyncRule::new())); // RUSTCOLA037
-    engine.register_rule(Box::new(VecSetLenMisuseRule::new())); // RUSTCOLA038
-    engine.register_rule(Box::new(HardcodedCryptoKeyRule::new())); // RUSTCOLA039
-    engine.register_rule(Box::new(PanicInDropRule::new())); // RUSTCOLA040
-    engine.register_rule(Box::new(UnwrapInPollRule::new())); // RUSTCOLA041
-    engine.register_rule(Box::new(CookieSecureAttributeRule::new())); // RUSTCOLA042
-    engine.register_rule(Box::new(CorsWildcardRule::new())); // RUSTCOLA043
-    engine.register_rule(Box::new(TimingAttackRule::new())); // RUSTCOLA044
-    engine.register_rule(Box::new(WeakCipherRule::new())); // RUSTCOLA045
-    engine.register_rule(Box::new(PredictableRandomnessRule::new())); // RUSTCOLA046
-    engine.register_rule(Box::new(EnvVarLiteralRule::new())); // RUSTCOLA047
-    engine.register_rule(Box::new(InvisibleUnicodeRule::new())); // RUSTCOLA048
-    engine.register_rule(Box::new(CrateWideAllowRule::new())); // RUSTCOLA049
-    engine.register_rule(Box::new(MisorderedAssertEqRule::new())); // RUSTCOLA050
-    engine.register_rule(Box::new(TryIoResultRule::new())); // RUSTCOLA051
-    engine.register_rule(Box::new(LocalRefCellRule::new())); // RUSTCOLA052
-    engine.register_rule(Box::new(UntrimmedStdinRule::new())); // RUSTCOLA053
-    engine.register_rule(Box::new(InfiniteIteratorRule::new())); // RUSTCOLA054
-    engine.register_rule(Box::new(UnixPermissionsNotOctalRule::new())); // RUSTCOLA055
-    engine.register_rule(Box::new(OpenOptionsInconsistentFlagsRule::new())); // RUSTCOLA056
-    engine.register_rule(Box::new(UnnecessaryBorrowMutRule::new())); // RUSTCOLA057
-    engine.register_rule(Box::new(AbsolutePathInJoinRule::new())); // RUSTCOLA058
-    engine.register_rule(Box::new(CtorDtorStdApiRule::new())); // RUSTCOLA059
-    engine.register_rule(Box::new(ConnectionStringPasswordRule::new())); // RUSTCOLA060
-    engine.register_rule(Box::new(PasswordFieldMaskingRule::new())); // RUSTCOLA061
-    engine.register_rule(Box::new(CommentedOutCodeRule::new())); // RUSTCOLA092
-    engine.register_rule(Box::new(DeadStoreArrayRule::new())); // RUSTCOLA068
-    engine.register_rule(Box::new(OverscopedAllowRule::new())); // RUSTCOLA072
-    engine.register_rule(Box::new(UnsafeFfiPointerReturnRule::new())); // RUSTCOLA073
-    engine.register_rule(Box::new(NonThreadSafeTestRule::new())); // RUSTCOLA074
-    engine.register_rule(Box::new(CleartextLoggingRule::new())); // RUSTCOLA075
-    engine.register_rule(Box::new(LogInjectionRule::new())); // RUSTCOLA076
-    engine.register_rule(Box::new(DivisionByUntrustedRule::new())); // RUSTCOLA077
-    engine.register_rule(Box::new(MaybeUninitAssumeInitDataflowRule::new())); // RUSTCOLA078
-    engine.register_rule(Box::new(RegexInjectionRule::new())); // RUSTCOLA079
-    engine.register_rule(Box::new(UncheckedIndexRule::new())); // RUSTCOLA080
-    engine.register_rule(Box::new(SerdeLengthMismatchRule::new())); // RUSTCOLA081
-    engine.register_rule(Box::new(SliceElementSizeMismatchRule::new())); // RUSTCOLA082
-    engine.register_rule(Box::new(SliceFromRawPartsRule::new())); // RUSTCOLA083
-    engine.register_rule(Box::new(TlsVerificationDisabledRule::new())); // RUSTCOLA084
-    engine.register_rule(Box::new(AwsS3UnscopedAccessRule::new())); // RUSTCOLA085
-    engine.register_rule(Box::new(PathTraversalRule::new())); // RUSTCOLA086
-    engine.register_rule(Box::new(SqlInjectionRule::new())); // RUSTCOLA087
-    engine.register_rule(Box::new(SsrfRule::new())); // RUSTCOLA088
-    engine.register_rule(Box::new(InsecureYamlDeserializationRule::new())); // RUSTCOLA089
-    engine.register_rule(Box::new(UnboundedReadRule::new())); // RUSTCOLA090
-    engine.register_rule(Box::new(InsecureJsonTomlDeserializationRule::new())); // RUSTCOLA091
-    engine.register_rule(Box::new(BlockingOpsInAsyncRule::new())); // RUSTCOLA093
-    engine.register_rule(Box::new(MutexGuardAcrossAwaitRule::new())); // RUSTCOLA094
-    engine.register_rule(Box::new(TransmuteLifetimeChangeRule::new())); // RUSTCOLA095
-    engine.register_rule(Box::new(RawPointerEscapeRule::new())); // RUSTCOLA096
-    engine.register_rule(Box::new(BuildScriptNetworkRule::new())); // RUSTCOLA097
-    engine.register_rule(Box::new(InterProceduralCommandInjectionRule::new())); // RUSTCOLA098
-    // engine.register_rule(Box::new(AllocatorMismatchRule::new())); // OLD RUSTCOLA017 - replaced by MIR-based AllocatorMismatchFfiRule
+    engine.register_rule(Box::new(LogInjectionRule::new()));
+    engine.register_rule(Box::new(RegexInjectionRule::new()));
+    engine.register_rule(Box::new(UncheckedIndexRule::new()));
+    engine.register_rule(Box::new(PathTraversalRule::new()));
+    engine.register_rule(Box::new(SqlInjectionRule::new()));
+    engine.register_rule(Box::new(SsrfRule::new()));
+    engine.register_rule(Box::new(InterProceduralCommandInjectionRule::new()));
+
+    // Memory/dataflow rules (complex analysis)
+    engine.register_rule(Box::new(MaybeUninitAssumeInitDataflowRule::new()));
+    engine.register_rule(Box::new(SerdeLengthMismatchRule::new()));
+    engine.register_rule(Box::new(SliceElementSizeMismatchRule::new()));
+    engine.register_rule(Box::new(SliceFromRawPartsRule::new()));
     engine.register_rule(Box::new(ContentLengthAllocationRule::new()));
     engine.register_rule(Box::new(UnboundedAllocationRule::new()));
     engine.register_rule(Box::new(LengthTruncationCastRule::new()));
+    engine.register_rule(Box::new(TransmuteLifetimeChangeRule::new()));
+    engine.register_rule(Box::new(RawPointerEscapeRule::new()));
+    engine.register_rule(Box::new(VecSetLenMisuseRule::new()));
+    engine.register_rule(Box::new(StaticMutGlobalRule::new()));
+
+    // Concurrency rules (complex async analysis)
+    engine.register_rule(Box::new(UnderscoreLockGuardRule::new()));
+    engine.register_rule(Box::new(UnsafeSendSyncBoundsRule::new()));
     engine.register_rule(Box::new(BroadcastUnsyncPayloadRule::new()));
-    engine.register_rule(Box::new(RustsecUnsoundDependencyRule::new()));
-    engine.register_rule(Box::new(YankedCrateRule::new()));
-    engine.register_rule(Box::new(CargoAuditableMetadataRule::new()));
+    engine.register_rule(Box::new(PanicInDropRule::new()));
+    engine.register_rule(Box::new(UnwrapInPollRule::new()));
+
+    // FFI rules (complex - FfiBufferLeakRule requires strip_string_literals)
+    engine.register_rule(Box::new(FfiBufferLeakRule::new()));
+
+    // Code quality rules
+    engine.register_rule(Box::new(CommentedOutCodeRule::new()));
+    engine.register_rule(Box::new(OverscopedAllowRule::new()));
 }
+
 
 #[derive(Clone, Debug)]
 pub struct CacheConfig {

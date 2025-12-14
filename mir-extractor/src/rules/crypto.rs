@@ -8,7 +8,7 @@
 //! - Timing attack vulnerabilities
 //! - TLS verification disabled
 
-use crate::{Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
+use crate::{Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;

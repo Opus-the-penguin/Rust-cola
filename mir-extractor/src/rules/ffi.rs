@@ -7,7 +7,7 @@
 //! - FFI buffer leaks (RUSTCOLA016)
 //! - FFI pointer returns (RUSTCOLA073)
 
-use crate::{Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
+use crate::{Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use super::filter_entry;
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
@@ -580,6 +580,97 @@ impl Rule for UnsafeCStringPointerRule {
 }
 
 // ============================================================================
+// RUSTCOLA059: Ctor/Dtor Std API Rule
+// ============================================================================
+
+/// Detects functions annotated with #[ctor] or #[dtor] that call std:: APIs.
+pub struct CtorDtorStdApiRule {
+    metadata: RuleMetadata,
+}
+
+impl CtorDtorStdApiRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA059".to_string(),
+                name: "ctor-dtor-std-api".to_string(),
+                short_description: "#[ctor]/#[dtor] invoking std APIs".to_string(),
+                full_description: "Detects functions annotated with #[ctor] or #[dtor] that call std:: APIs. Code running in constructors/destructors (before main or during program teardown) can cause initialization ordering issues, deadlocks, or undefined behavior when calling standard library functions that expect a fully initialized runtime. Mirrors CodeQL rust/ctor-initialization.".to_string(),
+                help_uri: Some("https://docs.rs/ctor/latest/ctor/".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn looks_like_ctor_dtor_with_std_calls(&self, function: &crate::MirFunction) -> bool {
+        let name = &function.name;
+        
+        // Exclude the rule implementation itself
+        if name.contains("CtorDtorStdApiRule") || name.contains("looks_like_ctor_dtor_with_std_calls") {
+            return false;
+        }
+        
+        // Heuristic: Look for functions that start with ctor_ or dtor_
+        // These are likely annotated with #[ctor] or #[dtor]
+        // Note: This won't catch all cases (e.g., different naming), but is a reasonable heuristic
+        let looks_like_ctor_dtor_name = name.starts_with("ctor_") || name.starts_with("dtor_");
+        
+        if !looks_like_ctor_dtor_name {
+            return false;
+        }
+
+        // Check for std:: API calls or common std patterns in the body or signature
+        let has_std_refs = function.body.iter().any(|line| {
+            line.contains("std::") 
+                || line.contains("_print(") // println!/print! desugars to _print
+        }) || function.signature.contains("std::");
+        
+        has_std_refs
+    }
+}
+
+impl Rule for CtorDtorStdApiRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            if self.looks_like_ctor_dtor_with_std_calls(function) {
+                // Collect evidence of std:: calls or _print
+                let mut evidence = vec![];
+                for line in &function.body {
+                    if line.contains("std::") || line.contains("_print(") {
+                        evidence.push(line.clone());
+                        if evidence.len() >= 3 {
+                            break;
+                        }
+                    }
+                }
+                
+                if !evidence.is_empty() {
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: "Constructor/destructor function calls std library APIs. Code running before main() or during program teardown can cause initialization issues, deadlocks, or undefined behavior.".to_string(),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence,
+                        span: None,
+                    });
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -589,5 +680,6 @@ pub fn register_ffi_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(UnsafeFfiPointerReturnRule::new()));
     engine.register_rule(Box::new(PackedFieldReferenceRule::new()));
     engine.register_rule(Box::new(UnsafeCStringPointerRule::new()));
+    engine.register_rule(Box::new(CtorDtorStdApiRule::new()));
     // Note: FfiBufferLeakRule requires strip_string_literals helper and remains in lib.rs
 }

@@ -9,8 +9,9 @@
 //! - Null pointer transmutes
 //! - ZST pointer arithmetic
 
-use crate::{Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity, SourceSpan};
+use crate::{Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use super::collect_matches;
+use std::collections::HashSet;
 
 // ============================================================================
 // Helper Functions
@@ -226,6 +227,53 @@ pub(crate) fn looks_like_zst_pointer_arithmetic(line: &str) -> bool {
     false
 }
 
+/// Check if text contains a word (case-insensitive, respecting word boundaries)
+pub(crate) fn text_contains_word_case_insensitive(text: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return false;
+    }
+
+    let target = needle.to_lowercase();
+    text.to_lowercase()
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .any(|token| token == target)
+}
+
+/// Strip comments from a line, tracking block comment state
+pub(crate) fn strip_comments(line: &str, in_block_comment: &mut bool) -> String {
+    let mut result = String::with_capacity(line.len());
+    let bytes = line.as_bytes();
+    let mut idx = 0usize;
+
+    while idx < bytes.len() {
+        if *in_block_comment {
+            if bytes[idx] == b'*' && idx + 1 < bytes.len() && bytes[idx + 1] == b'/' {
+                *in_block_comment = false;
+                idx += 2;
+            } else {
+                idx += 1;
+            }
+            continue;
+        }
+
+        if bytes[idx] == b'/' && idx + 1 < bytes.len() {
+            match bytes[idx + 1] {
+                b'/' => break,
+                b'*' => {
+                    *in_block_comment = true;
+                    idx += 2;
+                    continue;
+                }
+                _ => {}
+            }
+        }
+
+        result.push(bytes[idx] as char);
+        idx += 1;
+    }
+    result
+}
+
 // ============================================================================
 // RUSTCOLA001: Box::into_raw
 // ============================================================================
@@ -408,13 +456,45 @@ impl UnsafeUsageRule {
             metadata: RuleMetadata {
                 id: "RUSTCOLA003".to_string(),
                 name: "unsafe-usage".to_string(),
-                short_description: "Usage of unsafe block".to_string(),
-                full_description: "Flags functions containing unsafe blocks for audit.".to_string(),
+                short_description: "Unsafe function or block detected".to_string(),
+                full_description: "Flags functions marked unsafe or containing unsafe blocks, highlighting code that requires careful review.".to_string(),
                 help_uri: None,
-                default_severity: Severity::Low,
+                default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
             },
         }
+    }
+
+    fn gather_evidence(&self, function: &MirFunction) -> Vec<String> {
+        let mut evidence = Vec::new();
+        let mut seen = HashSet::new();
+
+        let (sanitized_sig, _) =
+            strip_string_literals(StringLiteralState::default(), &function.signature);
+        if text_contains_word_case_insensitive(&sanitized_sig, "unsafe") {
+            let sig = format!("signature: {}", function.signature.trim());
+            if seen.insert(sig.clone()) {
+                evidence.push(sig);
+            }
+        }
+
+        let mut state = StringLiteralState::default();
+        let mut in_block_comment = false;
+
+        for line in &function.body {
+            let (sanitized, next_state) = strip_string_literals(state, line);
+            state = next_state;
+
+            let without_comments = strip_comments(&sanitized, &mut in_block_comment);
+            if text_contains_word_case_insensitive(&without_comments, "unsafe") {
+                let entry = line.trim().to_string();
+                if seen.insert(entry.clone()) {
+                    evidence.push(entry);
+                }
+            }
+        }
+
+        evidence
     }
 }
 
@@ -425,30 +505,27 @@ impl Rule for UnsafeUsageRule {
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
         let mut findings = Vec::new();
-
         for function in &package.functions {
-            let evidence: Vec<String> = function
-                .body
-                .iter()
-                .filter(|line| line.contains("unsafe"))
-                .map(|line| line.trim().to_string())
-                .collect();
-
-            if !evidence.is_empty() {
-                findings.push(Finding {
-                    rule_id: self.metadata.id.clone(),
-                    rule_name: self.metadata.name.clone(),
-                    severity: self.metadata.default_severity,
-                    message: format!(
-                        "Function `{}` contains unsafe blocks",
-                        function.name
-                    ),
-                    function: function.name.clone(),
-                    function_signature: function.signature.clone(),
-                    evidence,
-                    span: function.span.clone(),
-                });
+            // Skip self-analysis
+            if package.crate_name == "mir-extractor" {
+                continue;
             }
+
+            let evidence = self.gather_evidence(function);
+            if evidence.is_empty() {
+                continue;
+            }
+
+            findings.push(Finding {
+                rule_id: self.metadata.id.clone(),
+                rule_name: self.metadata.name.clone(),
+                severity: self.metadata.default_severity,
+                message: format!("Unsafe code detected in `{}`", function.name),
+                function: function.name.clone(),
+                function_signature: function.signature.clone(),
+                evidence,
+                span: function.span.clone(),
+            });
         }
 
         findings
@@ -600,8 +677,10 @@ impl Rule for ZSTPointerArithmeticRule {
 }
 
 // ============================================================================
-// RUSTCOLA026: Vec::set_len
+// RUSTCOLA008: Vec::set_len
 // ============================================================================
+
+const VEC_SET_LEN_SYMBOL: &str = concat!("Vec", "::", "set", "_len");
 
 pub struct VecSetLenRule {
     metadata: RuleMetadata,
@@ -611,15 +690,47 @@ impl VecSetLenRule {
     pub fn new() -> Self {
         Self {
             metadata: RuleMetadata {
-                id: "RUSTCOLA026".to_string(),
+                id: "RUSTCOLA008".to_string(),
                 name: "vec-set-len".to_string(),
-                short_description: "Unsafe Vec::set_len usage".to_string(),
-                full_description: "Detects usage of Vec::set_len, which is unsafe and can lead to memory safety issues if the new length exceeds the allocated capacity or if uninitialized memory is exposed.".to_string(),
+                short_description: format!("Potential misuse of {}", VEC_SET_LEN_SYMBOL),
+                full_description: format!(
+                    "Flags calls to {} which can lead to uninitialized memory exposure if not followed by proper writes.",
+                    VEC_SET_LEN_SYMBOL
+                ),
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
             },
         }
+    }
+
+    fn gather_evidence(&self, function: &MirFunction) -> Vec<String> {
+        let mut evidence = Vec::new();
+        let mut seen = HashSet::new();
+        let mut state = StringLiteralState::default();
+        let mut in_block_comment = false;
+
+        for line in &function.body {
+            let (sanitized, next_state) = strip_string_literals(state, line);
+            state = next_state;
+
+            let without_comments = strip_comments(&sanitized, &mut in_block_comment);
+            let trimmed = without_comments.trim_start();
+            if trimmed.starts_with("0x") || without_comments.contains('│') {
+                continue;
+            }
+
+            let has_call = without_comments.contains("set_len(");
+            let has_turbofish = without_comments.contains("set_len::<");
+            if has_call || has_turbofish {
+                let entry = line.trim().to_string();
+                if seen.insert(entry.clone()) {
+                    evidence.push(entry);
+                }
+            }
+        }
+
+        evidence
     }
 }
 
@@ -629,28 +740,32 @@ impl Rule for VecSetLenRule {
     }
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        // Skip self-analysis
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
         let mut findings = Vec::new();
 
         for function in &package.functions {
-            let evidence: Vec<String> = function
-                .body
-                .iter()
-                .filter(|line| line.contains("set_len") && line.contains("Vec"))
-                .map(|line| line.trim().to_string())
-                .collect();
-
-            if !evidence.is_empty() {
-                findings.push(Finding {
-                    rule_id: self.metadata.id.clone(),
-                    rule_name: self.metadata.name.clone(),
-                    severity: self.metadata.default_severity,
-                    message: format!("Unsafe Vec::set_len usage in `{}`", function.name),
-                    function: function.name.clone(),
-                    function_signature: function.signature.clone(),
-                    evidence,
-                    span: function.span.clone(),
-                });
+            let evidence = self.gather_evidence(function);
+            if evidence.is_empty() {
+                continue;
             }
+
+            findings.push(Finding {
+                rule_id: self.metadata.id.clone(),
+                rule_name: self.metadata.name.clone(),
+                severity: self.metadata.default_severity,
+                message: format!(
+                    "{} used in `{}`; ensure elements are initialized",
+                    VEC_SET_LEN_SYMBOL, function.name
+                ),
+                function: function.name.clone(),
+                function_signature: function.signature.clone(),
+                evidence,
+                span: function.span.clone(),
+            });
         }
 
         findings
@@ -658,8 +773,11 @@ impl Rule for VecSetLenRule {
 }
 
 // ============================================================================
-// RUSTCOLA035: MaybeUninit::assume_init
+// RUSTCOLA009: MaybeUninit::assume_init
 // ============================================================================
+
+const MAYBE_UNINIT_TYPE_SYMBOL: &str = concat!("Maybe", "Uninit");
+const MAYBE_UNINIT_ASSUME_INIT_SYMBOL: &str = concat!("assume", "_init");
 
 pub struct MaybeUninitAssumeInitRule {
     metadata: RuleMetadata,
@@ -669,10 +787,16 @@ impl MaybeUninitAssumeInitRule {
     pub fn new() -> Self {
         Self {
             metadata: RuleMetadata {
-                id: "RUSTCOLA035".to_string(),
-                name: "maybe-uninit-assume-init".to_string(),
-                short_description: "MaybeUninit::assume_init without initialization".to_string(),
-                full_description: "Detects calls to MaybeUninit::assume_init which assumes the value has been properly initialized. Using this on uninitialized memory is undefined behavior.".to_string(),
+                id: "RUSTCOLA009".to_string(),
+                name: "maybeuninit-assume-init".to_string(),
+                short_description: format!(
+                    "{}::{} usage",
+                    MAYBE_UNINIT_TYPE_SYMBOL, MAYBE_UNINIT_ASSUME_INIT_SYMBOL
+                ),
+                full_description: format!(
+                    "Highlights {}::{} calls which require careful initialization guarantees.",
+                    MAYBE_UNINIT_TYPE_SYMBOL, MAYBE_UNINIT_ASSUME_INIT_SYMBOL
+                ),
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
@@ -687,28 +811,33 @@ impl Rule for MaybeUninitAssumeInitRule {
     }
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        // Skip self-analysis
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
         let mut findings = Vec::new();
+        let patterns = ["assume_init", "assume_init_ref"];
 
         for function in &package.functions {
-            let evidence: Vec<String> = function
-                .body
-                .iter()
-                .filter(|line| line.contains("assume_init") && line.contains("MaybeUninit"))
-                .map(|line| line.trim().to_string())
-                .collect();
-
-            if !evidence.is_empty() {
-                findings.push(Finding {
-                    rule_id: self.metadata.id.clone(),
-                    rule_name: self.metadata.name.clone(),
-                    severity: self.metadata.default_severity,
-                    message: format!("MaybeUninit::assume_init usage in `{}`", function.name),
-                    function: function.name.clone(),
-                    function_signature: function.signature.clone(),
-                    evidence,
-                    span: function.span.clone(),
-                });
+            let evidence = collect_matches(&function.body, &patterns);
+            if evidence.is_empty() {
+                continue;
             }
+
+            findings.push(Finding {
+                rule_id: self.metadata.id.clone(),
+                rule_name: self.metadata.name.clone(),
+                severity: self.metadata.default_severity,
+                message: format!(
+                    "{}::{} detected in `{}`",
+                    MAYBE_UNINIT_TYPE_SYMBOL, MAYBE_UNINIT_ASSUME_INIT_SYMBOL, function.name
+                ),
+                function: function.name.clone(),
+                function_signature: function.signature.clone(),
+                evidence,
+                span: function.span.clone(),
+            });
         }
 
         findings
@@ -716,8 +845,12 @@ impl Rule for MaybeUninitAssumeInitRule {
 }
 
 // ============================================================================
-// RUSTCOLA036: mem::uninitialized / mem::zeroed
+// RUSTCOLA010: mem::uninitialized / mem::zeroed
 // ============================================================================
+
+const MEM_MODULE_SYMBOL: &str = concat!("mem");
+const MEM_UNINITIALIZED_SYMBOL: &str = concat!("uninitialized");
+const MEM_ZEROED_SYMBOL: &str = concat!("zeroed");
 
 pub struct MemUninitZeroedRule {
     metadata: RuleMetadata,
@@ -727,10 +860,22 @@ impl MemUninitZeroedRule {
     pub fn new() -> Self {
         Self {
             metadata: RuleMetadata {
-                id: "RUSTCOLA036".to_string(),
-                name: "mem-uninitialized-zeroed".to_string(),
-                short_description: "Usage of deprecated mem::uninitialized or potentially dangerous mem::zeroed".to_string(),
-                full_description: "Detects use of std::mem::uninitialized (deprecated and UB) and std::mem::zeroed (dangerous for non-zero types). Use MaybeUninit instead.".to_string(),
+                id: "RUSTCOLA010".to_string(),
+                name: "mem-uninit-zeroed".to_string(),
+                short_description: format!(
+                    "Use of {}::{} or {}::{}",
+                    MEM_MODULE_SYMBOL,
+                    MEM_UNINITIALIZED_SYMBOL,
+                    MEM_MODULE_SYMBOL,
+                    MEM_ZEROED_SYMBOL
+                ),
+                full_description: format!(
+                    "Flags deprecated zero-initialization APIs such as {}::{} and {}::{} which can lead to undefined behavior on non-zero types.",
+                    MEM_MODULE_SYMBOL,
+                    MEM_UNINITIALIZED_SYMBOL,
+                    MEM_MODULE_SYMBOL,
+                    MEM_ZEROED_SYMBOL
+                ),
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
@@ -745,32 +890,43 @@ impl Rule for MemUninitZeroedRule {
     }
 
     fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        // Skip self-analysis
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
         let mut findings = Vec::new();
+        let patterns = [
+            format!("{}::{}", MEM_MODULE_SYMBOL, MEM_UNINITIALIZED_SYMBOL),
+            format!("{}::{}", MEM_MODULE_SYMBOL, MEM_ZEROED_SYMBOL),
+            "::uninitialized()".to_string(),
+            "::zeroed()".to_string(),
+        ];
+        let pattern_refs: Vec<_> = patterns.iter().map(|s| s.as_str()).collect();
 
         for function in &package.functions {
-            let evidence: Vec<String> = function
-                .body
-                .iter()
-                .filter(|line| {
-                    let lower = line.to_lowercase();
-                    (lower.contains("mem::uninitialized") || lower.contains("mem::zeroed"))
-                        && !lower.contains("maybeuninit")
-                })
-                .map(|line| line.trim().to_string())
-                .collect();
-
-            if !evidence.is_empty() {
-                findings.push(Finding {
-                    rule_id: self.metadata.id.clone(),
-                    rule_name: self.metadata.name.clone(),
-                    severity: self.metadata.default_severity,
-                    message: format!("Dangerous mem::uninitialized or mem::zeroed usage in `{}`", function.name),
-                    function: function.name.clone(),
-                    function_signature: function.signature.clone(),
-                    evidence,
-                    span: function.span.clone(),
-                });
+            let evidence = collect_matches(&function.body, &pattern_refs);
+            if evidence.is_empty() {
+                continue;
             }
+
+            findings.push(Finding {
+                rule_id: self.metadata.id.clone(),
+                rule_name: self.metadata.name.clone(),
+                severity: self.metadata.default_severity,
+                message: format!(
+                    "Deprecated zero-initialization detected in `{}` via {}::{} or {}::{}",
+                    function.name,
+                    MEM_MODULE_SYMBOL,
+                    MEM_UNINITIALIZED_SYMBOL,
+                    MEM_MODULE_SYMBOL,
+                    MEM_ZEROED_SYMBOL
+                ),
+                function: function.name.clone(),
+                function_signature: function.signature.clone(),
+                evidence,
+                span: function.span.clone(),
+            });
         }
 
         findings

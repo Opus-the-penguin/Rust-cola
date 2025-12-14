@@ -9,6 +9,8 @@
 //! - `input`: Input validation issues (environment, stdin, deserialization)
 //! - `resource`: Resource management (file permissions, open options, iterators)
 //! - `code_quality`: Code quality issues (dead stores, commented code, assertions)
+//! - `web`: Web security issues (TLS, CORS, cookies, passwords)
+//! - `supply_chain`: Supply chain security (RUSTSEC, yanked crates, auditable)
 
 pub mod crypto;
 pub mod memory;
@@ -18,6 +20,8 @@ pub mod ffi;
 pub mod input;
 pub mod resource;
 pub mod code_quality;
+pub mod web;
+pub mod supply_chain;
 
 // Re-export registration functions
 pub use crypto::register_crypto_rules;
@@ -28,6 +32,8 @@ pub use ffi::register_ffi_rules;
 pub use input::register_input_rules;
 pub use resource::register_resource_rules;
 pub use code_quality::register_code_quality_rules;
+pub use web::register_web_rules;
+pub use supply_chain::register_supply_chain_rules;
 
 // Re-export rule structs for direct access
 pub use crypto::{
@@ -60,6 +66,14 @@ pub use resource::{
 pub use code_quality::{
     CrateWideAllowRule, MisorderedAssertEqRule, TryIoResultRule, LocalRefCellRule,
     UnnecessaryBorrowMutRule, DeadStoreArrayRule,
+};
+pub use web::{
+    NonHttpsUrlRule, DangerAcceptInvalidCertRule, OpensslVerifyNoneRule,
+    CookieSecureAttributeRule, CorsWildcardRule, ConnectionStringPasswordRule,
+    PasswordFieldMaskingRule, CleartextLoggingRule,
+};
+pub use supply_chain::{
+    RustsecUnsoundDependencyRule, YankedCrateRule, CargoAuditableMetadataRule,
 };
 
 use crate::{MirFunction, MirPackage};

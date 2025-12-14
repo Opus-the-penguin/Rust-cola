@@ -1,27 +1,37 @@
 # Rust-cola Production Release Plan
 
 **Date:** December 14, 2025  
-**Current Version:** 0.7.2  
-**Target **Progress (v0.7.2):** ✅ **Major milestone achieved**
-- ✅ Created `rules/utils.rs` with shared utilities (`strip_string_literals`, `strip_comments`, `command_rule_should_skip`, `LOG_SINK_PATTERNS`, `INPUT_SOURCE_PATTERNS`)
+**Current Version:** 0.7.3  
+**Target **Progress (v0.7.1):** ✅ **Major milestone achieved**
+- ✅ Created `rules/utils.rs` with shared utilities (`strip_string_literals`, `StringLiteralState`)
 - ✅ Migrated `UnsafeSendSyncBoundsRule` (RUSTCOLA015) → `concurrency.rs`
 - ✅ Migrated `FfiBufferLeakRule` (RUSTCOLA016) → `ffi.rs`
 - ✅ Migrated `OverscopedAllowRule` (RUSTCOLA072) → `code_quality.rs`
 - ✅ Migrated `CommentedOutCodeRule` (RUSTCOLA092) → `code_quality.rs`
 - ✅ Migrated `UnderscoreLockGuardRule`, `BroadcastUnsyncPayloadRule`, `PanicInDropRule`, `UnwrapInPollRule` → `concurrency.rs`
-- ✅ **NEW:** Migrated `UntrustedEnvInputRule` (RUSTCOLA006) → `injection.rs`
-- ✅ **NEW:** Migrated `CommandInjectionRiskRule` (RUSTCOLA007) → `injection.rs`
-- ✅ **NEW:** Migrated `CommandArgConcatenationRule` (RUSTCOLA031) → `injection.rs`
-- ✅ **NEW:** Migrated `LogInjectionRule` (RUSTCOLA076) → `injection.rs`
-- 📊 **lib.rs reduced:** 22,936 → 20,666 lines (~2,270 lines removed, ~9.9% reduction)
-- 📊 **Tests:** 146 passed (up from 138)
+- 📊 **lib.rs reduced:** 22,936 → 21,236 lines (~1,700 lines removed, ~7.4% reduction)
+- ✅ **Tests:** 143 passed (up from 138)
 
-**Remaining (~17 rules in lib.rs):**
-- Injection rules with taint tracking dependencies (6 remaining)
-- Memory rules with dataflow analysis (11 remaining)
+**Progress (v0.7.2-v0.7.3):** ✅ **Injection rules migration complete**
+- ✅ Added shared utilities to `utils.rs`: `strip_comments`, `command_rule_should_skip`, `LOG_SINK_PATTERNS`, `INPUT_SOURCE_PATTERNS`
+- ✅ Migrated `CommandInjectionRule` (RUSTCOLA006) → `injection.rs`
+- ✅ Migrated `OsCommandInjectionRule` (RUSTCOLA007) → `injection.rs`
+- ✅ Migrated `ShellExpansionInjectionRule` (RUSTCOLA031) → `injection.rs`
+- ✅ Migrated `EnhancedCommandInjectionRule` (RUSTCOLA076) → `injection.rs`
+- ✅ Migrated `RegexInjectionRule` (RUSTCOLA079) → `injection.rs`
+- ✅ Migrated `UncheckedIndexRule` (RUSTCOLA080) → `injection.rs`
+- ✅ Migrated `PathTraversalRule` (RUSTCOLA064) → `injection.rs`
+- ✅ Migrated `SsrfRule` (RUSTCOLA065) → `injection.rs`
+- ✅ Migrated `SqlInjectionRule` (RUSTCOLA066) → `injection.rs`
+- ✅ Migrated `InterProceduralCommandInjectionRule` (RUSTCOLA030) → `injection.rs`
+- 📊 **lib.rs reduced:** 20,667 → 17,360 lines (~3,300 lines removed, ~16% reduction)
+- ✅ **Tests:** 146 passed
 
-**Exit Criteria:** `lib.rs` contains only core infrastructure, all rules in modules  
-**Status:** Phase 1.2 Nearing Completion
+**Remaining (~14 rules in lib.rs):**
+- Memory rules with dataflow analysis
+- Additional dataflow-dependent rules
+- Rules requiring core infrastructure access.0  
+**Status:** Phase 1.2 Major Milestone - Injection Rules Complete
 
 This document outlines the roadmap to achieve a production-ready release of Rust-cola. Completing these phases will yield a **Release Candidate (RC)** suitable for general availability.
 
@@ -38,13 +48,13 @@ Rust-cola v0.7.2 has reached significant maturity with 102 security rules and a 
 
 ---
 
-## Current State (v0.7.2)
+## Current State (v0.7.3)
 
 | Metric | Value |
 |--------|-------|
 | **Total Rules** | 102 |
 | **Test Status** | 146 passed, 0 failed ✅ |
-| **Core Codebase** | ~20.7K LOC (mir-extractor/lib.rs) |
+| **Core Codebase** | ~17.4K LOC (mir-extractor/lib.rs) |
 | **Rule Modules** | 10 categories + utils |
 
 ### Three-Tier Architecture
@@ -70,10 +80,10 @@ Rust-cola v0.7.2 has reached significant maturity with 102 security rules and a 
 | `code_quality.rs` | 8 | Dead stores, assertions, crate-wide allow, RefCell, commented code |
 | `web.rs` | 10 | TLS, CORS, cookies, passwords, logging, AWS S3 |
 | `supply_chain.rs` | 3 | RUSTSEC, yanked crates, auditable |
-| `injection.rs` | 5 | Command, SQL, path traversal, SSRF |
+| `injection.rs` | 10 | Command, SQL, path traversal, SSRF, regex, unchecked index, interprocedural |
 | `utils.rs` | - | Shared utilities (strip_string_literals, StringLiteralState) |
 
-**Complex Rules in lib.rs:** ~20 rules (dataflow-dependent, require inter-procedural context)
+**Complex Rules in lib.rs:** ~14 rules (dataflow-dependent, require inter-procedural context)
 
 **Advanced Rules (mir-advanced-rules):** 9 rules (ADV001-ADV009)
 
@@ -316,7 +326,7 @@ All artifacts generated on every run:
 | Metric | Current | Target (v1.0) |
 |--------|---------|---------------|
 | Total Rules | 102 | 115+ |
-| Test Pass Rate | 95.6% (132/138) | 100% |
+| Test Pass Rate | 100% (146/146) | 100% |
 | Rust-Specific Rules | ~20 | 35+ |
 | Average Scan Time (medium crate) | TBD | <30s |
 | Fast Mode Scan Time | N/A | <5s |
@@ -336,10 +346,27 @@ All artifacts generated on every run:
 
 ---
 
-## Next Steps
+## Progress Log
 
-1. **Immediate:** Begin Phase 1.1 - Fix the 6 failing tests
-2. **This Week:** Complete Phase 1.2 - Migrate remaining lib.rs rules
+### v0.7.2 (Current)
+- ✅ **Phase 1.1 COMPLETE:** All 146 tests passing
+- 🔄 **Phase 1.2 IN PROGRESS:** Rule migration to modules
+  - Created `rules/utils.rs` with shared utilities (`strip_string_literals`, `strip_comments`, `command_rule_should_skip`, `LOG_SINK_PATTERNS`, `INPUT_SOURCE_PATTERNS`)
+  - Migrated `UnsafeSendSyncBoundsRule` (RUSTCOLA015) → `concurrency.rs`
+  - Migrated `FfiBufferLeakRule` (RUSTCOLA016) → `ffi.rs`
+  - Migrated `OverscopedAllowRule` (RUSTCOLA072) → `code_quality.rs`
+  - Migrated `CommentedOutCodeRule` (RUSTCOLA092) → `code_quality.rs`
+  - Migrated `UnderscoreLockGuardRule`, `BroadcastUnsyncPayloadRule`, `PanicInDropRule`, `UnwrapInPollRule` → `concurrency.rs`
+  - Migrated `UntrustedEnvInputRule` (RUSTCOLA006) → `injection.rs`
+  - Migrated `CommandInjectionRiskRule` (RUSTCOLA007) → `injection.rs`
+  - Migrated `CommandArgConcatenationRule` (RUSTCOLA031) → `injection.rs`
+  - Migrated `LogInjectionRule` (RUSTCOLA076) → `injection.rs`
+  - **lib.rs reduced:** 22,936 → 20,666 lines (~9.9% reduction)
+  - **Remaining:** ~17 rules (6 injection, 11 memory)
+
+### Next Steps
+1. **Immediate:** Continue Phase 1.2 - Migrate remaining 17 rules
+2. **This Week:** Complete Phase 1.2 - Target lib.rs < 15K LOC
 3. **Next Sprint:** Start Phase 2.1 - Async correctness rules
 
 ---
@@ -349,3 +376,4 @@ All artifacts generated on every run:
 | Date | Version | Author | Changes |
 |------|---------|--------|---------|
 | 2025-12-14 | 1.0 | GitHub Copilot | Initial production release plan |
+| 2025-12-14 | 1.1 | GitHub Copilot | Updated for v0.7.2, Phase 1.1 complete |

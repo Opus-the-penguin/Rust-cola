@@ -54,7 +54,8 @@ pub use concurrency::{
 };
 pub use injection::{
     UntrustedEnvInputRule, CommandInjectionRiskRule, CommandArgConcatenationRule,
-    LogInjectionRule,
+    LogInjectionRule, RegexInjectionRule, UncheckedIndexRule, PathTraversalRule,
+    SsrfRule, SqlInjectionRule, InterProceduralCommandInjectionRule,
 };
 pub use ffi::{
     AllocatorMismatchFfiRule, UnsafeFfiPointerReturnRule, PackedFieldReferenceRule,

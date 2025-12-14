@@ -19655,7 +19655,32 @@ fn artifact_uri_for(package: &MirPackage, function_name: &str) -> String {
         return file_uri_from_path(&path);
     }
 
-    file_uri_from_path(&crate_root)
+    // Fallback: try to extract path from function name patterns like "src/lib.rs:15" or "build.rs:10"
+    // This handles source-level rules that use location-style function names
+    if function_name.contains(':') && !function_name.contains("::") {
+        // Pattern: "file.rs:line" or "path/to/file.rs:line"
+        if let Some(colon_pos) = function_name.rfind(':') {
+            let path_part = &function_name[..colon_pos];
+            if path_part.ends_with(".rs") {
+                let file_path = crate_root.join(path_part);
+                return file_uri_from_path(&file_path);
+            }
+        }
+    }
+
+    // Final fallback: use src/lib.rs if it exists, otherwise src/main.rs
+    // GitHub Code Scanning requires a file path, not a directory
+    let lib_rs = crate_root.join("src/lib.rs");
+    if lib_rs.exists() {
+        return file_uri_from_path(&lib_rs);
+    }
+    let main_rs = crate_root.join("src/main.rs");
+    if main_rs.exists() {
+        return file_uri_from_path(&main_rs);
+    }
+
+    // Last resort: append src/lib.rs even if it doesn't exist
+    file_uri_from_path(&crate_root.join("src/lib.rs"))
 }
 
 pub fn sarif_report(package: &MirPackage, analysis: &AnalysisResult) -> serde_json::Value {

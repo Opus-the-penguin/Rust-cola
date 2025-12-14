@@ -5,6 +5,28 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2025-12-14
+
+### Fixed
+- **SARIF Output**: Fixed GitHub Code Scanning error "artifact location cannot be parsed to a file path".
+  - `artifactLocation.uri` now always points to a file, not a directory.
+  - When span is unavailable, `artifact_uri_for` extracts path from location-style function names (e.g., `build.rs:15`).
+  - Falls back to `src/lib.rs` or `src/main.rs` instead of crate root directory.
+
+## [0.6.0] - 2025-12-14
+
+### Changed
+- **Rules Migration Complete**: Migrated additional rules to modular structure.
+  - `rules/web.rs`: Created with TlsVerificationDisabledRule (RUSTCOLA084), AwsS3UnscopedAccessRule (RUSTCOLA085), plus existing TLS/CORS/cookie rules.
+  - `rules/supply_chain.rs`: Created with RustsecUnsoundDependencyRule, YankedCrateRule, CargoAuditableMetadataRule.
+  - `rules/resource.rs`: Added HardcodedHomePathRule (RUSTCOLA014), BuildScriptNetworkRule (RUSTCOLA097).
+  - `rules/ffi.rs`: Added CtorDtorStdApiRule (RUSTCOLA059).
+  - `rules/memory.rs`: Upgraded with sophisticated string literal stripping and self-analysis skip logic.
+
+### Technical
+- 10 categorized rule modules now active (crypto, memory, concurrency, ffi, input, resource, code_quality, injection, web, supply_chain).
+- 29 complex dataflow/source-level rules remain in lib.rs (require taint tracking, syn parsing).
+
 ## [0.5.2] - 2025-12-13
 
 ### Changed

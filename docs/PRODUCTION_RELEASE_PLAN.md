@@ -1,7 +1,7 @@
 # Rust-cola Production Release Plan
 
 **Date:** December 14, 2025  
-**Current Version:** 0.7.3  
+**Current Version:** 0.7.4  
 **Target **Progress (v0.7.1):** ✅ **Major milestone achieved**
 - ✅ Created `rules/utils.rs` with shared utilities (`strip_string_literals`, `StringLiteralState`)
 - ✅ Migrated `UnsafeSendSyncBoundsRule` (RUSTCOLA015) → `concurrency.rs`
@@ -12,22 +12,17 @@
 - 📊 **lib.rs reduced:** 22,936 → 21,236 lines (~1,700 lines removed, ~7.4% reduction)
 - ✅ **Tests:** 143 passed (up from 138)
 
-**Progress (v0.7.2-v0.7.3):** ✅ **Injection rules migration complete**
+**Progress (v0.7.2-v0.7.4):** ✅ **Duplicate rules cleanup complete**
 - ✅ Added shared utilities to `utils.rs`: `strip_comments`, `command_rule_should_skip`, `LOG_SINK_PATTERNS`, `INPUT_SOURCE_PATTERNS`
-- ✅ Migrated `CommandInjectionRule` (RUSTCOLA006) → `injection.rs`
-- ✅ Migrated `OsCommandInjectionRule` (RUSTCOLA007) → `injection.rs`
-- ✅ Migrated `ShellExpansionInjectionRule` (RUSTCOLA031) → `injection.rs`
-- ✅ Migrated `EnhancedCommandInjectionRule` (RUSTCOLA076) → `injection.rs`
-- ✅ Migrated `RegexInjectionRule` (RUSTCOLA079) → `injection.rs`
-- ✅ Migrated `UncheckedIndexRule` (RUSTCOLA080) → `injection.rs`
-- ✅ Migrated `PathTraversalRule` (RUSTCOLA064) → `injection.rs`
-- ✅ Migrated `SsrfRule` (RUSTCOLA065) → `injection.rs`
-- ✅ Migrated `SqlInjectionRule` (RUSTCOLA066) → `injection.rs`
-- ✅ Migrated `InterProceduralCommandInjectionRule` (RUSTCOLA030) → `injection.rs`
-- 📊 **lib.rs reduced:** 20,667 → 17,360 lines (~3,300 lines removed, ~16% reduction)
+- ✅ Migrated injection rules → `injection.rs` (10 rules)
+- ✅ **Major cleanup:** Removed 64 duplicate rules from lib.rs (rules already existed in modules)
+- ✅ Added test imports for rules from memory.rs, crypto.rs, resource.rs, input.rs, web.rs
+- ✅ Preserved symbol constants (VEC_SET_LEN_SYMBOL, MAYBE_UNINIT_*, MEM_*, DANGER_*) for tests
+- 📊 **lib.rs reduced:** 17,360 → 8,253 lines (~9,100 lines removed, **52% reduction**)
 - ✅ **Tests:** 146 passed
+- ✅ **Rules in lib.rs:** 77 → 13 (only unique advanced dataflow rules remain)
 
-**Remaining (~14 rules in lib.rs):**
+**Remaining (~13 rules in lib.rs - all unique):**
 - Memory rules with dataflow analysis
 - Additional dataflow-dependent rules
 - Rules requiring core infrastructure access.0  
@@ -48,13 +43,13 @@ Rust-cola v0.7.2 has reached significant maturity with 102 security rules and a 
 
 ---
 
-## Current State (v0.7.3)
+## Current State (v0.7.4)
 
 | Metric | Value |
 |--------|-------|
 | **Total Rules** | 102 |
 | **Test Status** | 146 passed, 0 failed ✅ |
-| **Core Codebase** | ~17.4K LOC (mir-extractor/lib.rs) |
+| **Core Codebase** | ~8.3K LOC (mir-extractor/lib.rs) |
 | **Rule Modules** | 10 categories + utils |
 
 ### Three-Tier Architecture
@@ -83,7 +78,7 @@ Rust-cola v0.7.2 has reached significant maturity with 102 security rules and a 
 | `injection.rs` | 10 | Command, SQL, path traversal, SSRF, regex, unchecked index, interprocedural |
 | `utils.rs` | - | Shared utilities (strip_string_literals, StringLiteralState) |
 
-**Complex Rules in lib.rs:** ~14 rules (dataflow-dependent, require inter-procedural context)
+**Complex Rules in lib.rs:** 13 rules (unique advanced dataflow rules requiring inter-procedural context)
 
 **Advanced Rules (mir-advanced-rules):** 9 rules (ADV001-ADV009)
 

@@ -52,6 +52,9 @@ pub use concurrency::{
     MutexGuardAcrossAwaitRule, UnderscoreLockGuardRule, BroadcastUnsyncPayloadRule,
     PanicInDropRule, UnwrapInPollRule, UnsafeSendSyncBoundsRule,
 };
+pub use injection::{
+    UntrustedEnvInputRule, CommandInjectionRiskRule, CommandArgConcatenationRule,
+};
 pub use ffi::{
     AllocatorMismatchFfiRule, UnsafeFfiPointerReturnRule, PackedFieldReferenceRule,
     UnsafeCStringPointerRule, FfiBufferLeakRule,

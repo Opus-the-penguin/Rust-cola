@@ -180,6 +180,51 @@ pub fn strip_string_literals(
     (result, state)
 }
 
+/// Strip comments from a line of code.
+///
+/// Handles both single-line (`//`) and block (`/* */`) comments, tracking
+/// multi-line block comment state across calls.
+///
+/// # Arguments
+/// * `line` - The source line to process
+/// * `in_block_comment` - Mutable state tracking if we're inside a block comment
+///
+/// # Returns
+/// The line with comment content removed
+pub fn strip_comments(line: &str, in_block_comment: &mut bool) -> String {
+    let mut result = String::with_capacity(line.len());
+    let bytes = line.as_bytes();
+    let mut idx = 0usize;
+
+    while idx < bytes.len() {
+        if *in_block_comment {
+            if bytes[idx] == b'*' && idx + 1 < bytes.len() && bytes[idx + 1] == b'/' {
+                *in_block_comment = false;
+                idx += 2;
+            } else {
+                idx += 1;
+            }
+            continue;
+        }
+
+        if bytes[idx] == b'/' && idx + 1 < bytes.len() {
+            match bytes[idx + 1] {
+                b'/' => break,
+                b'*' => {
+                    *in_block_comment = true;
+                    idx += 2;
+                    continue;
+                }
+                _ => {}
+            }
+        }
+
+        result.push(bytes[idx] as char);
+        idx += 1;
+    }
+    result
+}
+
 /// Collect lines that match any of the given patterns after sanitizing string literals.
 ///
 /// This is useful for rules that need to find code patterns while ignoring
@@ -201,6 +246,24 @@ pub fn collect_sanitized_matches(lines: &[String], patterns: &[&str]) -> Vec<Str
             }
         })
         .collect()
+}
+
+/// Check if a function should be skipped for command injection rules.
+///
+/// This excludes mir-extractor's own build infrastructure functions that
+/// legitimately spawn external processes (rustc, cargo, etc.).
+pub fn command_rule_should_skip(function: &crate::MirFunction, package: &crate::MirPackage) -> bool {
+    if package.crate_name == "mir-extractor" {
+        matches!(
+            function.name.as_str(),
+            "detect_rustc_version"
+                | "run_cargo_rustc"
+                | "discover_rustc_targets"
+                | "detect_crate_name"
+        )
+    } else {
+        false
+    }
 }
 
 #[cfg(test)]
@@ -245,5 +308,33 @@ mod tests {
         let (sanitized, _) = strip_string_literals(StringLiteralState::default(), "let c = 'x';");
         assert!(sanitized.contains("let c ="));
         assert!(!sanitized.contains("'x'"));
+    }
+
+    #[test]
+    fn test_strip_comments_line_comment() {
+        let mut in_block = false;
+        let result = strip_comments("let x = 1; // comment", &mut in_block);
+        assert_eq!(result, "let x = 1; ");
+        assert!(!in_block);
+    }
+
+    #[test]
+    fn test_strip_comments_block_comment() {
+        let mut in_block = false;
+        let result = strip_comments("let x = /* inline */ 2;", &mut in_block);
+        assert_eq!(result, "let x =  2;");
+        assert!(!in_block);
+    }
+
+    #[test]
+    fn test_strip_comments_multiline_block() {
+        let mut in_block = false;
+        let line1 = strip_comments("let x = /* start", &mut in_block);
+        assert_eq!(line1, "let x = ");
+        assert!(in_block);
+        
+        let line2 = strip_comments("still in comment */ done;", &mut in_block);
+        assert_eq!(line2, " done;");
+        assert!(!in_block);
     }
 }

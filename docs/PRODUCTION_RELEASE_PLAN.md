@@ -1,9 +1,9 @@
 # Rust-cola Production Release Plan
 
 **Date:** December 14, 2025  
-**Current Version:** 0.7.0  
+**Current Version:** 0.7.1  
 **Target Version:** 1.0.0  
-**Status:** Phase 1.2 In Progress
+**Status:** Phase 1.2 Nearing Completion
 
 This document outlines the roadmap to achieve a production-ready release of Rust-cola. Completing these phases will yield a **Release Candidate (RC)** suitable for general availability.
 
@@ -11,7 +11,7 @@ This document outlines the roadmap to achieve a production-ready release of Rust
 
 ## Executive Summary
 
-Rust-cola v0.6.1 has reached significant maturity with 102 security rules and a three-tier analysis architecture. To achieve production readiness, we must:
+Rust-cola v0.7.1 has reached significant maturity with 102 security rules and a three-tier analysis architecture. To achieve production readiness, we must:
 
 1. **Stabilize** - Fix failing tests and complete architectural refactoring
 2. **Close Gaps** - Implement Rust-specific vulnerability detection (async, lifetimes, panic safety)
@@ -20,13 +20,13 @@ Rust-cola v0.6.1 has reached significant maturity with 102 security rules and a 
 
 ---
 
-## Current State (v0.7.0)
+## Current State (v0.7.1)
 
 | Metric | Value |
 |--------|-------|
 | **Total Rules** | 102 |
-| **Test Status** | 138 passed, 0 failed ✅ |
-| **Core Codebase** | ~22K LOC (mir-extractor/lib.rs) |
+| **Test Status** | 143 passed, 0 failed ✅ |
+| **Core Codebase** | ~21K LOC (mir-extractor/lib.rs) |
 | **Rule Modules** | 10 categories + utils |
 
 ### Three-Tier Architecture
@@ -39,22 +39,23 @@ Rust-cola v0.6.1 has reached significant maturity with 102 security rules and a 
 
 ### Rule Distribution
 
-**Organized Modules (59 rules):**
+**Organized Modules (76 rules):**
 
 | Module | Rules | Coverage |
 |--------|-------|----------|
 | `crypto.rs` | 8 | MD5, SHA1, hardcoded keys, timing, weak ciphers, PRNG |
 | `memory.rs` | 10 | Transmute, uninit, set_len, raw pointers, Box::into_raw |
-| `concurrency.rs` | 4 | Mutex guards, async blocking, Send/Sync |
-| `ffi.rs` | 5 | Allocator mismatch, CString, packed fields, repr(C) |
+| `concurrency.rs` | 9 | Mutex guards, async blocking, Send/Sync, lock guards, panic safety |
+| `ffi.rs` | 6 | Allocator mismatch, CString, packed fields, repr(C), buffer leaks |
 | `input.rs` | 9 | Env vars, stdin, unicode, deserialization, division |
 | `resource.rs` | 9 | File permissions, open options, iterators, paths |
-| `code_quality.rs` | 6 | Dead stores, assertions, crate-wide allow, RefCell |
+| `code_quality.rs` | 8 | Dead stores, assertions, crate-wide allow, RefCell, commented code |
 | `web.rs` | 10 | TLS, CORS, cookies, passwords, logging, AWS S3 |
 | `supply_chain.rs` | 3 | RUSTSEC, yanked crates, auditable |
 | `injection.rs` | 5 | Command, SQL, path traversal, SSRF |
+| `utils.rs` | - | Shared utilities (strip_string_literals, StringLiteralState) |
 
-**Complex Rules in lib.rs:** 29 rules (dataflow-dependent, require inter-procedural context)
+**Complex Rules in lib.rs:** ~20 rules (dataflow-dependent, require inter-procedural context)
 
 **Advanced Rules (mir-advanced-rules):** 9 rules (ADV001-ADV009)
 
@@ -79,9 +80,11 @@ All artifacts generated on every run:
 **Duration:** 2-3 weeks  
 **Goal:** Stabilize the codebase and eliminate technical debt
 
-### 1.1 Fix Failing Tests (P0)
+### 1.1 Fix Failing Tests (P0) ✅ COMPLETE
 
-**Current Failures (6):**
+**Status:** All tests passing (143/143)
+
+**Fixed in v0.7.0:**
 1. `dataflow::path_sensitive::tests::test_field_sensitive_helpers`
 2. `dataflow::taint::tests::detects_command_sink`
 3. `dataflow::taint::tests::full_taint_analysis`
@@ -89,30 +92,31 @@ All artifacts generated on every run:
 5. `tests::builtin_security_rules_fire`
 6. `tests::untrusted_env_rule_detects_env_call`
 
-**Why Critical:** Broken tests undermine CI reliability and hide regressions.
-
-**Approach:**
-- Debug dataflow test infrastructure
-- Adjust taint analysis expectations where API changed
-- Ensure all 138 tests pass before proceeding
-
-**Exit Criteria:** `cargo test` passes with 0 failures
+**Exit Criteria:** ✅ `cargo test` passes with 0 failures
 
 ### 1.2 Complete lib.rs Rule Migration (P0)
 
-**Why Critical:** 29 rules in a 23K LOC file is technical debt that impedes maintainability.
+**Why Critical:** Large monolithic files impede maintainability and onboarding.
 
 **Scope:** Move remaining dataflow-dependent rules to appropriate modules:
 - Injection/dataflow rules → `injection.rs`
 - Memory/dataflow rules → `memory.rs`
 - Concurrency rules → `concurrency.rs`
 
-**Progress (v0.7.1):**
+**Progress (v0.7.1):** ✅ **Major milestone achieved**
 - ✅ Created `rules/utils.rs` with shared utilities (`strip_string_literals`, `StringLiteralState`)
-- ✅ Migrated 4 concurrency rules: `UnderscoreLockGuardRule`, `BroadcastUnsyncPayloadRule`, `PanicInDropRule`, `UnwrapInPollRule`
-- ✅ Migrated 2 code quality rules: `OverscopedAllowRule`, `CommentedOutCodeRule`
-- 🔄 Remaining: `UnsafeSendSyncBoundsRule`, `FfiBufferLeakRule` (can now use utils.rs)
-- 🔄 Remaining: 10+ injection rules, 11+ memory rules (require further analysis)
+- ✅ Migrated `UnsafeSendSyncBoundsRule` (RUSTCOLA015) → `concurrency.rs`
+- ✅ Migrated `FfiBufferLeakRule` (RUSTCOLA016) → `ffi.rs`
+- ✅ Migrated `OverscopedAllowRule` (RUSTCOLA072) → `code_quality.rs`
+- ✅ Migrated `CommentedOutCodeRule` (RUSTCOLA092) → `code_quality.rs`
+- ✅ Migrated `UnderscoreLockGuardRule`, `BroadcastUnsyncPayloadRule`, `PanicInDropRule`, `UnwrapInPollRule` → `concurrency.rs`
+- 📊 **lib.rs reduced:** 22,936 → 21,236 lines (~1,700 lines removed, ~7.4% reduction)
+- � **Tests:** 143 passed (up from 138)
+
+**Remaining (~20 rules in lib.rs):**
+- Injection rules with taint tracking dependencies
+- Memory rules with dataflow analysis
+- Rules requiring `collect_sanitized_matches` (now available in utils.rs)
 
 **Exit Criteria:** `lib.rs` contains only core infrastructure, all rules in modules
 

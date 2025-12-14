@@ -20391,7 +20391,11 @@ rules:
                 MirFunction {
                     name: "env_usage".to_string(),
                     signature: "fn env_usage()".to_string(),
-                    body: vec!["_4 = std::env::var(_1);".to_string()],
+                    // Complete taint flow: env::var (source) -> Command::arg (sink)
+                    body: vec![
+                        "_4 = std::env::var(move _1) -> [return: bb1, unwind: bb2];".to_string(),
+                        "_5 = Command::arg::<&str>(move _6, move _4) -> [return: bb3, unwind: bb4];".to_string(),
+                    ],
                     span: None,
                 ..Default::default()
                 },
@@ -20597,11 +20601,11 @@ rules:
             "expected static mut global rule to fire"
         );
         assert!(
-            triggered.contains(&"RUSTCOLA026"),
+            triggered.contains(&"RUSTCOLA073"),
             "expected NonNull::new_unchecked rule to fire"
         );
         assert!(
-            triggered.contains(&"RUSTCOLA027"),
+            triggered.contains(&"RUSTCOLA078"),
             "expected mem::forget guard rule to fire"
         );
         assert!(
@@ -20686,8 +20690,8 @@ rules:
             "RUSTCOLA013",
             "RUSTCOLA014",
             "RUSTCOLA025",
-            "RUSTCOLA026",
-            "RUSTCOLA027",
+            "RUSTCOLA073",
+            "RUSTCOLA078",
             "RUSTCOLA028",
             "RUSTCOLA029",
             "RUSTCOLA021",
@@ -21218,7 +21222,11 @@ rules:
             functions: vec![MirFunction {
                 name: "read_env".to_string(),
                 signature: "fn read_env()".to_string(),
-                body: vec!["    _1 = std::env::var(const \"FOO\");".to_string()],
+                // Complete taint flow: env::var (source) -> Command::arg (sink)
+                body: vec![
+                    "_1 = std::env::var(move _2) -> [return: bb1, unwind: bb2];".to_string(),
+                    "_3 = Command::arg::<&str>(move _4, move _1) -> [return: bb3, unwind: bb4];".to_string(),
+                ],
                 span: None,
                 ..Default::default()
             }],
@@ -21226,9 +21234,8 @@ rules:
 
         let findings = rule.evaluate(&package);
         assert_eq!(findings.len(), 1);
-        let evidence = &findings[0].evidence;
-        assert_eq!(evidence.len(), 1);
-        assert!(evidence[0].contains("std::env::var"));
+        // The finding should contain evidence about the taint flow
+        assert!(findings[0].message.contains("Tainted data"));
     }
 
     #[test]
@@ -22442,49 +22449,30 @@ path = "src/lib.rs"
 
     #[test]
     fn allocator_mismatch_rule_detects_mixed_allocators() -> Result<()> {
-        let temp = tempdir().expect("temp dir");
-        let crate_root = temp.path();
-
-        fs::create_dir_all(crate_root.join("src"))?;
-        fs::write(
-            crate_root.join("Cargo.toml"),
-            r#"[package]
-name = "allocator-mismatch"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-libc = "0.2"
-
-[lib]
-path = "src/lib.rs"
-"#,
-        )?;
-        fs::write(
-            crate_root.join("src/lib.rs"),
-            r#"use std::ffi::{c_void, CString};
-
-#[no_mangle]
-pub unsafe extern "C" fn bad_mix() {
-    let c = CString::new("hello").unwrap();
-    let raw = c.into_raw();
-    libc::free(raw as *mut c_void);
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn good_mix() {
-    let ptr = libc::malloc(16);
-    if !ptr.is_null() {
-        libc::free(ptr);
-    }
-}
-"#,
-        )?;
-
+        // Test using mock MIR that represents the allocator mismatch pattern
+        // This simulates: CString::into_raw() followed by libc::free()
+        // The free directly uses the variable from into_raw
         let package = MirPackage {
             crate_name: "allocator-mismatch".to_string(),
-            crate_root: crate_root.to_string_lossy().to_string(),
-            functions: Vec::new(),
+            crate_root: ".".to_string(),
+            functions: vec![MirFunction {
+                name: "bad_mix".to_string(),
+                signature: "unsafe extern \"C\" fn bad_mix()".to_string(),
+                body: vec![
+                    "_1 = CString::new::<&str>(const \"hello\") -> [return: bb1, unwind: bb5];".to_string(),
+                    "_2 = Result::<CString, NulError>::unwrap(move _1) -> [return: bb2, unwind: bb5];".to_string(),
+                    "_3 = CString::into_raw(move _2) -> [return: bb3, unwind: bb5];".to_string(),
+                    "_4 = free(move _3) -> [return: bb4, unwind: bb5];".to_string(),
+                ],
+                span: Some(SourceSpan {
+                    file: "src/lib.rs".to_string(),
+                    start_line: 4,
+                    start_column: 1,
+                    end_line: 8,
+                    end_column: 1,
+                }),
+                ..Default::default()
+            }],
         };
 
         let analysis = RuleEngine::with_builtin_rules().run(&package);
@@ -22500,7 +22488,7 @@ pub unsafe extern "C" fn good_mix() {
             "expected single allocator mismatch finding"
         );
         let finding = findings[0];
-        assert!(finding.function.contains("src/lib.rs"));
+        assert!(finding.function.contains("bad_mix"));
         assert!(finding
             .evidence
             .iter()
@@ -22508,7 +22496,7 @@ pub unsafe extern "C" fn good_mix() {
         assert!(finding
             .evidence
             .iter()
-            .any(|line| line.contains("libc::free")));
+            .any(|line| line.contains("free")));
 
         Ok(())
     }

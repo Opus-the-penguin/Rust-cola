@@ -285,25 +285,78 @@ pub mod parser {
     pub fn parse_field_access(expr: &str) -> Option<FieldPath> {
         let expr = expr.trim();
         
-        // Check if this looks like a field access
-        if !expr.contains('(') || !expr.contains('.') {
+        // Check if this looks like a field access (requires a dot)
+        if !expr.contains('.') {
             return None;
         }
         
-        // Try parsing as nested field first
-        if let Some(path) = parse_nested_field_access(expr) {
-            return Some(path);
+        // If it contains parentheses, try MIR-style parsing
+        if expr.contains('(') {
+            // Try parsing as nested field first
+            if let Some(path) = parse_nested_field_access(expr) {
+                return Some(path);
+            }
+            
+            // Try parsing as downcast field access
+            if let Some(path) = parse_downcast_field_access(expr) {
+                return Some(path);
+            }
+            
+            // Try parsing as simple MIR field access
+            if let Some(path) = parse_simple_field_access(expr) {
+                return Some(path);
+            }
         }
         
-        // Try parsing as downcast field access
-        if let Some(path) = parse_downcast_field_access(expr) {
-            return Some(path);
-        }
-        
-        // Try parsing as simple field access
-        parse_simple_field_access(expr)
+        // Try parsing simple dot notation: _VAR.INDEX (e.g., _3.0, _1.2.3)
+        parse_dot_notation(expr)
     }
     
+    /// Parse simple dot notation: _VAR.INDEX (without MIR type annotations)
+    fn parse_dot_notation(expr: &str) -> Option<FieldPath> {
+        let expr = expr.trim();
+        
+        // Pattern: _VAR.INDEX or _VAR.INDEX.INDEX2
+        // Examples: _3.0, _1.2.3
+        
+        if !expr.starts_with('_') {
+            return None;
+        }
+        
+        let parts: Vec<&str> = expr.split('.').collect();
+        if parts.len() < 2 {
+            return None;
+        }
+        
+        let base_var = parts[0].trim().to_string();
+        
+        // Validate base_var is a proper variable name (_N)
+        if !base_var.starts_with('_') {
+            return None;
+        }
+        let digits_only = base_var[1..].chars().all(|c| c.is_ascii_digit());
+        if !digits_only || base_var.len() < 2 {
+            return None;
+        }
+        
+        // Parse indices
+        let mut indices = Vec::new();
+        for part in &parts[1..] {
+            if let Ok(index) = part.trim().parse::<usize>() {
+                indices.push(index);
+            } else {
+                // Not a valid numeric index, not a simple field access
+                return None;
+            }
+        }
+        
+        if indices.is_empty() {
+            None
+        } else {
+            Some(FieldPath::new(base_var, indices))
+        }
+    }
+
     /// Parse downcast field access: ((_VAR as Variant).INDEX: TYPE)
     fn parse_downcast_field_access(expr: &str) -> Option<FieldPath> {
         let expr = expr.trim();
@@ -476,7 +529,22 @@ pub mod parser {
     pub fn contains_field_access(expr: &str) -> bool {
         // Check for characteristic elements of MIR field access
         // (_1.0: Type) or ((_1 as Variant).0: Type) or dereferenced (*_1.0)
-        expr.contains(':') && expr.contains('.') && (expr.contains("(_") || expr.contains("(*_"))
+        let has_mir_style = expr.contains(':') && expr.contains('.') && (expr.contains("(_") || expr.contains("(*_"));
+        if has_mir_style {
+            return true;
+        }
+        
+        // Also check for simple dot notation: _VAR.INDEX
+        // e.g., _3.0, _1.2
+        if expr.starts_with('_') && expr.contains('.') {
+            let parts: Vec<&str> = expr.split('.').collect();
+            if parts.len() >= 2 {
+                // Check if at least one part after the base is a numeric index
+                return parts[1..].iter().any(|p| p.trim().parse::<usize>().is_ok());
+            }
+        }
+        
+        false
     }
     
     /// Extract the base variable from an expression

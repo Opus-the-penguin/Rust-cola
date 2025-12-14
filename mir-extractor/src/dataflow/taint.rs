@@ -747,7 +747,7 @@ mod tests {
     fn detects_command_sink() {
         let func = make_function(&[
             "_1 = std::env::var(move _2);",
-            "_3 = std::process::Command::arg(move _1);",
+            "_3 = Command::arg::<&str>(move _4, move _1) -> [return: bb1, unwind: bb2];",
         ]);
         
         let mut tainted = HashSet::new();
@@ -765,7 +765,7 @@ mod tests {
         let func = make_function(&[
             "_1 = std::env::var(move _2);",
             "_3 = copy _1;",
-            "_4 = std::process::Command::arg(move _3);",
+            "_4 = Command::arg::<&str>(move _5, move _3) -> [return: bb1, unwind: bb2];",
         ]);
         
         let analysis = TaintAnalysis::new();
@@ -781,7 +781,7 @@ mod tests {
     fn no_false_positive_on_hardcoded() {
         let func = make_function(&[
             "_1 = const \"hardcoded\";",
-            "_2 = std::process::Command::arg(move _1);",
+            "_2 = Command::arg::<&str>(move _3, move _1) -> [return: bb1, unwind: bb2];",
         ]);
         
         let analysis = TaintAnalysis::new();

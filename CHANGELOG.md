@@ -5,6 +5,26 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2025-12-14
+
+### Fixed
+- **Test Suite**: Fixed all 6 failing tests, achieving 100% test pass rate (138/138).
+  - `test_field_sensitive_helpers`: Fixed field parser to support simple dot notation (`_3.0`) in addition to MIR-style (`(_1.0: Type)`).
+  - `detects_command_sink` / `full_taint_analysis`: Updated test MIR to use realistic `Command::arg::<&str>` syntax matching actual MIR output.
+  - `allocator_mismatch_rule_detects_mixed_allocators`: Provided mock MIR functions with proper allocation/deallocation patterns.
+  - `builtin_security_rules_fire`: Updated to use current rule IDs (RUSTCOLA073, RUSTCOLA078) after module migration.
+  - `untrusted_env_rule_detects_env_call`: Added complete taint flow (source → sink) to match upgraded taint analysis behavior.
+
+### Changed
+- **Field-Sensitive Parsing**: Enhanced `contains_field_access()` and `parse_field_access()` to recognize both:
+  - MIR-style: `(_1.0: Type)`
+  - Simple dot notation: `_3.0`, `_1.2`
+- **Taint Analysis Tests**: Aligned test cases with realistic MIR syntax including generic type parameters.
+
+### Technical
+- Production Release Plan documented in `docs/PRODUCTION_RELEASE_PLAN.md`.
+- All version numbers synchronized across workspace (cargo-cola, mir-extractor, mir-advanced-rules).
+
 ## [0.6.1] - 2025-12-14
 
 ### Fixed

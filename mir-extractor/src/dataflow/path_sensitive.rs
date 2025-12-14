@@ -1151,8 +1151,8 @@ impl PathSensitiveTaintAnalysis {
             }
         }
         
-        // Fall back to whole variable check
-        if let Some(base_var) = parser::extract_base_var(var_or_field) {
+        // Fall back to whole variable check - use clean_expr, not var_or_field
+        if let Some(base_var) = parser::extract_base_var(clean_expr) {
             let whole_var_path = FieldPath::whole_var(base_var);
             let field_taint = field_map.get_field_taint(&whole_var_path);
             return Self::field_taint_to_taint_state(&field_taint);
@@ -1193,8 +1193,8 @@ impl PathSensitiveTaintAnalysis {
             }
         }
         
-        // Fall back to whole variable
-        if let Some(base_var) = parser::extract_base_var(var_or_field) {
+        // Fall back to whole variable - use clean_expr, not var_or_field
+        if let Some(base_var) = parser::extract_base_var(clean_expr) {
             field_map.set_var_taint(&base_var, field_taint);
         }
     }

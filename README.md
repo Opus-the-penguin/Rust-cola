@@ -81,7 +81,7 @@ Use `--no-ast`, `--no-hir`, or `--no-llm-prompt` to suppress specific outputs.
 
 ## What It Detects
 
-102 rules across 10 security categories:
+100+ rules grouped by vulnerability category:
 
 | Category | Rules | Examples |
 |----------|-------|----------|
@@ -95,8 +95,7 @@ Use `--no-ast`, `--no-hir`, or `--no-llm-prompt` to suppress specific outputs.
 | **Resource Management** | 10 | File permissions, open options, infinite iterators, unbounded allocations |
 | **Code Quality** | 8 | Dead stores, assertions, crate-wide allow, RefCell, commented code |
 | **Supply Chain** | 3 | RUSTSEC advisories, yanked crates, auditable dependencies |
-
-Plus 9 advanced dataflow rules for inter-procedural taint analysis: tracks data flow across function calls, async boundaries, and closures.
+| **Advanced Dataflow** | 9 | Inter-procedural taint tracking across function calls, async boundaries, and closures |
 
 ## Why It Requires Compilation
 

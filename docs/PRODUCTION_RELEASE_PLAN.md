@@ -1,7 +1,7 @@
 # Rust-cola Production Release Plan
 
 **Date:** December 14, 2025  
-**Current Version:** 0.8.1  
+**Current Version:** 0.8.2  
 **Target **Progress (v0.7.1):** ✅ **Major milestone achieved**
 - ✅ Created `rules/utils.rs` with shared utilities (`strip_string_literals`, `StringLiteralState`)
 - ✅ Migrated `UnsafeSendSyncBoundsRule` (RUSTCOLA015) → `concurrency.rs`
@@ -38,7 +38,7 @@
 - DeclarativeRule (rule-pack/YAML-based rules).0  
 **Status:** Phase 1.3 Complete - All security rules modularized
 
-**Progress (v0.8.0):** ✅ **Phase 2 - Async/Await & Concurrency rules**
+**Progress (v0.8.0-v0.8.1):** ✅ **Phase 2 - Async/Await & Concurrency rules**
 - ✅ RUSTCOLA093 (BlockingOpsInAsyncRule) - already existed
 - ✅ RUSTCOLA094 (MutexGuardAcrossAwaitRule) - already existed
 - ✅ RUSTCOLA106 (UncheckedTimestampMultiplicationRule) - **NEW** - detects unchecked timestamp overflow
@@ -47,8 +47,13 @@
 - ✅ RUSTCOLA112 (PinContractViolationRule) - **NEW** - detects Pin contract violations
 - ✅ RUSTCOLA113 (OneshotRaceAfterCloseRule) - **NEW** - detects oneshot race after close
 - ✅ RUSTCOLA115 (NonCancellationSafeSelectRule) - **NEW** - detects non-cancel-safe futures in select!
+
+**Progress (v0.8.2):** ✅ **Phase 2 - FFI & Supply Chain rules**
+- ✅ RUSTCOLA102 (ProcMacroSideEffectsRule) - **NEW** - detects suspicious patterns in proc-macros
+- ✅ RUSTCOLA107 (EmbeddedInterpreterUsageRule) - **NEW** - detects embedded interpreters (pyo3, rlua, v8)
+- ✅ RUSTCOLA116 (PanicInFfiBoundaryRule) - **NEW** - detects panic-prone code in extern "C" functions
 - 📊 **Tests:** 146 passed
-- 📊 **Total Rules:** 110 (8 new rules from Phase 2)
+- 📊 **Total Rules:** 113 (11 new rules from Phase 2)
 
 This document outlines the roadmap to achieve a production-ready release of Rust-cola. Completing these phases will yield a **Release Candidate (RC)** suitable for general availability.
 
@@ -65,11 +70,11 @@ Rust-cola v0.7.2 has reached significant maturity with 102 security rules and a 
 
 ---
 
-## Current State (v0.8.1)
+## Current State (v0.8.2)
 
 | Metric | Value |
 |--------|-------|
-| **Total Rules** | 110 |
+| **Total Rules** | 113 |
 | **Test Status** | 146 passed, 0 failed ✅ |
 | **Core Codebase** | ~5.5K LOC (mir-extractor/lib.rs) |
 | **Rule Modules** | 10 categories + utils |
@@ -91,12 +96,12 @@ Rust-cola v0.7.2 has reached significant maturity with 102 security rules and a 
 | `crypto.rs` | 8 | MD5, SHA1, hardcoded keys, timing, weak ciphers, PRNG |
 | `memory.rs` | 18 | Transmute, uninit, set_len, raw pointers, Box::into_raw, slice safety |
 | `concurrency.rs` | 15 | Mutex guards, async blocking, Send/Sync, lock guards, panic safety, select!, channel cloning, Pin, oneshot, signal handlers |
-| `ffi.rs` | 6 | Allocator mismatch, CString, packed fields, repr(C), buffer leaks |
+| `ffi.rs` | 8 | Allocator mismatch, CString, packed fields, repr(C), buffer leaks, FFI panic, interpreters |
 | `input.rs` | 11 | Env vars, stdin, unicode, deserialization, division, serde, timestamp overflow |
 | `resource.rs` | 10 | File permissions, open options, iterators, paths, allocations |
 | `code_quality.rs` | 8 | Dead stores, assertions, crate-wide allow, RefCell, commented code |
 | `web.rs` | 11 | TLS, CORS, cookies, passwords, logging, AWS S3, content-length |
-| `supply_chain.rs` | 3 | RUSTSEC, yanked crates, auditable |
+| `supply_chain.rs` | 4 | RUSTSEC, yanked crates, auditable, proc-macro side effects |
 | `injection.rs` | 10 | Command, SQL, path traversal, SSRF, regex, unchecked index, interprocedural |
 | `utils.rs` | - | Shared utilities (strip_string_literals, filter_entry) |
 
@@ -259,7 +264,7 @@ fn to_nanos(seconds: i64) -> Result<i64, Error> {
 
 | Rule ID | Name | Risk | Status |
 |---------|------|------|--------|
-| RUSTCOLA107 | Embedded interpreter usage | Code injection | ❌ **New from InfluxDB** |
+| RUSTCOLA107 | Embedded interpreter usage | Code injection | ✅ Complete (v0.8.2) |
 
 **Implementation Notes:**
 - Detect usage of `pyo3`, `rlua`, `v8`, `deno_core`
@@ -300,7 +305,7 @@ Procedural macros execute at compile time, creating supply chain attack vectors:
 | Rule ID | Name | Risk | Status |
 |---------|------|------|--------|
 | RUSTCOLA097 | Build script network access | Supply chain | ✅ Complete |
-| RUSTCOLA102 | Proc-macro side effects | Supply chain | ❌ To implement |
+| RUSTCOLA102 | Proc-macro side effects | Supply chain | ✅ Complete (v0.8.2) |
 | NEW | Proc-macro filesystem access | Supply chain | ❌ To implement |
 
 **Example - Build Script Attack:**

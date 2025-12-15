@@ -5,6 +5,22 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] - 2025-12-14
+
+### Added
+- **Phase 2 Rules - FFI & Supply Chain**: Implemented 3 new rules.
+  - `RUSTCOLA102` (ProcMacroSideEffectsRule): Detects suspicious patterns (fs, network, process) in proc-macro crates. Supply chain attack vector.
+  - `RUSTCOLA107` (EmbeddedInterpreterUsageRule): Detects embedded interpreters (pyo3, rlua, v8, wasmer, wasmtime). Code injection surface.
+  - `RUSTCOLA116` (PanicInFfiBoundaryRule): Detects panic-prone code (unwrap, expect, assert, indexing) in extern "C" functions. UB risk.
+
+### Changed
+- **Rule Count**: Total rules increased from 110 to 113.
+- **ffi.rs**: Now contains 8 rules (was 6).
+- **supply_chain.rs**: Now contains 4 rules (was 3).
+
+### Technical
+- All 146 tests pass.
+
 ## [0.8.1] - 2025-12-14
 
 ### Added

@@ -4,6 +4,7 @@
 //! - RUSTSEC advisory dependencies
 //! - Yanked crate versions
 //! - Cargo auditable metadata
+//! - Proc-macro side effects
 
 use crate::{Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use semver::{Version, VersionReq};
@@ -12,6 +13,8 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
+
+use super::utils::filter_entry;
 
 // ============================================================================
 // RUSTCOLA018: RUSTSEC Unsound Dependency Rule
@@ -607,9 +610,163 @@ impl Rule for CargoAuditableMetadataRule {
     }
 }
 
+// ============================================================================
+// RUSTCOLA102: Proc-Macro Side Effects Rule
+// ============================================================================
+
+/// Detects proc-macro crates with potential side effects (filesystem, network access).
+/// 
+/// Proc-macros run at compile time with full system access. Malicious or compromised
+/// proc-macros can exfiltrate data, download payloads, or modify the build.
+pub struct ProcMacroSideEffectsRule {
+    metadata: RuleMetadata,
+}
+
+impl ProcMacroSideEffectsRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA102".to_string(),
+                name: "proc-macro-side-effects".to_string(),
+                short_description: "Proc-macro with suspicious side effects".to_string(),
+                full_description: "Detects proc-macro crates that use filesystem, network, or \
+                    process APIs. Proc-macros execute at compile time with full system access, \
+                    making them a supply chain attack vector. Patterns include: std::fs, \
+                    std::net, std::process::Command, reqwest, and similar.".to_string(),
+                help_uri: Some("https://doc.rust-lang.org/reference/procedural-macros.html".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Suspicious patterns for proc-macros
+    fn suspicious_patterns() -> &'static [(&'static str, &'static str)] {
+        &[
+            ("std::fs::", "filesystem access in proc-macro"),
+            ("std::net::", "network access in proc-macro"),
+            ("std::process::Command", "process spawning in proc-macro"),
+            ("tokio::", "async runtime in proc-macro (unusual)"),
+            ("reqwest::", "HTTP client in proc-macro"),
+            ("hyper::", "HTTP library in proc-macro"),
+            ("curl::", "curl bindings in proc-macro"),
+            ("attohttpc::", "HTTP client in proc-macro"),
+            ("ureq::", "HTTP client in proc-macro"),
+            ("env!(", "environment variable access (may leak secrets)"),
+            ("include_bytes!", "includes external file at compile time"),
+            ("include_str!", "includes external file at compile time"),
+        ]
+    }
+}
+
+impl Rule for ProcMacroSideEffectsRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        // Check if this is a proc-macro crate
+        let cargo_toml = crate_root.join("Cargo.toml");
+        if !cargo_toml.exists() {
+            return findings;
+        }
+
+        let cargo_content = match std::fs::read_to_string(&cargo_toml) {
+            Ok(c) => c,
+            Err(_) => return findings,
+        };
+
+        // Only analyze proc-macro crates
+        let is_proc_macro = cargo_content.contains("proc-macro = true") 
+            || cargo_content.contains("proc_macro = true");
+        
+        if !is_proc_macro {
+            return findings;
+        }
+
+        // Scan source files for suspicious patterns
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(std::ffi::OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match std::fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Skip comments
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+
+                for (pattern, description) in Self::suspicious_patterns() {
+                    if trimmed.contains(pattern) {
+                        let location = format!("{}:{}", rel_path, idx + 1);
+
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: self.metadata.default_severity,
+                            message: format!(
+                                "Suspicious {} in proc-macro crate. Proc-macros execute at \
+                                compile time with full system access. This could be a supply \
+                                chain attack vector. Review carefully.",
+                                description
+                            ),
+                            function: location,
+                            function_signature: String::new(),
+                            evidence: vec![trimmed.to_string()],
+                            span: None,
+                        });
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 /// Register all supply chain rules with the rule engine.
 pub fn register_supply_chain_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(RustsecUnsoundDependencyRule::new()));
     engine.register_rule(Box::new(YankedCrateRule::new()));
     engine.register_rule(Box::new(CargoAuditableMetadataRule::new()));
+    engine.register_rule(Box::new(ProcMacroSideEffectsRule::new()));
 }

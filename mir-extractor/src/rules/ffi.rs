@@ -966,6 +966,351 @@ impl Rule for FfiBufferLeakRule {
 }
 
 // ============================================================================
+// RUSTCOLA116: Panic in FFI Boundary Rule
+// ============================================================================
+
+/// Detects potential panics in extern "C" functions which cause undefined behavior.
+/// 
+/// Unwinding across FFI boundaries (from Rust into C code) is undefined behavior.
+/// This rule detects panic-prone operations inside `extern "C"` functions.
+pub struct PanicInFfiBoundaryRule {
+    metadata: RuleMetadata,
+}
+
+impl PanicInFfiBoundaryRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA116".to_string(),
+                name: "panic-in-ffi-boundary".to_string(),
+                short_description: "Potential panic in extern \"C\" function".to_string(),
+                full_description: "Detects potential panics in extern \"C\" functions. Unwinding \
+                    across FFI boundaries is undefined behavior in Rust. Operations like unwrap(), \
+                    expect(), panic!(), assert!(), and indexing can all panic. Use catch_unwind \
+                    or return error codes instead.".to_string(),
+                help_uri: Some("https://doc.rust-lang.org/nomicon/ffi.html#ffi-and-panics".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Patterns that can cause panics
+    fn panic_patterns() -> &'static [(&'static str, &'static str)] {
+        &[
+            (".unwrap()", "unwrap() can panic on None/Err"),
+            (".expect(", "expect() can panic on None/Err"),
+            ("panic!", "explicit panic"),
+            ("unreachable!", "unreachable! panics if reached"),
+            ("unimplemented!", "unimplemented! always panics"),
+            ("todo!", "todo! always panics"),
+            ("assert!", "assert! panics on false"),
+            ("assert_eq!", "assert_eq! panics on mismatch"),
+            ("assert_ne!", "assert_ne! panics on match"),
+            ("debug_assert!", "debug_assert! panics in debug builds"),
+            ("[", "array/slice indexing can panic on out-of-bounds"),
+        ]
+    }
+}
+
+impl Rule for PanicInFfiBoundaryRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+            let mut in_extern_c_fn = false;
+            let mut extern_fn_start = 0;
+            let mut extern_fn_name = String::new();
+            let mut brace_depth = 0;
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Skip comments
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+
+                // Detect extern "C" fn or #[no_mangle] pub extern "C" fn
+                if (trimmed.contains("extern \"C\"") || trimmed.contains("extern \"system\""))
+                    && trimmed.contains("fn ") 
+                {
+                    in_extern_c_fn = true;
+                    extern_fn_start = idx;
+                    brace_depth = 0;
+                    
+                    // Extract function name
+                    if let Some(fn_pos) = trimmed.find("fn ") {
+                        let after_fn = &trimmed[fn_pos + 3..];
+                        extern_fn_name = after_fn
+                            .split(|c: char| c == '(' || c == '<' || c.is_whitespace())
+                            .next()
+                            .unwrap_or("")
+                            .to_string();
+                    }
+                }
+
+                if in_extern_c_fn {
+                    brace_depth += trimmed.chars().filter(|&c| c == '{').count() as i32;
+                    brace_depth -= trimmed.chars().filter(|&c| c == '}').count() as i32;
+
+                    // Check for panic-prone patterns
+                    for (pattern, reason) in Self::panic_patterns() {
+                        // Special handling for indexing - only flag if it looks like array access
+                        if *pattern == "[" {
+                            // Look for variable[index] pattern but not slice declarations
+                            if trimmed.contains('[') && trimmed.contains(']') 
+                                && !trimmed.contains("&[") 
+                                && !trimmed.contains(": [")
+                                && !trimmed.contains("-> [")
+                                && !trimmed.starts_with("let ")
+                                && !trimmed.starts_with("const ")
+                                && !trimmed.starts_with("static ")
+                            {
+                                // Check if it's an actual indexing operation
+                                let has_index_op = trimmed.chars()
+                                    .zip(trimmed.chars().skip(1))
+                                    .any(|(a, b)| a.is_alphanumeric() && b == '[');
+                                
+                                if has_index_op {
+                                    let location = format!("{}:{}", rel_path, idx + 1);
+
+                                    findings.push(Finding {
+                                        rule_id: self.metadata.id.clone(),
+                                        rule_name: self.metadata.name.clone(),
+                                        severity: Severity::Medium, // Lower for indexing
+                                        message: format!(
+                                            "Potential panic in extern \"C\" fn `{}`: {}. \
+                                            Consider using .get() with bounds checking.",
+                                            extern_fn_name, reason
+                                        ),
+                                        function: location,
+                                        function_signature: String::new(),
+                                        evidence: vec![trimmed.to_string()],
+                                        span: None,
+                                    });
+                                }
+                            }
+                        } else if trimmed.contains(pattern) {
+                            let location = format!("{}:{}", rel_path, idx + 1);
+
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message: format!(
+                                    "Potential panic in extern \"C\" fn `{}`: {}. \
+                                    Unwinding across FFI boundaries is undefined behavior. \
+                                    Use catch_unwind or return error codes.",
+                                    extern_fn_name, reason
+                                ),
+                                function: location,
+                                function_signature: String::new(),
+                                evidence: vec![trimmed.to_string()],
+                                span: None,
+                            });
+                        }
+                    }
+
+                    // End of function
+                    if brace_depth <= 0 && idx > extern_fn_start {
+                        in_extern_c_fn = false;
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA107: Embedded Interpreter Usage Rule
+// ============================================================================
+
+/// Detects usage of embedded interpreters which create code injection attack surfaces.
+/// 
+/// Embedded interpreters like PyO3, rlua, v8, deno_core can execute arbitrary code
+/// if not properly sandboxed. This rule flags their usage for security review.
+pub struct EmbeddedInterpreterUsageRule {
+    metadata: RuleMetadata,
+}
+
+impl EmbeddedInterpreterUsageRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA107".to_string(),
+                name: "embedded-interpreter-usage".to_string(),
+                short_description: "Embedded interpreter creates code injection surface".to_string(),
+                full_description: "Detects usage of embedded interpreters like PyO3 (Python), \
+                    rlua/mlua (Lua), rusty_v8/deno_core (JavaScript). These create potential \
+                    code injection attack surfaces if user input reaches the interpreter. \
+                    Ensure proper sandboxing and input validation.".to_string(),
+                help_uri: None,
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Interpreter crates and their initialization patterns
+    fn interpreter_patterns() -> &'static [(&'static str, &'static str, &'static str)] {
+        &[
+            ("pyo3", "Python::with_gil", "Python interpreter (PyO3)"),
+            ("pyo3", "Python::acquire_gil", "Python interpreter (PyO3)"),
+            ("pyo3", "prepare_freethreaded_python", "Python interpreter (PyO3)"),
+            ("rlua", "Lua::new", "Lua interpreter (rlua)"),
+            ("mlua", "Lua::new", "Lua interpreter (mlua)"),
+            ("rusty_v8", "v8::Isolate", "V8 JavaScript engine"),
+            ("deno_core", "JsRuntime::new", "Deno JavaScript runtime"),
+            ("rhai", "Engine::new", "Rhai scripting engine"),
+            ("rquickjs", "Context::new", "QuickJS runtime"),
+            ("wasmer", "Instance::new", "WebAssembly runtime (Wasmer)"),
+            ("wasmtime", "Instance::new", "WebAssembly runtime (Wasmtime)"),
+        ]
+    }
+}
+
+impl Rule for EmbeddedInterpreterUsageRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            // Quick check: does file use any interpreter crate?
+            let mut relevant_crates: Vec<&str> = Vec::new();
+            for (crate_name, _, _) in Self::interpreter_patterns() {
+                if content.contains(crate_name) && !relevant_crates.contains(crate_name) {
+                    relevant_crates.push(crate_name);
+                }
+            }
+
+            if relevant_crates.is_empty() {
+                continue;
+            }
+
+            let lines: Vec<&str> = content.lines().collect();
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Skip comments
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+
+                for (crate_name, pattern, description) in Self::interpreter_patterns() {
+                    if relevant_crates.contains(crate_name) && trimmed.contains(pattern) {
+                        let location = format!("{}:{}", rel_path, idx + 1);
+
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: self.metadata.default_severity,
+                            message: format!(
+                                "{} detected. Embedded interpreters can execute arbitrary code. \
+                                Ensure user input is validated before evaluation and consider \
+                                sandboxing the interpreter context.",
+                                description
+                            ),
+                            function: location,
+                            function_signature: String::new(),
+                            evidence: vec![trimmed.to_string()],
+                            span: None,
+                        });
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -977,4 +1322,6 @@ pub fn register_ffi_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(UnsafeCStringPointerRule::new()));
     engine.register_rule(Box::new(CtorDtorStdApiRule::new()));
     engine.register_rule(Box::new(FfiBufferLeakRule::new()));
+    engine.register_rule(Box::new(PanicInFfiBoundaryRule::new()));
+    engine.register_rule(Box::new(EmbeddedInterpreterUsageRule::new()));
 }

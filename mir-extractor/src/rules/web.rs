@@ -10,7 +10,7 @@
 //! - TLS verification disabled
 //! - Content-Length based allocations
 
-use crate::{Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
+use crate::{Confidence, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use crate::detect_content_length_allocations;
 use std::collections::HashSet;
 
@@ -34,6 +34,8 @@ impl NonHttpsUrlRule {
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -71,6 +73,10 @@ impl Rule for NonHttpsUrlRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
             });
         }
 
@@ -140,6 +146,8 @@ impl DangerAcceptInvalidCertRule {
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -186,6 +194,10 @@ impl Rule for DangerAcceptInvalidCertRule {
                 function_signature: function.signature.clone(),
                 evidence: lines,
                 span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
             });
         }
 
@@ -266,6 +278,8 @@ impl OpensslVerifyNoneRule {
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -310,6 +324,10 @@ impl Rule for OpensslVerifyNoneRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -338,6 +356,8 @@ impl CookieSecureAttributeRule {
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -380,6 +400,10 @@ impl Rule for CookieSecureAttributeRule {
                     function_signature: function.signature.clone(),
                     evidence: cookie_lines.iter().map(|s| s.trim().to_string()).collect(),
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -408,6 +432,8 @@ impl CorsWildcardRule {
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -442,6 +468,10 @@ impl Rule for CorsWildcardRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -470,6 +500,8 @@ impl ConnectionStringPasswordRule {
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -506,6 +538,10 @@ impl Rule for ConnectionStringPasswordRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -534,6 +570,8 @@ impl PasswordFieldMaskingRule {
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -579,6 +617,10 @@ impl Rule for PasswordFieldMaskingRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -607,6 +649,8 @@ impl CleartextLoggingRule {
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -644,6 +688,10 @@ impl Rule for CleartextLoggingRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -684,6 +732,8 @@ impl TlsVerificationDisabledRule {
                     .to_string(),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
                 help_uri: None,
             },
         }
@@ -804,6 +854,10 @@ impl Rule for TlsVerificationDisabledRule {
                     function_signature: function.signature.clone(),
                     evidence: vec![evidence],
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -837,6 +891,8 @@ impl AwsS3UnscopedAccessRule {
                     S3 objects. Use allowlists, starts_with validation, or path sanitization.".to_string(),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
                 help_uri: None,
             },
         }
@@ -1113,6 +1169,10 @@ impl Rule for AwsS3UnscopedAccessRule {
                                 function_signature: function.signature.clone(),
                                 evidence: vec![trimmed.to_string()],
                                 span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                             });
                             
                             break; // Only report once per S3 call
@@ -1146,6 +1206,8 @@ impl ContentLengthAllocationRule {
                 help_uri: Some("https://rustsec.org/advisories/RUSTSEC-2025-0015.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1184,6 +1246,10 @@ impl Rule for ContentLengthAllocationRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }

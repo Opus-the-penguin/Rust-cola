@@ -8,7 +8,7 @@
 //! - Timing attack vulnerabilities
 //! - TLS verification disabled
 
-use crate::{Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
+use crate::{Confidence, Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
@@ -121,6 +121,8 @@ impl InsecureMd5Rule {
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -154,6 +156,10 @@ impl Rule for InsecureMd5Rule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
             });
         }
 
@@ -180,6 +186,8 @@ impl InsecureSha1Rule {
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -217,6 +225,10 @@ impl Rule for InsecureSha1Rule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
             });
         }
 
@@ -243,6 +255,8 @@ impl WeakHashingExtendedRule {
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -289,6 +303,10 @@ impl Rule for WeakHashingExtendedRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
             });
         }
 
@@ -315,6 +333,8 @@ impl HardcodedCryptoKeyRule {
                 help_uri: Some("https://cwe.mitre.org/data/definitions/798.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -472,16 +492,16 @@ impl Rule for HardcodedCryptoKeyRule {
                         if trimmed.contains("b\"") || trimmed.contains("&[") || trimmed.contains("[0x") {
                             let location = format!("{}:{}", rel_path, idx + 1);
 
-                            findings.push(Finding {
-                                rule_id: self.metadata.id.clone(),
-                                rule_name: self.metadata.name.clone(),
-                                severity: self.metadata.default_severity,
-                                message: "Hard-coded cryptographic key or IV detected in source code".to_string(),
-                                function: location,
-                                function_signature: pattern.to_string(),
-                                evidence: vec![trimmed.to_string()],
-                                span: None,
-                            });
+                            findings.push(Finding::new(
+                                self.metadata.id.clone(),
+                                self.metadata.name.clone(),
+                                self.metadata.default_severity,
+                                "Hard-coded cryptographic key or IV detected in source code",
+                                location,
+                                pattern.to_string(),
+                                vec![trimmed.to_string()],
+                                None,
+                            ));
                         }
                     }
                 }
@@ -490,19 +510,19 @@ impl Rule for HardcodedCryptoKeyRule {
                     if Self::is_suspicious_assignment(trimmed, var_pattern) {
                         let location = format!("{}:{}", rel_path, idx + 1);
 
-                        findings.push(Finding {
-                            rule_id: self.metadata.id.clone(),
-                            rule_name: self.metadata.name.clone(),
-                            severity: self.metadata.default_severity,
-                            message: format!(
+                        findings.push(Finding::new(
+                            self.metadata.id.clone(),
+                            self.metadata.name.clone(),
+                            self.metadata.default_severity,
+                            format!(
                                 "Potential hard-coded secret in variable containing '{}'",
                                 var_pattern
                             ),
-                            function: location,
-                            function_signature: var_pattern.to_string(),
-                            evidence: vec![trimmed.to_string()],
-                            span: None,
-                        });
+                            location,
+                            var_pattern.to_string(),
+                            vec![trimmed.to_string()],
+                            None,
+                        ));
                     }
                 }
             }
@@ -531,6 +551,8 @@ impl TimingAttackRule {
                 help_uri: Some("https://codahale.com/a-lesson-in-timing-attacks/".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -626,16 +648,16 @@ impl Rule for TimingAttackRule {
                 if Self::is_non_constant_time_comparison(line) {
                     let location = format!("{}:{}", rel_path, idx + 1);
 
-                    findings.push(Finding {
-                        rule_id: self.metadata.id.clone(),
-                        rule_name: self.metadata.name.clone(),
-                        severity: self.metadata.default_severity,
-                        message: "Secret comparison using non-constant-time operation; vulnerable to timing attacks".to_string(),
-                        function: location,
-                        function_signature: String::new(),
-                        evidence: vec![line.trim().to_string()],
-                        span: None,
-                    });
+                    findings.push(Finding::new(
+                        self.metadata.id.clone(),
+                        self.metadata.name.clone(),
+                        self.metadata.default_severity,
+                        "Secret comparison using non-constant-time operation; vulnerable to timing attacks",
+                        location,
+                        String::new(),
+                        vec![line.trim().to_string()],
+                        None,
+                    ));
                 }
             }
         }
@@ -663,6 +685,8 @@ impl WeakCipherRule {
                 help_uri: Some("https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/09-Testing_for_Weak_Cryptography/04-Testing_for_Weak_Encryption".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -724,6 +748,10 @@ impl Rule for WeakCipherRule {
                         function_signature: function.signature.clone(),
                         evidence: vec![line.trim().to_string()],
                         span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                     });
                 }
             }
@@ -752,6 +780,8 @@ impl PredictableRandomnessRule {
                 help_uri: Some("https://owasp.org/www-community/vulnerabilities/Insecure_Randomness".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -822,6 +852,10 @@ impl Rule for PredictableRandomnessRule {
                         function_signature: function.signature.clone(),
                         evidence: vec![line.trim().to_string()],
                         span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                     });
                 }
             }
@@ -850,6 +884,8 @@ impl ModuloBiasRandomRule {
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -902,6 +938,10 @@ impl Rule for ModuloBiasRandomRule {
                     function_signature: function.signature.clone(),
                     evidence: modulo_evidence,
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }

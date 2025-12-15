@@ -14,7 +14,7 @@
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
-use crate::{Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
+use crate::{Confidence, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use crate::prototypes;
 use crate::line_has_world_writable_mode;
 
@@ -41,6 +41,8 @@ impl SpawnedChildNoWaitRule {
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -105,6 +107,10 @@ impl Rule for SpawnedChildNoWaitRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -135,6 +141,8 @@ impl PermissionsSetReadonlyFalseRule {
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -177,6 +185,10 @@ impl Rule for PermissionsSetReadonlyFalseRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
             });
         }
 
@@ -205,6 +217,8 @@ impl WorldWritableModeRule {
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -244,6 +258,10 @@ impl Rule for WorldWritableModeRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
             });
         }
 
@@ -273,6 +291,8 @@ impl OpenOptionsMissingTruncateRule {
                 help_uri: Some("https://rust-lang.github.io/rust-clippy/master/index.html#suspicious_open_options".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -343,6 +363,10 @@ impl Rule for OpenOptionsMissingTruncateRule {
                                     function_signature: function.signature.clone(),
                                     evidence: evidence_lines.clone(),
                                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                                 });
                             }
                             open_options_start_line = None;
@@ -381,6 +405,8 @@ impl UnixPermissionsNotOctalRule {
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -453,6 +479,7 @@ impl Rule for UnixPermissionsNotOctalRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: None,
+                    ..Default::default()
                 });
             }
         }
@@ -482,6 +509,8 @@ impl OpenOptionsInconsistentFlagsRule {
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -547,6 +576,7 @@ impl Rule for OpenOptionsInconsistentFlagsRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: None,
+                    ..Default::default()
                 });
             }
         }
@@ -577,6 +607,8 @@ impl AbsolutePathInJoinRule {
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -654,6 +686,7 @@ impl Rule for AbsolutePathInJoinRule {
                         function_signature: function.signature.clone(),
                         evidence,
                         span: None,
+                    ..Default::default()
                     });
                 }
             }
@@ -683,6 +716,8 @@ impl HardcodedHomePathRule {
                 help_uri: None,
                 default_severity: Severity::Low,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -767,6 +802,10 @@ impl Rule for HardcodedHomePathRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
             });
         }
 
@@ -794,6 +833,8 @@ impl BuildScriptNetworkRule {
                 help_uri: Some("https://doc.rust-lang.org/cargo/reference/build-scripts.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -919,6 +960,7 @@ impl Rule for BuildScriptNetworkRule {
                         function_signature: current_fn_name.clone(),
                         evidence: vec![trimmed.to_string()],
                         span: None,
+                    ..Default::default()
                     });
                     break; // Only report once per line
                 }
@@ -948,6 +990,8 @@ impl UnboundedAllocationRule {
                 help_uri: Some("https://github.com/Opus-the-penguin/Rust-cola/blob/main/docs/security-rule-backlog.md#resource-management--dos".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1003,6 +1047,10 @@ impl Rule for UnboundedAllocationRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }

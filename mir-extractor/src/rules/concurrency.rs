@@ -11,7 +11,7 @@
 //! - Unwrap in Poll (RUSTCOLA041)
 
 use crate::detect_broadcast_unsync_payloads;
-use crate::{Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
+use crate::{Confidence, Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use super::filter_entry;
 use super::utils::{StringLiteralState, strip_string_literals};
 use std::collections::HashSet;
@@ -46,6 +46,8 @@ impl NonThreadSafeTestRule {
                 help_uri: Some("https://doc.rust-lang.org/book/ch16-04-extensible-concurrency-sync-and-send.html".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -152,6 +154,10 @@ impl Rule for NonThreadSafeTestRule {
                     function_signature: function.signature.clone(),
                     evidence: limited_evidence,
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -182,6 +188,8 @@ impl BlockingSleepInAsyncRule {
                 help_uri: Some("https://www.jetbrains.com/help/inspectopedia/RsSleepInsideAsyncFunction.html".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -272,19 +280,19 @@ impl Rule for BlockingSleepInAsyncRule {
                         if trimmed.contains(pattern) {
                             let location = format!("{}:{}", rel_path, idx + 1);
 
-                            findings.push(Finding {
-                                rule_id: self.metadata.id.clone(),
-                                rule_name: self.metadata.name.clone(),
-                                severity: self.metadata.default_severity,
-                                message: format!(
+                            findings.push(Finding::new(
+                                self.metadata.id.clone(),
+                                self.metadata.name.clone(),
+                                self.metadata.default_severity,
+                                format!(
                                     "Blocking sleep in async function `{}` can stall executor",
                                     async_fn_name
                                 ),
-                                function: location,
-                                function_signature: async_fn_name.clone(),
-                                evidence: vec![trimmed.to_string()],
-                                span: None,
-                            });
+                                location,
+                                async_fn_name.clone(),
+                                vec![trimmed.to_string()],
+                                None,
+                            ));
                         }
                     }
 
@@ -322,6 +330,8 @@ impl BlockingOpsInAsyncRule {
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -515,6 +525,7 @@ impl Rule for BlockingOpsInAsyncRule {
                                 function_signature: async_fn_name.clone(),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
+                    ..Default::default()
                             });
                         }
                     }
@@ -552,6 +563,8 @@ impl MutexGuardAcrossAwaitRule {
                 help_uri: Some("https://rust-lang.github.io/rust-clippy/master/index.html#await_holding_lock".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -721,6 +734,7 @@ impl Rule for MutexGuardAcrossAwaitRule {
                                     function_signature: async_fn_name.clone(),
                                     evidence: vec![trimmed.to_string()],
                                     span: None,
+                    ..Default::default()
                                 });
                             }
                         }
@@ -757,6 +771,8 @@ impl UnderscoreLockGuardRule {
                 help_uri: Some("https://rust-lang.github.io/rust-clippy/master/index.html#/let_underscore_lock".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -857,6 +873,10 @@ impl Rule for UnderscoreLockGuardRule {
                         function_signature: function.signature.clone(),
                         evidence: vec![trimmed.to_string()],
                         span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                     });
                     continue;
                 }
@@ -898,6 +918,10 @@ impl Rule for UnderscoreLockGuardRule {
                                     function_signature: function.signature.clone(),
                                     evidence: vec![trimmed.to_string(), future_trimmed.to_string()],
                                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                                 });
                                 break;
                             }
@@ -931,6 +955,8 @@ impl BroadcastUnsyncPayloadRule {
                 help_uri: Some("https://rustsec.org/advisories/RUSTSEC-2025-0023.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -960,6 +986,10 @@ impl Rule for BroadcastUnsyncPayloadRule {
                     function_signature: function.signature.clone(),
                     evidence: vec![usage.line.clone()],
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -988,6 +1018,8 @@ impl PanicInDropRule {
                 help_uri: Some("https://doc.rust-lang.org/nomicon/exception-safety.html".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1101,6 +1133,7 @@ impl Rule for PanicInDropRule {
                                     function_signature: drop_type_name.clone(),
                                     evidence: vec![trimmed.to_string()],
                                     span: None,
+                    ..Default::default()
                                 });
                             }
                         }
@@ -1138,6 +1171,8 @@ impl UnwrapInPollRule {
                 help_uri: Some("https://rust-lang.github.io/async-book/02_execution/03_wakeups.html".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1263,6 +1298,7 @@ impl Rule for UnwrapInPollRule {
                                         function_signature: future_type_name.clone(),
                                         evidence: vec![trimmed.to_string()],
                                         span: None,
+                    ..Default::default()
                                     });
                                 }
                             }
@@ -1307,6 +1343,8 @@ impl UnsafeSendSyncBoundsRule {
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1659,19 +1697,10 @@ impl Rule for UnsafeSendSyncBoundsRule {
 
                 if !Self::has_required_bounds(&block_text, trait_name) {
                     let location = format!("{}:{}", rel_path, idx + 1);
-                    findings.push(Finding {
-                        rule_id: self.metadata.id.clone(),
-                        rule_name: self.metadata.name.clone(),
-                        severity: self.metadata.default_severity,
-                        message: format!("Unsafe impl of {trait_name} without generic bounds"),
-                        function: location,
-                        function_signature: block_lines
+                    findings.push(Finding::new(self.metadata.id.clone(), self.metadata.name.clone(), self.metadata.default_severity, format!("Unsafe impl of {trait_name} without generic bounds"), location, block_lines
                             .first()
                             .cloned()
-                            .unwrap_or_else(|| trait_name.to_string()),
-                        evidence: block_lines.clone(),
-                        span: None,
-                    });
+                            .unwrap_or_else(|| trait_name.to_string()), block_lines.clone(), None));
                 }
 
                 string_state = state_after_line;
@@ -1714,6 +1743,8 @@ impl NonCancellationSafeSelectRule {
                 help_uri: Some("https://docs.rs/tokio/latest/tokio/macro.select.html#cancellation-safety".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1835,6 +1866,7 @@ impl Rule for NonCancellationSafeSelectRule {
                                 function_signature: String::new(),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
+                    ..Default::default()
                             });
                         }
                     }
@@ -1880,6 +1912,8 @@ impl MissingSyncBoundOnCloneRule {
                 help_uri: Some("https://rustsec.org/advisories/RUSTSEC-2025-0023.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1966,18 +2000,9 @@ impl Rule for MissingSyncBoundOnCloneRule {
                         if has_clone_send && !has_sync_bound {
                             let location = format!("{}:{}", rel_path, idx + 1);
 
-                            findings.push(Finding {
-                                rule_id: self.metadata.id.clone(),
-                                rule_name: self.metadata.name.clone(),
-                                severity: self.metadata.default_severity,
-                                message: "unsafe impl Sync for channel-like type with Clone + Send \
+                            findings.push(Finding::new(self.metadata.id.clone(), self.metadata.name.clone(), self.metadata.default_severity, "unsafe impl Sync for channel-like type with Clone + Send \
                                     but no Sync bound. This may allow data races when cloning. \
-                                    Consider adding `T: Sync` bound.".to_string(),
-                                function: location,
-                                function_signature: String::new(),
-                                evidence: vec![trimmed.to_string()],
-                                span: None,
-                            });
+                                    Consider adding `T: Sync` bound.".to_string(), location, String::new(), vec![trimmed.to_string()], None));
                         }
                     }
                 }
@@ -1993,18 +2018,9 @@ impl Rule for MissingSyncBoundOnCloneRule {
                     if is_channel_like {
                         let location = format!("{}:{}", rel_path, idx + 1);
 
-                        findings.push(Finding {
-                            rule_id: self.metadata.id.clone(),
-                            rule_name: self.metadata.name.clone(),
-                            severity: self.metadata.default_severity,
-                            message: "Channel implementation with Clone + Send but missing Sync \
+                        findings.push(Finding::new(self.metadata.id.clone(), self.metadata.name.clone(), self.metadata.default_severity, "Channel implementation with Clone + Send but missing Sync \
                                 bound. Concurrent cloning may cause data races. \
-                                Consider `T: Clone + Send + Sync`.".to_string(),
-                            function: location,
-                            function_signature: String::new(),
-                            evidence: vec![trimmed.to_string()],
-                            span: None,
-                        });
+                                Consider `T: Clone + Send + Sync`.".to_string(), location, String::new(), vec![trimmed.to_string()], None));
                     }
                 }
             }
@@ -2041,6 +2057,8 @@ impl PinContractViolationRule {
                 help_uri: Some("https://rustsec.org/advisories/RUSTSEC-2023-0005.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -2117,6 +2135,7 @@ impl Rule for PinContractViolationRule {
                         function_signature: String::new(),
                         evidence: vec![trimmed.to_string()],
                         span: None,
+                    ..Default::default()
                     });
                 }
 
@@ -2124,17 +2143,8 @@ impl Rule for PinContractViolationRule {
                 if trimmed.contains("Pin::new_unchecked") {
                     let location = format!("{}:{}", rel_path, idx + 1);
 
-                    findings.push(Finding {
-                        rule_id: self.metadata.id.clone(),
-                        rule_name: self.metadata.name.clone(),
-                        severity: Severity::Medium,
-                        message: "Use of Pin::new_unchecked requires ensuring the pinned value \
-                            is never moved. Verify the value is not moved after pinning.".to_string(),
-                        function: location,
-                        function_signature: String::new(),
-                        evidence: vec![trimmed.to_string()],
-                        span: None,
-                    });
+                    findings.push(Finding::new(self.metadata.id.clone(), self.metadata.name.clone(), Severity::Medium, "Use of Pin::new_unchecked requires ensuring the pinned value \
+                            is never moved. Verify the value is not moved after pinning.".to_string(), location, String::new(), vec![trimmed.to_string()], None));
                 }
             }
         }
@@ -2169,6 +2179,8 @@ impl OneshotRaceAfterCloseRule {
                 help_uri: Some("https://rustsec.org/advisories/RUSTSEC-2021-0124.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -2266,6 +2278,7 @@ impl Rule for OneshotRaceAfterCloseRule {
                                 function_signature: String::new(),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
+                    ..Default::default()
                             });
                         }
                     }
@@ -2305,6 +2318,8 @@ impl AsyncSignalUnsafeInHandlerRule {
                 help_uri: Some("https://man7.org/linux/man-pages/man7/signal-safety.7.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -2434,6 +2449,7 @@ impl Rule for AsyncSignalUnsafeInHandlerRule {
                                 function_signature: String::new(),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
+                    ..Default::default()
                             });
                         }
                     }
@@ -2478,6 +2494,8 @@ impl OnceCellTocTouRule {
                 help_uri: Some("https://doc.rust-lang.org/std/cell/struct.OnceCell.html".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -2580,6 +2598,7 @@ impl Rule for OnceCellTocTouRule {
                                 function_signature: String::new(),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
+                    ..Default::default()
                             });
                         }
                     }
@@ -2617,6 +2636,8 @@ impl PanicWhileHoldingLockRule {
                 help_uri: Some("https://doc.rust-lang.org/std/sync/struct.Mutex.html#poisoning".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -2747,6 +2768,7 @@ impl Rule for PanicWhileHoldingLockRule {
                                 function_signature: String::new(),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
+                    ..Default::default()
                             });
                         }
                     }
@@ -2787,6 +2809,8 @@ impl ClosureEscapingRefsRule {
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -2908,6 +2932,7 @@ impl Rule for ClosureEscapingRefsRule {
                                 function_signature: String::new(),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
+                    ..Default::default()
                             });
                         }
 
@@ -2932,6 +2957,7 @@ impl Rule for ClosureEscapingRefsRule {
                                         function_signature: String::new(),
                                         evidence: vec![trimmed.to_string()],
                                         span: None,
+                    ..Default::default()
                                     });
                                     break;
                                 }
@@ -2972,6 +2998,8 @@ impl ExecutorStarvationRule {
                 help_uri: Some("https://tokio.rs/tokio/topics/bridging".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -3117,6 +3145,7 @@ impl Rule for ExecutorStarvationRule {
                                     function_signature: String::new(),
                                     evidence: vec![trimmed.to_string()],
                                     span: None,
+                    ..Default::default()
                                 });
                             }
                         }
@@ -3154,6 +3183,8 @@ impl AsyncDropCorrectnessRule {
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -3315,6 +3346,7 @@ impl Rule for AsyncDropCorrectnessRule {
                             function_signature: async_fn_name.clone(),
                             evidence: vec![lines.get(*decl_line).unwrap_or(&"").to_string()],
                             span: None,
+                    ..Default::default()
                         });
                     }
                     in_async_fn = false;
@@ -3351,6 +3383,8 @@ impl PanicInDropImplRule {
                 help_uri: Some("https://doc.rust-lang.org/std/ops/trait.Drop.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -3496,6 +3530,7 @@ impl Rule for PanicInDropImplRule {
                                 function_signature: format!("Drop for {}", drop_type_name),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
+                    ..Default::default()
                             });
                             break; // One finding per line
                         }
@@ -3532,6 +3567,8 @@ impl SpawnedTaskPanicRule {
                 help_uri: Some("https://docs.rs/tokio/latest/tokio/task/fn.spawn.html".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -3649,19 +3686,10 @@ impl Rule for SpawnedTaskPanicRule {
 
                         if !has_panic_handling && !is_assigned {
                             let location = format!("{}:{}", rel_path, idx + 1);
-                            findings.push(Finding {
-                                rule_id: self.metadata.id.clone(),
-                                rule_name: self.metadata.name.clone(),
-                                severity: self.metadata.default_severity,
-                                message: format!(
+                            findings.push(Finding::new(self.metadata.id.clone(), self.metadata.name.clone(), self.metadata.default_severity, format!(
                                     "Spawned task without panic handling. Panics will be silently swallowed. \
                                     Consider using .await on the JoinHandle or adding a panic hook."
-                                ),
-                                function: location,
-                                function_signature: String::new(),
-                                evidence: vec![trimmed.to_string()],
-                                span: None,
-                            });
+                                ), location, String::new(), vec![trimmed.to_string()], None));
                         }
                         break;
                     }

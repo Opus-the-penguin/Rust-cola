@@ -7,7 +7,7 @@
 //! - FFI buffer leaks (RUSTCOLA016)
 //! - FFI pointer returns (RUSTCOLA073)
 
-use crate::{Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
+use crate::{Confidence, Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use super::filter_entry;
 use super::utils::{StringLiteralState, strip_string_literals};
 use std::collections::{HashMap, HashSet};
@@ -38,6 +38,8 @@ impl AllocatorMismatchFfiRule {
                 help_uri: Some("https://doc.rust-lang.org/std/boxed/struct.Box.html#method.from_raw".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -131,6 +133,10 @@ impl Rule for AllocatorMismatchFfiRule {
                                     format!("C deallocation: {}", line.trim()),
                                 ],
                                 span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                             });
                         }
                     }
@@ -164,6 +170,10 @@ impl Rule for AllocatorMismatchFfiRule {
                                     format!("Rust deallocation: {}", line.trim()),
                                 ],
                                 span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                             });
                         }
                     }
@@ -197,6 +207,10 @@ impl Rule for AllocatorMismatchFfiRule {
                                     format!("Rust deallocation: {}", line.trim()),
                                 ],
                                 span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                             });
                         }
                     }
@@ -232,6 +246,8 @@ impl UnsafeFfiPointerReturnRule {
                 help_uri: Some("https://doc.rust-lang.org/nomicon/ffi.html".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -291,6 +307,10 @@ impl Rule for UnsafeFfiPointerReturnRule {
                         "No safety documentation found".to_string(),
                     ],
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -321,6 +341,8 @@ impl PackedFieldReferenceRule {
                 help_uri: Some("https://doc.rust-lang.org/nomicon/other-reprs.html#reprpacked".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -452,6 +474,7 @@ impl Rule for PackedFieldReferenceRule {
                             function_signature: String::new(),
                             evidence: vec![trimmed.to_string()],
                             span: None,
+                    ..Default::default()
                         });
                     }
                 }
@@ -486,6 +509,8 @@ impl UnsafeCStringPointerRule {
                 help_uri: Some("https://www.jetbrains.com/help/inspectopedia/RsCStringPointer.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -561,17 +586,8 @@ impl Rule for UnsafeCStringPointerRule {
                 if Self::is_cstring_temp_pattern(trimmed) {
                     let location = format!("{}:{}", rel_path, idx + 1);
 
-                    findings.push(Finding {
-                        rule_id: self.metadata.id.clone(),
-                        rule_name: self.metadata.name.clone(),
-                        severity: self.metadata.default_severity,
-                        message: "CString temporary used with as_ptr() creates dangling pointer"
-                            .to_string(),
-                        function: location,
-                        function_signature: String::new(),
-                        evidence: vec![trimmed.to_string()],
-                        span: None,
-                    });
+                    findings.push(Finding::new(self.metadata.id.clone(), self.metadata.name.clone(), self.metadata.default_severity, "CString temporary used with as_ptr() creates dangling pointer"
+                            .to_string(), location, String::new(), vec![trimmed.to_string()], None));
                 }
             }
         }
@@ -600,6 +616,8 @@ impl CtorDtorStdApiRule {
                 help_uri: Some("https://docs.rs/ctor/latest/ctor/".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -662,6 +680,7 @@ impl Rule for CtorDtorStdApiRule {
                         function_signature: function.signature.clone(),
                         evidence,
                         span: None,
+                    ..Default::default()
                     });
                 }
             }
@@ -692,6 +711,8 @@ impl FfiBufferLeakRule {
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -951,6 +972,7 @@ impl Rule for FfiBufferLeakRule {
                         function_signature: signature_line,
                         evidence,
                         span: None,
+                    ..Default::default()
                     });
                 }
 
@@ -991,6 +1013,8 @@ impl PanicInFfiBoundaryRule {
                 help_uri: Some("https://doc.rust-lang.org/nomicon/ffi.html#ffi-and-panics".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1130,6 +1154,7 @@ impl Rule for PanicInFfiBoundaryRule {
                                         function_signature: String::new(),
                                         evidence: vec![trimmed.to_string()],
                                         span: None,
+                    ..Default::default()
                                     });
                                 }
                             }
@@ -1150,6 +1175,7 @@ impl Rule for PanicInFfiBoundaryRule {
                                 function_signature: String::new(),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
+                    ..Default::default()
                             });
                         }
                     }
@@ -1192,6 +1218,8 @@ impl EmbeddedInterpreterUsageRule {
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1300,6 +1328,7 @@ impl Rule for EmbeddedInterpreterUsageRule {
                             function_signature: String::new(),
                             evidence: vec![trimmed.to_string()],
                             span: None,
+                    ..Default::default()
                         });
                     }
                 }
@@ -1337,6 +1366,8 @@ impl WasmLinearMemoryOobRule {
                 help_uri: Some("https://webassembly.org/docs/security/".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1489,6 +1520,7 @@ impl Rule for WasmLinearMemoryOobRule {
                                     function_signature: String::new(),
                                     evidence: vec![trimmed.to_string()],
                                     span: None,
+                    ..Default::default()
                                 });
                             }
                         }
@@ -1525,6 +1557,8 @@ impl WasmHostFunctionTrustRule {
                 help_uri: Some("https://docs.rs/wasmtime/latest/wasmtime/".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1649,6 +1683,7 @@ impl Rule for WasmHostFunctionTrustRule {
                                 function_signature: String::new(),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
+                    ..Default::default()
                             });
                         }
                     }
@@ -1684,6 +1719,8 @@ impl WasmCapabilityLeakRule {
                 help_uri: Some("https://component-model.bytecodealliance.org/".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1784,6 +1821,7 @@ impl Rule for WasmCapabilityLeakRule {
                             function_signature: String::new(),
                             evidence: vec![trimmed.to_string()],
                             span: None,
+                    ..Default::default()
                         });
                     }
                 }
@@ -1808,6 +1846,7 @@ impl Rule for WasmCapabilityLeakRule {
                             function_signature: String::new(),
                             evidence: vec![trimmed.to_string()],
                             span: None,
+                    ..Default::default()
                         });
                     }
                 }

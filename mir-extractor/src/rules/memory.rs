@@ -9,7 +9,7 @@
 //! - Null pointer transmutes
 //! - ZST pointer arithmetic
 
-use crate::{Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
+use crate::{Confidence, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use crate::detect_truncating_len_casts;
 use super::collect_matches;
 use super::utils::filter_entry;
@@ -299,6 +299,8 @@ impl BoxIntoRawRule {
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -343,6 +345,10 @@ impl Rule for BoxIntoRawRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
             });
         }
 
@@ -369,6 +375,8 @@ impl TransmuteRule {
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -441,6 +449,10 @@ impl Rule for TransmuteRule {
                     function_signature: function.signature.clone(),
                     evidence: transmute_lines,
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -467,6 +479,8 @@ impl UnsafeUsageRule {
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -531,6 +545,10 @@ impl Rule for UnsafeUsageRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
             });
         }
 
@@ -557,6 +575,8 @@ impl NullPointerTransmuteRule {
                 help_uri: Some("https://rules.sonarsource.com/rust/RSPEC-7427/".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -603,6 +623,10 @@ impl Rule for NullPointerTransmuteRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
             });
         }
 
@@ -629,6 +653,8 @@ impl ZSTPointerArithmeticRule {
                 help_uri: Some("https://rules.sonarsource.com/rust/RSPEC-7428/".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -675,6 +701,10 @@ impl Rule for ZSTPointerArithmeticRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
             });
         }
 
@@ -706,6 +736,8 @@ impl VecSetLenRule {
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -771,6 +803,10 @@ impl Rule for VecSetLenRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
             });
         }
 
@@ -806,6 +842,8 @@ impl MaybeUninitAssumeInitRule {
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -843,6 +881,10 @@ impl Rule for MaybeUninitAssumeInitRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
             });
         }
 
@@ -885,6 +927,8 @@ impl MemUninitZeroedRule {
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -932,6 +976,10 @@ impl Rule for MemUninitZeroedRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
             });
         }
 
@@ -958,6 +1006,8 @@ impl NonNullNewUncheckedRule {
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -994,6 +1044,10 @@ impl Rule for NonNullNewUncheckedRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -1021,6 +1075,8 @@ impl MemForgetGuardRule {
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1066,6 +1122,10 @@ impl Rule for MemForgetGuardRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -1093,6 +1153,8 @@ impl StaticMutGlobalRule {
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1134,6 +1196,10 @@ impl Rule for StaticMutGlobalRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
             });
         }
 
@@ -1160,6 +1226,8 @@ impl TransmuteLifetimeChangeRule {
                 help_uri: Some("https://doc.rust-lang.org/std/mem/fn.transmute.html#examples".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1290,6 +1358,7 @@ impl Rule for TransmuteLifetimeChangeRule {
                                         function_signature: current_fn_name.clone(),
                                         evidence: vec![trimmed.to_string()],
                                         span: None,
+                    ..Default::default()
                                     });
                                 }
                             }
@@ -1337,6 +1406,7 @@ impl Rule for TransmuteLifetimeChangeRule {
                                 function_signature: current_fn_name.clone(),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
+                    ..Default::default()
                             });
                         }
                     }
@@ -1389,6 +1459,7 @@ impl Rule for TransmuteLifetimeChangeRule {
                                                 function_signature: current_fn_name.clone(),
                                                 evidence: vec![trimmed.to_string()],
                                                 span: None,
+                    ..Default::default()
                                             });
                                         }
                                     }
@@ -1423,6 +1494,8 @@ impl RawPointerEscapeRule {
                 help_uri: Some("https://doc.rust-lang.org/std/primitive.pointer.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1679,6 +1752,7 @@ impl Rule for RawPointerEscapeRule {
                             function_signature: current_fn_name.clone(),
                             evidence: vec![trimmed.to_string()],
                             span: None,
+                    ..Default::default()
                         });
                     }
                 }
@@ -1708,6 +1782,8 @@ impl VecSetLenMisuseRule {
                 help_uri: Some("https://doc.rust-lang.org/std/vec/struct.Vec.html#method.set_len".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1839,6 +1915,7 @@ impl Rule for VecSetLenMisuseRule {
                                 function_signature: var.to_string(),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
+                    ..Default::default()
                             });
                         }
                     }
@@ -1869,6 +1946,8 @@ impl LengthTruncationCastRule {
                 help_uri: Some("https://rustsec.org/advisories/RUSTSEC-2024-0363.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1914,6 +1993,10 @@ impl Rule for LengthTruncationCastRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -1946,6 +2029,8 @@ impl MaybeUninitAssumeInitDataflowRule {
                 help_uri: Some("https://doc.rust-lang.org/std/mem/union.MaybeUninit.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -2068,6 +2153,10 @@ impl Rule for MaybeUninitAssumeInitDataflowRule {
                         format!("Assumed: {}", assume_line),
                     ],
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -2099,6 +2188,8 @@ impl SliceElementSizeMismatchRule {
                     .to_string(),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
                 help_uri: None,
             },
         }
@@ -2298,6 +2389,10 @@ impl Rule for SliceElementSizeMismatchRule {
                             function_signature: function.signature.clone(),
                             evidence: vec![trimmed.to_string()],
                             span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                         });
                         continue;
                     }
@@ -2319,6 +2414,10 @@ impl Rule for SliceElementSizeMismatchRule {
                             function_signature: function.signature.clone(),
                             evidence: vec![trimmed.to_string()],
                             span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                         });
                         continue;
                     }
@@ -2396,6 +2495,10 @@ impl Rule for SliceElementSizeMismatchRule {
                             function_signature: function.signature.clone(),
                             evidence: vec![trimmed.to_string()],
                             span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                         });
                     }
                     
@@ -2417,6 +2520,10 @@ impl Rule for SliceElementSizeMismatchRule {
                             function_signature: function.signature.clone(),
                             evidence: vec![trimmed.to_string()],
                             span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                         });
                     }
                 }
@@ -2450,6 +2557,8 @@ impl SliceFromRawPartsRule {
                     .to_string(),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
                 help_uri: None,
             },
         }
@@ -2718,6 +2827,10 @@ impl Rule for SliceFromRawPartsRule {
                         function_signature: function.signature.clone(),
                         evidence: vec![trimmed.to_string()],
                         span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                     });
                     continue;
                 }
@@ -2745,6 +2858,10 @@ impl Rule for SliceFromRawPartsRule {
                         function_signature: function.signature.clone(),
                         evidence: vec![trimmed.to_string()],
                         span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                     });
                     continue;
                 }
@@ -2763,6 +2880,10 @@ impl Rule for SliceFromRawPartsRule {
                         function_signature: function.signature.clone(),
                         evidence: vec![trimmed.to_string()],
                         span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                     });
                     continue;
                 }
@@ -2786,6 +2907,10 @@ impl Rule for SliceFromRawPartsRule {
                         function_signature: function.signature.clone(),
                         evidence: vec![trimmed.to_string()],
                         span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                     });
                 }
             }
@@ -2818,6 +2943,8 @@ impl VarianceTransmuteUnsoundRule {
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -2914,6 +3041,10 @@ impl Rule for VarianceTransmuteUnsoundRule {
                         function_signature: function.signature.clone(),
                         evidence: vec![trimmed.to_string()],
                         span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                     });
                     continue;
                 }
@@ -2931,6 +3062,10 @@ impl Rule for VarianceTransmuteUnsoundRule {
                         function_signature: function.signature.clone(),
                         evidence: vec![trimmed.to_string()],
                         span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                     });
                     continue;
                 }
@@ -2948,6 +3083,10 @@ impl Rule for VarianceTransmuteUnsoundRule {
                         function_signature: function.signature.clone(),
                         evidence: vec![trimmed.to_string()],
                         span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                     });
                 }
             }
@@ -2983,6 +3122,8 @@ impl ReturnedRefToLocalRule {
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -3135,6 +3276,7 @@ impl Rule for ReturnedRefToLocalRule {
                                         function_signature: String::new(),
                                         evidence: vec![trimmed.to_string()],
                                         span: None,
+                    ..Default::default()
                                     });
                                     break;
                                 }
@@ -3156,6 +3298,7 @@ impl Rule for ReturnedRefToLocalRule {
                             function_signature: String::new(),
                             evidence: vec![trimmed.to_string()],
                             span: None,
+                    ..Default::default()
                         });
                     }
                 }
@@ -3193,6 +3336,8 @@ impl SelfReferentialStructRule {
                 help_uri: Some("https://doc.rust-lang.org/std/pin/index.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -3330,6 +3475,7 @@ impl Rule for SelfReferentialStructRule {
                                     function_signature: String::new(),
                                     evidence: vec![trimmed.to_string()],
                                     span: None,
+                    ..Default::default()
                                 });
                                 break;
                             }
@@ -3373,6 +3519,8 @@ impl UnsafeCellAliasingRule {
                 help_uri: Some("https://doc.rust-lang.org/std/cell/struct.UnsafeCell.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -3496,6 +3644,7 @@ impl Rule for UnsafeCellAliasingRule {
                                     function_signature: String::new(),
                                     evidence: vec![trimmed.to_string()],
                                     span: None,
+                    ..Default::default()
                                 });
                                 break;
                             }
@@ -3539,6 +3688,8 @@ impl LazyInitPanicPoisonRule {
                 help_uri: Some("https://doc.rust-lang.org/std/sync/struct.OnceLock.html".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -3674,6 +3825,7 @@ impl Rule for LazyInitPanicPoisonRule {
                                 function_signature: String::new(),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
+                    ..Default::default()
                             });
                             break;
                         }

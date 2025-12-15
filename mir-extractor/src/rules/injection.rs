@@ -17,7 +17,7 @@ use crate::dataflow::taint::TaintAnalysis;
 use crate::interprocedural;
 use crate::rules::utils::{command_rule_should_skip, INPUT_SOURCE_PATTERNS, LOG_SINK_PATTERNS};
 use crate::{
-    detect_command_invocations, extract_span_from_mir_line, Finding, MirPackage, Rule,
+    detect_command_invocations, extract_span_from_mir_line, Confidence, Finding, MirPackage, Rule,
     RuleMetadata, RuleOrigin, Severity,
 };
 
@@ -40,6 +40,8 @@ impl UntrustedEnvInputRule {
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -96,6 +98,8 @@ impl CommandInjectionRiskRule {
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -155,6 +159,10 @@ impl Rule for CommandInjectionRiskRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -182,6 +190,8 @@ impl CommandArgConcatenationRule {
                 help_uri: Some("https://cwe.mitre.org/data/definitions/78.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -274,6 +284,10 @@ impl Rule for CommandArgConcatenationRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -306,6 +320,8 @@ impl LogInjectionRule {
                 help_uri: Some("https://cwe.mitre.org/data/definitions/117.html".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -548,6 +564,10 @@ impl Rule for LogInjectionRule {
                     function_signature: function.signature.clone(),
                     evidence: injections.into_iter().take(3).collect(),
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -582,6 +602,8 @@ impl RegexInjectionRule {
                 help_uri: Some("https://cwe.mitre.org/data/definitions/1333.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -929,6 +951,10 @@ impl Rule for RegexInjectionRule {
                     function_signature: function.signature.clone(),
                     evidence: injections.into_iter().take(3).collect(),
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -962,6 +988,8 @@ impl UncheckedIndexRule {
                 help_uri: Some("https://cwe.mitre.org/data/definitions/129.html".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1286,6 +1314,10 @@ impl Rule for UncheckedIndexRule {
                     function_signature: function.signature.clone(),
                     evidence: unsafe_indexing.into_iter().take(3).collect(),
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -1331,6 +1363,8 @@ impl PathTraversalRule {
                 help_uri: Some("https://owasp.org/www-community/attacks/Path_Traversal".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1593,6 +1627,10 @@ impl Rule for PathTraversalRule {
                     function_signature: function.signature.clone(),
                     evidence: unsafe_ops.into_iter().take(3).collect(),
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -1662,6 +1700,7 @@ impl Rule for PathTraversalRule {
                         function_signature: signature,
                         evidence: vec![flow.describe()],
                         span,
+                        ..Default::default()
                     });
                     
                     reported_functions.insert(flow.sink_function.clone());
@@ -1697,6 +1736,8 @@ impl SsrfRule {
                 help_uri: Some("https://owasp.org/www-community/attacks/Server_Side_Request_Forgery".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1889,6 +1930,10 @@ impl Rule for SsrfRule {
                     function_signature: function.signature.clone(),
                     evidence: unsafe_ops.into_iter().take(3).collect(),
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -1949,6 +1994,7 @@ impl Rule for SsrfRule {
                         function_signature: signature,
                         evidence: vec![flow.describe()],
                         span,
+                        ..Default::default()
                     });
                     
                     reported_functions.insert(flow.sink_function.clone());
@@ -1983,6 +2029,8 @@ impl SqlInjectionRule {
                 help_uri: Some("https://owasp.org/www-community/attacks/SQL_Injection".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -2329,6 +2377,10 @@ impl Rule for SqlInjectionRule {
                     function_signature: function.signature.clone(),
                     evidence: unsafe_ops.into_iter().take(3).collect(),
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -2389,6 +2441,7 @@ impl Rule for SqlInjectionRule {
                         function_signature: signature,
                         evidence: vec![flow.describe()],
                         span,
+                        ..Default::default()
                     });
                     
                     reported_functions.insert(flow.sink_function.clone());
@@ -2422,6 +2475,8 @@ impl InterProceduralCommandInjectionRule {
                 help_uri: Some("https://owasp.org/www-community/attacks/Command_Injection".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -2496,6 +2551,7 @@ impl Rule for InterProceduralCommandInjectionRule {
                         function_signature: signature,
                         evidence: vec![flow.describe()],
                         span,
+                        ..Default::default()
                     });
                     
                     reported_functions.insert(flow.sink_function.clone());
@@ -2570,6 +2626,7 @@ impl Rule for InterProceduralCommandInjectionRule {
                                     "Closure body contains command execution".to_string(),
                                 ],
                                 span: closure_fn.span.clone(),
+                                ..Default::default()
                             });
                             
                             reported_functions.insert(closure.name.clone());
@@ -2636,6 +2693,10 @@ impl Rule for InterProceduralCommandInjectionRule {
                                 "Closure body contains command execution".to_string(),
                             ],
                             span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                         });
                         
                         reported_functions.insert(function.name.clone());

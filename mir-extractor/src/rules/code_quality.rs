@@ -12,7 +12,7 @@
 
 #![allow(dead_code)]
 
-use crate::{Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity, SourceFile};
+use crate::{Confidence, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity, SourceFile};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -38,6 +38,8 @@ impl CrateWideAllowRule {
                 help_uri: None,
                 default_severity: Severity::Low,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -93,6 +95,7 @@ impl Rule for CrateWideAllowRule {
                         function_signature: function.signature.clone(),
                         evidence: vec![line.clone()],
                         span: None,
+                    ..Default::default()
                     });
                     reported = true;
                     break;
@@ -129,6 +132,8 @@ impl MisorderedAssertEqRule {
                 help_uri: None,
                 default_severity: Severity::Low,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -181,6 +186,7 @@ impl Rule for MisorderedAssertEqRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: None,
+                    ..Default::default()
                 });
             }
         }
@@ -210,6 +216,8 @@ impl TryIoResultRule {
                 help_uri: None,
                 default_severity: Severity::Low,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -264,6 +272,7 @@ impl Rule for TryIoResultRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: None,
+                    ..Default::default()
                 });
             }
         }
@@ -294,6 +303,8 @@ impl LocalRefCellRule {
                 help_uri: None,
                 default_severity: Severity::Low,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -349,6 +360,7 @@ impl Rule for LocalRefCellRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: None,
+                    ..Default::default()
                 });
             }
         }
@@ -379,6 +391,8 @@ impl UnnecessaryBorrowMutRule {
                 help_uri: None,
                 default_severity: Severity::Low,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -442,6 +456,7 @@ impl Rule for UnnecessaryBorrowMutRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: None,
+                    ..Default::default()
                 });
             }
         }
@@ -472,6 +487,8 @@ impl DeadStoreArrayRule {
                 help_uri: None,
                 default_severity: Severity::Low,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -626,6 +643,10 @@ impl Rule for DeadStoreArrayRule {
                                 format!("Line {}: {} (overwrites)", overwrite_line_idx, overwrite_line.trim()),
                             ],
                             span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                         });
                         break;  // Only report first overwrite
                     }
@@ -657,6 +678,8 @@ impl OverscopedAllowRule {
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -750,6 +773,7 @@ impl Rule for OverscopedAllowRule {
                                     function_signature: String::new(),
                                     evidence: vec![format!("#![allow({})]", lint_name)],
                                     span: None,
+                    ..Default::default()
                                 });
                             }
                         }
@@ -782,6 +806,8 @@ impl CommentedOutCodeRule {
                 help_uri: None,
                 default_severity: Severity::Low,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -907,6 +933,7 @@ impl Rule for CommentedOutCodeRule {
                             function_signature: String::new(),
                             evidence: evidence.clone(),
                             span: None,
+                    ..Default::default()
                         });
                         
                         evidence.clear();
@@ -935,6 +962,7 @@ impl Rule for CommentedOutCodeRule {
                     function_signature: String::new(),
                     evidence,
                     span: None,
+                    ..Default::default()
                 });
             }
         }
@@ -971,6 +999,8 @@ impl UnwrapInHotPathRule {
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1125,6 +1155,7 @@ impl Rule for UnwrapInHotPathRule {
                                 function_signature: String::new(),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
+                    ..Default::default()
                             });
                             break; // One finding per line
                         }

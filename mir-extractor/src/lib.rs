@@ -66,12 +66,18 @@ pub use prototypes::{
 #[cfg(feature = "hir-driver")]
 pub const HIR_CAPTURE_ICE_LOG_PREFIX: &str = "rust-cola: rustc ICE while capturing HIR";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Severity levels for security findings (CVSS-aligned)
+/// - Critical: Exploitable remotely without authentication, leads to full system compromise
+/// - High: Serious vulnerability, likely exploitable
+/// - Medium: Moderate risk, requires specific conditions
+/// - Low: Minor issue, limited impact
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
     Low,
     Medium,
     High,
+    Critical,
 }
 
 impl Severity {
@@ -80,7 +86,56 @@ impl Severity {
             Severity::Low => "note",
             Severity::Medium => "warning",
             Severity::High => "error",
+            Severity::Critical => "error",
         }
+    }
+    
+    /// Get a human-readable label with emoji
+    pub fn label(&self) -> &'static str {
+        match self {
+            Severity::Low => "🟢 Low",
+            Severity::Medium => "🟡 Medium", 
+            Severity::High => "🟠 High",
+            Severity::Critical => "🔴 Critical",
+        }
+    }
+    
+    /// Get CVSS score range for this severity
+    pub fn cvss_range(&self) -> &'static str {
+        match self {
+            Severity::Low => "0.1-3.9",
+            Severity::Medium => "4.0-6.9",
+            Severity::High => "7.0-8.9",
+            Severity::Critical => "9.0-10.0",
+        }
+    }
+}
+
+/// Confidence level for analysis findings
+/// - High: Strong evidence, low false positive likelihood
+/// - Medium: Moderate evidence, may require manual review
+/// - Low: Weak evidence, higher false positive likelihood
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Confidence {
+    Low,
+    Medium,
+    High,
+}
+
+impl Confidence {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Confidence::Low => "Low",
+            Confidence::Medium => "Medium",
+            Confidence::High => "High",
+        }
+    }
+}
+
+impl Default for Confidence {
+    fn default() -> Self {
+        Confidence::Medium
     }
 }
 
@@ -110,6 +165,12 @@ pub struct RuleMetadata {
     pub help_uri: Option<String>,
     pub default_severity: Severity,
     pub origin: RuleOrigin,
+    /// CWE (Common Weakness Enumeration) identifiers
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cwe_ids: Vec<String>,
+    /// Fix suggestion template
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fix_suggestion: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -126,11 +187,95 @@ pub struct Finding {
     pub rule_id: String,
     pub rule_name: String,
     pub severity: Severity,
+    /// Confidence level of this specific finding
+    #[serde(default)]
+    pub confidence: Confidence,
     pub message: String,
     pub function: String,
     pub function_signature: String,
     pub evidence: Vec<String>,
     pub span: Option<SourceSpan>,
+    /// CWE identifiers for this finding
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cwe_ids: Vec<String>,
+    /// Actionable fix suggestion
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fix_suggestion: Option<String>,
+    /// Code snippet showing the vulnerable code
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_snippet: Option<String>,
+}
+
+impl Finding {
+    /// Create a new finding with default confidence and optional fields
+    pub fn new(
+        rule_id: impl Into<String>,
+        rule_name: impl Into<String>,
+        severity: Severity,
+        message: impl Into<String>,
+        function: impl Into<String>,
+        function_signature: impl Into<String>,
+        evidence: Vec<String>,
+        span: Option<SourceSpan>,
+    ) -> Self {
+        Self {
+            rule_id: rule_id.into(),
+            rule_name: rule_name.into(),
+            severity,
+            confidence: Confidence::Medium,
+            message: message.into(),
+            function: function.into(),
+            function_signature: function_signature.into(),
+            evidence,
+            span,
+            cwe_ids: Vec::new(),
+            fix_suggestion: None,
+            code_snippet: None,
+        }
+    }
+    
+    /// Set confidence level
+    pub fn with_confidence(mut self, confidence: Confidence) -> Self {
+        self.confidence = confidence;
+        self
+    }
+    
+    /// Set CWE identifiers
+    pub fn with_cwe(mut self, cwe_ids: Vec<String>) -> Self {
+        self.cwe_ids = cwe_ids;
+        self
+    }
+    
+    /// Set fix suggestion
+    pub fn with_fix(mut self, fix: impl Into<String>) -> Self {
+        self.fix_suggestion = Some(fix.into());
+        self
+    }
+    
+    /// Set code snippet
+    pub fn with_snippet(mut self, snippet: impl Into<String>) -> Self {
+        self.code_snippet = Some(snippet.into());
+        self
+    }
+}
+
+impl Default for Finding {
+    fn default() -> Self {
+        Self {
+            rule_id: String::new(),
+            rule_name: String::new(),
+            severity: Severity::Medium,
+            confidence: Confidence::Medium,
+            message: String::new(),
+            function: String::new(),
+            function_signature: String::new(),
+            evidence: Vec::new(),
+            span: None,
+            cwe_ids: Vec::new(),
+            fix_suggestion: None,
+            code_snippet: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -837,6 +982,8 @@ impl DeclarativeRule {
             help_uri: config.help_uri,
             default_severity: config.severity.unwrap_or(Severity::Medium),
             origin: RuleOrigin::RulePack { source: origin },
+            cwe_ids: Vec::new(),
+            fix_suggestion: None,
         };
 
         Self {
@@ -955,11 +1102,15 @@ impl Rule for DeclarativeRule {
                 rule_id: self.metadata.id.clone(),
                 rule_name: self.metadata.name.clone(),
                 severity,
+                confidence: Confidence::Medium,
                 message,
                 function: function.name.clone(),
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
+                code_snippet: None,
             });
         }
 
@@ -994,6 +1145,8 @@ impl WasmRulePlaceholder {
             help_uri: None,
             default_severity: Severity::Low,
             origin: RuleOrigin::Wasm { module: module_utf8 },
+            cwe_ids: Vec::new(),
+            fix_suggestion: None,
         };
 
         Self { metadata }
@@ -2860,17 +3013,23 @@ fn <impl at C:\\workspace\\demo\\src\\lib.rs:40:1: 40:32>::vec_set_len(_1: &mut 
             help_uri: None,
             default_severity: Severity::Medium,
             origin: RuleOrigin::BuiltIn,
+            cwe_ids: Vec::new(),
+            fix_suggestion: None,
         };
 
         let finding = Finding {
             rule_id: rule.id.clone(),
             rule_name: rule.name.clone(),
             severity: rule.default_severity,
+            confidence: Confidence::High,
             message: "Something happened".to_string(),
             function: "demo::example".to_string(),
             function_signature: "fn demo::example()".to_string(),
             evidence: vec![],
             span: Some(span.clone()),
+            cwe_ids: Vec::new(),
+            fix_suggestion: None,
+            code_snippet: None,
         };
 
         let analysis = AnalysisResult {

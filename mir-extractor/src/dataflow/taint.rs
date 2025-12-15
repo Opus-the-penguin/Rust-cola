@@ -626,16 +626,16 @@ impl TaintFlow {
             format!("Sink: {}", self.sink.sink_line),
         ];
 
-        Finding {
-            rule_id: rule_metadata.id.clone(),
-            rule_name: rule_metadata.name.clone(),
-            severity: if self.sanitized { Severity::Low } else { self.sink.severity },
+        Finding::new(
+            rule_metadata.id.clone(),
+            rule_metadata.name.clone(),
+            if self.sanitized { Severity::Low } else { self.sink.severity },
             message,
-            function: function_name.to_string(),
-            function_signature: function_sig.to_string(),
+            function_name.to_string(),
+            function_sig.to_string(),
             evidence,
             span,
-        }
+        )
     }
 }
 

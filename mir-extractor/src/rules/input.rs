@@ -18,7 +18,7 @@ use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
 
-use crate::{interprocedural, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
+use crate::{interprocedural, Confidence, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use super::utils::filter_entry;
 
 // Shared input source patterns used by multiple rules
@@ -58,6 +58,8 @@ impl CleartextEnvVarRule {
                 help_uri: Some("https://cwe.mitre.org/data/definitions/526.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -121,6 +123,10 @@ impl Rule for CleartextEnvVarRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -152,6 +158,8 @@ impl EnvVarLiteralRule {
                 help_uri: None,
                 default_severity: Severity::Low,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -198,6 +206,10 @@ impl Rule for EnvVarLiteralRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -230,6 +242,8 @@ impl InvisibleUnicodeRule {
                 help_uri: Some("https://trojansource.codes/".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -297,6 +311,10 @@ impl Rule for InvisibleUnicodeRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -328,6 +346,8 @@ impl UntrimmedStdinRule {
                 help_uri: None,
                 default_severity: Severity::Low,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -381,6 +401,10 @@ impl Rule for UntrimmedStdinRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -412,6 +436,8 @@ impl InfiniteIteratorRule {
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -498,6 +524,7 @@ impl Rule for InfiniteIteratorRule {
                     function_signature: function.signature.clone(),
                     evidence,
                     span: None,
+                    ..Default::default()
                 });
             }
         }
@@ -529,6 +556,8 @@ impl DivisionByUntrustedRule {
                 help_uri: Some("https://cwe.mitre.org/data/definitions/369.html".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -673,6 +702,10 @@ impl Rule for DivisionByUntrustedRule {
                     function_signature: function.signature.clone(),
                     evidence: unsafe_divs.into_iter().take(3).collect(),
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -705,6 +738,8 @@ impl InsecureYamlDeserializationRule {
                 help_uri: Some("https://owasp.org/www-project-web-security-testing-guide/".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -849,6 +884,10 @@ impl Rule for InsecureYamlDeserializationRule {
                     function_signature: function.signature.clone(),
                     evidence: unsafe_ops.into_iter().take(3).collect(),
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -886,6 +925,7 @@ impl Rule for InsecureYamlDeserializationRule {
                         function_signature: sink_func.map(|f| f.signature.clone()).unwrap_or_default(),
                         evidence: vec![flow.describe()],
                         span: sink_func.map(|f| f.span.clone()).unwrap_or_default(),
+                        ..Default::default()
                     });
                     reported_functions.insert(flow.sink_function);
                 }
@@ -919,6 +959,8 @@ impl UnboundedReadRule {
                 help_uri: Some("https://cwe.mitre.org/data/definitions/400.html".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1016,6 +1058,10 @@ impl Rule for UnboundedReadRule {
                     function_signature: function.signature.clone(),
                     evidence: unbounded_reads.into_iter().take(3).collect(),
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -1047,6 +1093,8 @@ impl InsecureJsonTomlDeserializationRule {
                 help_uri: Some("https://owasp.org/www-project-web-security-testing-guide/".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1202,6 +1250,10 @@ impl Rule for InsecureJsonTomlDeserializationRule {
                     function_signature: function.signature.clone(),
                     evidence: unsafe_ops.into_iter().take(3).collect(),
                     span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                 });
             }
         }
@@ -1235,6 +1287,8 @@ impl SerdeLengthMismatchRule {
                     .to_string(),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
                 help_uri: None,
             },
         }
@@ -1500,6 +1554,10 @@ impl Rule for SerdeLengthMismatchRule {
                         function_signature: function.signature.clone(),
                         evidence: vec![decl_line.clone()],
                         span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                     });
                     continue;
                 }
@@ -1533,6 +1591,10 @@ impl Rule for SerdeLengthMismatchRule {
                         function_signature: function.signature.clone(),
                         evidence: vec![decl_line.clone()],
                         span: function.span.clone(),
+                    confidence: Confidence::Medium,
+                    cwe_ids: Vec::new(),
+                    fix_suggestion: None,
+                    code_snippet: None,
                     });
                 }
             }
@@ -1569,6 +1631,8 @@ impl UncheckedTimestampMultiplicationRule {
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -1690,6 +1754,7 @@ impl Rule for UncheckedTimestampMultiplicationRule {
                                 function_signature: String::new(),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
+                    ..Default::default()
                             });
                         }
                     }

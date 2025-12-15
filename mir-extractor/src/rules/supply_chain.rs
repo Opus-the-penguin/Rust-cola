@@ -43,6 +43,8 @@ impl RustsecUnsoundDependencyRule {
                 help_uri: Some("https://rustsec.org/".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -176,6 +178,7 @@ impl Rule for RustsecUnsoundDependencyRule {
                     function_signature: format!("{} {}", name, version_str),
                     evidence,
                     span: None,
+                    ..Default::default()
                 });
             }
         }
@@ -210,6 +213,8 @@ impl YankedCrateRule {
                 help_uri: Some("https://doc.rust-lang.org/cargo/reference/publishing.html#removing-a-version".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -295,6 +300,7 @@ impl Rule for YankedCrateRule {
                     function_signature: format!("{} {}", name, version),
                     evidence,
                     span: None,
+                    ..Default::default()
                 });
             }
         }
@@ -323,6 +329,8 @@ impl CargoAuditableMetadataRule {
                 help_uri: Some("https://github.com/rust-secure-code/cargo-auditable".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -604,6 +612,7 @@ impl Rule for CargoAuditableMetadataRule {
             function_signature: package_name.to_string(),
             evidence,
             span: None,
+                    ..Default::default()
         });
 
         findings
@@ -636,6 +645,8 @@ impl ProcMacroSideEffectsRule {
                 help_uri: Some("https://doc.rust-lang.org/reference/procedural-macros.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
             },
         }
     }
@@ -753,6 +764,7 @@ impl Rule for ProcMacroSideEffectsRule {
                             function_signature: String::new(),
                             evidence: vec![trimmed.to_string()],
                             span: None,
+                    ..Default::default()
                         });
                     }
                 }

@@ -872,6 +872,8 @@ mod tests {
             help_uri: None,
             default_severity: mir_extractor::Severity::Medium,
             origin: mir_extractor::RuleOrigin::BuiltIn,
+            cwe_ids: Vec::new(),
+            fix_suggestion: None,
         }];
 
         let findings = vec![Finding {
@@ -889,6 +891,7 @@ mod tests {
                 end_line: 8,
                 end_column: 4,
             }),
+            ..Default::default()
         }];
 
         let rendered = format_findings_output(&findings, &rules).expect("should render output");
@@ -2017,9 +2020,10 @@ fn write_finding_detail(
         .unwrap_or("unknown");
     
     let severity_emoji = match finding.severity {
-        mir_extractor::Severity::High => "�",
+        mir_extractor::Severity::Critical => "🔴",
+        mir_extractor::Severity::High => "🟠",
         mir_extractor::Severity::Medium => "🟡",
-        mir_extractor::Severity::Low => "🔵",
+        mir_extractor::Severity::Low => "�",
     };
 
     writeln!(content, "### {}. {} {} - {}", index, severity_emoji, finding.rule_id, rule_name)?;
@@ -2407,6 +2411,7 @@ fn run_advanced_rules(package: &MirPackage) -> Vec<Finding> {
                     function_signature: func.signature.clone(),
                     evidence: func.body.clone(),
                     span: func.span.clone(),
+                    ..Default::default()
                 });
             }
         }

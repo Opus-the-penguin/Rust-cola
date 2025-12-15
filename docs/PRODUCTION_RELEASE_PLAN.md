@@ -328,10 +328,11 @@ fn main() {
 
 | Rule ID | Name | Risk | Status |
 |---------|------|------|--------|
-| RUSTCOLA100 | OnceCell TOCTOU race | Data corruption | ❌ To implement |
+| RUSTCOLA100 | OnceCell TOCTOU race | Data corruption | ✅ Complete (v0.8.3) |
 | NEW | UnsafeCell aliasing violation | UB | ❌ To implement |
 | NEW | Lazy initialization panic poison | DoS | ❌ To implement |
-| RUSTCOLA101 | Variance transmute unsound | Type confusion | ❌ To implement |
+| RUSTCOLA101 | Variance transmute unsound | Type confusion | ✅ Complete (v0.8.3) |
+| RUSTCOLA117 | Panic while holding lock | Mutex poisoning | ✅ Complete (v0.8.3) |
 
 **Implementation Notes:**
 - Requires HIR analysis for type variance

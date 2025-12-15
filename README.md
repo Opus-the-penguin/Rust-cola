@@ -81,21 +81,21 @@ Use `--no-ast`, `--no-hir`, or `--no-llm-prompt` to suppress specific outputs.
 
 ## What It Detects
 
-100+ rules grouped by vulnerability category:
+111 rules grouped by vulnerability category:
 
 | Category | Rules | Examples |
 |----------|-------|----------|
-| **Memory Safety** | 18 | Transmute misuse, uninitialized memory, Box leaks, raw pointer escapes, slice safety, set_len misuse |
+| **Memory Safety** | 19 | Transmute misuse, uninitialized memory, Box leaks, raw pointer escapes, slice safety, set_len misuse, variance violations |
 | **Injection** | 10 | SQL injection, command injection, path traversal, SSRF, template injection, regex DoS |
 | **Cryptography** | 8 | Weak hashes (MD5/SHA1), weak ciphers, hardcoded keys, timing attacks, PRNG bias |
-| **Concurrency** | 9 | Mutex across await, blocking in async, Send/Sync violations, lock guards, panic safety |
-| **FFI** | 6 | Allocator mismatch, CString pointer misuse, packed fields, repr(C), buffer leaks |
-| **Input Validation** | 10 | Env vars, stdin, unicode, deserialization, division by untrusted input |
+| **Concurrency** | 16 | Mutex across await, blocking in async, Send/Sync violations, lock guards, panic safety, OnceCell races, cancellation safety |
+| **FFI** | 8 | Allocator mismatch, CString pointer misuse, packed fields, repr(C), panic in FFI, embedded interpreters |
+| **Input Validation** | 11 | Env vars, stdin, unicode, deserialization, division by untrusted, timestamp overflow |
 | **Web Security** | 11 | TLS validation, CORS, cookies, passwords in logs, Content-Length allocation |
 | **Resource Management** | 10 | File permissions, open options, infinite iterators, unbounded allocations |
 | **Code Quality** | 8 | Dead stores, assertions, crate-wide allow, RefCell, commented code |
-| **Supply Chain** | 3 | RUSTSEC advisories, yanked crates, auditable dependencies |
-| **Advanced Dataflow** | 9 | Inter-procedural taint tracking across function calls, async boundaries, and closures |
+| **Supply Chain** | 4 | RUSTSEC advisories, yanked crates, auditable dependencies, proc-macro side effects |
+| **Advanced Dataflow** | 9 | Use-after-free, taint propagation, integer overflow, uncontrolled allocation |
 
 ## Why It Requires Compilation
 
@@ -145,16 +145,6 @@ When `--with-audit` is enabled:
 - cargo-audit scans `Cargo.lock` against the RustSec Advisory Database
 - Known CVEs and security advisories are included in the report
 - Findings from both static analysis and dependency audit are merged
-
-This provides comprehensive security coverage:
-- **cargo-audit**: Are my dependencies safe?
-- **rust-cola**: Is my own code safe?
-
-## Documentation
-
-- `docs/RULE_DEVELOPMENT_GUIDE.md` - Writing rules
-- `docs/RULES_MASTER_PLAN.md` - Rules status and roadmap
-- `docs/design/phase3-interprocedural-design.md` - Taint analysis
 
 ## License
 

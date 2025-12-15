@@ -160,18 +160,18 @@ async fn safe_read_line_pattern(stream: TcpStream, mut rx: mpsc::Receiver<()>) {
     let reader = BufReader::new(stream);
     let mut lines = reader.lines();
     
-    // Pin the future outside of select so we can resume it
-    let mut next_line = Box::pin(lines.next_line());
-    
     loop {
+        // Pin the future outside of select so we can resume it
+        let next_line = lines.next_line();
+        tokio::pin!(next_line);
+    
         tokio::select! {
             // The future is owned and pinned - we can restart if needed
             line = &mut next_line => {
                 match line {
                     Ok(Some(l)) => {
                         println!("Got line: {}", l);
-                        // Create a new future for the next iteration
-                        next_line = Box::pin(lines.next_line());
+                        // Loop continues with a new future
                     }
                     Ok(None) => break,
                     Err(e) => {

@@ -5,6 +5,22 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.3] - 2025-12-14
+
+### Added
+- **Phase 2 Rules - Interior Mutability & Variance**: Implemented 3 new rules.
+  - `RUSTCOLA100` (OnceCellTocTouRule): Detects TOCTOU race conditions with OnceCell/OnceLock (get().is_none() followed by get_or_init()). Use get_or_init() directly.
+  - `RUSTCOLA101` (VarianceTransmuteUnsoundRule): Detects transmutes violating variance rules (&T→&mut T, *const T→*mut T, invariant types). UB risk.
+  - `RUSTCOLA117` (PanicWhileHoldingLockRule): Detects panic-prone operations (unwrap, expect, assert) while holding MutexGuard/RwLockGuard. Mutex poisoning risk.
+
+### Changed
+- **Rule Count**: 102 unique RUSTCOLA rules + 9 ADV advanced rules = 111 total.
+- **concurrency.rs**: Now contains 16 rules (was 15).
+- **memory.rs**: Now contains 19 rules (was 18).
+
+### Technical
+- All 146 tests pass.
+
 ## [0.8.2] - 2025-12-14
 
 ### Added

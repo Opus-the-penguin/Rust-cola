@@ -2776,6 +2776,168 @@ impl Rule for SliceFromRawPartsRule {
     }
 }
 
+// ============================================================================
+// RUSTCOLA101: Variance Transmute Unsound Rule
+// ============================================================================
+
+/// Detects transmutes that violate Rust's variance rules, which can lead to 
+/// unsoundness. Common patterns include transmuting between &T and &mut T,
+/// or between covariant and invariant types.
+pub struct VarianceTransmuteUnsoundRule {
+    metadata: RuleMetadata,
+}
+
+impl VarianceTransmuteUnsoundRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA101".to_string(),
+                name: "variance-transmute-unsound".to_string(),
+                short_description: "Transmutes violating variance rules".to_string(),
+                full_description: "Detects transmutes that violate Rust's variance rules (e.g., &T to &mut T, \
+                    *const T to *mut T, or invariant types like Cell/RefCell), which cause undefined behavior.".to_string(),
+                help_uri: None,
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Detects &T to &mut T transmute patterns
+    fn is_ref_to_mut_transmute(line: &str) -> bool {
+        if !line.contains("transmute") {
+            return false;
+        }
+        
+        // Pattern: transmute::<&Foo, &mut Foo> or similar
+        if let Some(transmute_start) = line.find("transmute") {
+            let after_transmute = &line[transmute_start..];
+            // Look for pattern where we go from & to &mut
+            if after_transmute.contains("::<&") && after_transmute.contains("&mut") {
+                return true;
+            }
+            // Look for explicit type annotations
+            if after_transmute.contains("::<&") && !after_transmute.contains("&mut") {
+                // Check if the result is being assigned to &mut
+                let before_transmute = &line[..transmute_start];
+                if before_transmute.contains("&mut") || before_transmute.contains(": &mut") {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Detects *const T to *mut T transmute patterns
+    fn is_const_to_mut_ptr_transmute(line: &str) -> bool {
+        if !line.contains("transmute") {
+            return false;
+        }
+        
+        if let Some(transmute_start) = line.find("transmute") {
+            let after_transmute = &line[transmute_start..];
+            // Pattern: transmute::<*const T, *mut T>
+            if after_transmute.contains("*const") && after_transmute.contains("*mut") {
+                // Make sure *const comes before *mut in type params
+                if let (Some(const_pos), Some(mut_pos)) = 
+                    (after_transmute.find("*const"), after_transmute.find("*mut")) {
+                    return const_pos < mut_pos;
+                }
+            }
+        }
+        false
+    }
+
+    /// Detects transmutes involving invariant types (Cell, RefCell, UnsafeCell)
+    fn is_invariant_type_transmute(line: &str) -> bool {
+        if !line.contains("transmute") {
+            return false;
+        }
+        
+        let invariant_types = ["Cell<", "RefCell<", "UnsafeCell<", "Mutex<", "RwLock<"];
+        
+        for inv_type in invariant_types.iter() {
+            if line.contains(inv_type) {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+impl Rule for VarianceTransmuteUnsoundRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for function in &package.functions {
+            for line in &function.body {
+                let trimmed = line.trim();
+                
+                // Skip comments
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+
+                // Check for &T to &mut T transmute
+                if Self::is_ref_to_mut_transmute(trimmed) {
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: Severity::High,
+                        message: "Transmuting from immutable reference (&T) to mutable reference (&mut T) \
+                            violates Rust's aliasing rules and is undefined behavior. Use interior \
+                            mutability (Cell, RefCell, Mutex) instead.".to_string(),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence: vec![trimmed.to_string()],
+                        span: function.span.clone(),
+                    });
+                    continue;
+                }
+
+                // Check for *const T to *mut T transmute
+                if Self::is_const_to_mut_ptr_transmute(trimmed) {
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: Severity::High,
+                        message: "Transmuting from *const T to *mut T can cause undefined behavior \
+                            if the original data was immutable. Use ptr.cast_mut() (Rust 1.65+) \
+                            or ensure the underlying data is actually mutable.".to_string(),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence: vec![trimmed.to_string()],
+                        span: function.span.clone(),
+                    });
+                    continue;
+                }
+
+                // Check for invariant type transmutes
+                if Self::is_invariant_type_transmute(trimmed) {
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: Severity::High,
+                        message: "Transmuting invariant types (Cell, RefCell, UnsafeCell, Mutex, RwLock) \
+                            can violate their safety invariants and cause undefined behavior. \
+                            These types have special memory semantics that transmute bypasses.".to_string(),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence: vec![trimmed.to_string()],
+                        span: function.span.clone(),
+                    });
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 /// Register all memory safety rules with the rule engine.
 pub fn register_memory_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
@@ -2797,4 +2959,5 @@ pub fn register_memory_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(MaybeUninitAssumeInitDataflowRule::new()));
     engine.register_rule(Box::new(SliceElementSizeMismatchRule::new()));
     engine.register_rule(Box::new(SliceFromRawPartsRule::new()));
+    engine.register_rule(Box::new(VarianceTransmuteUnsoundRule::new()));
 }

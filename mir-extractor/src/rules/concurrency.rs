@@ -2453,6 +2453,319 @@ impl Rule for AsyncSignalUnsafeInHandlerRule {
 // ============================================================================
 // Registration
 // ============================================================================
+// RUSTCOLA100: OnceCell TOCTOU Race Rule
+// ============================================================================
+
+/// Detects potential TOCTOU (Time-of-check to time-of-use) races with OnceCell.
+/// 
+/// Pattern: Checking OnceCell::get() then calling get_or_init() based on result
+/// creates a race window where another thread may initialize between check and use.
+pub struct OnceCellTocTouRule {
+    metadata: RuleMetadata,
+}
+
+impl OnceCellTocTouRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA100".to_string(),
+                name: "oncecell-toctou-race".to_string(),
+                short_description: "Potential TOCTOU race with OnceCell".to_string(),
+                full_description: "Detects patterns where OnceCell::get() is checked before \
+                    calling get_or_init(). This creates a TOCTOU race: another thread may \
+                    initialize the cell between the check and the use. Use get_or_init() \
+                    directly without pre-checking, or use get_or_try_init() for fallible init.".to_string(),
+                help_uri: Some("https://doc.rust-lang.org/std/cell/struct.OnceCell.html".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Patterns that indicate TOCTOU with OnceCell/OnceLock
+    fn toctou_patterns() -> &'static [(&'static str, &'static str)] {
+        &[
+            (".get().is_none()", "checking get().is_none() then initializing"),
+            (".get().is_some()", "checking get().is_some() before using"),
+            ("if let None = ", "pattern matching None before get_or_init"),
+            ("if cell.get() == None", "comparing get() to None"),
+            ("match .get() {", "matching on get() result"),
+        ]
+    }
+}
+
+impl Rule for OnceCellTocTouRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            // Quick check: does file use OnceCell or OnceLock?
+            if !content.contains("OnceCell") && !content.contains("OnceLock") 
+                && !content.contains("once_cell") {
+                continue;
+            }
+
+            let lines: Vec<&str> = content.lines().collect();
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Skip comments
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+
+                // Check for TOCTOU patterns
+                for (pattern, description) in Self::toctou_patterns() {
+                    if trimmed.contains(pattern) {
+                        // Look ahead for get_or_init within 5 lines
+                        let has_init_nearby = lines[idx..].iter().take(5)
+                            .any(|l| l.contains("get_or_init") || l.contains("set("));
+                        
+                        if has_init_nearby {
+                            let location = format!("{}:{}", rel_path, idx + 1);
+
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message: format!(
+                                    "Potential TOCTOU race: {} followed by initialization. \
+                                    Another thread may initialize between check and use. \
+                                    Use get_or_init() directly without pre-checking.",
+                                    description
+                                ),
+                                function: location,
+                                function_signature: String::new(),
+                                evidence: vec![trimmed.to_string()],
+                                span: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA117: Panic While Holding Lock Rule
+// ============================================================================
+
+/// Detects panic-prone operations while holding a MutexGuard or RwLockGuard.
+/// 
+/// Panicking while holding a lock poisons the mutex, making it permanently
+/// unusable for other threads. This can cause cascading failures.
+pub struct PanicWhileHoldingLockRule {
+    metadata: RuleMetadata,
+}
+
+impl PanicWhileHoldingLockRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA117".to_string(),
+                name: "panic-while-holding-lock".to_string(),
+                short_description: "Potential panic while holding lock".to_string(),
+                full_description: "Detects panic-prone operations (unwrap, expect, assert, \
+                    indexing) while a MutexGuard or RwLockGuard is held. Panicking while \
+                    holding a lock poisons the mutex, making it unusable for other threads \
+                    and causing cascading failures.".to_string(),
+                help_uri: Some("https://doc.rust-lang.org/std/sync/struct.Mutex.html#poisoning".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Patterns that can cause panics
+    fn panic_patterns() -> &'static [&'static str] {
+        &[
+            ".unwrap()",
+            ".expect(",
+            "panic!",
+            "assert!",
+            "assert_eq!",
+            "assert_ne!",
+            "unreachable!",
+            "unimplemented!",
+            "todo!",
+        ]
+    }
+
+    /// Patterns that acquire locks
+    fn lock_patterns() -> &'static [&'static str] {
+        &[
+            ".lock()",
+            ".read()",
+            ".write()",
+            ".try_lock()",
+            ".try_read()",
+            ".try_write()",
+        ]
+    }
+}
+
+impl Rule for PanicWhileHoldingLockRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            // Quick check: does file use Mutex or RwLock?
+            if !content.contains("Mutex") && !content.contains("RwLock") {
+                continue;
+            }
+
+            let lines: Vec<&str> = content.lines().collect();
+            let mut in_lock_scope = false;
+            let mut lock_start_line = 0;
+            let mut brace_depth_at_lock = 0;
+            let mut current_brace_depth = 0;
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Skip comments
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+
+                // Track brace depth
+                current_brace_depth += trimmed.chars().filter(|&c| c == '{').count() as i32;
+                current_brace_depth -= trimmed.chars().filter(|&c| c == '}').count() as i32;
+
+                // Detect lock acquisition
+                for pattern in Self::lock_patterns() {
+                    if trimmed.contains(pattern) && trimmed.contains("let ") {
+                        in_lock_scope = true;
+                        lock_start_line = idx;
+                        brace_depth_at_lock = current_brace_depth;
+                    }
+                }
+
+                // Check for panic patterns while lock is held
+                if in_lock_scope {
+                    for pattern in Self::panic_patterns() {
+                        if trimmed.contains(pattern) {
+                            let location = format!("{}:{}", rel_path, idx + 1);
+
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message: format!(
+                                    "Panic-prone operation `{}` while holding lock (acquired at line {}). \
+                                    Panicking will poison the mutex, making it unusable. \
+                                    Consider using fallible alternatives or dropping the guard first.",
+                                    pattern.trim_end_matches('('), lock_start_line + 1
+                                ),
+                                function: location,
+                                function_signature: String::new(),
+                                evidence: vec![trimmed.to_string()],
+                                span: None,
+                            });
+                        }
+                    }
+
+                    // End of lock scope (simplified: when we return to or below the lock depth)
+                    if current_brace_depth < brace_depth_at_lock {
+                        in_lock_scope = false;
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// Registration
+// ============================================================================
 
 /// Register all concurrency rules with the rule engine.
 pub fn register_concurrency_rules(engine: &mut crate::RuleEngine) {
@@ -2470,4 +2783,6 @@ pub fn register_concurrency_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(PinContractViolationRule::new()));
     engine.register_rule(Box::new(OneshotRaceAfterCloseRule::new()));
     engine.register_rule(Box::new(AsyncSignalUnsafeInHandlerRule::new()));
+    engine.register_rule(Box::new(OnceCellTocTouRule::new()));
+    engine.register_rule(Box::new(PanicWhileHoldingLockRule::new()));
 }

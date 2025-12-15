@@ -2764,6 +2764,372 @@ impl Rule for PanicWhileHoldingLockRule {
 }
 
 // ============================================================================
+// RUSTCOLA119: Closure Escaping References Rule
+// ============================================================================
+
+/// Detects closures that capture references and may escape their scope,
+/// particularly when passed to spawn/thread functions or stored in 
+/// longer-lived contexts.
+pub struct ClosureEscapingRefsRule {
+    metadata: RuleMetadata,
+}
+
+impl ClosureEscapingRefsRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA119".to_string(),
+                name: "closure-escaping-refs".to_string(),
+                short_description: "Closure may capture escaping references".to_string(),
+                full_description: "Detects closures passed to spawn/thread functions that \
+                    capture local references. These closures outlive the captured references, \
+                    leading to use-after-free. Use move closures or Arc for shared ownership.".to_string(),
+                help_uri: None,
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Functions that take closures that outlive the current scope
+    fn escaping_closure_receivers() -> &'static [&'static str] {
+        &[
+            "thread::spawn",
+            "spawn(",
+            "spawn_blocking(",
+            "spawn_local(",
+            "task::spawn",
+            "tokio::spawn",
+            "async_std::spawn",
+            "rayon::spawn",
+            "thread::Builder",
+            ".spawn(",
+            "std::thread::spawn",
+        ]
+    }
+
+    /// Patterns indicating a closure captures a reference
+    fn ref_capture_patterns() -> &'static [&'static str] {
+        &[
+            // Non-move closure with explicit ref capture
+            "|&",
+            "| &",
+            // Patterns that suggest borrowing in closure body
+            ".as_ref()",
+            ".borrow()",
+        ]
+    }
+}
+
+impl Rule for ClosureEscapingRefsRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            // Quick check: does file use spawn-like functions?
+            let has_spawn = Self::escaping_closure_receivers()
+                .iter()
+                .any(|p| content.contains(p));
+            if !has_spawn {
+                continue;
+            }
+
+            let lines: Vec<&str> = content.lines().collect();
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Skip comments
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+
+                // Check for spawn-like function calls
+                for spawn_fn in Self::escaping_closure_receivers() {
+                    if trimmed.contains(spawn_fn) {
+                        // Check if it's NOT a move closure (which would be safe)
+                        let has_closure = trimmed.contains('|');
+                        let is_move_closure = trimmed.contains("move |") || 
+                                             trimmed.contains("move|");
+                        
+                        if has_closure && !is_move_closure {
+                            // Non-move closure passed to spawn - potential issue
+                            let location = format!("{}:{}", rel_path, idx + 1);
+                            
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: Severity::Medium,
+                                message: format!(
+                                    "Non-move closure passed to '{}'. Closures passed to spawn \
+                                    functions must use 'move' to take ownership of captured \
+                                    variables, otherwise captured references may dangle. \
+                                    Add 'move' keyword: `move |...| {{ ... }}`",
+                                    spawn_fn.trim_end_matches('(')
+                                ),
+                                function: location,
+                                function_signature: String::new(),
+                                evidence: vec![trimmed.to_string()],
+                                span: None,
+                            });
+                        }
+
+                        // Also check for reference capture patterns even in move closures
+                        // (which can still be problematic with explicit &var)
+                        if has_closure {
+                            for ref_pattern in Self::ref_capture_patterns() {
+                                if trimmed.contains(ref_pattern) {
+                                    let location = format!("{}:{}", rel_path, idx + 1);
+                                    
+                                    findings.push(Finding {
+                                        rule_id: self.metadata.id.clone(),
+                                        rule_name: self.metadata.name.clone(),
+                                        severity: Severity::High,
+                                        message: format!(
+                                            "Closure passed to spawn may capture reference (pattern: '{}'). \
+                                            References captured in spawn closures will dangle when the \
+                                            spawning function returns. Use Arc or clone the data instead.",
+                                            ref_pattern
+                                        ),
+                                        function: location,
+                                        function_signature: String::new(),
+                                        evidence: vec![trimmed.to_string()],
+                                        span: None,
+                                    });
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA121: Executor Starvation Rule
+// ============================================================================
+
+/// Detects CPU-bound operations in async functions that may starve the executor.
+/// 
+/// Long-running synchronous operations in async code block the executor thread,
+/// preventing other tasks from making progress. Use spawn_blocking or yield points.
+pub struct ExecutorStarvationRule {
+    metadata: RuleMetadata,
+}
+
+impl ExecutorStarvationRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA121".to_string(),
+                name: "executor-starvation".to_string(),
+                short_description: "CPU-bound work in async context".to_string(),
+                full_description: "Detects CPU-bound operations (tight loops, heavy computation) \
+                    in async functions that may starve the executor. Long-running synchronous \
+                    work blocks the executor thread. Use tokio::task::spawn_blocking or \
+                    add yield points with tokio::task::yield_now().".to_string(),
+                help_uri: Some("https://tokio.rs/tokio/topics/bridging".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Patterns indicating CPU-bound work
+    fn cpu_bound_patterns() -> &'static [(&'static str, &'static str)] {
+        &[
+            // Tight loops without yield
+            ("loop {", "CPU-bound loop without yield_now() or await"),
+            ("while true", "Infinite loop without yield"),
+            ("for _ in 0..", "Large iteration without yield"),
+            // Heavy computation patterns
+            (".par_iter()", "Rayon parallel iteration blocks executor"),
+            // Cryptographic operations
+            ("hash(", "Cryptographic hashing is CPU-bound"),
+            ("encrypt(", "Encryption is CPU-bound"),
+            ("decrypt(", "Decryption is CPU-bound"),
+            // Compression
+            ("compress(", "Compression is CPU-bound"),
+            ("decompress(", "Decompression is CPU-bound"),
+            ("GzEncoder", "Gzip encoding is CPU-bound"),
+            ("GzDecoder", "Gzip decoding is CPU-bound"),
+        ]
+    }
+}
+
+impl Rule for ExecutorStarvationRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            // Quick check: does file have async functions?
+            if !content.contains("async fn") && !content.contains("async move") {
+                continue;
+            }
+
+            let lines: Vec<&str> = content.lines().collect();
+            let mut in_async_fn = false;
+            let mut async_fn_name = String::new();
+            let mut brace_depth = 0;
+            let mut async_start_depth = 0;
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Skip comments
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+
+                // Track async function entry
+                if (trimmed.contains("async fn ") || trimmed.contains("async move")) && !in_async_fn {
+                    in_async_fn = true;
+                    async_start_depth = brace_depth;
+                    // Extract function name
+                    if let Some(fn_pos) = trimmed.find("fn ") {
+                        let after_fn = &trimmed[fn_pos + 3..];
+                        async_fn_name = after_fn.split(|c| c == '(' || c == '<')
+                            .next()
+                            .unwrap_or("")
+                            .trim()
+                            .to_string();
+                    }
+                }
+
+                // Track brace depth
+                brace_depth += trimmed.chars().filter(|&c| c == '{').count() as i32;
+                brace_depth -= trimmed.chars().filter(|&c| c == '}').count() as i32;
+
+                // Check if we've exited the async function
+                if in_async_fn && brace_depth <= async_start_depth && trimmed.contains('}') {
+                    in_async_fn = false;
+                    async_fn_name.clear();
+                }
+
+                // Check for CPU-bound patterns in async context
+                if in_async_fn {
+                    // Skip if there's already a spawn_blocking nearby
+                    if trimmed.contains("spawn_blocking") || trimmed.contains("block_in_place") {
+                        continue;
+                    }
+
+                    for (pattern, description) in Self::cpu_bound_patterns() {
+                        if trimmed.contains(pattern) {
+                            // Check if there's an await or yield nearby (within 5 lines)
+                            let start_idx = idx.saturating_sub(5);
+                            let end_idx = (idx + 5).min(lines.len() - 1);
+                            let has_nearby_yield = lines[start_idx..=end_idx]
+                                .iter()
+                                .any(|l| l.contains(".await") || l.contains("yield_now"));
+
+                            if !has_nearby_yield {
+                                let location = format!("{}:{}", rel_path, idx + 1);
+                                
+                                findings.push(Finding {
+                                    rule_id: self.metadata.id.clone(),
+                                    rule_name: self.metadata.name.clone(),
+                                    severity: self.metadata.default_severity,
+                                    message: format!(
+                                        "Potential executor starvation in async function '{}': {}. \
+                                        Consider using tokio::task::spawn_blocking() for CPU-bound work \
+                                        or adding yield points with tokio::task::yield_now().await",
+                                        async_fn_name, description
+                                    ),
+                                    function: location,
+                                    function_signature: String::new(),
+                                    evidence: vec![trimmed.to_string()],
+                                    span: None,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -2785,4 +3151,6 @@ pub fn register_concurrency_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(AsyncSignalUnsafeInHandlerRule::new()));
     engine.register_rule(Box::new(OnceCellTocTouRule::new()));
     engine.register_rule(Box::new(PanicWhileHoldingLockRule::new()));
+    engine.register_rule(Box::new(ClosureEscapingRefsRule::new()));
+    engine.register_rule(Box::new(ExecutorStarvationRule::new()));
 }

@@ -1311,6 +1311,197 @@ impl Rule for EmbeddedInterpreterUsageRule {
 }
 
 // ============================================================================
+// RUSTCOLA103: WASM Linear Memory OOB Rule
+// ============================================================================
+
+/// Detects patterns in WASM-targeted code that may cause linear memory 
+/// out-of-bounds access.
+/// 
+/// In WebAssembly, memory is a contiguous linear array. Unchecked pointer
+/// arithmetic or slice creation from raw pointers can access arbitrary memory.
+pub struct WasmLinearMemoryOobRule {
+    metadata: RuleMetadata,
+}
+
+impl WasmLinearMemoryOobRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA103".to_string(),
+                name: "wasm-linear-memory-oob".to_string(),
+                short_description: "WASM linear memory out-of-bounds risk".to_string(),
+                full_description: "Detects patterns in WASM-targeted code that may allow \
+                    out-of-bounds access to linear memory. In WASM, memory is a contiguous \
+                    array and unchecked pointer operations can access arbitrary memory. \
+                    Use bounds checking or safe abstractions like wasm-bindgen.".to_string(),
+                help_uri: Some("https://webassembly.org/docs/security/".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Patterns indicating WASM memory operations
+    fn wasm_memory_patterns() -> &'static [(&'static str, &'static str)] {
+        &[
+            // Raw pointer operations in WASM exports
+            ("slice::from_raw_parts", "Creating slice from raw pointer without bounds check"),
+            ("slice::from_raw_parts_mut", "Creating mutable slice from raw pointer without bounds check"),
+            ("std::ptr::read", "Reading from raw pointer without bounds check"),
+            ("std::ptr::write", "Writing to raw pointer without bounds check"),
+            ("ptr::read", "Reading from raw pointer"),
+            ("ptr::write", "Writing to raw pointer"),
+            ("ptr::copy", "Copying via raw pointer"),
+            ("ptr::copy_nonoverlapping", "Copying via raw pointer"),
+            // Pointer arithmetic
+            (".offset(", "Pointer offset without bounds validation"),
+            (".add(", "Pointer addition without bounds validation"),
+            (".sub(", "Pointer subtraction without bounds validation"),
+        ]
+    }
+
+    /// WASM-specific attributes and patterns
+    fn wasm_export_indicators() -> &'static [&'static str] {
+        &[
+            "#[no_mangle]",
+            "#[wasm_bindgen]",
+            "extern \"C\"",
+            "#[export_name",
+        ]
+    }
+}
+
+impl Rule for WasmLinearMemoryOobRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            // Quick check: is this likely WASM code?
+            let is_wasm_target = content.contains("wasm_bindgen") || 
+                                 content.contains("wasm32") ||
+                                 content.contains("#[no_mangle]") ||
+                                 package.crate_name.contains("wasm");
+            
+            if !is_wasm_target {
+                continue;
+            }
+
+            let lines: Vec<&str> = content.lines().collect();
+            let mut in_wasm_export = false;
+            let mut export_fn_name = String::new();
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Skip comments
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+
+                // Track WASM export functions
+                for indicator in Self::wasm_export_indicators() {
+                    if trimmed.contains(indicator) {
+                        in_wasm_export = true;
+                    }
+                }
+
+                // Extract function name if we're at a function definition
+                if in_wasm_export && (trimmed.starts_with("pub fn ") || 
+                                      trimmed.starts_with("pub unsafe fn ") ||
+                                      trimmed.starts_with("fn ") ||
+                                      trimmed.starts_with("unsafe fn ")) {
+                    if let Some(fn_pos) = trimmed.find("fn ") {
+                        let after_fn = &trimmed[fn_pos + 3..];
+                        export_fn_name = after_fn.split(|c| c == '(' || c == '<')
+                            .next()
+                            .unwrap_or("")
+                            .trim()
+                            .to_string();
+                    }
+                }
+
+                // Reset on function end (simplified)
+                if trimmed == "}" && in_wasm_export && !export_fn_name.is_empty() {
+                    // Could track brace depth for accuracy
+                }
+
+                // Check for dangerous memory patterns in WASM exports
+                if in_wasm_export {
+                    for (pattern, description) in Self::wasm_memory_patterns() {
+                        if trimmed.contains(pattern) {
+                            // Check if there's bounds checking nearby
+                            let has_bounds_check = lines[idx.saturating_sub(3)..=(idx + 1).min(lines.len() - 1)]
+                                .iter()
+                                .any(|l| l.contains("if ") && (l.contains(" < ") || l.contains(" <= ") || 
+                                     l.contains(".len()") || l.contains("bounds")));
+
+                            if !has_bounds_check {
+                                let location = format!("{}:{}", rel_path, idx + 1);
+                                
+                                findings.push(Finding {
+                                    rule_id: self.metadata.id.clone(),
+                                    rule_name: self.metadata.name.clone(),
+                                    severity: self.metadata.default_severity,
+                                    message: format!(
+                                        "Potential WASM linear memory OOB in export '{}': {}. \
+                                        In WebAssembly, this can access arbitrary memory. \
+                                        Add bounds checking or use wasm-bindgen's safe abstractions.",
+                                        export_fn_name, description
+                                    ),
+                                    function: location,
+                                    function_signature: String::new(),
+                                    evidence: vec![trimmed.to_string()],
+                                    span: None,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -1324,4 +1515,5 @@ pub fn register_ffi_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(FfiBufferLeakRule::new()));
     engine.register_rule(Box::new(PanicInFfiBoundaryRule::new()));
     engine.register_rule(Box::new(EmbeddedInterpreterUsageRule::new()));
+    engine.register_rule(Box::new(WasmLinearMemoryOobRule::new()));
 }

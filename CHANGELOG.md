@@ -5,6 +5,25 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.4] - 2025-12-14
+
+### Added
+- **Phase 2 Rules - Lifetime/Borrow & Async Correctness**: Implemented 5 new rules.
+  - `RUSTCOLA103` (WasmLinearMemoryOobRule): Detects unchecked pointer operations in WASM exports that may cause out-of-bounds memory access.
+  - `RUSTCOLA118` (ReturnedRefToLocalRule): Detects patterns where functions return references to local variables in unsafe code. UAF risk.
+  - `RUSTCOLA119` (ClosureEscapingRefsRule): Detects non-move closures passed to spawn functions that may capture escaping references.
+  - `RUSTCOLA120` (SelfReferentialStructRule): Detects self-referential struct creation patterns without proper Pin usage. UAF risk.
+  - `RUSTCOLA121` (ExecutorStarvationRule): Detects CPU-bound operations in async functions that may starve the executor.
+
+### Changed
+- **Rule Count**: 107 unique RUSTCOLA rules + 9 ADV advanced rules = 116 total.
+- **memory.rs**: Now contains 21 rules (was 19).
+- **concurrency.rs**: Now contains 18 rules (was 16).
+- **ffi.rs**: Now contains 9 rules (was 8).
+
+### Technical
+- All 146 tests pass.
+
 ## [0.8.3] - 2025-12-14
 
 ### Added

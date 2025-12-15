@@ -1,7 +1,7 @@
 # Rust-cola Production Release Plan
 
 **Date:** December 14, 2025  
-**Current Version:** 0.8.2  
+**Current Version:** 0.8.4  
 **Target **Progress (v0.7.1):** ✅ **Major milestone achieved**
 - ✅ Created `rules/utils.rs` with shared utilities (`strip_string_literals`, `StringLiteralState`)
 - ✅ Migrated `UnsafeSendSyncBoundsRule` (RUSTCOLA015) → `concurrency.rs`
@@ -52,8 +52,20 @@
 - ✅ RUSTCOLA102 (ProcMacroSideEffectsRule) - **NEW** - detects suspicious patterns in proc-macros
 - ✅ RUSTCOLA107 (EmbeddedInterpreterUsageRule) - **NEW** - detects embedded interpreters (pyo3, rlua, v8)
 - ✅ RUSTCOLA116 (PanicInFfiBoundaryRule) - **NEW** - detects panic-prone code in extern "C" functions
+
+**Progress (v0.8.3):** ✅ **Phase 2 - Interior Mutability & Variance rules**
+- ✅ RUSTCOLA100 (OnceCellTocTouRule) - **NEW** - detects TOCTOU race with OnceCell/OnceLock
+- ✅ RUSTCOLA101 (VarianceTransmuteUnsoundRule) - **NEW** - detects transmutes violating variance rules
+- ✅ RUSTCOLA117 (PanicWhileHoldingLockRule) - **NEW** - detects panic while holding MutexGuard/RwLockGuard
+
+**Progress (v0.8.4):** ✅ **Phase 2 - Lifetime/Borrow & Async Correctness rules**
+- ✅ RUSTCOLA103 (WasmLinearMemoryOobRule) - **NEW** - detects unchecked WASM memory operations
+- ✅ RUSTCOLA118 (ReturnedRefToLocalRule) - **NEW** - detects returned refs to local variables
+- ✅ RUSTCOLA119 (ClosureEscapingRefsRule) - **NEW** - detects escaping refs in spawn closures
+- ✅ RUSTCOLA120 (SelfReferentialStructRule) - **NEW** - detects self-referential struct patterns
+- ✅ RUSTCOLA121 (ExecutorStarvationRule) - **NEW** - detects CPU-bound work in async context
 - 📊 **Tests:** 146 passed
-- 📊 **Total Rules:** 113 (11 new rules from Phase 2)
+- 📊 **Total Rules:** 116 (107 RUSTCOLA + 9 ADV advanced rules)
 
 This document outlines the roadmap to achieve a production-ready release of Rust-cola. Completing these phases will yield a **Release Candidate (RC)** suitable for general availability.
 
@@ -70,11 +82,11 @@ Rust-cola v0.7.2 has reached significant maturity with 102 security rules and a 
 
 ---
 
-## Current State (v0.8.2)
+## Current State (v0.8.4)
 
 | Metric | Value |
 |--------|-------|
-| **Total Rules** | 113 |
+| **Total Rules** | 116 (107 RUSTCOLA + 9 ADV) |
 | **Test Status** | 146 passed, 0 failed ✅ |
 | **Core Codebase** | ~5.5K LOC (mir-extractor/lib.rs) |
 | **Rule Modules** | 10 categories + utils |
@@ -89,14 +101,14 @@ Rust-cola v0.7.2 has reached significant maturity with 102 security rules and a 
 
 ### Rule Distribution
 
-**Organized Modules (87 rules):**
+**Organized Modules (107 RUSTCOLA rules):**
 
 | Module | Rules | Coverage |
 |--------|-------|----------|
 | `crypto.rs` | 8 | MD5, SHA1, hardcoded keys, timing, weak ciphers, PRNG |
-| `memory.rs` | 18 | Transmute, uninit, set_len, raw pointers, Box::into_raw, slice safety |
-| `concurrency.rs` | 15 | Mutex guards, async blocking, Send/Sync, lock guards, panic safety, select!, channel cloning, Pin, oneshot, signal handlers |
-| `ffi.rs` | 8 | Allocator mismatch, CString, packed fields, repr(C), buffer leaks, FFI panic, interpreters |
+| `memory.rs` | 21 | Transmute, uninit, set_len, raw pointers, self-refs, returned refs to locals |
+| `concurrency.rs` | 18 | Mutex guards, async blocking, Send/Sync, executor starvation, closure escapes |
+| `ffi.rs` | 9 | Allocator mismatch, CString, packed fields, FFI panic, WASM linear memory |
 | `input.rs` | 11 | Env vars, stdin, unicode, deserialization, division, serde, timestamp overflow |
 | `resource.rs` | 10 | File permissions, open options, iterators, paths, allocations |
 | `code_quality.rs` | 8 | Dead stores, assertions, crate-wide allow, RefCell, commented code |
@@ -193,7 +205,7 @@ All artifacts generated on every run:
 | RUSTCOLA094 | MutexGuard across `.await` | Deadlock | ✅ Complete |
 | RUSTCOLA111 | Missing Sync bound on Clone | Data races | ✅ Complete (v0.8.0) |
 | RUSTCOLA115 | Non-cancellation-safe select | Resource leaks | ✅ Complete (v0.8.0) |
-| NEW | Executor starvation detection | DoS | ❌ To implement |
+| RUSTCOLA121 | Executor starvation detection | DoS | ✅ Complete (v0.8.4) |
 | NEW | Async drop correctness | Resource leaks | ❌ To implement |
 | NEW | Spawned task panic propagation | Silent failures | ❌ To implement |
 
@@ -208,12 +220,12 @@ All artifacts generated on every run:
 
 | Rule ID | Name | Risk | Status |
 |---------|------|------|--------|
-| NEW | Returned reference to local | UAF | ❌ To implement |
-| NEW | Closure capturing escaping refs | UAF | ❌ To implement |
+| RUSTCOLA118 | Returned reference to local | UAF | ✅ Complete (v0.8.4) |
+| RUSTCOLA119 | Closure capturing escaping refs | UAF | ✅ Complete (v0.8.4) |
 | RUSTCOLA096 | `unsafe { &*ptr }` outliving pointee | UAF | ⚠️ Partial |
 | RUSTCOLA112 | Pin contract violation (unsplit) | UAF | ✅ Complete (v0.8.0) |
 | RUSTCOLA113 | Oneshot race after close | Data race | ✅ Complete (v0.8.0) |
-| NEW | Self-referential struct creation | UAF | ❌ To implement |
+| RUSTCOLA120 | Self-referential struct creation | UAF | ✅ Complete (v0.8.4) |
 
 **Implementation Notes:**
 - Leverage rustc's lifetime information where available
@@ -225,9 +237,9 @@ All artifacts generated on every run:
 
 | Rule ID | Name | Risk | Status |
 |---------|------|------|--------|
-| RUSTCOLA109 | Async-signal-unsafe in handler | Deadlock/corruption | ✅ Complete (v0.8.0) |
-| NEW | Panic in FFI boundary | UB | ❌ To implement |
-| NEW | Panic while holding lock | Poison/Deadlock | ❌ To implement |
+| RUSTCOLA109 | Async-signal-unsafe in handler | Deadlock/corruption | ✅ Complete (v0.8.1) |
+| RUSTCOLA116 | Panic in FFI boundary | UB | ✅ Complete (v0.8.2) |
+| RUSTCOLA117 | Panic while holding lock | Poison/Deadlock | ✅ Complete (v0.8.3) |
 | NEW | `unwrap()`/`expect()` in hot paths | Crash | ❌ To implement |
 | NEW | Panic in Drop impl | Double panic | ❌ To implement |
 
@@ -277,7 +289,7 @@ As Rust becomes the primary language for WebAssembly, new vulnerability classes 
 
 | Rule ID | Name | Risk | Status |
 |---------|------|------|--------|
-| RUSTCOLA103 | Linear memory out-of-bounds | Memory corruption | ❌ To implement |
+| RUSTCOLA103 | Linear memory out-of-bounds | Memory corruption | ✅ Complete (v0.8.4) |
 | NEW | Host function trust assumptions | Data injection | ❌ To implement |
 | NEW | Component model capability leaks | Privilege escalation | ❌ To implement |
 

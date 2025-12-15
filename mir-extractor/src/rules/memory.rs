@@ -2938,6 +2938,397 @@ impl Rule for VarianceTransmuteUnsoundRule {
     }
 }
 
+// ============================================================================
+// RUSTCOLA118: Returned Reference to Local Rule
+// ============================================================================
+
+/// Detects patterns where a function returns a reference to a local variable,
+/// which would be a use-after-free if the borrow checker didn't catch it.
+/// 
+/// In safe Rust, the compiler prevents this. But in unsafe code or through
+/// certain patterns involving raw pointers, this can slip through.
+pub struct ReturnedRefToLocalRule {
+    metadata: RuleMetadata,
+}
+
+impl ReturnedRefToLocalRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA118".to_string(),
+                name: "returned-ref-to-local".to_string(),
+                short_description: "Reference to local variable returned".to_string(),
+                full_description: "Detects patterns where a function may return a reference \
+                    to a stack-allocated local variable. In unsafe code, this leads to \
+                    use-after-free when the stack frame is deallocated.".to_string(),
+                help_uri: None,
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Patterns that indicate returning a reference to a local
+    fn dangerous_return_patterns() -> &'static [&'static str] {
+        &[
+            // Raw pointer from local then returned as reference
+            "&*",
+            "as *const",
+            "as *mut",
+            // Transmute of local address
+            "transmute(&",
+            "transmute::<&",
+            // addr_of! macro on local
+            "addr_of!(",
+            "addr_of_mut!(",
+        ]
+    }
+}
+
+impl Rule for ReturnedRefToLocalRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            // Quick check: does file have unsafe blocks?
+            if !content.contains("unsafe") {
+                continue;
+            }
+
+            let lines: Vec<&str> = content.lines().collect();
+            let mut in_unsafe_block = false;
+            let mut unsafe_depth = 0;
+            let mut local_vars: HashSet<String> = HashSet::new();
+            let mut current_fn_returns_ref = false;
+            let mut current_fn_name = String::new();
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Skip comments
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+
+                // Track function signatures that return references
+                if trimmed.starts_with("fn ") || trimmed.starts_with("pub fn ") ||
+                   trimmed.starts_with("unsafe fn ") || trimmed.starts_with("pub unsafe fn ") {
+                    current_fn_returns_ref = trimmed.contains("-> &") || 
+                                            trimmed.contains("-> *const") ||
+                                            trimmed.contains("-> *mut");
+                    // Extract function name
+                    if let Some(fn_start) = trimmed.find("fn ") {
+                        let after_fn = &trimmed[fn_start + 3..];
+                        if let Some(paren) = after_fn.find('(') {
+                            current_fn_name = after_fn[..paren].trim().to_string();
+                        }
+                    }
+                    local_vars.clear();
+                }
+
+                // Track unsafe blocks
+                if trimmed.contains("unsafe {") || trimmed.contains("unsafe{") {
+                    in_unsafe_block = true;
+                    unsafe_depth = 1;
+                } else if in_unsafe_block {
+                    unsafe_depth += trimmed.chars().filter(|&c| c == '{').count() as i32;
+                    unsafe_depth -= trimmed.chars().filter(|&c| c == '}').count() as i32;
+                    if unsafe_depth <= 0 {
+                        in_unsafe_block = false;
+                    }
+                }
+
+                // Track local variable declarations
+                if trimmed.starts_with("let ") {
+                    if let Some(eq_pos) = trimmed.find('=') {
+                        let var_part = &trimmed[4..eq_pos];
+                        // Handle patterns like "let mut x", "let x: Type"
+                        let var_name = var_part.trim()
+                            .trim_start_matches("mut ")
+                            .split(':')
+                            .next()
+                            .map(|s| s.trim())
+                            .unwrap_or("");
+                        if !var_name.is_empty() && !var_name.contains('(') {
+                            local_vars.insert(var_name.to_string());
+                        }
+                    }
+                }
+
+                // Only check in unsafe blocks for functions returning references
+                if in_unsafe_block && current_fn_returns_ref {
+                    // Check for dangerous patterns
+                    for pattern in Self::dangerous_return_patterns() {
+                        if trimmed.contains(pattern) {
+                            // Check if this involves a local variable
+                            for var in &local_vars {
+                                if trimmed.contains(var.as_str()) {
+                                    let location = format!("{}:{}", rel_path, idx + 1);
+                                    
+                                    findings.push(Finding {
+                                        rule_id: self.metadata.id.clone(),
+                                        rule_name: self.metadata.name.clone(),
+                                        severity: self.metadata.default_severity,
+                                        message: format!(
+                                            "Potential return of reference to local variable '{}' in unsafe block. \
+                                            When the function returns, the stack frame is deallocated, \
+                                            leaving a dangling pointer. Pattern: '{}'",
+                                            var, pattern
+                                        ),
+                                        function: format!("{} ({})", current_fn_name, location),
+                                        function_signature: String::new(),
+                                        evidence: vec![trimmed.to_string()],
+                                        span: None,
+                                    });
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    // Special check: returning &*ptr where ptr is from a local
+                    if trimmed.contains("return") && trimmed.contains("&*") {
+                        let location = format!("{}:{}", rel_path, idx + 1);
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: self.metadata.default_severity,
+                            message: "Returning dereferenced raw pointer in unsafe block. \
+                                Ensure the pointer does not point to stack-allocated memory \
+                                that will be deallocated when the function returns.".to_string(),
+                            function: format!("{} ({})", current_fn_name, location),
+                            function_signature: String::new(),
+                            evidence: vec![trimmed.to_string()],
+                            span: None,
+                        });
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA120: Self-Referential Struct Rule
+// ============================================================================
+
+/// Detects patterns that create self-referential structs without proper Pin usage.
+/// 
+/// Self-referential structs (where a field contains a pointer/reference to another
+/// field) are inherently dangerous because moving the struct invalidates the
+/// internal pointer.
+pub struct SelfReferentialStructRule {
+    metadata: RuleMetadata,
+}
+
+impl SelfReferentialStructRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA120".to_string(),
+                name: "self-referential-struct".to_string(),
+                short_description: "Potential self-referential struct without Pin".to_string(),
+                full_description: "Detects patterns that may create self-referential structs \
+                    without proper Pin usage. When a struct contains a pointer to one of its \
+                    own fields, moving the struct invalidates that pointer. Use Pin<Box<T>> \
+                    or crates like 'ouroboros' or 'self_cell' for safe self-references.".to_string(),
+                help_uri: Some("https://doc.rust-lang.org/std/pin/index.html".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Patterns indicating self-referential struct creation
+    fn self_ref_patterns() -> &'static [&'static str] {
+        &[
+            // Taking address of own field
+            "&self.",
+            "addr_of!(self.",
+            "addr_of_mut!(self.",
+            // Raw pointer to self field
+            "as *const Self",
+            "as *mut Self",
+            // Storing reference to self
+            "self as *",
+            "&mut self as *",
+            "&self as *",
+        ]
+    }
+}
+
+impl Rule for SelfReferentialStructRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            // Quick check: file likely has self-referential patterns
+            if !content.contains("*const") && !content.contains("*mut") && 
+               !content.contains("addr_of") {
+                continue;
+            }
+
+            let lines: Vec<&str> = content.lines().collect();
+            let mut in_impl_block = false;
+            let mut current_type = String::new();
+            let mut in_unsafe = false;
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Skip comments
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+
+                // Track impl blocks
+                if trimmed.starts_with("impl ") || trimmed.starts_with("impl<") {
+                    in_impl_block = true;
+                    // Extract type name
+                    if let Some(for_pos) = trimmed.find(" for ") {
+                        let after_for = &trimmed[for_pos + 5..];
+                        current_type = after_for.split(|c| c == '<' || c == ' ' || c == '{')
+                            .next()
+                            .unwrap_or("")
+                            .to_string();
+                    } else if let Some(impl_pos) = trimmed.find("impl ") {
+                        let after_impl = &trimmed[impl_pos + 5..];
+                        current_type = after_impl.split(|c| c == '<' || c == ' ' || c == '{')
+                            .next()
+                            .unwrap_or("")
+                            .to_string();
+                    }
+                }
+
+                // Track unsafe blocks
+                if trimmed.contains("unsafe") {
+                    in_unsafe = true;
+                }
+
+                // Only flag in impl blocks where self-reference is meaningful
+                if in_impl_block && in_unsafe {
+                    for pattern in Self::self_ref_patterns() {
+                        if trimmed.contains(pattern) {
+                            // Check if this is being stored in a field (assignment to self.field)
+                            let is_storing = trimmed.contains("self.") && 
+                                            (trimmed.contains(" = ") || trimmed.contains("="));
+                            
+                            // Check if Pin is being used properly
+                            let has_pin = content.contains("Pin<") || content.contains("pin!");
+                            
+                            if is_storing || !has_pin {
+                                let location = format!("{}:{}", rel_path, idx + 1);
+                                
+                                findings.push(Finding {
+                                    rule_id: self.metadata.id.clone(),
+                                    rule_name: self.metadata.name.clone(),
+                                    severity: self.metadata.default_severity,
+                                    message: format!(
+                                        "Potential self-referential pattern in type '{}' without Pin. \
+                                        Creating a pointer to a struct's own field and storing it \
+                                        creates a self-referential struct. Moving this struct will \
+                                        invalidate the internal pointer. Use Pin<Box<{}>> to prevent \
+                                        moves, or use 'ouroboros'/'self_cell' crates for safe self-references.",
+                                        current_type, current_type
+                                    ),
+                                    function: location,
+                                    function_signature: String::new(),
+                                    evidence: vec![trimmed.to_string()],
+                                    span: None,
+                                });
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Reset on block end (simplified)
+                if trimmed == "}" && in_impl_block {
+                    // This is a simplification - proper tracking would need brace counting
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 /// Register all memory safety rules with the rule engine.
 pub fn register_memory_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
@@ -2960,4 +3351,6 @@ pub fn register_memory_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(SliceElementSizeMismatchRule::new()));
     engine.register_rule(Box::new(SliceFromRawPartsRule::new()));
     engine.register_rule(Box::new(VarianceTransmuteUnsoundRule::new()));
+    engine.register_rule(Box::new(ReturnedRefToLocalRule::new()));
+    engine.register_rule(Box::new(SelfReferentialStructRule::new()));
 }

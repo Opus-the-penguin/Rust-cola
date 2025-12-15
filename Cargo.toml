@@ -71,6 +71,7 @@ members = [
     "examples/raw-pointer-escape",
     "examples/build-script-network",
     "examples/non-cancellation-safe-select",
+    "examples/missing-sync-bound-clone",
 ]
 exclude = [
     # ci-test-crate must be standalone for CI self-analysis to avoid analyzing entire workspace

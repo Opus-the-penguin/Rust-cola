@@ -8,12 +8,18 @@
 //! - Unsafe deserialization (RUSTCOLA089, RUSTCOLA091)
 //! - Unbounded reads (RUSTCOLA090)
 //! - Division by untrusted input (RUSTCOLA077)
+//! - Unchecked timestamp multiplication (RUSTCOLA106)
 
 #![allow(dead_code)]
 
 use std::collections::HashSet;
+use std::ffi::OsStr;
+use std::fs;
+use std::path::Path;
+use walkdir::WalkDir;
 
 use crate::{interprocedural, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
+use super::utils::filter_entry;
 
 // Shared input source patterns used by multiple rules
 const INPUT_SOURCE_PATTERNS: &[&str] = &[
@@ -1537,6 +1543,165 @@ impl Rule for SerdeLengthMismatchRule {
 }
 
 // ============================================================================
+// RUSTCOLA106: Unchecked Timestamp Multiplication Rule
+// ============================================================================
+
+/// Detects unchecked multiplication when converting time units (seconds to nanos, etc.).
+/// 
+/// Time unit conversions often involve multiplying by large constants (1_000_000_000 for
+/// seconds to nanoseconds). Without overflow checks, this can silently wrap around,
+/// causing incorrect timestamps.
+pub struct UncheckedTimestampMultiplicationRule {
+    metadata: RuleMetadata,
+}
+
+impl UncheckedTimestampMultiplicationRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA106".to_string(),
+                name: "unchecked-timestamp-multiplication".to_string(),
+                short_description: "Unchecked multiplication in timestamp conversion".to_string(),
+                full_description: "Detects unchecked multiplication when converting time units. \
+                    Conversions like seconds to nanoseconds (multiply by 1_000_000_000) can \
+                    overflow for large values. Use checked_mul() or saturating_mul() to handle \
+                    overflow correctly. Pattern found in InfluxDB research.".to_string(),
+                help_uri: None,
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Large multipliers that indicate time unit conversion
+    fn time_multipliers() -> &'static [(&'static str, &'static str)] {
+        &[
+            ("1_000_000_000", "seconds to nanoseconds"),
+            ("1000000000", "seconds to nanoseconds"),
+            ("1_000_000", "seconds to microseconds or millis to nanos"),
+            ("1000000", "seconds to microseconds or millis to nanos"),
+            ("1_000", "seconds to milliseconds or millis to micros"),
+            ("86_400", "days to seconds"),
+            ("86400", "days to seconds"),
+            ("3_600", "hours to seconds"),
+            ("3600", "hours to seconds"),
+        ]
+    }
+}
+
+impl Rule for UncheckedTimestampMultiplicationRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Skip comments
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+
+                // Skip if already using checked/saturating operations
+                if trimmed.contains("checked_mul") || trimmed.contains("saturating_mul")
+                    || trimmed.contains("overflowing_mul") || trimmed.contains("wrapping_mul") {
+                    continue;
+                }
+
+                // Check for unchecked multiplication with time constants
+                for (multiplier, conversion_type) in Self::time_multipliers() {
+                    // Look for patterns like: value * 1_000_000_000 or 1_000_000_000 * value
+                    if trimmed.contains(multiplier) && trimmed.contains('*') {
+                        // Additional check: is this likely a timestamp context?
+                        let is_time_context = trimmed.contains("sec")
+                            || trimmed.contains("time")
+                            || trimmed.contains("nano")
+                            || trimmed.contains("micro")
+                            || trimmed.contains("milli")
+                            || trimmed.contains("duration")
+                            || trimmed.contains("timestamp")
+                            || trimmed.contains("epoch");
+
+                        // Also flag if function name suggests time handling
+                        let fn_context = lines[..idx].iter().rev().take(15)
+                            .any(|l| l.contains("fn ") && (
+                                l.contains("time") || l.contains("sec") || 
+                                l.contains("nano") || l.contains("duration") ||
+                                l.contains("timestamp") || l.contains("to_")
+                            ));
+
+                        if is_time_context || fn_context {
+                            let location = format!("{}:{}", rel_path, idx + 1);
+
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message: format!(
+                                    "Unchecked multiplication by {} ({}). \
+                                    This can overflow for large values. Use checked_mul() \
+                                    or saturating_mul() for safe conversion.",
+                                    multiplier, conversion_type
+                                ),
+                                function: location,
+                                function_signature: String::new(),
+                                evidence: vec![trimmed.to_string()],
+                                span: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -1552,4 +1717,5 @@ pub fn register_input_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(UnboundedReadRule::new()));
     engine.register_rule(Box::new(InsecureJsonTomlDeserializationRule::new()));
     engine.register_rule(Box::new(SerdeLengthMismatchRule::new()));
+    engine.register_rule(Box::new(UncheckedTimestampMultiplicationRule::new()));
 }

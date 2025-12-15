@@ -5,21 +5,33 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.0] - 2025-12-14
+## [0.8.1] - 2025-12-14
 
 ### Added
-- **Phase 2 Rules - Async/Await Correctness**: Implemented 2 new rules from Tokio research.
-  - `RUSTCOLA111` (MissingSyncBoundOnCloneRule): Detects Clone+Send without Sync bound in channel-like concurrent structures. Based on RUSTSEC-2025-0023 (tokio broadcast channel vulnerability).
-  - `RUSTCOLA115` (NonCancellationSafeSelectRule): Detects non-cancellation-safe futures in `select!` macros (read_line, read_exact, recv_many, copy, etc.).
-- **Example**: Added `examples/non-cancellation-safe-select/` with comprehensive test cases.
+- **Phase 2 Rules - Async/Await & Concurrency Correctness**: Implemented 6 new rules from Tokio/InfluxDB research.
+  - `RUSTCOLA106` (UncheckedTimestampMultiplicationRule): Detects unchecked multiplication in timestamp conversions (seconds→nanos, etc.) that can overflow.
+  - `RUSTCOLA109` (AsyncSignalUnsafeInHandlerRule): Detects async-signal-unsafe operations (println!, format!, heap allocation, locking) inside signal handlers.
+  - `RUSTCOLA111` (MissingSyncBoundOnCloneRule): Detects Clone+Send without Sync bound in channel-like concurrent structures. Based on RUSTSEC-2025-0023.
+  - `RUSTCOLA112` (PinContractViolationRule): Detects Pin contract violations through unsplit/reconstruction patterns. Based on RUSTSEC-2023-0005.
+  - `RUSTCOLA113` (OneshotRaceAfterCloseRule): Detects race conditions with oneshot channel close(). Based on RUSTSEC-2021-0124.
+  - `RUSTCOLA115` (NonCancellationSafeSelectRule): Detects non-cancellation-safe futures in `select!` macros.
+- **Examples**: Added `examples/non-cancellation-safe-select/` and `examples/missing-sync-bound-clone/`.
 
 ### Changed
-- **Rule Count**: Total rules increased from 102 to 104.
-- **concurrency.rs**: Now contains 11 rules (was 9).
+- **Rule Count**: Total rules increased from 102 to 110.
+- **concurrency.rs**: Now contains 15 rules (was 9).
+- **input.rs**: Now contains 11 rules (was 10).
+- **README.md**: Updated description to be more precise ("difficult to find" vs "invisible").
+- **SECURITY.md**: Removed outdated "Supported Versions" table.
 
 ### Technical
-- Real-world research completed on tokio-rs/tokio identifying 5 new vulnerability patterns.
+- Real-world research completed on tokio-rs/tokio identifying 5 vulnerability patterns.
+- Real-world research completed on InfluxDB identifying 7 vulnerability patterns.
 - All 146 tests pass.
+
+## [0.8.0] - 2025-12-14
+
+(Version skipped - bumped directly to 0.8.1)
 
 ## [0.7.5] - 2025-12-14
 

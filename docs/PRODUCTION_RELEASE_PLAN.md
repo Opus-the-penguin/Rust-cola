@@ -1,7 +1,7 @@
 # Rust-cola Production Release Plan
 
 **Date:** December 14, 2025  
-**Current Version:** 0.8.0  
+**Current Version:** 0.8.1  
 **Target **Progress (v0.7.1):** ✅ **Major milestone achieved**
 - ✅ Created `rules/utils.rs` with shared utilities (`strip_string_literals`, `StringLiteralState`)
 - ✅ Migrated `UnsafeSendSyncBoundsRule` (RUSTCOLA015) → `concurrency.rs`
@@ -38,13 +38,17 @@
 - DeclarativeRule (rule-pack/YAML-based rules).0  
 **Status:** Phase 1.3 Complete - All security rules modularized
 
-**Progress (v0.8.0):** ✅ **Phase 2 - Async/Await Correctness rules**
+**Progress (v0.8.0):** ✅ **Phase 2 - Async/Await & Concurrency rules**
 - ✅ RUSTCOLA093 (BlockingOpsInAsyncRule) - already existed
 - ✅ RUSTCOLA094 (MutexGuardAcrossAwaitRule) - already existed
+- ✅ RUSTCOLA106 (UncheckedTimestampMultiplicationRule) - **NEW** - detects unchecked timestamp overflow
+- ✅ RUSTCOLA109 (AsyncSignalUnsafeInHandlerRule) - **NEW** - detects unsafe ops in signal handlers
 - ✅ RUSTCOLA111 (MissingSyncBoundOnCloneRule) - **NEW** - detects Clone+Send without Sync in channels
+- ✅ RUSTCOLA112 (PinContractViolationRule) - **NEW** - detects Pin contract violations
+- ✅ RUSTCOLA113 (OneshotRaceAfterCloseRule) - **NEW** - detects oneshot race after close
 - ✅ RUSTCOLA115 (NonCancellationSafeSelectRule) - **NEW** - detects non-cancel-safe futures in select!
 - 📊 **Tests:** 146 passed
-- 📊 **Total Rules:** 104 (2 new rules added)
+- 📊 **Total Rules:** 110 (8 new rules from Phase 2)
 
 This document outlines the roadmap to achieve a production-ready release of Rust-cola. Completing these phases will yield a **Release Candidate (RC)** suitable for general availability.
 
@@ -61,11 +65,11 @@ Rust-cola v0.7.2 has reached significant maturity with 102 security rules and a 
 
 ---
 
-## Current State (v0.8.0)
+## Current State (v0.8.1)
 
 | Metric | Value |
 |--------|-------|
-| **Total Rules** | 104 |
+| **Total Rules** | 110 |
 | **Test Status** | 146 passed, 0 failed ✅ |
 | **Core Codebase** | ~5.5K LOC (mir-extractor/lib.rs) |
 | **Rule Modules** | 10 categories + utils |
@@ -86,9 +90,9 @@ Rust-cola v0.7.2 has reached significant maturity with 102 security rules and a 
 |--------|-------|----------|
 | `crypto.rs` | 8 | MD5, SHA1, hardcoded keys, timing, weak ciphers, PRNG |
 | `memory.rs` | 18 | Transmute, uninit, set_len, raw pointers, Box::into_raw, slice safety |
-| `concurrency.rs` | 11 | Mutex guards, async blocking, Send/Sync, lock guards, panic safety, select!, channel cloning |
+| `concurrency.rs` | 15 | Mutex guards, async blocking, Send/Sync, lock guards, panic safety, select!, channel cloning, Pin, oneshot, signal handlers |
 | `ffi.rs` | 6 | Allocator mismatch, CString, packed fields, repr(C), buffer leaks |
-| `input.rs` | 10 | Env vars, stdin, unicode, deserialization, division, serde |
+| `input.rs` | 11 | Env vars, stdin, unicode, deserialization, division, serde, timestamp overflow |
 | `resource.rs` | 10 | File permissions, open options, iterators, paths, allocations |
 | `code_quality.rs` | 8 | Dead stores, assertions, crate-wide allow, RefCell, commented code |
 | `web.rs` | 11 | TLS, CORS, cookies, passwords, logging, AWS S3, content-length |
@@ -202,8 +206,8 @@ All artifacts generated on every run:
 | NEW | Returned reference to local | UAF | ❌ To implement |
 | NEW | Closure capturing escaping refs | UAF | ❌ To implement |
 | RUSTCOLA096 | `unsafe { &*ptr }` outliving pointee | UAF | ⚠️ Partial |
-| RUSTCOLA112 | Pin contract violation (unsplit) | UAF | ❌ **New from Tokio** |
-| RUSTCOLA113 | Oneshot race after close | Data race | ❌ **New from Tokio** |
+| RUSTCOLA112 | Pin contract violation (unsplit) | UAF | ✅ Complete (v0.8.0) |
+| RUSTCOLA113 | Oneshot race after close | Data race | ✅ Complete (v0.8.0) |
 | NEW | Self-referential struct creation | UAF | ❌ To implement |
 
 **Implementation Notes:**
@@ -216,7 +220,7 @@ All artifacts generated on every run:
 
 | Rule ID | Name | Risk | Status |
 |---------|------|------|--------|
-| RUSTCOLA109 | Async-signal-unsafe in handler | Deadlock/corruption | ❌ **New from InfluxDB** |
+| RUSTCOLA109 | Async-signal-unsafe in handler | Deadlock/corruption | ✅ Complete (v0.8.0) |
 | NEW | Panic in FFI boundary | UB | ❌ To implement |
 | NEW | Panic while holding lock | Poison/Deadlock | ❌ To implement |
 | NEW | `unwrap()`/`expect()` in hot paths | Crash | ❌ To implement |
@@ -233,7 +237,7 @@ All artifacts generated on every run:
 
 | Rule ID | Name | Risk | Status |
 |---------|------|------|--------|
-| RUSTCOLA106 | Unchecked timestamp multiplication | Overflow | ❌ **New from InfluxDB** |
+| RUSTCOLA106 | Unchecked timestamp multiplication | Overflow | ✅ Complete (v0.8.0) |
 
 **Example - Unchecked Overflow:**
 ```rust

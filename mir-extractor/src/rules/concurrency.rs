@@ -2015,6 +2015,442 @@ impl Rule for MissingSyncBoundOnCloneRule {
 }
 
 // ============================================================================
+// RUSTCOLA112: Pin Contract Violation Rule
+// ============================================================================
+
+/// Detects potential Pin contract violations through unsplit/reconstruction patterns.
+/// 
+/// Based on RUSTSEC-2023-0005 where ReadHalf::unsplit could violate Pin contract
+/// for !Unpin types. When split IO types are unsplit, pinned data may be moved
+/// incorrectly, leading to use-after-free.
+pub struct PinContractViolationRule {
+    metadata: RuleMetadata,
+}
+
+impl PinContractViolationRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA112".to_string(),
+                name: "pin-contract-violation".to_string(),
+                short_description: "Potential Pin contract violation through unsplit".to_string(),
+                full_description: "Detects potential Pin contract violations through unsplit or \
+                    reconstruction patterns. When split IO types are recombined using unsplit(), \
+                    pinned data for !Unpin types may be moved incorrectly. Also detects unsafe \
+                    Pin::new_unchecked followed by potential moves. Based on RUSTSEC-2023-0005.".to_string(),
+                help_uri: Some("https://rustsec.org/advisories/RUSTSEC-2023-0005.html".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for PinContractViolationRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Skip comments
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+
+                // Pattern 1: unsplit() calls on IO types
+                if trimmed.contains(".unsplit(") {
+                    let location = format!("{}:{}", rel_path, idx + 1);
+
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: self.metadata.default_severity,
+                        message: "Use of unsplit() may violate Pin contract for !Unpin types. \
+                            When recombining split IO halves, pinned data may be moved incorrectly. \
+                            Ensure the underlying type is Unpin or use appropriate synchronization.".to_string(),
+                        function: location,
+                        function_signature: String::new(),
+                        evidence: vec![trimmed.to_string()],
+                        span: None,
+                    });
+                }
+
+                // Pattern 2: Pin::new_unchecked in unsafe blocks
+                if trimmed.contains("Pin::new_unchecked") {
+                    let location = format!("{}:{}", rel_path, idx + 1);
+
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: Severity::Medium,
+                        message: "Use of Pin::new_unchecked requires ensuring the pinned value \
+                            is never moved. Verify the value is not moved after pinning.".to_string(),
+                        function: location,
+                        function_signature: String::new(),
+                        evidence: vec![trimmed.to_string()],
+                        span: None,
+                    });
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA113: Oneshot Race After Close Rule
+// ============================================================================
+
+/// Detects potential race conditions when using oneshot channels after close().
+/// 
+/// Based on RUSTSEC-2021-0124 where concurrent close(), send(), and recv()
+/// operations on a oneshot channel could cause data races.
+pub struct OneshotRaceAfterCloseRule {
+    metadata: RuleMetadata,
+}
+
+impl OneshotRaceAfterCloseRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA113".to_string(),
+                name: "oneshot-race-after-close".to_string(),
+                short_description: "Potential race condition with oneshot channel close()".to_string(),
+                full_description: "Detects patterns where oneshot::Receiver::close() may be called \
+                    concurrently with send() or recv()/await operations. This pattern can cause \
+                    data races as the sender and receiver may concurrently access shared memory. \
+                    Based on RUSTSEC-2021-0124.".to_string(),
+                help_uri: Some("https://rustsec.org/advisories/RUSTSEC-2021-0124.html".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for OneshotRaceAfterCloseRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            // Check if file uses oneshot channels
+            if !content.contains("oneshot::") && !content.contains("oneshot::{") {
+                continue;
+            }
+
+            let lines: Vec<&str> = content.lines().collect();
+            let mut has_close_call = false;
+            let mut close_line = 0;
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Skip comments
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+
+                // Track .close() calls on receivers
+                if trimmed.contains(".close()") {
+                    has_close_call = true;
+                    close_line = idx + 1;
+                }
+
+                // If we've seen a close() and see send/recv in spawn context, flag it
+                if has_close_call {
+                    let in_spawn_context = lines[..idx].iter().rev().take(10)
+                        .any(|l| l.contains("spawn") || l.contains("thread::"));
+                    
+                    if in_spawn_context {
+                        if trimmed.contains(".send(") || trimmed.contains(".try_recv(") {
+                            let location = format!("{}:{}", rel_path, idx + 1);
+
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message: format!(
+                                    "Oneshot channel operation after close() at line {}. \
+                                    Concurrent close(), send(), and recv() operations can cause data races. \
+                                    Ensure proper synchronization between channel halves.",
+                                    close_line
+                                ),
+                                function: location,
+                                function_signature: String::new(),
+                                evidence: vec![trimmed.to_string()],
+                                span: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA109: Async-Signal-Unsafe in Handler Rule
+// ============================================================================
+
+/// Detects async-signal-unsafe operations inside signal handlers.
+/// 
+/// Signal handlers have strict requirements about what operations are safe.
+/// Many common operations (heap allocation, I/O, locking) are NOT safe in
+/// signal handlers and can cause deadlocks or corruption.
+pub struct AsyncSignalUnsafeInHandlerRule {
+    metadata: RuleMetadata,
+}
+
+impl AsyncSignalUnsafeInHandlerRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA109".to_string(),
+                name: "async-signal-unsafe-in-handler".to_string(),
+                short_description: "Async-signal-unsafe operation in signal handler".to_string(),
+                full_description: "Detects async-signal-unsafe operations inside signal handlers. \
+                    Signal handlers run asynchronously and interrupt normal execution, so only \
+                    'async-signal-safe' functions may be called. Unsafe operations include: \
+                    heap allocation (Box, Vec, String, format!), I/O (println!, eprintln!), \
+                    locking (Mutex, RwLock), and most standard library functions.".to_string(),
+                help_uri: Some("https://man7.org/linux/man-pages/man7/signal-safety.7.html".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Operations that are NOT async-signal-safe
+    fn unsafe_operations() -> &'static [(&'static str, &'static str)] {
+        &[
+            ("println!", "I/O operations are not async-signal-safe"),
+            ("eprintln!", "I/O operations are not async-signal-safe"),
+            ("print!", "I/O operations are not async-signal-safe"),
+            ("eprint!", "I/O operations are not async-signal-safe"),
+            ("format!", "format! allocates memory, not async-signal-safe"),
+            ("vec!", "vec! allocates memory, not async-signal-safe"),
+            ("Box::new", "Box allocates memory, not async-signal-safe"),
+            ("Vec::new", "Vec may allocate, not async-signal-safe"),
+            ("String::new", "String may allocate, not async-signal-safe"),
+            (".to_string()", "to_string allocates, not async-signal-safe"),
+            (".to_owned()", "to_owned allocates, not async-signal-safe"),
+            ("Mutex::new", "Creating locks in handlers is dangerous"),
+            (".lock()", "Locking is not async-signal-safe"),
+            (".read()", "RwLock read is not async-signal-safe"),
+            (".write()", "RwLock write is not async-signal-safe"),
+            ("std::io::", "Most std::io is not async-signal-safe"),
+            ("std::fs::", "File operations are not async-signal-safe"),
+        ]
+    }
+}
+
+impl Rule for AsyncSignalUnsafeInHandlerRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            // Check if file uses signal handling
+            if !content.contains("signal") && !content.contains("Signal") 
+                && !content.contains("ctrlc") && !content.contains("SIGINT")
+                && !content.contains("SIGTERM") && !content.contains("SIGHUP") {
+                continue;
+            }
+
+            let lines: Vec<&str> = content.lines().collect();
+            let mut in_signal_handler = false;
+            let mut handler_start_line = 0;
+            let mut brace_depth = 0;
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Skip comments
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+
+                // Detect signal handler registration patterns
+                let is_handler_start = trimmed.contains("signal::") 
+                    || trimmed.contains("ctrlc::set_handler")
+                    || trimmed.contains("set_handler")
+                    || (trimmed.contains("signal") && trimmed.contains("move ||"))
+                    || (trimmed.contains("signal") && trimmed.contains("move |"))
+                    || trimmed.contains("SigAction::new");
+
+                if is_handler_start && !in_signal_handler {
+                    in_signal_handler = true;
+                    handler_start_line = idx;
+                    brace_depth = 0;
+                }
+
+                if in_signal_handler {
+                    brace_depth += trimmed.chars().filter(|&c| c == '{').count() as i32;
+                    brace_depth -= trimmed.chars().filter(|&c| c == '}').count() as i32;
+
+                    // Check for unsafe operations within handler
+                    for (pattern, reason) in Self::unsafe_operations() {
+                        if trimmed.contains(pattern) {
+                            let location = format!("{}:{}", rel_path, idx + 1);
+
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message: format!(
+                                    "Async-signal-unsafe operation `{}` in signal handler (started at line {}). {}",
+                                    pattern, handler_start_line + 1, reason
+                                ),
+                                function: location,
+                                function_signature: String::new(),
+                                evidence: vec![trimmed.to_string()],
+                                span: None,
+                            });
+                        }
+                    }
+
+                    // End of handler closure
+                    if brace_depth <= 0 && idx > handler_start_line {
+                        in_signal_handler = false;
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -2031,4 +2467,7 @@ pub fn register_concurrency_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(UnsafeSendSyncBoundsRule::new()));
     engine.register_rule(Box::new(NonCancellationSafeSelectRule::new()));
     engine.register_rule(Box::new(MissingSyncBoundOnCloneRule::new()));
+    engine.register_rule(Box::new(PinContractViolationRule::new()));
+    engine.register_rule(Box::new(OneshotRaceAfterCloseRule::new()));
+    engine.register_rule(Box::new(AsyncSignalUnsafeInHandlerRule::new()));
 }

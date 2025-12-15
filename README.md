@@ -1,6 +1,6 @@
 # Rust-cola
 
-Security static analyzer for Rust. Compiles source code to extract MIR (Mid-level Intermediate Representation) and HIR (High-level Intermediate Representation)—internal compiler formats that reveal issues invisible to source-level scanners.
+Security static analyzer for Rust. Compiles source code to extract MIR (Mid-level Intermediate Representation) and HIR (High-level Intermediate Representation)—internal compiler formats that reveal issues difficult to find in source-level scanners.
 
 **Note:** The environment running cargo-cola must be able to compile the target code. This is required to extract the intermediate representations for deep analysis.
 

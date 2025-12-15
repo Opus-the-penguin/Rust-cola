@@ -1,0 +1,6 @@
+[package]
+name = "missing-sync-bound-clone"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]

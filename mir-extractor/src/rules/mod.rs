@@ -51,6 +51,7 @@ pub use concurrency::{
     NonThreadSafeTestRule, BlockingSleepInAsyncRule, BlockingOpsInAsyncRule,
     MutexGuardAcrossAwaitRule, UnderscoreLockGuardRule, BroadcastUnsyncPayloadRule,
     PanicInDropRule, UnwrapInPollRule, UnsafeSendSyncBoundsRule,
+    AsyncDropCorrectnessRule, PanicInDropImplRule, SpawnedTaskPanicRule,
 };
 pub use injection::{
     UntrustedEnvInputRule, CommandInjectionRiskRule, CommandArgConcatenationRule,
@@ -74,6 +75,7 @@ pub use resource::{
 pub use code_quality::{
     CrateWideAllowRule, MisorderedAssertEqRule, TryIoResultRule, LocalRefCellRule,
     UnnecessaryBorrowMutRule, DeadStoreArrayRule, OverscopedAllowRule, CommentedOutCodeRule,
+    UnwrapInHotPathRule,
 };
 pub use web::{
     NonHttpsUrlRule, DangerAcceptInvalidCertRule, OpensslVerifyNoneRule,

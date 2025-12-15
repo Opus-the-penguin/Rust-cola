@@ -1434,6 +1434,19 @@ impl RawPointerEscapeRule {
         line.contains(".as_mut_ptr()")
     }
 
+    /// Check for unsafe dereference patterns that create references outliving pointee
+    fn is_unsafe_deref_outlive(line: &str) -> bool {
+        // Pattern: unsafe { &*ptr } or unsafe { &mut *ptr }
+        (line.contains("&*") || line.contains("&mut *")) && 
+        (line.contains("unsafe") || line.contains("ptr"))
+    }
+
+    /// Check for transmute patterns that extend lifetimes
+    fn is_lifetime_transmute(line: &str) -> bool {
+        line.contains("transmute") && 
+        (line.contains("&'") || line.contains("'static") || line.contains("'a"))
+    }
+
     fn is_return_context(lines: &[&str], idx: usize, ptr_var: &str) -> bool {
         let line = lines[idx].trim();
         
@@ -1645,8 +1658,14 @@ impl Rule for RawPointerEscapeRule {
                     
                     let is_deref_assign = trimmed.starts_with("*") && trimmed.contains(" = &");
                     
+                    // Enhanced: Check for unsafe { &*ptr } outliving pointee
+                    let is_unsafe_deref = Self::is_unsafe_deref_outlive(trimmed);
+                    let is_transmute_lifetime = Self::is_lifetime_transmute(trimmed);
+                    
                     if ((returns_ptr || escapes_via_return || escapes_via_store) && is_local_cast) || 
-                       (is_deref_assign && is_local_cast) {
+                       (is_deref_assign && is_local_cast) ||
+                       (is_unsafe_deref && escapes_via_return) ||
+                       (is_transmute_lifetime && (returns_ptr || escapes_via_return)) {
                         let location = format!("{}:{}", rel_path, idx + 1);
                         findings.push(Finding {
                             rule_id: self.metadata.id.clone(),

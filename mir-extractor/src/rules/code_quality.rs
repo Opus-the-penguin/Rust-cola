@@ -944,6 +944,200 @@ impl Rule for CommentedOutCodeRule {
 }
 
 // ============================================================================
+// RUSTCOLA123: Unwrap/Expect in Hot Paths Rule
+// ============================================================================
+
+use std::ffi::OsStr;
+use walkdir::WalkDir;
+use crate::rules::utils::filter_entry;
+
+/// Detects panic-prone code in performance-critical paths.
+/// Panics in hot paths can cause cascading failures under load.
+pub struct UnwrapInHotPathRule {
+    metadata: RuleMetadata,
+}
+
+impl UnwrapInHotPathRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA123".to_string(),
+                name: "unwrap-in-hot-path".to_string(),
+                short_description: "Panic-prone code in performance-critical path".to_string(),
+                full_description: "Detects unwrap(), expect(), and indexing operations in \
+                    performance-critical code paths like loops, iterators, async poll functions, \
+                    and request handlers. Panics in these paths can cause cascading failures. \
+                    Use Result propagation, .get(), or pattern matching instead.".to_string(),
+                help_uri: None,
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Hot path indicators
+    fn hot_path_indicators() -> &'static [&'static str] {
+        &[
+            "for ",
+            "while ",
+            "loop {",
+            ".iter()",
+            ".map(",
+            ".filter(",
+            ".fold(",
+            ".for_each(",
+            "fn poll(",
+            "impl Future",
+            "impl Stream",
+            "async fn handle",
+            "fn handle_request",
+            "fn process",
+            "#[inline]",
+            "#[hot]",
+        ]
+    }
+
+    /// Panic-prone patterns
+    fn panic_patterns() -> &'static [(&'static str, &'static str)] {
+        &[
+            (".unwrap()", "Use ? operator, .unwrap_or(), .unwrap_or_else(), or pattern match"),
+            (".expect(", "Use ? operator, .unwrap_or(), .unwrap_or_else(), or pattern match"),
+            ("[", "Use .get() for safe indexing"),
+        ]
+    }
+}
+
+impl Rule for UnwrapInHotPathRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match std::fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+            let mut in_hot_path = false;
+            let mut hot_path_type = String::new();
+            let mut brace_depth = 0;
+            let mut hot_path_start_depth = 0;
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+
+                // Skip comments
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+
+                // Check for hot path entry
+                for indicator in Self::hot_path_indicators() {
+                    if trimmed.contains(indicator) {
+                        in_hot_path = true;
+                        hot_path_start_depth = brace_depth;
+                        hot_path_type = (*indicator).to_string();
+                        break;
+                    }
+                }
+
+                // Track brace depth
+                brace_depth += trimmed.chars().filter(|&c| c == '{').count() as i32;
+                brace_depth -= trimmed.chars().filter(|&c| c == '}').count() as i32;
+
+                // Check if we've exited the hot path
+                if in_hot_path && brace_depth <= hot_path_start_depth && trimmed.contains('}') {
+                    in_hot_path = false;
+                    hot_path_type.clear();
+                }
+
+                // Check for panic patterns in hot path
+                if in_hot_path {
+                    for (pattern, advice) in Self::panic_patterns() {
+                        if trimmed.contains(pattern) {
+                            // Filter out false positives
+                            // Skip comments
+                            if let Some(comment_pos) = trimmed.find("//") {
+                                if trimmed.find(pattern).map(|p| p > comment_pos).unwrap_or(false) {
+                                    continue;
+                                }
+                            }
+
+                            // For indexing, be more specific
+                            if *pattern == "[" {
+                                // Skip if it's a slice pattern, array type, or already uses .get()
+                                if trimmed.contains(".get(") ||
+                                   trimmed.contains("[..]") ||
+                                   trimmed.contains(": [") ||
+                                   trimmed.contains("-> [") ||
+                                   trimmed.contains("Vec<") ||
+                                   !trimmed.contains("]") {
+                                    continue;
+                                }
+                            }
+
+                            let location = format!("{}:{}", rel_path, idx + 1);
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message: format!(
+                                    "Panic-prone code '{}' in hot path ({}). {}",
+                                    pattern.trim_end_matches('('), hot_path_type, advice
+                                ),
+                                function: location,
+                                function_signature: String::new(),
+                                evidence: vec![trimmed.to_string()],
+                                span: None,
+                            });
+                            break; // One finding per line
+                        }
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -957,4 +1151,5 @@ pub fn register_code_quality_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(DeadStoreArrayRule::new()));
     engine.register_rule(Box::new(OverscopedAllowRule::new()));
     engine.register_rule(Box::new(CommentedOutCodeRule::new()));
+    engine.register_rule(Box::new(UnwrapInHotPathRule::new()));
 }

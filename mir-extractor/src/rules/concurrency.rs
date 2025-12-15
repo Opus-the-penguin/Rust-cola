@@ -3130,6 +3130,550 @@ impl Rule for ExecutorStarvationRule {
 }
 
 // ============================================================================
+// RUSTCOLA122: Async Drop Correctness Rule
+// ============================================================================
+
+/// Detects async resources that may be dropped without proper cleanup.
+/// Common patterns: TcpStream, File, database connections in async context
+/// without explicit close/shutdown.
+pub struct AsyncDropCorrectnessRule {
+    metadata: RuleMetadata,
+}
+
+impl AsyncDropCorrectnessRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA122".to_string(),
+                name: "async-drop-correctness".to_string(),
+                short_description: "Async resource may be dropped without cleanup".to_string(),
+                full_description: "Detects async resources (network connections, file handles, \
+                    database connections) that may be dropped without explicit cleanup. In async \
+                    code, Drop::drop() is synchronous and cannot await cleanup operations. Use \
+                    explicit .shutdown(), .close(), or .flush() before dropping async resources.".to_string(),
+                help_uri: None,
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Async resource types that need explicit cleanup
+    fn async_resource_types() -> &'static [(&'static str, &'static str)] {
+        &[
+            ("TcpStream", "Use .shutdown() before dropping"),
+            ("TcpListener", "Use .shutdown() or explicit close"),
+            ("UnixStream", "Use .shutdown() before dropping"),
+            ("File", "Use .flush().await and .sync_all().await before dropping"),
+            ("BufWriter", "Use .flush().await before dropping"),
+            ("BufReader", "Ensure underlying reader is properly closed"),
+            ("Pool", "Use .close().await for connection pools"),
+            ("Client", "Use .close() or explicit shutdown for HTTP clients"),
+            ("Connection", "Close database connections explicitly"),
+            ("Sender", "Drop sender explicitly or use .closed().await"),
+            ("WebSocket", "Use .close().await before dropping"),
+        ]
+    }
+
+    /// Cleanup methods that indicate proper resource handling
+    fn cleanup_methods() -> &'static [&'static str] {
+        &[
+            ".shutdown()",
+            ".close()",
+            ".flush()",
+            ".sync_all()",
+            ".sync_data()",
+            "drop(",
+            "std::mem::drop(",
+            ".abort()",
+            ".cancel()",
+        ]
+    }
+}
+
+impl Rule for AsyncDropCorrectnessRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(std::ffi::OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match std::fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+            let mut in_async_fn = false;
+            let mut async_fn_name = String::new();
+            let mut resource_declarations: Vec<(usize, String, String)> = Vec::new(); // (line, var_name, type)
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+
+                // Skip comments
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+
+                // Track async function entry
+                if trimmed.contains("async fn ") {
+                    in_async_fn = true;
+                    if let Some(fn_pos) = trimmed.find("fn ") {
+                        let after_fn = &trimmed[fn_pos + 3..];
+                        async_fn_name = after_fn.split(|c| c == '(' || c == '<')
+                            .next()
+                            .unwrap_or("")
+                            .trim()
+                            .to_string();
+                    }
+                    resource_declarations.clear();
+                }
+
+                if !in_async_fn {
+                    continue;
+                }
+
+                // Check for async resource declarations
+                for (resource_type, advice) in Self::async_resource_types() {
+                    if trimmed.contains(resource_type) && 
+                       (trimmed.contains("let ") || trimmed.contains("mut ")) &&
+                       (trimmed.contains(".await") || trimmed.contains("::new") || trimmed.contains("::connect")) {
+                        // Extract variable name
+                        if let Some(let_pos) = trimmed.find("let ") {
+                            let after_let = &trimmed[let_pos + 4..];
+                            let var_name: String = after_let
+                                .split(|c: char| c == ':' || c == '=' || c.is_whitespace())
+                                .next()
+                                .unwrap_or("")
+                                .replace("mut", "")
+                                .trim()
+                                .to_string();
+                            if !var_name.is_empty() {
+                                resource_declarations.push((idx, var_name, (*advice).to_string()));
+                            }
+                        }
+                    }
+                }
+
+                // Check if resources are properly cleaned up
+                for cleanup in Self::cleanup_methods() {
+                    if trimmed.contains(cleanup) {
+                        // Remove declarations that are cleaned up
+                        resource_declarations.retain(|(_, var, _)| !trimmed.contains(var.as_str()));
+                    }
+                }
+
+                // Function end - check for uncleaned resources
+                if trimmed == "}" && in_async_fn {
+                    // Check remaining uncleaned resources
+                    for (decl_line, var_name, advice) in &resource_declarations {
+                        let location = format!("{}:{}", rel_path, decl_line + 1);
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: self.metadata.default_severity,
+                            message: format!(
+                                "Async resource '{}' in function '{}' may be dropped without cleanup. {}",
+                                var_name, async_fn_name, advice
+                            ),
+                            function: location,
+                            function_signature: async_fn_name.clone(),
+                            evidence: vec![lines.get(*decl_line).unwrap_or(&"").to_string()],
+                            span: None,
+                        });
+                    }
+                    in_async_fn = false;
+                    resource_declarations.clear();
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA124: Panic in Drop Implementation Rule  
+// ============================================================================
+
+/// Detects panic-prone code in Drop implementations.
+/// Panicking in Drop can cause double-panic and abort.
+pub struct PanicInDropImplRule {
+    metadata: RuleMetadata,
+}
+
+impl PanicInDropImplRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA124".to_string(),
+                name: "panic-in-drop-impl".to_string(),
+                short_description: "Panic-prone code in Drop implementation".to_string(),
+                full_description: "Detects panic-prone operations (unwrap, expect, panic!, \
+                    assert!, indexing) in Drop implementations. If Drop panics during stack \
+                    unwinding from another panic, the process will abort. Use Option::take(), \
+                    logging, or ignore errors in Drop.".to_string(),
+                help_uri: Some("https://doc.rust-lang.org/std/ops/trait.Drop.html".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Panic-prone patterns to detect in Drop
+    fn panic_patterns() -> &'static [(&'static str, &'static str)] {
+        &[
+            (".unwrap()", "Use .ok(), .unwrap_or_default(), or log errors instead"),
+            (".expect(", "Use .ok(), .unwrap_or_default(), or log errors instead"),
+            ("panic!(", "Never panic in Drop - log error or silently ignore"),
+            ("unreachable!(", "Replace with logging or silent handling"),
+            ("unimplemented!(", "Implement proper cleanup or silently skip"),
+            ("todo!(", "Complete implementation before production use"),
+            ("assert!(", "Use debug_assert! or remove assertion"),
+            ("assert_eq!(", "Use debug_assert_eq! or remove assertion"),
+            ("assert_ne!(", "Use debug_assert_ne! or remove assertion"),
+            ("[", "Use .get() instead of direct indexing to avoid panic"),
+        ]
+    }
+}
+
+impl Rule for PanicInDropImplRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(std::ffi::OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match std::fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+            let mut in_drop_impl = false;
+            let mut drop_type_name = String::new();
+            let mut brace_depth = 0;
+            let mut drop_start_depth = 0;
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+
+                // Skip comments
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+
+                // Detect impl Drop for Type
+                if trimmed.contains("impl") && trimmed.contains("Drop") && trimmed.contains("for") {
+                    in_drop_impl = true;
+                    drop_start_depth = brace_depth;
+                    // Extract type name
+                    if let Some(for_pos) = trimmed.find("for ") {
+                        let after_for = &trimmed[for_pos + 4..];
+                        drop_type_name = after_for
+                            .split(|c: char| c == '<' || c == '{' || c.is_whitespace())
+                            .next()
+                            .unwrap_or("")
+                            .trim()
+                            .to_string();
+                    }
+                }
+
+                // Track brace depth
+                brace_depth += trimmed.chars().filter(|&c| c == '{').count() as i32;
+                brace_depth -= trimmed.chars().filter(|&c| c == '}').count() as i32;
+
+                // Check if we've exited the Drop impl
+                if in_drop_impl && brace_depth <= drop_start_depth && trimmed.contains('}') {
+                    in_drop_impl = false;
+                    drop_type_name.clear();
+                }
+
+                // Check for panic patterns in Drop
+                if in_drop_impl {
+                    for (pattern, advice) in Self::panic_patterns() {
+                        if trimmed.contains(pattern) {
+                            // Filter out false positives
+                            // Skip if pattern is in a comment on same line
+                            if let Some(comment_pos) = trimmed.find("//") {
+                                if trimmed.find(pattern).map(|p| p > comment_pos).unwrap_or(false) {
+                                    continue;
+                                }
+                            }
+
+                            // For indexing, check it's actual array access not a range
+                            if *pattern == "[" {
+                                if !trimmed.contains("][") && 
+                                   !trimmed.contains("[..]") &&
+                                   trimmed.contains("[") && 
+                                   trimmed.contains("]") &&
+                                   !trimmed.contains(".get(") {
+                                    // Likely array indexing
+                                } else {
+                                    continue;
+                                }
+                            }
+
+                            let location = format!("{}:{}", rel_path, idx + 1);
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message: format!(
+                                    "Panic-prone code in Drop impl for '{}': {}. {}",
+                                    drop_type_name, pattern, advice
+                                ),
+                                function: location,
+                                function_signature: format!("Drop for {}", drop_type_name),
+                                evidence: vec![trimmed.to_string()],
+                                span: None,
+                            });
+                            break; // One finding per line
+                        }
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA125: Spawned Task Panic Propagation Rule
+// ============================================================================
+
+/// Detects spawned tasks without panic handling.
+/// Panics in spawned tasks are silently swallowed by default.
+pub struct SpawnedTaskPanicRule {
+    metadata: RuleMetadata,
+}
+
+impl SpawnedTaskPanicRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA125".to_string(),
+                name: "spawned-task-panic-propagation".to_string(),
+                short_description: "Spawned task may silently swallow panics".to_string(),
+                full_description: "Detects spawned tasks (tokio::spawn, async_std::spawn, etc.) \
+                    without panic handling. By default, panics in spawned tasks are silently \
+                    swallowed when the JoinHandle is dropped. Use .await on JoinHandle, \
+                    catch_unwind, or panic hooks to detect task panics.".to_string(),
+                help_uri: Some("https://docs.rs/tokio/latest/tokio/task/fn.spawn.html".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Spawn functions that need panic handling
+    fn spawn_functions() -> &'static [&'static str] {
+        &[
+            "tokio::spawn(",
+            "spawn(",
+            "task::spawn(",
+            "async_std::spawn(",
+            "spawn_blocking(",
+            "spawn_local(",
+            "thread::spawn(",
+            "rayon::spawn(",
+        ]
+    }
+
+    /// Patterns that indicate proper panic handling
+    fn panic_handling_patterns() -> &'static [&'static str] {
+        &[
+            ".await",
+            "join!(",
+            "try_join!(",
+            "JoinSet",
+            "catch_unwind",
+            "AssertUnwindSafe",
+            "panic::set_hook",
+            ".abort()",
+            "JoinHandle",
+            "let handle =",
+            "let _ = handle",
+        ]
+    }
+}
+
+impl Rule for SpawnedTaskPanicRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(std::ffi::OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match std::fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+
+                // Skip comments and test code
+                if trimmed.starts_with("//") || trimmed.contains("#[test]") {
+                    continue;
+                }
+
+                // Check for spawn calls
+                for spawn_fn in Self::spawn_functions() {
+                    if trimmed.contains(spawn_fn) {
+                        // Check if the spawn result is handled
+                        let has_panic_handling = {
+                            // Check current line and next 5 lines for handling
+                            let check_range = idx..std::cmp::min(idx + 6, lines.len());
+                            let context: String = lines[check_range]
+                                .iter()
+                                .map(|s| *s)
+                                .collect::<Vec<&str>>()
+                                .join("\n");
+                            
+                            Self::panic_handling_patterns()
+                                .iter()
+                                .any(|pattern| context.contains(pattern))
+                        };
+
+                        // Also check if spawn is assigned to a variable (implies later handling)
+                        let is_assigned = trimmed.contains("let ") && 
+                                         trimmed.contains(" = ") &&
+                                         !trimmed.contains("let _ =");
+
+                        if !has_panic_handling && !is_assigned {
+                            let location = format!("{}:{}", rel_path, idx + 1);
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message: format!(
+                                    "Spawned task without panic handling. Panics will be silently swallowed. \
+                                    Consider using .await on the JoinHandle or adding a panic hook."
+                                ),
+                                function: location,
+                                function_signature: String::new(),
+                                evidence: vec![trimmed.to_string()],
+                                span: None,
+                            });
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -3153,4 +3697,7 @@ pub fn register_concurrency_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(PanicWhileHoldingLockRule::new()));
     engine.register_rule(Box::new(ClosureEscapingRefsRule::new()));
     engine.register_rule(Box::new(ExecutorStarvationRule::new()));
+    engine.register_rule(Box::new(AsyncDropCorrectnessRule::new()));
+    engine.register_rule(Box::new(PanicInDropImplRule::new()));
+    engine.register_rule(Box::new(SpawnedTaskPanicRule::new()));
 }

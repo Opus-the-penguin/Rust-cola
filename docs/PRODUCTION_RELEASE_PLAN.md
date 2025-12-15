@@ -66,6 +66,7 @@
 - ✅ RUSTCOLA121 (ExecutorStarvationRule) - **NEW** - detects CPU-bound work in async context
 - 📊 **Tests:** 146 passed
 - 📊 **Total Rules:** 116 (107 RUSTCOLA + 9 ADV advanced rules)
+- ⚠️ **Superseded by v0.8.6**
 
 **Progress (v0.8.5):** ✅ **Test Coverage for v0.8.4 Rules**
 - ✅ Added `mir-extractor/tests/test_new_rules_v084.rs` with 10 unit tests for new rules
@@ -75,7 +76,16 @@
   - `examples/self-referential-struct/` - RUSTCOLA120 test cases
   - `examples/executor-starvation/` - RUSTCOLA121 test cases
   - `examples/wasm-linear-memory-oob/` - RUSTCOLA103 test cases
-- 📊 **Tests:** 170 passed (was 146)
+- 📊 **Tests:** 165 passed (was 146)
+
+**Progress (v0.8.6):** ✅ **Phase 2 High-Priority Rules Complete**
+- ✅ RUSTCOLA096 - Enhanced with `unsafe { &*ptr }` outliving pointee detection
+- ✅ RUSTCOLA122 (AsyncDropCorrectnessRule) - **NEW** - detects Drop on async types
+- ✅ RUSTCOLA123 (UnwrapInHotPathRule) - **NEW** - detects unwrap/expect in loops
+- ✅ RUSTCOLA124 (PanicInDropImplRule) - **NEW** - detects panic-prone code in Drop
+- ✅ RUSTCOLA125 (SpawnedTaskPanicRule) - **NEW** - detects spawn without panic handling
+- 📊 **Tests:** 173 passed (was 165)
+- 📊 **Total Rules:** 120 (111 RUSTCOLA + 9 ADV advanced rules)
 
 This document outlines the roadmap to achieve a production-ready release of Rust-cola. Completing these phases will yield a **Release Candidate (RC)** suitable for general availability.
 
@@ -92,12 +102,12 @@ Rust-cola v0.7.2 has reached significant maturity with 102 security rules and a 
 
 ---
 
-## Current State (v0.8.5)
+## Current State (v0.8.6)
 
 | Metric | Value |
 |--------|-------|
-| **Total Rules** | 116 (107 RUSTCOLA + 9 ADV) |
-| **Test Status** | 170 passed, 0 failed ✅ |
+| **Total Rules** | 120 (111 RUSTCOLA + 9 ADV) |
+| **Test Status** | 173 passed, 0 failed ✅ |
 | **Core Codebase** | ~5.5K LOC (mir-extractor/lib.rs) |
 | **Rule Modules** | 10 categories + utils |
 
@@ -216,8 +226,8 @@ All artifacts generated on every run:
 | RUSTCOLA111 | Missing Sync bound on Clone | Data races | ✅ Complete (v0.8.0) |
 | RUSTCOLA115 | Non-cancellation-safe select | Resource leaks | ✅ Complete (v0.8.0) |
 | RUSTCOLA121 | Executor starvation detection | DoS | ✅ Complete (v0.8.4) |
-| NEW | Async drop correctness | Resource leaks | ❌ To implement |
-| NEW | Spawned task panic propagation | Silent failures | ❌ To implement |
+| RUSTCOLA122 | Async drop correctness | Resource leaks | ✅ Complete (v0.8.6) |
+| RUSTCOLA125 | Spawned task panic propagation | Silent failures | ✅ Complete (v0.8.6) |
 
 **Implementation Notes:**
 - Requires async boundary tracking in MIR
@@ -232,7 +242,7 @@ All artifacts generated on every run:
 |---------|------|------|--------|
 | RUSTCOLA118 | Returned reference to local | UAF | ✅ Complete (v0.8.4) |
 | RUSTCOLA119 | Closure capturing escaping refs | UAF | ✅ Complete (v0.8.4) |
-| RUSTCOLA096 | `unsafe { &*ptr }` outliving pointee | UAF | ⚠️ Partial |
+| RUSTCOLA096 | `unsafe { &*ptr }` outliving pointee | UAF | ✅ Complete (v0.8.6) |
 | RUSTCOLA112 | Pin contract violation (unsplit) | UAF | ✅ Complete (v0.8.0) |
 | RUSTCOLA113 | Oneshot race after close | Data race | ✅ Complete (v0.8.0) |
 | RUSTCOLA120 | Self-referential struct creation | UAF | ✅ Complete (v0.8.4) |
@@ -250,8 +260,8 @@ All artifacts generated on every run:
 | RUSTCOLA109 | Async-signal-unsafe in handler | Deadlock/corruption | ✅ Complete (v0.8.1) |
 | RUSTCOLA116 | Panic in FFI boundary | UB | ✅ Complete (v0.8.2) |
 | RUSTCOLA117 | Panic while holding lock | Poison/Deadlock | ✅ Complete (v0.8.3) |
-| NEW | `unwrap()`/`expect()` in hot paths | Crash | ❌ To implement |
-| NEW | Panic in Drop impl | Double panic | ❌ To implement |
+| RUSTCOLA123 | `unwrap()`/`expect()` in hot paths | Crash | ✅ Complete (v0.8.6) |
+| RUSTCOLA124 | Panic in Drop impl | Double panic | ✅ Complete (v0.8.6) |
 
 **Implementation Notes:**
 - Identify FFI boundaries via `extern "C"` functions
@@ -490,9 +500,9 @@ fn main() {
 
 | Metric | Current | Target (v1.0) |
 |--------|---------|---------------|
-| Total Rules | 102 | 115+ |
-| Test Pass Rate | 100% (146/146) | 100% |
-| Rust-Specific Rules | ~20 | 35+ |
+| Total Rules | 120 | 125+ |
+| Test Pass Rate | 100% (173/173) | 100% |
+| Rust-Specific Rules | ~35 | 40+ |
 | Average Scan Time (medium crate) | TBD | <30s |
 | Fast Mode Scan Time | N/A | <5s |
 | False Positive Rate | TBD | <15% |

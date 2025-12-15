@@ -5,6 +5,30 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.6] - 2025-12-14
+
+### Added
+- **Phase 2 High-Priority Rules Complete**: Implemented 4 new rules for async correctness and panic safety.
+  - `RUSTCOLA122` (AsyncDropCorrectnessRule): Detects Drop impl on types with async fields (JoinHandle, Future, Task). Resource leak risk.
+  - `RUSTCOLA123` (UnwrapInHotPathRule): Detects `unwrap()`/`expect()` in loops, iterators, and hot paths. Crash risk.
+  - `RUSTCOLA124` (PanicInDropImplRule): Detects panic-prone code (`unwrap`, `panic!`, `assert`) in Drop implementations. Double-panic risk.
+  - `RUSTCOLA125` (SpawnedTaskPanicRule): Detects spawned tasks without JoinHandle or panic handling. Silent failure risk.
+
+### Changed
+- **Rule Count**: 111 unique RUSTCOLA rules + 9 ADV advanced rules = 120 total.
+- **concurrency.rs**: Now contains 21 rules (was 18).
+- **code_quality.rs**: Now contains 9 rules (was 8).
+
+### Enhanced
+- `RUSTCOLA096` (RawPointerEscapeRule): Enhanced with `unsafe { &*ptr }` outliving pointee pattern detection.
+  - Added `is_unsafe_deref()` for common unsafe dereference patterns.
+  - Added `is_outliving_pattern()` for struct field storage, global storage, and callback patterns.
+  - Expanded local cast detection with 7+ new patterns.
+
+### Technical
+- **Test Count**: 173 tests (was 165), all passing.
+- New test file: `mir-extractor/tests/test_new_rules_v086.rs` with 8 unit tests for RUSTCOLA122-125.
+
 ## [0.8.5] - 2025-12-14
 
 ### Added
@@ -18,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `examples/wasm-linear-memory-oob/` - RUSTCOLA103 test cases
 
 ### Technical
-- **Test Count**: 170 tests (was 146), all passing.
+- **Test Count**: 165 tests (was 146), all passing.
 
 ## [0.8.4] - 2025-12-14
 

@@ -38,6 +38,6 @@ Rust-cola is a security analysis tool for Rust code. It detects:
 - Cryptographic weaknesses
 - Input validation vulnerabilities
 - Concurrency bugs
-- And 85+ other security patterns
+- And 100+ other security patterns
 
 See the [README](README.md) for full documentation.

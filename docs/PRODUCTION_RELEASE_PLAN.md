@@ -1,7 +1,7 @@
 # Rust-cola Production Release Plan
 
 **Date:** December 14, 2025  
-**Current Version:** 0.8.4  
+**Current Version:** 0.8.5  
 **Target **Progress (v0.7.1):** ✅ **Major milestone achieved**
 - ✅ Created `rules/utils.rs` with shared utilities (`strip_string_literals`, `StringLiteralState`)
 - ✅ Migrated `UnsafeSendSyncBoundsRule` (RUSTCOLA015) → `concurrency.rs`
@@ -67,6 +67,16 @@
 - 📊 **Tests:** 146 passed
 - 📊 **Total Rules:** 116 (107 RUSTCOLA + 9 ADV advanced rules)
 
+**Progress (v0.8.5):** ✅ **Test Coverage for v0.8.4 Rules**
+- ✅ Added `mir-extractor/tests/test_new_rules_v084.rs` with 10 unit tests for new rules
+- ✅ Created example projects with vulnerable/safe patterns for each new rule:
+  - `examples/returned-ref-to-local/` - RUSTCOLA118 test cases
+  - `examples/closure-escaping-refs/` - RUSTCOLA119 test cases  
+  - `examples/self-referential-struct/` - RUSTCOLA120 test cases
+  - `examples/executor-starvation/` - RUSTCOLA121 test cases
+  - `examples/wasm-linear-memory-oob/` - RUSTCOLA103 test cases
+- 📊 **Tests:** 170 passed (was 146)
+
 This document outlines the roadmap to achieve a production-ready release of Rust-cola. Completing these phases will yield a **Release Candidate (RC)** suitable for general availability.
 
 ---
@@ -82,12 +92,12 @@ Rust-cola v0.7.2 has reached significant maturity with 102 security rules and a 
 
 ---
 
-## Current State (v0.8.4)
+## Current State (v0.8.5)
 
 | Metric | Value |
 |--------|-------|
 | **Total Rules** | 116 (107 RUSTCOLA + 9 ADV) |
-| **Test Status** | 146 passed, 0 failed ✅ |
+| **Test Status** | 170 passed, 0 failed ✅ |
 | **Core Codebase** | ~5.5K LOC (mir-extractor/lib.rs) |
 | **Rule Modules** | 10 categories + utils |
 

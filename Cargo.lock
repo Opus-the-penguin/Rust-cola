@@ -838,7 +838,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-cola"
-version = "0.8.4"
+version = "0.8.5"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1010,6 +1010,10 @@ dependencies = [
  "env_logger",
  "log",
 ]
+
+[[package]]
+name = "closure-escaping-refs"
+version = "0.1.0"
 
 [[package]]
 name = "cmake"
@@ -1456,6 +1460,13 @@ checksum = "8be9f3dfaaffdae2972880079a491a1a8bb7cbed0b8dd7a347f668b4150a3b93"
 dependencies = [
  "event-listener 5.4.1",
  "pin-project-lite",
+]
+
+[[package]]
+name = "executor-starvation"
+version = "0.1.0"
+dependencies = [
+ "tokio",
 ]
 
 [[package]]
@@ -2387,7 +2398,7 @@ dependencies = [
 
 [[package]]
 name = "mir-extractor"
-version = "0.8.4"
+version = "0.8.5"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -3063,6 +3074,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "returned-ref-to-local"
+version = "0.1.0"
+
+[[package]]
 name = "rfc6979"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3312,6 +3327,10 @@ dependencies = [
  "core-foundation-sys",
  "libc",
 ]
+
+[[package]]
+name = "self-referential-struct"
+version = "0.1.0"
 
 [[package]]
 name = "semver"
@@ -4248,6 +4267,10 @@ checksum = "76f218a38c84bcb33c25ec7059b07847d465ce0e0a76b995e134a45adcb6af76"
 dependencies = [
  "unicode-ident",
 ]
+
+[[package]]
+name = "wasm-linear-memory-oob"
+version = "0.1.0"
 
 [[package]]
 name = "weak-ciphers"

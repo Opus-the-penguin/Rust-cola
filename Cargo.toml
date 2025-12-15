@@ -72,6 +72,11 @@ members = [
     "examples/build-script-network",
     "examples/non-cancellation-safe-select",
     "examples/missing-sync-bound-clone",
+    "examples/returned-ref-to-local",
+    "examples/closure-escaping-refs",
+    "examples/self-referential-struct",
+    "examples/executor-starvation",
+    "examples/wasm-linear-memory-oob",
 ]
 exclude = [
     # ci-test-crate must be standalone for CI self-analysis to avoid analyzing entire workspace

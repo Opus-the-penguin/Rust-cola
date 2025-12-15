@@ -1,0 +1,6 @@
+[package]
+name = "wasm-linear-memory-oob"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]

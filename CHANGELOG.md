@@ -5,6 +5,21 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.5] - 2025-12-14
+
+### Added
+- **Test Coverage for v0.8.4 Rules**: Added comprehensive test suite for the 5 new rules.
+  - New test file: `mir-extractor/tests/test_new_rules_v084.rs` with 10 unit tests.
+  - Example projects for each rule with vulnerable and safe patterns:
+    - `examples/returned-ref-to-local/` - RUSTCOLA118 test cases
+    - `examples/closure-escaping-refs/` - RUSTCOLA119 test cases
+    - `examples/self-referential-struct/` - RUSTCOLA120 test cases
+    - `examples/executor-starvation/` - RUSTCOLA121 test cases
+    - `examples/wasm-linear-memory-oob/` - RUSTCOLA103 test cases
+
+### Technical
+- **Test Count**: 170 tests (was 146), all passing.
+
 ## [0.8.4] - 2025-12-14
 
 ### Added

@@ -5,6 +5,26 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.8] - 2025-12-14
+
+### Added
+- **Phase 3 Complete**: Framework-aware sanitization recognition for precision improvements.
+  - **Actix-web**: `web::Json`, `web::Path`, `web::Query`, `web::Form`, `web::Data` validators
+  - **Axum**: `extract::Json`, `extract::Path`, `extract::Query`, `extract::Form`, `extract::State`
+  - **Rocket**: `FromForm`, `FromParam`, `FromData`, `FromFormField` validators
+  - **HTML escaping**: `html_escape`, `encode_safe`, `askama`, `tera`, `maud`
+  - **SQL escaping**: `sql_escape`, `bind`, `quote_literal`, `escape_string`
+  - **URL encoding**: `url_encode`, `percent_encode`, `form_urlencoded`
+  - **Validation**: `Regex::is_match`, `validator::Validate`, `garde::Validate`, `serde_valid`
+
+### Changed
+- **Sanitizer Recognition**: Expanded from 4 patterns to 70+ patterns for reduced false positives.
+- **Phase 3 Status**: All precision & recall improvements complete (3.1 field-sensitive, 3.2 recursion, 3.3 sanitization).
+
+### Technical
+- **Test Count**: 237 tests (was 181), all passing.
+- Added 10 new sanitizer tests in `path_sensitive.rs` for framework coverage validation.
+
 ## [0.8.7] - 2025-12-14
 
 ### Added

@@ -1064,11 +1064,79 @@ impl PathSensitiveTaintAnalysis {
     }
     
     /// Check if an expression is a sanitizer call
+    /// 
+    /// Recognizes sanitization patterns from:
+    /// - Common validation functions (validate_input, sanitize, escape, etc.)
+    /// - Actix-web: web::Json, web::Path, web::Query, web::Form (typed extractors with validation)
+    /// - Axum: extract::Json, extract::Path, extract::Query (typed extractors)
+    /// - Rocket: FromForm, FromParam, FromData (validation traits)
+    /// - Common escaping: html_escape, sql_escape, url_encode, etc.
     fn is_sanitizer_call(expr: &str) -> bool {
+        // Generic sanitization patterns
         expr.contains("validate_input")
             || expr.contains("sanitize")
             || expr.contains("parse::<")
             || expr.contains("to_string()")
+            || expr.contains("validate")
+            || expr.contains("is_valid")
+            || expr.contains("is_safe")
+            || expr.contains("clean")
+            || expr.contains("filter")
+            // Actix-web typed extractors (perform validation on deserialization)
+            || expr.contains("actix_web::web::Json")
+            || expr.contains("web::Json")
+            || expr.contains("actix_web::web::Path")
+            || expr.contains("web::Path")
+            || expr.contains("actix_web::web::Query")
+            || expr.contains("web::Query")
+            || expr.contains("actix_web::web::Form")
+            || expr.contains("web::Form")
+            || expr.contains("actix_web::web::Data")
+            // Axum typed extractors
+            || expr.contains("axum::extract::Json")
+            || expr.contains("extract::Json")
+            || expr.contains("axum::extract::Path")
+            || expr.contains("extract::Path")
+            || expr.contains("axum::extract::Query")
+            || expr.contains("extract::Query")
+            || expr.contains("axum::extract::Form")
+            || expr.contains("extract::Form")
+            || expr.contains("axum::extract::State")
+            // Rocket validation traits
+            || expr.contains("rocket::form::FromForm")
+            || expr.contains("FromForm")
+            || expr.contains("rocket::request::FromParam")
+            || expr.contains("FromParam")
+            || expr.contains("rocket::data::FromData")
+            || expr.contains("FromData")
+            || expr.contains("rocket::form::FromFormField")
+            || expr.contains("FromFormField")
+            // HTML escaping
+            || expr.contains("html_escape")
+            || expr.contains("encode_safe")
+            || expr.contains("encode_text")
+            || expr.contains("escape_html")
+            || expr.contains("askama")  // Askama templates auto-escape
+            || expr.contains("tera::escape")
+            || expr.contains("maud")    // Maud templates auto-escape
+            // SQL escaping / parameterization
+            || expr.contains("sql_escape")
+            || expr.contains("escape_string")
+            || expr.contains("quote_literal")
+            || expr.contains("bind")    // Parameterized queries
+            // URL encoding
+            || expr.contains("url_encode")
+            || expr.contains("urlencoding")
+            || expr.contains("percent_encode")
+            || expr.contains("form_urlencoded")
+            // Regex validation
+            || expr.contains("Regex::is_match")
+            || expr.contains("regex::is_match")
+            || expr.contains("regex_match")
+            // Serde deserialization with validation
+            || expr.contains("serde_valid")
+            || expr.contains("validator::Validate")
+            || expr.contains("garde::Validate")
     }
     
     /// Convert TaintState to FieldTaint
@@ -1278,6 +1346,99 @@ mod tests {
         assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("validate_input(_1)"));
         assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("parse::<i32>()"));
         assert!(!PathSensitiveTaintAnalysis::is_sanitizer_call("some_function()"));
+    }
+    
+    #[test]
+    fn test_actix_web_sanitizers() {
+        // Actix-web typed extractors perform validation on deserialization
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("actix_web::web::Json::extract"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("web::Json::from_request"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("actix_web::web::Path::extract"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("web::Path::from_request"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("actix_web::web::Query::extract"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("web::Query::from_request"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("actix_web::web::Form::extract"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("web::Form::from_request"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("actix_web::web::Data::get"));
+    }
+    
+    #[test]
+    fn test_axum_sanitizers() {
+        // Axum typed extractors
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("axum::extract::Json::from_request"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("extract::Json::from_request"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("axum::extract::Path::from_request"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("extract::Path::from_request"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("axum::extract::Query::from_request"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("extract::Query::from_request"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("axum::extract::Form::from_request"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("extract::Form::from_request"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("axum::extract::State::from_request"));
+    }
+    
+    #[test]
+    fn test_rocket_sanitizers() {
+        // Rocket validation traits
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("rocket::form::FromForm::from_form"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("FromForm::from_form"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("rocket::request::FromParam::from_param"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("FromParam::from_param"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("rocket::data::FromData::from_data"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("FromData::from_data"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("rocket::form::FromFormField::from_value"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("FromFormField::from_value"));
+    }
+    
+    #[test]
+    fn test_html_escape_sanitizers() {
+        // HTML escaping libraries
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("html_escape::encode_safe"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("encode_safe(&input)"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("encode_text(&input)"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("escape_html(&input)"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("askama::Template::render"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("tera::escape::escape_html"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("maud::html!"));
+    }
+    
+    #[test]
+    fn test_sql_escape_sanitizers() {
+        // SQL escaping / parameterization
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("sql_escape(&query)"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("escape_string(&value)"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("quote_literal(&value)"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("query.bind(value)"));
+    }
+    
+    #[test]
+    fn test_url_encoding_sanitizers() {
+        // URL encoding
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("url_encode(&path)"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("urlencoding::encode"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("percent_encode(&input)"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("form_urlencoded::serialize"));
+    }
+    
+    #[test]
+    fn test_validation_sanitizers() {
+        // Regex and validation libraries
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("Regex::is_match(&input)"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("regex::is_match(&input)"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("regex_match(&pattern, &input)"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("serde_valid::Validate::validate"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("validator::Validate::validate"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("garde::Validate::validate"));
+    }
+    
+    #[test]
+    fn test_generic_sanitizers() {
+        // Generic validation patterns
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("validate(&input)"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("is_valid(&input)"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("is_safe(&input)"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("clean(&input)"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("filter(&input)"));
+        assert!(PathSensitiveTaintAnalysis::is_sanitizer_call("sanitize(&input)"));
     }
     
     #[test]

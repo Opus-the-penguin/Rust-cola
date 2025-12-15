@@ -3348,6 +3348,350 @@ impl Rule for SelfReferentialStructRule {
     }
 }
 
+// ============================================================================
+// RUSTCOLA128: UnsafeCell Aliasing Violation Rule
+// ============================================================================
+
+/// Detects potential UnsafeCell aliasing violations where multiple mutable
+/// references may exist simultaneously, violating Rust's aliasing rules.
+pub struct UnsafeCellAliasingRule {
+    metadata: RuleMetadata,
+}
+
+impl UnsafeCellAliasingRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA128".to_string(),
+                name: "unsafecell-aliasing-violation".to_string(),
+                short_description: "Potential UnsafeCell aliasing violation".to_string(),
+                full_description: "Detects patterns where UnsafeCell, Cell, or RefCell contents \
+                    may be accessed through multiple mutable references simultaneously in unsafe \
+                    code. This violates Rust's aliasing rules and causes undefined behavior. \
+                    Ensure only one mutable reference exists at a time, or use proper interior \
+                    mutability patterns.".to_string(),
+                help_uri: Some("https://doc.rust-lang.org/std/cell/struct.UnsafeCell.html".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn aliasing_patterns() -> Vec<(&'static str, &'static str)> {
+        vec![
+            (".get()", "UnsafeCell::get() returns *mut T - ensure no aliasing"),
+            ("&mut *self.", "mutable dereference may alias with other refs"),
+            ("&mut *ptr", "raw pointer to mutable ref - check for aliases"),
+            ("as *mut", "casting to *mut - may create aliasing mutable refs"),
+            (".as_mut()", "as_mut() in unsafe may alias"),
+            ("get_unchecked_mut", "unchecked mutable access - verify no aliasing"),
+        ]
+    }
+
+    fn aliasing_contexts() -> Vec<&'static str> {
+        vec![
+            "UnsafeCell",
+            "Cell<",
+            "RefCell<",
+            "*mut",
+            "*const",
+        ]
+    }
+}
+
+impl Rule for UnsafeCellAliasingRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        // Skip self-analysis
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(filter_entry)
+            .filter_map(Result::ok)
+            .filter(|e| e.file_type().is_file())
+        {
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            // Quick check: does this file use interior mutability?
+            let has_interior_mut = Self::aliasing_contexts()
+                .iter()
+                .any(|ctx| content.contains(ctx));
+
+            if !has_interior_mut {
+                continue;
+            }
+
+            let lines: Vec<&str> = content.lines().collect();
+            let mut in_unsafe = false;
+            let mut unsafe_start = 0;
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Skip comments
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+
+                // Track unsafe blocks
+                if trimmed.contains("unsafe {") || trimmed.contains("unsafe{") {
+                    in_unsafe = true;
+                    unsafe_start = idx;
+                }
+
+                if in_unsafe {
+                    // Check for aliasing patterns
+                    for (pattern, description) in Self::aliasing_patterns() {
+                        if trimmed.contains(pattern) {
+                            // Check if there are multiple access patterns in the same unsafe block
+                            let unsafe_block = &lines[unsafe_start..=(idx + 5).min(lines.len() - 1)];
+                            
+                            let mut_access_count = unsafe_block.iter()
+                                .filter(|l| l.contains("&mut") || l.contains("as *mut") || 
+                                           l.contains(".get()") || l.contains(".as_mut()"))
+                                .count();
+
+                            // Multiple mutable accesses in same block is suspicious
+                            if mut_access_count >= 2 {
+                                let location = format!("{}:{}", rel_path, idx + 1);
+                                
+                                findings.push(Finding {
+                                    rule_id: self.metadata.id.clone(),
+                                    rule_name: self.metadata.name.clone(),
+                                    severity: self.metadata.default_severity,
+                                    message: format!(
+                                        "Potential aliasing violation: {}. Multiple mutable accesses \
+                                        detected in same unsafe block. Ensure only one &mut reference \
+                                        exists at a time to avoid undefined behavior.",
+                                        description
+                                    ),
+                                    function: location,
+                                    function_signature: String::new(),
+                                    evidence: vec![trimmed.to_string()],
+                                    span: None,
+                                });
+                                break;
+                            }
+                        }
+                    }
+
+                    // Simple closing brace tracking
+                    if trimmed == "}" {
+                        in_unsafe = false;
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA129: Lazy Initialization Panic Poison Rule
+// ============================================================================
+
+/// Detects lazy initialization patterns that can panic and poison the lazy value,
+/// causing all future accesses to fail or return corrupted state.
+pub struct LazyInitPanicPoisonRule {
+    metadata: RuleMetadata,
+}
+
+impl LazyInitPanicPoisonRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA129".to_string(),
+                name: "lazy-init-panic-poison".to_string(),
+                short_description: "Panic-prone code in lazy initialization".to_string(),
+                full_description: "Detects lazy initialization (OnceLock, Lazy, OnceCell, lazy_static) \
+                    with panic-prone code like unwrap(), expect(), or panic!(). If the initialization \
+                    panics, the lazy value may be poisoned, causing all future accesses to fail or \
+                    return incomplete state. Use fallible initialization patterns or handle errors \
+                    gracefully.".to_string(),
+                help_uri: Some("https://doc.rust-lang.org/std/sync/struct.OnceLock.html".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn lazy_patterns() -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("OnceLock", "std::sync::OnceLock"),
+            ("OnceCell", "once_cell::sync::OnceCell"),
+            ("Lazy<", "once_cell::sync::Lazy"),
+            ("lazy_static!", "lazy_static macro"),
+            ("LazyLock", "std::sync::LazyLock"),
+            (".get_or_init(", "lazy initialization closure"),
+            (".get_or_try_init(", "fallible lazy init"),
+            ("call_once(", "std::sync::Once::call_once"),
+        ]
+    }
+
+    fn panic_patterns() -> Vec<&'static str> {
+        vec![
+            ".unwrap()",
+            ".expect(",
+            "panic!(",
+            "unreachable!(",
+            "todo!(",
+            "unimplemented!(",
+            "assert!(",
+            "assert_eq!(",
+            "assert_ne!(",
+        ]
+    }
+}
+
+impl Rule for LazyInitPanicPoisonRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        // Skip self-analysis
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(filter_entry)
+            .filter_map(Result::ok)
+            .filter(|e| e.file_type().is_file())
+        {
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            // Quick check: does this file use lazy initialization?
+            let has_lazy = Self::lazy_patterns()
+                .iter()
+                .any(|(p, _)| content.contains(p));
+
+            if !has_lazy {
+                continue;
+            }
+
+            let lines: Vec<&str> = content.lines().collect();
+            let mut in_lazy_init = false;
+            let mut lazy_type = String::new();
+            let mut lazy_start = 0;
+            let mut brace_depth = 0;
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Skip comments
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+
+                // Detect lazy initialization patterns
+                for (pattern, desc) in Self::lazy_patterns() {
+                    if trimmed.contains(pattern) {
+                        // Check if this is a definition with an initializer
+                        if trimmed.contains("=") || trimmed.contains("get_or_init") || 
+                           trimmed.contains("call_once") {
+                            in_lazy_init = true;
+                            lazy_type = desc.to_string();
+                            lazy_start = idx;
+                            brace_depth = trimmed.matches('{').count() as i32 
+                                        - trimmed.matches('}').count() as i32;
+                        }
+                    }
+                }
+
+                // Track the initialization block
+                if in_lazy_init {
+                    brace_depth += trimmed.matches('{').count() as i32;
+                    brace_depth -= trimmed.matches('}').count() as i32;
+
+                    // Look for panic patterns in the init block
+                    for panic_pat in Self::panic_patterns() {
+                        if trimmed.contains(panic_pat) {
+                            let location = format!("{}:{}", rel_path, idx + 1);
+                            
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message: format!(
+                                    "Panic-prone code '{}' in {} initialization. If this panics, \
+                                    the lazy value may be poisoned, causing all future accesses to \
+                                    fail. Consider using fallible initialization (get_or_try_init) \
+                                    or handling errors gracefully.",
+                                    panic_pat.trim_end_matches('('), lazy_type
+                                ),
+                                function: location,
+                                function_signature: String::new(),
+                                evidence: vec![trimmed.to_string()],
+                                span: None,
+                            });
+                            break;
+                        }
+                    }
+
+                    // End of init block
+                    if brace_depth <= 0 && idx > lazy_start {
+                        in_lazy_init = false;
+                        lazy_type.clear();
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
 /// Register all memory safety rules with the rule engine.
 pub fn register_memory_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(BoxIntoRawRule::new()));
@@ -3372,4 +3716,6 @@ pub fn register_memory_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(VarianceTransmuteUnsoundRule::new()));
     engine.register_rule(Box::new(ReturnedRefToLocalRule::new()));
     engine.register_rule(Box::new(SelfReferentialStructRule::new()));
+    engine.register_rule(Box::new(UnsafeCellAliasingRule::new()));
+    engine.register_rule(Box::new(LazyInitPanicPoisonRule::new()));
 }

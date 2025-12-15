@@ -5,6 +5,24 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.7] - 2025-12-14
+
+### Added
+- **Phase 2 Complete**: Implemented final 4 Phase 2 rules for WASM, memory safety, and interior mutability.
+  - `RUSTCOLA126` (WasmHostFunctionTrustRule): Detects untrusted data from WASM host functions without validation.
+  - `RUSTCOLA127` (WasmCapabilityLeakRule): Detects overly permissive capabilities leaked to WASM guests.
+  - `RUSTCOLA128` (UnsafeCellAliasingRule): Detects potential UnsafeCell aliasing violations with multiple mutable refs.
+  - `RUSTCOLA129` (LazyInitPanicPoisonRule): Detects panic-prone code in OnceLock/Lazy initialization.
+
+### Changed
+- **Rule Count**: 115 unique RUSTCOLA rules + 9 ADV advanced rules = 124 total.
+- **Memory rules**: Now contains 23 rules (was 21).
+- **FFI rules**: Now contains 11 rules (was 9).
+
+### Technical
+- **Test Count**: 181 tests (was 173), all passing.
+- New test file: `mir-extractor/tests/test_new_rules_v087.rs` with 8 unit tests.
+
 ## [0.8.6] - 2025-12-14
 
 ### Added

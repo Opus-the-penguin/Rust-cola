@@ -81,15 +81,15 @@ Use `--no-ast`, `--no-hir`, or `--no-llm-prompt` to suppress specific outputs.
 
 ## What It Detects
 
-120 rules grouped by vulnerability category:
+124 rules grouped by vulnerability category:
 
 | Category | Rules | Examples |
 |----------|-------|----------|
-| **Memory Safety** | 21 | Transmute misuse, uninitialized memory, Box leaks, raw pointer escapes, slice safety, self-referential structs, returned refs to locals |
+| **Memory Safety** | 23 | Transmute misuse, uninitialized memory, Box leaks, raw pointer escapes, slice safety, self-referential structs, returned refs to locals, UnsafeCell aliasing, lazy init poison |
 | **Injection** | 10 | SQL injection, command injection, path traversal, SSRF, template injection, regex DoS |
 | **Cryptography** | 8 | Weak hashes (MD5/SHA1), weak ciphers, hardcoded keys, timing attacks, PRNG bias |
 | **Concurrency** | 21 | Mutex across await, blocking in async, Send/Sync violations, executor starvation, closure escaping refs, cancellation safety, async drop correctness, panic in Drop, task panic propagation |
-| **FFI** | 9 | Allocator mismatch, CString pointer misuse, packed fields, panic in FFI, WASM linear memory OOB |
+| **FFI** | 11 | Allocator mismatch, CString pointer misuse, packed fields, panic in FFI, WASM linear memory OOB, WASM host trust, WASM capability leaks |
 | **Input Validation** | 11 | Env vars, stdin, unicode, deserialization, division by untrusted, timestamp overflow |
 | **Web Security** | 11 | TLS validation, CORS, cookies, passwords in logs, Content-Length allocation |
 | **Resource Management** | 10 | File permissions, open options, infinite iterators, unbounded allocations |

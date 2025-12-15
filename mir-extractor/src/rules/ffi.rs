@@ -1502,6 +1502,323 @@ impl Rule for WasmLinearMemoryOobRule {
 }
 
 // ============================================================================
+// RUSTCOLA126: WASM Host Function Trust Assumptions
+// ============================================================================
+
+/// Detects untrusted data from WASM host functions used without validation.
+/// Host-provided data in WebAssembly should be treated as untrusted input.
+pub struct WasmHostFunctionTrustRule {
+    metadata: RuleMetadata,
+}
+
+impl WasmHostFunctionTrustRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA126".to_string(),
+                name: "wasm-host-function-trust".to_string(),
+                short_description: "Untrusted data from WASM host functions".to_string(),
+                full_description: "Detects patterns where data received from WebAssembly host functions \
+                    (wasmtime, wasmer, wasm-bindgen imports) is used without validation. Host-provided \
+                    data should be treated as untrusted input since the host environment may be compromised \
+                    or malicious.".to_string(),
+                help_uri: Some("https://docs.rs/wasmtime/latest/wasmtime/".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn host_import_patterns() -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("extern \"C\"", "C FFI import - host-provided function"),
+            ("#[wasm_bindgen]", "wasm-bindgen import from host"),
+            ("import_func!", "wasmer import macro"),
+            ("Func::wrap", "wasmtime host function wrap"),
+            ("Linker::func_wrap", "wasmtime linker import"),
+            ("imports!", "wasmer imports macro"),
+            ("Instance::new", "WASM instance with imports"),
+        ]
+    }
+
+    fn dangerous_usages() -> Vec<&'static str> {
+        vec![
+            "from_raw_parts",
+            "from_utf8_unchecked",
+            "transmute",
+            "as_ptr",
+            "offset(",
+            "add(",
+            "slice::from_raw_parts",
+            "str::from_utf8_unchecked",
+            "CStr::from_ptr",
+        ]
+    }
+}
+
+impl Rule for WasmHostFunctionTrustRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        // Skip if not WASM-related crate
+        if !package.crate_name.contains("wasm") && 
+           !package.crate_name.contains("plugin") &&
+           !package.crate_name.contains("runtime") {
+            // Still scan but don't require wasm in name
+        }
+
+        for entry in walkdir::WalkDir::new(crate_root)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_type().is_file())
+        {
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            // Check for WASM host function patterns
+            let has_wasm_imports = Self::host_import_patterns()
+                .iter()
+                .any(|(p, _)| content.contains(p));
+
+            if !has_wasm_imports {
+                continue;
+            }
+
+            let lines: Vec<&str> = content.lines().collect();
+            
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Skip comments
+                if trimmed.starts_with("//") || trimmed.starts_with("/*") {
+                    continue;
+                }
+
+                // Look for dangerous usage of potentially host-provided data
+                for dangerous in Self::dangerous_usages() {
+                    if trimmed.contains(dangerous) {
+                        // Check context for host function calls nearby
+                        let context_start = idx.saturating_sub(10);
+                        let context_end = (idx + 5).min(lines.len());
+                        let context = &lines[context_start..context_end];
+                        
+                        let has_host_import = Self::host_import_patterns()
+                            .iter()
+                            .any(|(p, _)| context.iter().any(|l| l.contains(p)));
+
+                        // Check if there's validation
+                        let has_validation = context.iter().any(|l| {
+                            l.contains("if ") || l.contains("match ") || 
+                            l.contains("validate") || l.contains("check") ||
+                            l.contains(".is_ok()") || l.contains(".is_err()") ||
+                            l.contains("?.") || l.contains("try!")
+                        });
+
+                        if has_host_import && !has_validation {
+                            let location = format!("{}:{}", rel_path, idx + 1);
+                            
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message: format!(
+                                    "Potentially untrusted host data used in '{}' without validation. \
+                                    Data from WASM host functions should be validated before use in \
+                                    unsafe operations.",
+                                    dangerous
+                                ),
+                                function: location,
+                                function_signature: String::new(),
+                                evidence: vec![trimmed.to_string()],
+                                span: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA127: WASM Component Model Capability Leaks
+// ============================================================================
+
+/// Detects capability leaks in WASM component model exports.
+/// Resources and capabilities should not leak to untrusted guests.
+pub struct WasmCapabilityLeakRule {
+    metadata: RuleMetadata,
+}
+
+impl WasmCapabilityLeakRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA127".to_string(),
+                name: "wasm-capability-leak".to_string(),
+                short_description: "WASM component model capability leak".to_string(),
+                full_description: "Detects patterns where sensitive capabilities (filesystem access, \
+                    network sockets, environment variables) may leak to WebAssembly guest modules \
+                    through component model exports or WASI permissions. Apply principle of least \
+                    privilege to guest capabilities.".to_string(),
+                help_uri: Some("https://component-model.bytecodealliance.org/".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    fn capability_patterns() -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("WasiCtxBuilder::new().inherit_stdio()", "Inherits all stdio - may leak sensitive output"),
+            ("inherit_env()", "Inherits environment variables - may leak secrets"),
+            ("inherit_network()", "Inherits network access - may allow exfiltration"),
+            ("inherit_args()", "Inherits command line args - may leak secrets"),
+            ("preopened_dir", "Preopen directory access - verify scope is minimal"),
+            ("allow_ip_name_lookup", "Allows DNS lookups - potential for exfiltration"),
+            ("allow_udp", "Allows UDP sockets"),
+            ("allow_tcp", "Allows TCP connections"),
+            (".ctx_builder().build()", "Check WasiCtx configuration for minimal privileges"),
+        ]
+    }
+
+    fn sensitive_exports() -> Vec<&'static str> {
+        vec![
+            "std::fs::",
+            "std::net::",
+            "std::process::",
+            "std::env::",
+            "tokio::fs::",
+            "tokio::net::",
+            "async_std::fs::",
+            "async_std::net::",
+        ]
+    }
+}
+
+impl Rule for WasmCapabilityLeakRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        for entry in walkdir::WalkDir::new(crate_root)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_type().is_file())
+        {
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            // Check for WASM runtime usage
+            let is_wasm_host = content.contains("wasmtime") || 
+                               content.contains("wasmer") ||
+                               content.contains("WasiCtx") ||
+                               content.contains("wasi_common");
+
+            if !is_wasm_host {
+                continue;
+            }
+
+            let lines: Vec<&str> = content.lines().collect();
+            
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Skip comments
+                if trimmed.starts_with("//") || trimmed.starts_with("/*") {
+                    continue;
+                }
+
+                // Check for overly permissive capability patterns
+                for (pattern, description) in Self::capability_patterns() {
+                    if trimmed.contains(pattern) {
+                        let location = format!("{}:{}", rel_path, idx + 1);
+                        
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: self.metadata.default_severity,
+                            message: format!(
+                                "Potential capability leak to WASM guest: {}. \
+                                Apply principle of least privilege - only grant necessary capabilities.",
+                                description
+                            ),
+                            function: location.clone(),
+                            function_signature: String::new(),
+                            evidence: vec![trimmed.to_string()],
+                            span: None,
+                        });
+                    }
+                }
+
+                // Check for exports of sensitive APIs
+                for sensitive in Self::sensitive_exports() {
+                    if trimmed.contains(sensitive) && 
+                       (trimmed.contains("Linker::") || trimmed.contains("func_wrap") ||
+                        trimmed.contains("define(") || trimmed.contains("export(")) {
+                        let location = format!("{}:{}", rel_path, idx + 1);
+                        
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: Severity::High,
+                            message: format!(
+                                "Exporting sensitive capability '{}' to WASM guest. \
+                                Verify this is intentional and properly sandboxed.",
+                                sensitive
+                            ),
+                            function: location,
+                            function_signature: String::new(),
+                            evidence: vec![trimmed.to_string()],
+                            span: None,
+                        });
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -1516,4 +1833,6 @@ pub fn register_ffi_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(PanicInFfiBoundaryRule::new()));
     engine.register_rule(Box::new(EmbeddedInterpreterUsageRule::new()));
     engine.register_rule(Box::new(WasmLinearMemoryOobRule::new()));
+    engine.register_rule(Box::new(WasmHostFunctionTrustRule::new()));
+    engine.register_rule(Box::new(WasmCapabilityLeakRule::new()));
 }

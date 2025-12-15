@@ -45,7 +45,7 @@ pub use crypto::{
 pub use memory::{
     BoxIntoRawRule, TransmuteRule, UnsafeUsageRule, NullPointerTransmuteRule,
     ZSTPointerArithmeticRule, VecSetLenRule, MaybeUninitAssumeInitRule, MemUninitZeroedRule,
-    NonNullNewUncheckedRule, MemForgetGuardRule,
+    NonNullNewUncheckedRule, MemForgetGuardRule, UnsafeCellAliasingRule, LazyInitPanicPoisonRule,
 };
 pub use concurrency::{
     NonThreadSafeTestRule, BlockingSleepInAsyncRule, BlockingOpsInAsyncRule,
@@ -60,7 +60,7 @@ pub use injection::{
 };
 pub use ffi::{
     AllocatorMismatchFfiRule, UnsafeFfiPointerReturnRule, PackedFieldReferenceRule,
-    UnsafeCStringPointerRule, FfiBufferLeakRule,
+    UnsafeCStringPointerRule, FfiBufferLeakRule, WasmHostFunctionTrustRule, WasmCapabilityLeakRule,
 };
 pub use input::{
     CleartextEnvVarRule, EnvVarLiteralRule, InvisibleUnicodeRule, UntrimmedStdinRule,

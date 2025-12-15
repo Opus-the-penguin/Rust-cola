@@ -1684,6 +1684,337 @@ impl Rule for UnsafeSendSyncBoundsRule {
 }
 
 // ============================================================================
+// RUSTCOLA115: Non-Cancellation-Safe Select Rule
+// ============================================================================
+
+/// Detects use of potentially non-cancellation-safe futures in select! macro.
+/// 
+/// When using `select!`, if a branch is not chosen, its future is dropped.
+/// If that future has made partial progress (e.g., partially read from a channel),
+/// that progress is lost. This can lead to data loss or unexpected behavior.
+pub struct NonCancellationSafeSelectRule {
+    metadata: RuleMetadata,
+}
+
+impl NonCancellationSafeSelectRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA115".to_string(),
+                name: "non-cancellation-safe-select".to_string(),
+                short_description: "Potentially non-cancellation-safe future in select!".to_string(),
+                full_description: "Detects use of potentially non-cancellation-safe futures in select! macro. \
+                    When using tokio::select!, futures::select!, or similar macros, if a branch is not chosen, \
+                    its future is dropped. If the future has made partial progress (e.g., started reading from \
+                    a buffered stream), that progress is lost. Common non-cancellation-safe patterns include: \
+                    - read_line() / read_until() on buffered streams \
+                    - recv_many() on channels \
+                    - Futures that modify internal state before awaiting \
+                    Consider using cancellation-safe alternatives or restructuring the code.".to_string(),
+                help_uri: Some("https://docs.rs/tokio/latest/tokio/macro.select.html#cancellation-safety".to_string()),
+                default_severity: Severity::Medium,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+
+    /// Patterns that are known to be non-cancellation-safe
+    fn non_cancellation_safe_patterns() -> &'static [(&'static str, &'static str)] {
+        &[
+            ("read_line(", "BufRead::read_line is not cancellation safe - partial reads are lost"),
+            ("read_until(", "BufRead::read_until is not cancellation safe - partial reads are lost"),
+            ("read_exact(", "read_exact is not cancellation safe - partial reads are lost"),
+            ("recv_many(", "recv_many is not cancellation safe - some messages may be lost"),
+            ("read_to_end(", "read_to_end is not cancellation safe - partial reads are lost"),
+            ("read_to_string(", "read_to_string is not cancellation safe - partial reads are lost"),
+            ("copy(", "io::copy is not cancellation safe - partial copy progress is lost"),
+            ("copy_buf(", "io::copy_buf is not cancellation safe - partial copy progress is lost"),
+        ]
+    }
+    
+    /// Patterns that indicate we're in a select! context
+    fn select_macro_patterns() -> &'static [&'static str] {
+        &[
+            "select!",
+            "tokio::select!",
+            "futures::select!",
+            "futures_util::select!",
+        ]
+    }
+}
+
+impl Rule for NonCancellationSafeSelectRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+
+            // Look for select! macro usage
+            let mut in_select = false;
+            let mut select_start_line = 0;
+            let mut brace_depth = 0;
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Skip comments
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+
+                // Check for select! macro start
+                for pattern in Self::select_macro_patterns() {
+                    if trimmed.contains(pattern) && !in_select {
+                        in_select = true;
+                        select_start_line = idx;
+                        brace_depth = 0;
+                    }
+                }
+
+                if in_select {
+                    brace_depth += trimmed.chars().filter(|&c| c == '{').count() as i32;
+                    brace_depth -= trimmed.chars().filter(|&c| c == '}').count() as i32;
+
+                    // Check for non-cancellation-safe patterns within select!
+                    for (pattern, reason) in Self::non_cancellation_safe_patterns() {
+                        if trimmed.contains(pattern) {
+                            let location = format!("{}:{}", rel_path, idx + 1);
+
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message: format!(
+                                    "Non-cancellation-safe operation `{}` used in select! macro. {}",
+                                    pattern.trim_end_matches('('),
+                                    reason
+                                ),
+                                function: location,
+                                function_signature: String::new(),
+                                evidence: vec![trimmed.to_string()],
+                                span: None,
+                            });
+                        }
+                    }
+
+                    // End of select! macro
+                    if brace_depth <= 0 && idx > select_start_line {
+                        in_select = false;
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
+// RUSTCOLA111: Missing Sync Bound on Clone Rule
+// ============================================================================
+
+/// Detects concurrent data structures that clone values without requiring Sync bound.
+/// 
+/// This pattern was found in tokio broadcast channels (RUSTSEC-2025-0023) where
+/// cloning a value in a concurrent context without `Sync` bound can cause data races.
+/// When multiple threads clone the same inner value simultaneously without synchronization,
+/// undefined behavior can occur.
+pub struct MissingSyncBoundOnCloneRule {
+    metadata: RuleMetadata,
+}
+
+impl MissingSyncBoundOnCloneRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA111".to_string(),
+                name: "missing-sync-bound-on-clone".to_string(),
+                short_description: "Clone in concurrent context without Sync bound".to_string(),
+                full_description: "Detects implementations that clone values in concurrent contexts \
+                    without requiring the `Sync` trait bound. This pattern was found in tokio's \
+                    broadcast channel (RUSTSEC-2025-0023) where concurrent cloning without Sync \
+                    can cause data races. Channels and shared data structures that clone inner \
+                    values should require `T: Clone + Send + Sync` instead of just `T: Clone + Send`.".to_string(),
+                help_uri: Some("https://rustsec.org/advisories/RUSTSEC-2025-0023.html".to_string()),
+                default_severity: Severity::High,
+                origin: RuleOrigin::BuiltIn,
+            },
+        }
+    }
+}
+
+impl Rule for MissingSyncBoundOnCloneRule {
+    fn metadata(&self) -> &RuleMetadata {
+        &self.metadata
+    }
+
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        if package.crate_name == "mir-extractor" {
+            return Vec::new();
+        }
+
+        let mut findings = Vec::new();
+        let crate_root = Path::new(&package.crate_root);
+
+        if !crate_root.exists() {
+            return findings;
+        }
+
+        for entry in WalkDir::new(crate_root)
+            .into_iter()
+            .filter_entry(|e| filter_entry(e))
+        {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let path = entry.path();
+            if path.extension() != Some(OsStr::new("rs")) {
+                continue;
+            }
+
+            let rel_path = path
+                .strip_prefix(crate_root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let content = match fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+
+            // Track impl blocks that use Clone + Send but not Sync
+            // and also use unsafe impl Sync or have channel-like names
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed = line.trim();
+                
+                // Skip comments
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+
+                // Pattern 1: unsafe impl Sync for types that clone without Sync bound
+                if trimmed.contains("unsafe impl") && trimmed.contains("Sync") {
+                    // Check if this might be a channel or shared structure
+                    let is_channel_like = trimmed.contains("Sender") 
+                        || trimmed.contains("Receiver")
+                        || trimmed.contains("Channel")
+                        || trimmed.contains("Broadcast")
+                        || trimmed.contains("Queue")
+                        || trimmed.contains("Buffer");
+                    
+                    if is_channel_like {
+                        // Look for Clone + Send without Sync in nearby context
+                        let context_start = idx.saturating_sub(20);
+                        let context_end = (idx + 20).min(lines.len());
+                        
+                        let has_clone_send = lines[context_start..context_end].iter()
+                            .any(|l| l.contains("Clone") && l.contains("Send"));
+                        let has_sync_bound = lines[context_start..context_end].iter()
+                            .any(|l| l.contains(": Sync") || l.contains("+ Sync"));
+                        
+                        if has_clone_send && !has_sync_bound {
+                            let location = format!("{}:{}", rel_path, idx + 1);
+
+                            findings.push(Finding {
+                                rule_id: self.metadata.id.clone(),
+                                rule_name: self.metadata.name.clone(),
+                                severity: self.metadata.default_severity,
+                                message: "unsafe impl Sync for channel-like type with Clone + Send \
+                                    but no Sync bound. This may allow data races when cloning. \
+                                    Consider adding `T: Sync` bound.".to_string(),
+                                function: location,
+                                function_signature: String::new(),
+                                evidence: vec![trimmed.to_string()],
+                                span: None,
+                            });
+                        }
+                    }
+                }
+
+                // Pattern 2: impl blocks with Clone + Send but not Sync for channel types
+                if trimmed.starts_with("impl") && trimmed.contains("Clone + Send") 
+                    && !trimmed.contains("Sync") {
+                    let is_channel_like = trimmed.contains("Sender") 
+                        || trimmed.contains("Receiver")
+                        || trimmed.contains("Channel")
+                        || trimmed.contains("Broadcast");
+                    
+                    if is_channel_like {
+                        let location = format!("{}:{}", rel_path, idx + 1);
+
+                        findings.push(Finding {
+                            rule_id: self.metadata.id.clone(),
+                            rule_name: self.metadata.name.clone(),
+                            severity: self.metadata.default_severity,
+                            message: "Channel implementation with Clone + Send but missing Sync \
+                                bound. Concurrent cloning may cause data races. \
+                                Consider `T: Clone + Send + Sync`.".to_string(),
+                            function: location,
+                            function_signature: String::new(),
+                            evidence: vec![trimmed.to_string()],
+                            span: None,
+                        });
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -1698,4 +2029,6 @@ pub fn register_concurrency_rules(engine: &mut crate::RuleEngine) {
     engine.register_rule(Box::new(PanicInDropRule::new()));
     engine.register_rule(Box::new(UnwrapInPollRule::new()));
     engine.register_rule(Box::new(UnsafeSendSyncBoundsRule::new()));
+    engine.register_rule(Box::new(NonCancellationSafeSelectRule::new()));
+    engine.register_rule(Box::new(MissingSyncBoundOnCloneRule::new()));
 }

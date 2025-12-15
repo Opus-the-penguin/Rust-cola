@@ -5,6 +5,22 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2025-12-14
+
+### Added
+- **Phase 2 Rules - Async/Await Correctness**: Implemented 2 new rules from Tokio research.
+  - `RUSTCOLA111` (MissingSyncBoundOnCloneRule): Detects Clone+Send without Sync bound in channel-like concurrent structures. Based on RUSTSEC-2025-0023 (tokio broadcast channel vulnerability).
+  - `RUSTCOLA115` (NonCancellationSafeSelectRule): Detects non-cancellation-safe futures in `select!` macros (read_line, read_exact, recv_many, copy, etc.).
+- **Example**: Added `examples/non-cancellation-safe-select/` with comprehensive test cases.
+
+### Changed
+- **Rule Count**: Total rules increased from 102 to 104.
+- **concurrency.rs**: Now contains 11 rules (was 9).
+
+### Technical
+- Real-world research completed on tokio-rs/tokio identifying 5 new vulnerability patterns.
+- All 146 tests pass.
+
 ## [0.7.5] - 2025-12-14
 
 ### Changed

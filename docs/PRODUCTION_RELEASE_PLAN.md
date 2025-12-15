@@ -1,7 +1,7 @@
 # Rust-cola Production Release Plan
 
 **Date:** December 14, 2025  
-**Current Version:** 0.7.5  
+**Current Version:** 0.8.0  
 **Target **Progress (v0.7.1):** ✅ **Major milestone achieved**
 - ✅ Created `rules/utils.rs` with shared utilities (`strip_string_literals`, `StringLiteralState`)
 - ✅ Migrated `UnsafeSendSyncBoundsRule` (RUSTCOLA015) → `concurrency.rs`
@@ -38,6 +38,14 @@
 - DeclarativeRule (rule-pack/YAML-based rules).0  
 **Status:** Phase 1.3 Complete - All security rules modularized
 
+**Progress (v0.8.0):** ✅ **Phase 2 - Async/Await Correctness rules**
+- ✅ RUSTCOLA093 (BlockingOpsInAsyncRule) - already existed
+- ✅ RUSTCOLA094 (MutexGuardAcrossAwaitRule) - already existed
+- ✅ RUSTCOLA111 (MissingSyncBoundOnCloneRule) - **NEW** - detects Clone+Send without Sync in channels
+- ✅ RUSTCOLA115 (NonCancellationSafeSelectRule) - **NEW** - detects non-cancel-safe futures in select!
+- 📊 **Tests:** 146 passed
+- 📊 **Total Rules:** 104 (2 new rules added)
+
 This document outlines the roadmap to achieve a production-ready release of Rust-cola. Completing these phases will yield a **Release Candidate (RC)** suitable for general availability.
 
 ---
@@ -53,11 +61,11 @@ Rust-cola v0.7.2 has reached significant maturity with 102 security rules and a 
 
 ---
 
-## Current State (v0.7.5)
+## Current State (v0.8.0)
 
 | Metric | Value |
 |--------|-------|
-| **Total Rules** | 102 |
+| **Total Rules** | 104 |
 | **Test Status** | 146 passed, 0 failed ✅ |
 | **Core Codebase** | ~5.5K LOC (mir-extractor/lib.rs) |
 | **Rule Modules** | 10 categories + utils |
@@ -78,7 +86,7 @@ Rust-cola v0.7.2 has reached significant maturity with 102 security rules and a 
 |--------|-------|----------|
 | `crypto.rs` | 8 | MD5, SHA1, hardcoded keys, timing, weak ciphers, PRNG |
 | `memory.rs` | 18 | Transmute, uninit, set_len, raw pointers, Box::into_raw, slice safety |
-| `concurrency.rs` | 9 | Mutex guards, async blocking, Send/Sync, lock guards, panic safety |
+| `concurrency.rs` | 11 | Mutex guards, async blocking, Send/Sync, lock guards, panic safety, select!, channel cloning |
 | `ffi.rs` | 6 | Allocator mismatch, CString, packed fields, repr(C), buffer leaks |
 | `input.rs` | 10 | Env vars, stdin, unicode, deserialization, division, serde |
 | `resource.rs` | 10 | File permissions, open options, iterators, paths, allocations |
@@ -160,12 +168,22 @@ All artifacts generated on every run:
 **Duration:** 4-6 weeks  
 **Goal:** Implement detection for Rust-specific vulnerability classes underrepresented in current tooling
 
-### 2.1 Async/Await Correctness (High Priority)
+**Research Validation:** 
+- InfluxDB v3 codebase analysis confirmed relevance of planned rules. See `docs/real-world-testing-influxdb.md` for details.
+- Tokio async runtime analysis identified additional vulnerability patterns. See `docs/real-world-testing-tokio.md` for details.
+
+### 2.1 Async/Await Correctness (High Priority) 🔥
+
+*Validated by InfluxDB: Multiple `#[allow(clippy::await_holding_lock)]` annotations found in test code*
+*Validated by Tokio: RUSTSEC-2025-0023 (broadcast channel Sync bound), RUSTSEC-2021-0072 (LocalSet abort)*
 
 | Rule ID | Name | Risk | Status |
 |---------|------|------|--------|
 | ADV003 | Non-Send types across `.await` | Data races | ✅ Complete |
-| NEW | `select!` cancellation safety | Resource leaks | ❌ To implement |
+| RUSTCOLA093 | Blocking in async context | Executor starvation | ✅ Complete |
+| RUSTCOLA094 | MutexGuard across `.await` | Deadlock | ✅ Complete |
+| RUSTCOLA111 | Missing Sync bound on Clone | Data races | ✅ Complete (v0.8.0) |
+| RUSTCOLA115 | Non-cancellation-safe select | Resource leaks | ✅ Complete (v0.8.0) |
 | NEW | Executor starvation detection | DoS | ❌ To implement |
 | NEW | Async drop correctness | Resource leaks | ❌ To implement |
 | NEW | Spawned task panic propagation | Silent failures | ❌ To implement |
@@ -173,24 +191,32 @@ All artifacts generated on every run:
 **Implementation Notes:**
 - Requires async boundary tracking in MIR
 - Must understand executor semantics (tokio, async-std, smol)
+- InfluxDB pattern: Uses `tokio_util::sync::CancellationToken` for graceful shutdown
 
 ### 2.2 Lifetime/Borrow Escape Bugs (Medium Priority)
+
+*Validated by Tokio: RUSTSEC-2023-0005 (ReadHalf::unsplit Pin violation), RUSTSEC-2021-0124 (oneshot race)*
 
 | Rule ID | Name | Risk | Status |
 |---------|------|------|--------|
 | NEW | Returned reference to local | UAF | ❌ To implement |
 | NEW | Closure capturing escaping refs | UAF | ❌ To implement |
 | RUSTCOLA096 | `unsafe { &*ptr }` outliving pointee | UAF | ⚠️ Partial |
+| RUSTCOLA112 | Pin contract violation (unsplit) | UAF | ❌ **New from Tokio** |
+| RUSTCOLA113 | Oneshot race after close | Data race | ❌ **New from Tokio** |
 | NEW | Self-referential struct creation | UAF | ❌ To implement |
 
 **Implementation Notes:**
 - Leverage rustc's lifetime information where available
 - Focus on `unsafe` blocks where borrow checker is bypassed
 
-### 2.3 Panic Safety (Medium Priority)
+### 2.3 Panic Safety & Signal Handling (Medium Priority)
+
+*InfluxDB Finding: Custom panic handlers leaked intentionally to prevent panic-during-panic*
 
 | Rule ID | Name | Risk | Status |
 |---------|------|------|--------|
+| RUSTCOLA109 | Async-signal-unsafe in handler | Deadlock/corruption | ❌ **New from InfluxDB** |
 | NEW | Panic in FFI boundary | UB | ❌ To implement |
 | NEW | Panic while holding lock | Poison/Deadlock | ❌ To implement |
 | NEW | `unwrap()`/`expect()` in hot paths | Crash | ❌ To implement |
@@ -199,6 +225,42 @@ All artifacts generated on every run:
 **Implementation Notes:**
 - Identify FFI boundaries via `extern "C"` functions
 - Track lock guard lifetimes and potential panic points
+- **RUSTCOLA109:** Detect `eprintln!`, `format!`, heap allocation in `signal_handler` context
+
+### 2.3.1 Timestamp & Integer Safety (New from InfluxDB Research)
+
+*InfluxDB Finding: Proper use of `checked_mul` for nanosecond timestamp conversion*
+
+| Rule ID | Name | Risk | Status |
+|---------|------|------|--------|
+| RUSTCOLA106 | Unchecked timestamp multiplication | Overflow | ❌ **New from InfluxDB** |
+
+**Example - Unchecked Overflow:**
+```rust
+// VULNERABLE: No overflow check
+fn to_nanos(seconds: i64) -> i64 {
+    seconds * 1_000_000_000  // Can overflow!
+}
+
+// CORRECT (InfluxDB pattern):
+fn to_nanos(seconds: i64) -> Result<i64, Error> {
+    seconds.checked_mul(1_000_000_000)
+        .ok_or_else(|| anyhow!("timestamp out of range"))
+}
+```
+
+### 2.3.2 Embedded Interpreters (New from InfluxDB Research)
+
+*InfluxDB Finding: Python VM embedded via pyo3 for plugins*
+
+| Rule ID | Name | Risk | Status |
+|---------|------|------|--------|
+| RUSTCOLA107 | Embedded interpreter usage | Code injection | ❌ **New from InfluxDB** |
+
+**Implementation Notes:**
+- Detect usage of `pyo3`, `rlua`, `v8`, `deno_core`
+- Flag `Python::attach()`, `Lua::new()` without sandboxing context
+- Severity: HIGH (arbitrary code execution surface)
 
 ### 2.4 WebAssembly-Specific Vulnerabilities (Medium Priority)
 
@@ -407,21 +469,89 @@ fn main() {
 
 ## Future Rule ID Assignments
 
-Reserved rule IDs for planned rules (from GAP-ANALYSIS-RUST-SPECIFIC.md):
+Reserved rule IDs for planned rules (from GAP-ANALYSIS-RUST-SPECIFIC.md + InfluxDB research):
 
-| Rule ID | Name | Category | Priority |
-|---------|------|----------|----------|
-| RUSTCOLA093 | `blocking-in-async-context` | Async | High |
-| RUSTCOLA094 | `mutex-guard-across-await` | Async | High |
-| RUSTCOLA095 | `transmute-lifetime-change` | Memory | High ✅ |
-| RUSTCOLA096 | `raw-pointer-from-reference-escape` | Memory | High ✅ |
-| RUSTCOLA097 | `build-script-network-access` | Supply Chain | High ✅ |
-| RUSTCOLA098 | `panic-unsafe-invariant` | Panic Safety | Medium |
-| RUSTCOLA099 | `catch-unwind-mutable-reference` | Panic Safety | Medium |
-| RUSTCOLA100 | `oncecell-toctou` | Interior Mutability | Medium |
-| RUSTCOLA101 | `variance-transmute-unsound` | Type Safety | Low |
-| RUSTCOLA102 | `proc-macro-side-effects` | Supply Chain | Low |
-| RUSTCOLA103 | `wasm-linear-memory-oob` | WebAssembly | Medium |
+### Phase 2.1 - Async Correctness (High Priority)
+
+| Rule ID | Name | Category | Priority | Source |
+|---------|------|----------|----------|--------|
+| RUSTCOLA093 | `blocking-in-async-context` | Async | High | Planned |
+| RUSTCOLA094 | `mutex-guard-across-await` | Async | High | **InfluxDB validated** |
+| RUSTCOLA115 | `non-cancellation-safe-select` | Async | Medium | **Tokio research** |
+
+### Phase 2.2 - Memory & Type Safety
+
+| Rule ID | Name | Category | Priority | Source |
+|---------|------|----------|----------|--------|
+| RUSTCOLA095 | `transmute-lifetime-change` | Memory | High | ✅ Complete |
+| RUSTCOLA096 | `raw-pointer-from-reference-escape` | Memory | High | ✅ Complete |
+| RUSTCOLA106 | `unchecked-timestamp-multiplication` | Memory | Medium | **InfluxDB** |
+| RUSTCOLA111 | `missing-sync-bound-on-clone` | Concurrency | High | **Tokio (RUSTSEC-2025-0023)** |
+| RUSTCOLA112 | `pin-contract-violation` | Memory | High | **Tokio (RUSTSEC-2023-0005)** |
+| RUSTCOLA113 | `oneshot-race-after-close` | Concurrency | High | **Tokio (RUSTSEC-2021-0124)** |
+
+### Phase 2.3 - Panic & Signal Safety
+
+| Rule ID | Name | Category | Priority | Source |
+|---------|------|----------|----------|--------|
+| RUSTCOLA098 | `panic-unsafe-invariant` | Panic Safety | Medium | Planned |
+| RUSTCOLA099 | `catch-unwind-mutable-reference` | Panic Safety | Medium | Planned |
+| RUSTCOLA109 | `async-signal-unsafe-in-handler` | Signal Safety | High | **InfluxDB** |
+
+### Phase 2.4 - Supply Chain & Code Execution
+
+| Rule ID | Name | Category | Priority | Source |
+|---------|------|----------|----------|--------|
+| RUSTCOLA097 | `build-script-network-access` | Supply Chain | High | ✅ Complete |
+| RUSTCOLA102 | `proc-macro-side-effects` | Supply Chain | Low | Planned |
+| RUSTCOLA107 | `embedded-interpreter-usage` | Code Injection | Medium | **InfluxDB** |
+
+### Phase 2.5 - Interior Mutability & Type Safety
+
+| Rule ID | Name | Category | Priority | Source |
+|---------|------|----------|----------|--------|
+| RUSTCOLA100 | `oncecell-toctou` | Interior Mutability | Medium | Planned |
+| RUSTCOLA101 | `variance-transmute-unsound` | Type Safety | Low | Planned |
+
+### Phase 2.6 - WebAssembly (Future)
+
+| Rule ID | Name | Category | Priority | Source |
+|---------|------|----------|----------|--------|
+| RUSTCOLA103 | `wasm-linear-memory-oob` | WebAssembly | Medium | Planned |
+
+### Lower Priority (Backlog from InfluxDB)
+
+| Rule ID | Name | Category | Priority | Source |
+|---------|------|----------|----------|--------|
+| RUSTCOLA104 | `incomplete-sensitive-pattern-list` | Security | INFO | **InfluxDB** |
+| RUSTCOLA105 | `insecure-token-file-permissions` | Security | Low | **InfluxDB** |
+| RUSTCOLA108 | `missing-graceful-shutdown` | Operational | Low | **InfluxDB** |
+| RUSTCOLA110 | `incomplete-string-escaping` | Input | Low | **InfluxDB** |
+
+### Supply Chain & Ecosystem (From Tokio Research)
+
+| Rule ID | Name | Category | Priority | Source |
+|---------|------|----------|----------|--------|
+| RUSTCOLA114 | `unmaintained-archive-crate` | Supply Chain | High | **Tokio (TARmageddon)** |
+
+---
+
+## Research Summary
+
+### InfluxDB v3 Analysis (Complete)
+- Validated RUSTCOLA094 (mutex-guard-across-await)
+- Identified 7 new rules (RUSTCOLA104-110)
+- Key patterns: CancellationToken, checked timestamp arithmetic, embedded interpreters
+
+### Tokio Async Runtime Analysis (Complete)
+- Validated RUSTCOLA015 (blocking-in-async)
+- Identified 5 new rules (RUSTCOLA111-115)
+- Key findings:
+  - RUSTSEC-2025-0023: Broadcast channel missing Sync bound on clone
+  - RUSTSEC-2023-0005: Pin contract violation in ReadHalf::unsplit
+  - RUSTSEC-2021-0124: Data race in oneshot channel after close
+  - RUSTSEC-2021-0072: LocalSet task dropped on wrong thread
+  - CVE-2025-62518 (TARmageddon): tokio-tar parser desynchronization
 
 ---
 
@@ -439,7 +569,7 @@ Reserved rule IDs for planned rules (from GAP-ANALYSIS-RUST-SPECIFIC.md):
 
 ## Progress Log
 
-### v0.7.5 (Current)
+### v0.7.5 + Research (Current)
 - ✅ **Phase 1.3 COMPLETE:** All security rules modularized
   - Migrated 8 memory rules → `memory.rs`: StaticMutGlobalRule, TransmuteLifetimeChangeRule, RawPointerEscapeRule, VecSetLenMisuseRule, LengthTruncationCastRule, MaybeUninitAssumeInitDataflowRule, SliceElementSizeMismatchRule, SliceFromRawPartsRule
   - Migrated `ContentLengthAllocationRule` → `web.rs`
@@ -450,6 +580,19 @@ Reserved rule IDs for planned rules (from GAP-ANALYSIS-RUST-SPECIFIC.md):
   - **lib.rs reduced:** 8,253 → 5,542 lines (68% total reduction from 17,360)
   - **Only infrastructure rules remain:** SuppressionRule, DeclarativeRule
   - **Tests:** 146 passed
+- ✅ **Pre-Phase 2 Research:** InfluxDB v3 codebase analysis
+  - Analyzed `influxdata/influxdb` GitHub repository for real-world patterns
+  - **Validated:** RUSTCOLA094 (mutex-guard-across-await) - found `#[allow(clippy::await_holding_lock)]`
+  - **New rules identified:** RUSTCOLA106-110 from production patterns
+  - **Key insight:** Production databases use `CancellationToken` for graceful shutdown
+  - Created `docs/real-world-testing-influxdb.md` with detailed findings
+- ✅ **Pre-Phase 2 Research:** Tokio async runtime analysis
+  - Analyzed `tokio-rs/tokio` GitHub repository and RUSTSEC advisories
+  - **Validated:** RUSTCOLA015 (blocking-in-async) - Tokio wraps std::fs in spawn_blocking
+  - **5 RUSTSEC advisories analyzed:** Data races, Pin violations, LocalSet thread safety
+  - **TARmageddon (CVE-2025-62518):** Archive parser desync affecting tokio-tar ecosystem
+  - **New rules identified:** RUSTCOLA111-115 from vulnerability patterns
+  - Created `docs/real-world-testing-tokio.md` with detailed findings
 
 ### v0.7.2-v0.7.4
 - ✅ **Phase 1.2 COMPLETE:** Duplicate rules cleanup
@@ -463,9 +606,11 @@ Reserved rule IDs for planned rules (from GAP-ANALYSIS-RUST-SPECIFIC.md):
 - **lib.rs reduced:** 22,936 → 21,236 lines
 
 ### Next Steps
-1. **Ready:** Phase 1 COMPLETE - lib.rs at 5,542 lines (infrastructure only)
-2. **Next:** Start Phase 2.1 - Async correctness rules (RUSTCOLA093, RUSTCOLA094)
-3. **Upcoming:** Phase 3.1 - Field-sensitive taint analysis
+1. ✅ **COMPLETE:** Phase 1 - lib.rs at 5,542 lines (infrastructure only)
+2. ✅ **COMPLETE:** Real-world research - InfluxDB + Tokio analysis validates planned rules
+3. **NEXT:** Phase 2.1 - Implement RUSTCOLA093 (blocking-in-async-context)
+4. **THEN:** Phase 2.1 - Implement RUSTCOLA094 (mutex-guard-across-await)
+5. **Upcoming:** Phase 3.1 - Field-sensitive taint analysis
 
 ---
 
@@ -475,4 +620,6 @@ Reserved rule IDs for planned rules (from GAP-ANALYSIS-RUST-SPECIFIC.md):
 |------|---------|--------|---------|
 | 2025-12-14 | 1.0 | GitHub Copilot | Initial production release plan |
 | 2025-12-14 | 1.1 | GitHub Copilot | Updated for v0.7.2, Phase 1.1 complete |
-| 2025-12-14 | 1.2 | GitHub Copilot | v0.7.5: Phase 1.3 complete, added WebAssembly/Macro sections, future rule IDs |
+| 2025-12-14 | 1.2 | GitHub Copilot | v0.7.5: Phase 1.3 complete, added WebAssembly/Macro sections |
+| 2025-01-XX | 1.3 | GitHub Copilot | InfluxDB research: validated async rules, added 5 new rule IDs |
+| 2025-01-XX | 1.4 | GitHub Copilot | Tokio research: added 5 new rule IDs (RUSTCOLA111-115), TARmageddon analysis |

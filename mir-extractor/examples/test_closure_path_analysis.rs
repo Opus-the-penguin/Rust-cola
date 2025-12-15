@@ -71,7 +71,7 @@ fn main() {
             
             // Run path-sensitive analysis with closure context
             let mut analysis = PathSensitiveTaintAnalysis::new(cfg);
-            let result = analysis.analyze_closure(closure_fn, closure_info);
+            let result = analysis.analyze_closure(closure_fn, closure_info, None);
             
             println!("\n📋 Analysis Results:");
             println!("   Total paths analyzed: {}", result.total_paths);

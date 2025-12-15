@@ -70,6 +70,7 @@ members = [
     "examples/transmute-lifetime",
     "examples/raw-pointer-escape",
     "examples/build-script-network",
+    "examples/non-cancellation-safe-select",
 ]
 exclude = [
     # ci-test-crate must be standalone for CI self-analysis to avoid analyzing entire workspace

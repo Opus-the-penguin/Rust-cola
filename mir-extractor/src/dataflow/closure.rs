@@ -493,6 +493,7 @@ pub fn is_closure_function(name: &str) -> bool {
 /// 
 /// # Examples
 /// ```
+/// use mir_extractor::dataflow::closure::parse_closure_name;
 /// let (parent, index) = parse_closure_name("test_func::{closure#0}").unwrap();
 /// assert_eq!(parent, "test_func");
 /// assert_eq!(index, 0);

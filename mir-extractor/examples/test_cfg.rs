@@ -58,7 +58,7 @@ fn main() {
     
     println!("\n=== Path-Sensitive Taint Analysis ===");
     let mut analysis = PathSensitiveTaintAnalysis::new(cfg);
-    let result = analysis.analyze(function);
+    let result = analysis.analyze(function, None);
     
     println!("Total paths analyzed: {}", result.total_paths);
     println!("Vulnerable paths: {}", result.vulnerable_paths().len());

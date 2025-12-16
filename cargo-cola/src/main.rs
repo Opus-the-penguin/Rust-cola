@@ -927,6 +927,7 @@ fn resolve_crate_roots(path: &Path) -> Result<(Vec<PathBuf>, PathBuf)> {
     let metadata = cmd.exec().context("fetch cargo metadata")?;
     let workspace_root = metadata.workspace_root.clone().into_std_path_buf();
 
+    // If there's a root package (single crate, not workspace), use it
     if let Some(pkg) = metadata.root_package() {
         let manifest_path = pkg.manifest_path.clone().into_std_path_buf();
         let crate_root = manifest_path
@@ -936,10 +937,12 @@ fn resolve_crate_roots(path: &Path) -> Result<(Vec<PathBuf>, PathBuf)> {
         return Ok((vec![crate_root], workspace_root));
     }
 
-    let member_ids: HashSet<_> = metadata.workspace_members.into_iter().collect();
+    // For workspaces: check if the user specified a path to a specific member
+    // If so, only scan that member, not the entire workspace
+    let member_ids: HashSet<_> = metadata.workspace_members.iter().cloned().collect();
     let mut members = Vec::new();
 
-    for pkg in metadata.packages {
+    for pkg in &metadata.packages {
         if !member_ids.contains(&pkg.id) {
             continue;
         }
@@ -953,6 +956,25 @@ fn resolve_crate_roots(path: &Path) -> Result<(Vec<PathBuf>, PathBuf)> {
         members.push((pkg.name.clone(), crate_root));
     }
 
+    // Check if the user-specified path matches a specific workspace member
+    // If so, only scan that member instead of the entire workspace
+    let user_canonical = fs::canonicalize(&canonical).unwrap_or_else(|_| canonical.clone());
+    let matching_member: Vec<_> = members
+        .iter()
+        .filter(|(_, member_path)| {
+            let member_canonical = fs::canonicalize(member_path).unwrap_or_else(|_| member_path.clone());
+            member_canonical == user_canonical || user_canonical.starts_with(&member_canonical)
+        })
+        .cloned()
+        .collect();
+
+    if matching_member.len() == 1 {
+        // User pointed to a specific workspace member - only scan that one
+        let crate_roots = matching_member.into_iter().map(|(_, path)| path).collect();
+        return Ok((crate_roots, workspace_root));
+    }
+
+    // No specific member matched - scan all workspace members
     members.sort_by(|a, b| a.0.cmp(&b.0));
     let crate_roots = members.into_iter().map(|(_, path)| path).collect();
 

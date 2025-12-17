@@ -78,6 +78,8 @@ By default, all artifacts are written to `out/cola/`:
 
 Use `--no-ast`, `--no-hir`, or `--no-llm-prompt` to suppress specific outputs.
 
+If an output file already exists, a timestamped version is created to avoid overwriting.
+
 ## What It Detects
 
 124 rules grouped by vulnerability category:
@@ -107,6 +109,20 @@ Rust-cola analyzes MIR (Mid-level IR) and HIR (High-level IR) from the compiler.
 - **Detection of unsafe code and FFI issues:** MIR reveals low-level operations, pointer manipulation, and FFI boundaries that are invisible in the AST.
 
 Source-level and AST-based scanners can only see the surface structure of the code. They miss vulnerabilities that depend on macro expansion, type inference, trait resolution, or complex data/control flow. By requiring compilation and analyzing MIR/HIR, Rust-cola can detect a broader and more precise set of security issues, including those unique to Rust's type system and memory model.
+
+## Interprocedural Analysis
+
+Five rules use interprocedural taint tracking to detect vulnerabilities that span multiple functions:
+
+| Rule | ID | Description |
+|------|-----|-------------|
+| Path Traversal | RUSTCOLA086 | Tracks user input flowing to filesystem operations across function calls |
+| SQL Injection | RUSTCOLA087 | Detects tainted data reaching SQL query construction through call chains |
+| SSRF | RUSTCOLA088 | Follows untrusted input to HTTP request URLs across boundaries |
+| YAML Injection | RUSTCOLA089 | Tracks external input to YAML deserialization sinks |
+| Command Injection | RUSTCOLA098 | Inter-procedural variant detecting tainted data in shell commands |
+
+The analysis builds a call graph from MIR, generates function summaries (sources, sinks, sanitizers), and propagates taint across function boundaries. This catches injection vulnerabilities where user input enters in one function and reaches a dangerous sink in another.
 
 ## Options
 

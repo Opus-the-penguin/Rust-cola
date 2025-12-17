@@ -5,6 +5,17 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] - 2025-12-16
+
+### Changed
+- Improved standalone report for offline/disconnected use
+- Removed all emojis and special characters for better terminal portability
+- Added P0/P1/P2 remediation priority classification
+- Added CWE IDs and confidence levels to finding details
+- Added fix suggestions when available
+- Simplified LLM integration section in standalone report
+- Added exploitability analysis framework to LLM prompt template
+
 ## [0.9.1] - 2025-12-16
 
 ### Changed

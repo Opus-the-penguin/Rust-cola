@@ -58,9 +58,8 @@ Binary: `target/release/cargo-cola`
 
 ## Documentation
 
-- [User Guide](docs/USER_GUIDE.md): Detailed instructions on features like False Positive Suppression.
+- [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md): Custom rules, YAML rulepacks, and suppression.
 - [Rules Master Plan](docs/RULES_MASTER_PLAN.md): Current status, roadmap, and backlog of security rules.
-- [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md): How to write new security rules.
 
 ## Output Artifacts
 

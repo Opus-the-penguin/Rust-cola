@@ -124,6 +124,56 @@ cargo test -p mir-extractor
 
 ---
 
+## Suppressing Findings
+
+Two methods: source code comments or YAML configuration.
+
+### Method 1: Source Code Comments
+
+Add `// rust-cola:ignore <RuleID>` on the preceding line or the same line.
+
+```rust
+// rust-cola:ignore RUSTCOLA001 Manual verification
+unsafe {
+    let ptr = buffer.as_mut_ptr();
+}
+```
+
+Same line:
+
+```rust
+let x = unsafe { *ptr }; // rust-cola:ignore RUSTCOLA002 Valid pointer
+```
+
+### Method 2: YAML Suppressions
+
+Add a `suppressions` section to a rulepack file:
+
+```yaml
+suppressions:
+  - rule_id: "RUSTCOLA001"
+    file: "src/unsafe_module.rs"  # Optional: substring match
+    function: "dangerous_op"      # Optional: substring match
+    reason: "Verified safe by audit team"
+```
+
+Load with `--rulepack`:
+
+```sh
+cargo cola --rulepack suppressions.yaml --crate-path .
+```
+
+### Suppression Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `rule_id` | Yes | Rule ID to suppress |
+| `file` | No | File path substring match |
+| `function` | No | Function name substring match |
+| `reason` | No | Documentation for audit trail |
+
+---
+
 ## Example Rulepack File
 
 See `examples/rulepacks/example-basic.yaml` for a working example.

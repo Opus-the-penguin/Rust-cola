@@ -41,6 +41,7 @@
 
 | Item | Description | Effort |
 |------|-------------|--------|
+| Rich AST output | Enhance ast.json with function bodies, field types, full signatures for security researchers | Medium |
 | `cola init` wizard | Interactive config file generation | Medium |
 | IDE integration docs | VS Code, IntelliJ setup guides | Small |
 

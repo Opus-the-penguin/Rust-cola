@@ -10,7 +10,7 @@ Requires the nightly Rust toolchain.
 
 ### Recommended: LLM-assisted analysis
 
-Rust-cola is designed to work with an LLM for best results. The LLM filters false positives, rates severity, assesses exploitability, and suggests remediations—turning raw findings into an actionable security report.
+Rust-cola is designed to work with an LLM (Large Language Model) for best results. The LLM filters false positives, rates severity, assesses exploitability, and suggests remediations—turning raw findings into an actionable security report.
 
 **Manual Workflow (Recommended):**
 

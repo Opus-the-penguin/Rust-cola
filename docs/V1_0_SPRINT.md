@@ -25,6 +25,7 @@
 
 | Item | Description | Effort |
 |------|-------------|--------|
+| Large workspace support | Fix OOM on projects like InfluxDB (24 crates, 1000+ functions). Stream rule evaluation or chunk processing. | Large |
 | CVSS-like scoring | Severity scores based on exploitability factors | Medium |
 | Code snippets in SARIF | Include source context in SARIF findings | Small |
 | Rule profiles | strict/balanced/permissive presets via config | Medium |

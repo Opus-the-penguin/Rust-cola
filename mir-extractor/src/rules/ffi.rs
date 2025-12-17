@@ -54,7 +54,7 @@ impl Rule for AllocatorMismatchFfiRule {
         format!("{}:v1", self.metadata.id)
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -286,7 +286,7 @@ impl Rule for UnsafeFfiPointerReturnRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -353,7 +353,7 @@ impl Rule for PackedFieldReferenceRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -537,7 +537,7 @@ impl Rule for UnsafeCStringPointerRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -654,7 +654,7 @@ impl Rule for CtorDtorStdApiRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -762,7 +762,7 @@ impl Rule for FfiBufferLeakRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
         let crate_root = Path::new(&package.crate_root);
 
@@ -1042,7 +1042,7 @@ impl Rule for PanicInFfiBoundaryRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -1247,7 +1247,7 @@ impl Rule for EmbeddedInterpreterUsageRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -1407,7 +1407,7 @@ impl Rule for WasmLinearMemoryOobRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
         let crate_root = Path::new(&package.crate_root);
 
@@ -1595,7 +1595,7 @@ impl Rule for WasmHostFunctionTrustRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
         let crate_root = Path::new(&package.crate_root);
 
@@ -1758,7 +1758,7 @@ impl Rule for WasmCapabilityLeakRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
         let crate_root = Path::new(&package.crate_root);
 

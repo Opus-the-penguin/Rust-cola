@@ -320,7 +320,7 @@ impl Rule for BoxIntoRawRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -434,7 +434,7 @@ impl Rule for TransmuteRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
         for function in &package.functions {
             let transmute_lines = Self::collect_transmute_lines(&function.body);
@@ -523,7 +523,7 @@ impl Rule for UnsafeUsageRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
         for function in &package.functions {
             // Skip self-analysis
@@ -587,7 +587,7 @@ impl Rule for NullPointerTransmuteRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -665,7 +665,7 @@ impl Rule for ZSTPointerArithmeticRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -777,7 +777,7 @@ impl Rule for VecSetLenRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         // Skip self-analysis
         if package.crate_name == "mir-extractor" {
             return Vec::new();
@@ -854,7 +854,7 @@ impl Rule for MaybeUninitAssumeInitRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         // Skip self-analysis
         if package.crate_name == "mir-extractor" {
             return Vec::new();
@@ -939,7 +939,7 @@ impl Rule for MemUninitZeroedRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         // Skip self-analysis
         if package.crate_name == "mir-extractor" {
             return Vec::new();
@@ -1018,7 +1018,7 @@ impl Rule for NonNullNewUncheckedRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         // Skip analyzer's own crate to avoid self-referential warnings
         if package.crate_name == "mir-extractor" {
             return Vec::new();
@@ -1087,7 +1087,7 @@ impl Rule for MemForgetGuardRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         // Skip analyzer's own crate to avoid self-referential warnings
         if package.crate_name == "mir-extractor" {
             return Vec::new();
@@ -1165,7 +1165,7 @@ impl Rule for StaticMutGlobalRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -1273,7 +1273,7 @@ impl Rule for TransmuteLifetimeChangeRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -1625,7 +1625,7 @@ impl Rule for RawPointerEscapeRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -1808,7 +1808,7 @@ impl Rule for VecSetLenMisuseRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -1958,7 +1958,7 @@ impl Rule for LengthTruncationCastRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -2124,7 +2124,7 @@ impl Rule for MaybeUninitAssumeInitDataflowRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -2329,7 +2329,7 @@ impl Rule for SliceElementSizeMismatchRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -2788,7 +2788,7 @@ impl Rule for SliceFromRawPartsRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -3016,7 +3016,7 @@ impl Rule for VarianceTransmuteUnsoundRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -3150,7 +3150,7 @@ impl Rule for ReturnedRefToLocalRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
         let crate_root = Path::new(&package.crate_root);
 
@@ -3365,7 +3365,7 @@ impl Rule for SelfReferentialStructRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
         let crate_root = Path::new(&package.crate_root);
 
@@ -3552,7 +3552,7 @@ impl Rule for UnsafeCellAliasingRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         // Skip self-analysis
         if package.crate_name == "mir-extractor" {
             return Vec::new();
@@ -3727,7 +3727,7 @@ impl Rule for LazyInitPanicPoisonRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         // Skip self-analysis
         if package.crate_name == "mir-extractor" {
             return Vec::new();

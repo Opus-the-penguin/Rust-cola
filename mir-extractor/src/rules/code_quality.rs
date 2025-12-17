@@ -68,7 +68,7 @@ impl Rule for CrateWideAllowRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
         let mut reported = false;
 
@@ -164,7 +164,7 @@ impl Rule for MisorderedAssertEqRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -246,7 +246,7 @@ impl Rule for TryIoResultRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -334,7 +334,7 @@ impl Rule for LocalRefCellRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -430,7 +430,7 @@ impl Rule for UnnecessaryBorrowMutRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -556,7 +556,7 @@ impl Rule for DeadStoreArrayRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -713,7 +713,7 @@ impl Rule for OverscopedAllowRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         let crate_root = Path::new(&package.crate_root);
@@ -888,7 +888,7 @@ impl Rule for CommentedOutCodeRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
         
         let crate_root = Path::new(&package.crate_root);
@@ -1042,7 +1042,7 @@ impl Rule for UnwrapInHotPathRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }

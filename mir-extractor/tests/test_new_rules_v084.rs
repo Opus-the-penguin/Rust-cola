@@ -52,7 +52,7 @@ fn test_rustcola118_pattern_detection() {
         vec!["_1 = &_2;", "_0 = _1 as *const i32;", "return;"],
     );
     
-    let findings = rule.evaluate(&pkg);
+    let findings = rule.evaluate(&pkg, None);
     println!("RUSTCOLA118 findings: {:?}", findings);
 }
 
@@ -75,7 +75,7 @@ fn test_rustcola119_pattern_detection() {
         vec!["transmute::<Box<dyn Fn() + 'a>, Box<dyn Fn() + 'static>>(closure)"],
     );
     
-    let findings = rule.evaluate(&pkg);
+    let findings = rule.evaluate(&pkg, None);
     println!("RUSTCOLA119 findings: {:?}", findings);
 }
 
@@ -98,7 +98,7 @@ fn test_rustcola120_pattern_detection() {
         vec!["_1.ptr = &_1.data;", "_0 = move _1;", "return;"],
     );
     
-    let findings = rule.evaluate(&pkg);
+    let findings = rule.evaluate(&pkg, None);
     println!("RUSTCOLA120 findings: {:?}", findings);
 }
 
@@ -121,7 +121,7 @@ fn test_rustcola121_pattern_detection() {
         vec!["loop {", "_1 = _1.wrapping_add(_2);", "}", "return;"],
     );
     
-    let findings = rule.evaluate(&pkg);
+    let findings = rule.evaluate(&pkg, None);
     println!("RUSTCOLA121 findings: {:?}", findings);
 }
 
@@ -144,6 +144,6 @@ fn test_rustcola103_pattern_detection() {
         vec!["slice::from_raw_parts_mut(ptr, len)"],
     );
     
-    let findings = rule.evaluate(&pkg);
+    let findings = rule.evaluate(&pkg, None);
     println!("RUSTCOLA103 findings: {:?}", findings);
 }

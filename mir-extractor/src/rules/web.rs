@@ -46,7 +46,7 @@ impl Rule for NonHttpsUrlRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -158,7 +158,7 @@ impl Rule for DangerAcceptInvalidCertRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -290,7 +290,7 @@ impl Rule for OpensslVerifyNoneRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         // Skip analyzer's own crate to avoid self-referential warnings
         if package.crate_name == "mir-extractor" {
             return Vec::new();
@@ -368,7 +368,7 @@ impl Rule for CookieSecureAttributeRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -444,7 +444,7 @@ impl Rule for CorsWildcardRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -512,7 +512,7 @@ impl Rule for ConnectionStringPasswordRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -582,7 +582,7 @@ impl Rule for PasswordFieldMaskingRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -661,7 +661,7 @@ impl Rule for CleartextLoggingRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -745,7 +745,7 @@ impl Rule for TlsVerificationDisabledRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -950,7 +950,7 @@ impl Rule for AwsS3UnscopedAccessRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -1218,7 +1218,7 @@ impl Rule for ContentLengthAllocationRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {

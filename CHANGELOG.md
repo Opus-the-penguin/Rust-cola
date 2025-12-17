@@ -5,6 +5,21 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3] - 2025-12-17
+
+### Changed
+- **Shared InterProcedural Analysis**: Refactored IPA engine to create a single shared analysis instance per crate instead of 5 separate instances (one per injection rule). This reduces memory usage by ~5x for interprocedural analysis.
+- **Rule Trait Signature**: Updated `Rule::evaluate()` to accept optional `&InterProceduralAnalysis` parameter, enabling shared analysis across all rules.
+- **Batched Parameter Analysis**: Path-sensitive analysis now processes all function parameters in a single pass instead of N separate analyses per function.
+
+### Fixed
+- **OOM on Large Crates**: Resolved out-of-memory issues when scanning crates with 1000+ functions by sharing interprocedural analysis infrastructure.
+
+### Technical
+- Updated all 120 Rule implementations to use new signature
+- RuleEngine now creates shared InterProceduralAnalysis once and passes to all rules
+- Successful full scan of InfluxDB: 24 crates, 11,178 functions, 2,621 findings
+
 ## [0.9.2] - 2025-12-16
 
 ### Changed

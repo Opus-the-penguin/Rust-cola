@@ -14,7 +14,6 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::dataflow::taint::TaintAnalysis;
-use crate::interprocedural;
 use crate::rules::utils::{command_rule_should_skip, INPUT_SOURCE_PATTERNS, LOG_SINK_PATTERNS};
 use crate::{
     detect_command_invocations, extract_span_from_mir_line, Confidence, Finding, MirPackage, Rule,
@@ -52,7 +51,7 @@ impl Rule for UntrustedEnvInputRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let taint_analysis = TaintAnalysis::new();
         let mut findings = Vec::new();
 
@@ -110,7 +109,7 @@ impl Rule for CommandInjectionRiskRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -224,7 +223,7 @@ impl Rule for CommandArgConcatenationRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -526,7 +525,7 @@ impl Rule for LogInjectionRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
         
         let logging_helpers = Self::find_logging_helpers(package);
@@ -854,7 +853,7 @@ impl Rule for RegexInjectionRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
         
         let mut tainted_closures: HashSet<String> = HashSet::new();
@@ -1275,7 +1274,7 @@ impl Rule for UncheckedIndexRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
         
         let tainted_return_funcs = Self::find_tainted_return_functions(package);
@@ -1575,7 +1574,7 @@ impl Rule for PathTraversalRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -1635,76 +1634,74 @@ impl Rule for PathTraversalRule {
             }
         }
 
-        // Inter-procedural analysis
-        if let Ok(mut inter_analysis) = interprocedural::InterProceduralAnalysis::new(package) {
-            if inter_analysis.analyze(package).is_ok() {
-                let flows = inter_analysis.detect_inter_procedural_flows(package);
-                
-                let mut reported_functions: HashSet<String> = findings
-                    .iter()
-                    .map(|f| f.function.clone())
-                    .collect();
-                
-                for flow in flows {
-                    if flow.sink_type != "filesystem" {
-                        continue;
-                    }
-                    
-                    let is_internal = flow.sink_function.contains("mir_extractor")
-                        || flow.sink_function.contains("mir-extractor")
-                        || flow.sink_function.contains("cache_envelope")
-                        || flow.sink_function.contains("detect_toolchain")
-                        || flow.sink_function.contains("extract_artifacts")
-                        || flow.sink_function.contains("__")
-                        || flow.source_function.contains("mir_extractor")
-                        || flow.source_function.contains("mir-extractor")
-                        || flow.source_function.contains("cache_envelope")
-                        || flow.source_function.contains("fingerprint")
-                        || flow.source_function.contains("toolchain");
-                    if is_internal {
-                        continue;
-                    }
-                    
-                    if reported_functions.contains(&flow.sink_function) {
-                        continue;
-                    }
-                    
-                    if flow.sanitized {
-                        continue;
-                    }
-                    
-                    let sink_func = package.functions.iter()
-                        .find(|f| f.name == flow.sink_function);
-                    
-                    let span = sink_func.map(|f| f.span.clone()).unwrap_or_default();
-                    let signature = sink_func.map(|f| f.signature.clone()).unwrap_or_default();
-                    
-                    findings.push(Finding {
-                        rule_id: self.metadata.id.clone(),
-                        rule_name: self.metadata.name.clone(),
-                        severity: Severity::High,
-                        message: format!(
-                            "Inter-procedural path traversal: untrusted input from `{}` \
-                            flows through {} to filesystem operation in `{}`. \
-                            User-controlled paths can enable access to files outside \
-                            intended directories.",
-                            flow.source_function,
-                            if flow.call_chain.len() > 2 {
-                                format!("{} function calls", flow.call_chain.len() - 1)
-                            } else {
-                                "helper function".to_string()
-                            },
-                            flow.sink_function
-                        ),
-                        function: flow.sink_function.clone(),
-                        function_signature: signature,
-                        evidence: vec![flow.describe()],
-                        span,
-                        ..Default::default()
-                    });
-                    
-                    reported_functions.insert(flow.sink_function.clone());
+        // Inter-procedural analysis (use shared analysis if available)
+        if let Some(analysis) = inter_analysis {
+            let flows = analysis.detect_inter_procedural_flows(package);
+            
+            let mut reported_functions: HashSet<String> = findings
+                .iter()
+                .map(|f| f.function.clone())
+                .collect();
+            
+            for flow in flows {
+                if flow.sink_type != "filesystem" {
+                    continue;
                 }
+                
+                let is_internal = flow.sink_function.contains("mir_extractor")
+                    || flow.sink_function.contains("mir-extractor")
+                    || flow.sink_function.contains("cache_envelope")
+                    || flow.sink_function.contains("detect_toolchain")
+                    || flow.sink_function.contains("extract_artifacts")
+                    || flow.sink_function.contains("__")
+                    || flow.source_function.contains("mir_extractor")
+                    || flow.source_function.contains("mir-extractor")
+                    || flow.source_function.contains("cache_envelope")
+                    || flow.source_function.contains("fingerprint")
+                    || flow.source_function.contains("toolchain");
+                if is_internal {
+                    continue;
+                }
+                
+                if reported_functions.contains(&flow.sink_function) {
+                    continue;
+                }
+                
+                if flow.sanitized {
+                    continue;
+                }
+                
+                let sink_func = package.functions.iter()
+                    .find(|f| f.name == flow.sink_function);
+                
+                let span = sink_func.map(|f| f.span.clone()).unwrap_or_default();
+                let signature = sink_func.map(|f| f.signature.clone()).unwrap_or_default();
+                
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: Severity::High,
+                    message: format!(
+                        "Inter-procedural path traversal: untrusted input from `{}` \
+                        flows through {} to filesystem operation in `{}`. \
+                        User-controlled paths can enable access to files outside \
+                        intended directories.",
+                        flow.source_function,
+                        if flow.call_chain.len() > 2 {
+                            format!("{} function calls", flow.call_chain.len() - 1)
+                        } else {
+                            "helper function".to_string()
+                        },
+                        flow.sink_function
+                    ),
+                    function: flow.sink_function.clone(),
+                    function_signature: signature,
+                    evidence: vec![flow.describe()],
+                    span,
+                    ..Default::default()
+                });
+                
+                reported_functions.insert(flow.sink_function.clone());
             }
         }
 
@@ -1879,7 +1876,7 @@ impl Rule for SsrfRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -1938,67 +1935,65 @@ impl Rule for SsrfRule {
             }
         }
 
-        // Inter-procedural analysis
-        if let Ok(mut inter_analysis) = interprocedural::InterProceduralAnalysis::new(package) {
-            if inter_analysis.analyze(package).is_ok() {
-                let flows = inter_analysis.detect_inter_procedural_flows(package);
-                
-                let mut reported_functions: HashSet<String> = findings
-                    .iter()
-                    .map(|f| f.function.clone())
-                    .collect();
-                
-                for flow in flows {
-                    if flow.sink_type != "http" {
-                        continue;
-                    }
-                    
-                    let is_internal = flow.sink_function.contains("mir_extractor")
-                        || flow.sink_function.contains("__")
-                        || flow.source_function.contains("mir_extractor");
-                    if is_internal {
-                        continue;
-                    }
-                    
-                    if reported_functions.contains(&flow.sink_function) {
-                        continue;
-                    }
-                    
-                    if flow.sanitized {
-                        continue;
-                    }
-                    
-                    let sink_func = package.functions.iter()
-                        .find(|f| f.name == flow.sink_function);
-                    
-                    let span = sink_func.map(|f| f.span.clone()).unwrap_or_default();
-                    let signature = sink_func.map(|f| f.signature.clone()).unwrap_or_default();
-                    
-                    findings.push(Finding {
-                        rule_id: self.metadata.id.clone(),
-                        rule_name: self.metadata.name.clone(),
-                        severity: Severity::High,
-                        message: format!(
-                            "Inter-procedural SSRF: untrusted input from `{}` \
-                            flows through {} to HTTP request in `{}`. Validate \
-                            URLs against an allowlist before making requests.",
-                            flow.source_function,
-                            if flow.call_chain.len() > 2 {
-                                format!("{} function calls", flow.call_chain.len() - 1)
-                            } else {
-                                "helper function".to_string()
-                            },
-                            flow.sink_function
-                        ),
-                        function: flow.sink_function.clone(),
-                        function_signature: signature,
-                        evidence: vec![flow.describe()],
-                        span,
-                        ..Default::default()
-                    });
-                    
-                    reported_functions.insert(flow.sink_function.clone());
+        // Inter-procedural analysis (use shared analysis if available)
+        if let Some(analysis) = inter_analysis {
+            let flows = analysis.detect_inter_procedural_flows(package);
+            
+            let mut reported_functions: HashSet<String> = findings
+                .iter()
+                .map(|f| f.function.clone())
+                .collect();
+            
+            for flow in flows {
+                if flow.sink_type != "http" {
+                    continue;
                 }
+                
+                let is_internal = flow.sink_function.contains("mir_extractor")
+                    || flow.sink_function.contains("__")
+                    || flow.source_function.contains("mir_extractor");
+                if is_internal {
+                    continue;
+                }
+                
+                if reported_functions.contains(&flow.sink_function) {
+                    continue;
+                }
+                
+                if flow.sanitized {
+                    continue;
+                }
+                
+                let sink_func = package.functions.iter()
+                    .find(|f| f.name == flow.sink_function);
+                
+                let span = sink_func.map(|f| f.span.clone()).unwrap_or_default();
+                let signature = sink_func.map(|f| f.signature.clone()).unwrap_or_default();
+                
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: Severity::High,
+                    message: format!(
+                        "Inter-procedural SSRF: untrusted input from `{}` \
+                        flows through {} to HTTP request in `{}`. Validate \
+                        URLs against an allowlist before making requests.",
+                        flow.source_function,
+                        if flow.call_chain.len() > 2 {
+                            format!("{} function calls", flow.call_chain.len() - 1)
+                        } else {
+                            "helper function".to_string()
+                        },
+                        flow.sink_function
+                    ),
+                    function: flow.sink_function.clone(),
+                    function_signature: signature,
+                    evidence: vec![flow.describe()],
+                    span,
+                    ..Default::default()
+                });
+                
+                reported_functions.insert(flow.sink_function.clone());
             }
         }
 
@@ -2264,7 +2259,7 @@ impl Rule for SqlInjectionRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         // Build tainted return functions map
@@ -2385,67 +2380,65 @@ impl Rule for SqlInjectionRule {
             }
         }
 
-        // Inter-procedural analysis
-        if let Ok(mut inter_analysis) = interprocedural::InterProceduralAnalysis::new(package) {
-            if inter_analysis.analyze(package).is_ok() {
-                let flows = inter_analysis.detect_inter_procedural_flows(package);
-                
-                let mut reported_functions: HashSet<String> = findings
-                    .iter()
-                    .map(|f| f.function.clone())
-                    .collect();
-                
-                for flow in flows {
-                    if flow.sink_type != "sql" {
-                        continue;
-                    }
-                    
-                    let is_internal = flow.sink_function.contains("mir_extractor")
-                        || flow.sink_function.contains("__")
-                        || flow.source_function.contains("mir_extractor");
-                    if is_internal {
-                        continue;
-                    }
-                    
-                    if reported_functions.contains(&flow.sink_function) {
-                        continue;
-                    }
-                    
-                    if flow.sanitized {
-                        continue;
-                    }
-                    
-                    let sink_func = package.functions.iter()
-                        .find(|f| f.name == flow.sink_function);
-                    
-                    let span = sink_func.map(|f| f.span.clone()).unwrap_or_default();
-                    let signature = sink_func.map(|f| f.signature.clone()).unwrap_or_default();
-                    
-                    findings.push(Finding {
-                        rule_id: self.metadata.id.clone(),
-                        rule_name: self.metadata.name.clone(),
-                        severity: Severity::High,
-                        message: format!(
-                            "Inter-procedural SQL injection: untrusted input from `{}` \
-                            flows through {} to SQL query in `{}`. Use parameterized \
-                            queries to prevent SQL injection.",
-                            flow.source_function,
-                            if flow.call_chain.len() > 2 {
-                                format!("{} function calls", flow.call_chain.len() - 1)
-                            } else {
-                                "helper function".to_string()
-                            },
-                            flow.sink_function
-                        ),
-                        function: flow.sink_function.clone(),
-                        function_signature: signature,
-                        evidence: vec![flow.describe()],
-                        span,
-                        ..Default::default()
-                    });
-                    
-                    reported_functions.insert(flow.sink_function.clone());
+        // Inter-procedural analysis (use shared analysis if available)
+        if let Some(analysis) = inter_analysis {
+            let flows = analysis.detect_inter_procedural_flows(package);
+            
+            let mut reported_functions: HashSet<String> = findings
+                .iter()
+                .map(|f| f.function.clone())
+                .collect();
+            
+            for flow in flows {
+                if flow.sink_type != "sql" {
+                    continue;
                 }
+                
+                let is_internal = flow.sink_function.contains("mir_extractor")
+                    || flow.sink_function.contains("__")
+                    || flow.source_function.contains("mir_extractor");
+                if is_internal {
+                    continue;
+                }
+                
+                if reported_functions.contains(&flow.sink_function) {
+                    continue;
+                }
+                
+                if flow.sanitized {
+                    continue;
+                }
+                
+                let sink_func = package.functions.iter()
+                    .find(|f| f.name == flow.sink_function);
+                
+                let span = sink_func.map(|f| f.span.clone()).unwrap_or_default();
+                let signature = sink_func.map(|f| f.signature.clone()).unwrap_or_default();
+                
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: Severity::High,
+                    message: format!(
+                        "Inter-procedural SQL injection: untrusted input from `{}` \
+                        flows through {} to SQL query in `{}`. Use parameterized \
+                        queries to prevent SQL injection.",
+                        flow.source_function,
+                        if flow.call_chain.len() > 2 {
+                            format!("{} function calls", flow.call_chain.len() - 1)
+                        } else {
+                            "helper function".to_string()
+                        },
+                        flow.sink_function
+                    ),
+                    function: flow.sink_function.clone(),
+                    function_signature: signature,
+                    evidence: vec![flow.describe()],
+                    span,
+                    ..Default::default()
+                });
+                
+                reported_functions.insert(flow.sink_function.clone());
             }
         }
 
@@ -2487,193 +2480,125 @@ impl Rule for InterProceduralCommandInjectionRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
-        if let Ok(mut inter_analysis) = interprocedural::InterProceduralAnalysis::new(package) {
-            if inter_analysis.analyze(package).is_ok() {
-                let flows = inter_analysis.detect_inter_procedural_flows(package);
-                
-                let mut reported_functions: HashSet<String> = HashSet::new();
-                
-                for flow in flows {
-                    if !flow.sink_type.contains("command") {
-                        continue;
-                    }
-                    
-                    let is_internal = flow.sink_function.contains("mir_extractor")
-                        || flow.sink_function.contains("mir-extractor")
-                        || flow.sink_function.contains("__")
-                        || flow.source_function.contains("mir_extractor")
-                        || flow.source_function.contains("mir-extractor");
-                    if is_internal {
-                        continue;
-                    }
-                    
-                    if flow.sink_function.contains("test") && flow.sink_function.contains("::") {
-                        if !flow.sink_function.starts_with("test_") {
-                            continue;
-                        }
-                    }
-                    
-                    if reported_functions.contains(&flow.sink_function) {
-                        continue;
-                    }
-                    
-                    if flow.sanitized {
-                        continue;
-                    }
-                    
-                    let sink_func = package.functions.iter()
-                        .find(|f| f.name == flow.sink_function);
-                    
-                    let span = sink_func.map(|f| f.span.clone()).unwrap_or_default();
-                    let signature = sink_func.map(|f| f.signature.clone()).unwrap_or_default();
-                    
-                    findings.push(Finding {
-                        rule_id: self.metadata.id.clone(),
-                        rule_name: self.metadata.name.clone(),
-                        severity: Severity::High,
-                        message: format!(
-                            "Inter-procedural command injection: untrusted input from `{}` \
-                            flows through {} to command execution in `{}`. \
-                            Attackers can inject shell metacharacters. \
-                            Validate against an allowlist or avoid shell invocation.",
-                            flow.source_function,
-                            if flow.call_chain.len() > 2 {
-                                format!("{} function calls", flow.call_chain.len() - 1)
-                            } else {
-                                "helper function".to_string()
-                            },
-                            flow.sink_function
-                        ),
-                        function: flow.sink_function.clone(),
-                        function_signature: signature,
-                        evidence: vec![flow.describe()],
-                        span,
-                        ..Default::default()
-                    });
-                    
-                    reported_functions.insert(flow.sink_function.clone());
+        // Use shared interprocedural analysis if available
+        if let Some(analysis) = inter_analysis {
+            let flows = analysis.detect_inter_procedural_flows(package);
+            
+            let mut reported_functions: HashSet<String> = HashSet::new();
+            
+            for flow in flows {
+                if !flow.sink_type.contains("command") {
+                    continue;
                 }
                 
-                // Closure capture detection
-                for closure in inter_analysis.closure_registry.get_all_closures() {
-                    if reported_functions.contains(&closure.name) {
+                let is_internal = flow.sink_function.contains("mir_extractor")
+                    || flow.sink_function.contains("mir-extractor")
+                    || flow.sink_function.contains("__")
+                    || flow.source_function.contains("mir_extractor")
+                    || flow.source_function.contains("mir-extractor");
+                if is_internal {
+                    continue;
+                }
+                
+                if flow.sink_function.contains("test") && flow.sink_function.contains("::") {
+                    if !flow.sink_function.starts_with("test_") {
                         continue;
                     }
-                    
-                    let parent_func = package.functions.iter()
-                        .find(|f| f.name == closure.parent_function);
-                    
-                    let closure_func = package.functions.iter()
-                        .find(|f| f.name == closure.name);
-                    
-                    if let Some(closure_fn) = closure_func {
-                        let parent_has_source = if let Some(parent) = parent_func {
-                            parent.body.iter().any(|line| {
-                                line.contains("args()") || 
-                                line.contains("env::args") || 
-                                line.contains("env::var") ||
-                                line.contains("std::env::") ||
-                                line.contains("= args") ||
-                                line.contains("var(")
-                            })
+                }
+                
+                if reported_functions.contains(&flow.sink_function) {
+                    continue;
+                }
+                
+                if flow.sanitized {
+                    continue;
+                }
+                
+                let sink_func = package.functions.iter()
+                    .find(|f| f.name == flow.sink_function);
+                
+                let span = sink_func.map(|f| f.span.clone()).unwrap_or_default();
+                let signature = sink_func.map(|f| f.signature.clone()).unwrap_or_default();
+                
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: Severity::High,
+                    message: format!(
+                        "Inter-procedural command injection: untrusted input from `{}` \
+                        flows through {} to command execution in `{}`. \
+                        Attackers can inject shell metacharacters. \
+                        Validate against an allowlist or avoid shell invocation.",
+                        flow.source_function,
+                        if flow.call_chain.len() > 2 {
+                            format!("{} function calls", flow.call_chain.len() - 1)
                         } else {
-                            closure_fn.body.iter().any(|line| {
-                                let line_lower = line.to_lowercase();
-                                (line.contains("debug ") && line.contains("(*((*_1)")) &&
-                                (line_lower.contains("tainted") || 
-                                 line_lower.contains("user") ||
-                                 line_lower.contains("input") ||
-                                 line_lower.contains("cmd") ||
-                                 line_lower.contains("arg") ||
-                                 line_lower.contains("command"))
-                            })
-                        };
-                        
-                        let closure_has_sink = closure_fn.body.iter().any(|line| {
-                            line.contains("Command::new") ||
-                            line.contains("Command::") ||
-                            line.contains("::spawn") ||
-                            line.contains("::output") ||
-                            line.contains("process::Command")
+                            "helper function".to_string()
+                        },
+                        flow.sink_function
+                    ),
+                    function: flow.sink_function.clone(),
+                    function_signature: signature,
+                    evidence: vec![flow.describe()],
+                    span,
+                    ..Default::default()
+                });
+                
+                reported_functions.insert(flow.sink_function.clone());
+            }
+            
+            // Closure capture detection
+            for closure in analysis.closure_registry.get_all_closures() {
+                if reported_functions.contains(&closure.name) {
+                    continue;
+                }
+                
+                let parent_func = package.functions.iter()
+                    .find(|f| f.name == closure.parent_function);
+                
+                let closure_func = package.functions.iter()
+                    .find(|f| f.name == closure.name);
+                
+                if let Some(closure_fn) = closure_func {
+                    let parent_has_source = if let Some(parent) = parent_func {
+                        parent.body.iter().any(|line| {
+                            line.contains("args()") || 
+                            line.contains("env::args") || 
+                            line.contains("env::var") ||
+                            line.contains("std::env::") ||
+                            line.contains("= args") ||
+                            line.contains("var(")
+                        })
+                    } else {
+                        closure_fn.body.iter().any(|line| {
+                            let line_lower = line.to_lowercase();
+                            (line.contains("debug ") && line.contains("(*((*_1)")) &&
+                            (line_lower.contains("tainted") || 
+                             line_lower.contains("user") ||
+                             line_lower.contains("input") ||
+                             line_lower.contains("cmd") ||
+                             line_lower.contains("arg") ||
+                             line_lower.contains("command"))
+                        })
+                    };
+                    
+                    let closure_has_sink = closure_fn.body.iter().any(|line| {
+                        line.contains("Command::new") ||
+                        line.contains("Command::") ||
+                        line.contains("::spawn") ||
+                        line.contains("::output") ||
+                        line.contains("process::Command")
+                    });
+                    
+                    let has_captures = !closure.captured_vars.is_empty() ||
+                        closure_fn.body.iter().any(|line| {
+                            line.contains("debug ") && line.contains("(*((*_1)")
                         });
-                        
-                        let has_captures = !closure.captured_vars.is_empty() ||
-                            closure_fn.body.iter().any(|line| {
-                                line.contains("debug ") && line.contains("(*((*_1)")
-                            });
-                        
-                        if parent_has_source && closure_has_sink && has_captures {
-                            findings.push(Finding {
-                                rule_id: self.metadata.id.clone(),
-                                rule_name: self.metadata.name.clone(),
-                                severity: Severity::High,
-                                message: format!(
-                                    "Closure captures tainted data: `{}` captures untrusted input \
-                                    from parent function `{}` and passes it to command execution. \
-                                    Attackers can inject shell metacharacters. \
-                                    Validate input or avoid shell invocation.",
-                                    closure.name,
-                                    closure.parent_function
-                                ),
-                                function: closure.name.clone(),
-                                function_signature: closure_fn.signature.clone(),
-                                evidence: vec![
-                                    format!("Parent function {} contains taint source", closure.parent_function),
-                                    format!("Closure captures variable(s) from parent"),
-                                    "Closure body contains command execution".to_string(),
-                                ],
-                                span: closure_fn.span.clone(),
-                                ..Default::default()
-                            });
-                            
-                            reported_functions.insert(closure.name.clone());
-                        }
-                    }
-                }
-                
-                // Direct closure scan fallback
-                for function in &package.functions {
-                    if !function.name.contains("::{closure#") {
-                        continue;
-                    }
                     
-                    if reported_functions.contains(&function.name) {
-                        continue;
-                    }
-                    
-                    let body_str = function.body.join("\n");
-                    
-                    let has_command_sink = body_str.contains("Command::") ||
-                        body_str.contains("::spawn") ||
-                        body_str.contains("::output");
-                    
-                    if !has_command_sink {
-                        continue;
-                    }
-                    
-                    let has_tainted_capture = body_str.lines().any(|line| {
-                        if !line.contains("debug ") || !line.contains("(*((*_1)") {
-                            return false;
-                        }
-                        let line_lower = line.to_lowercase();
-                        line_lower.contains("tainted") ||
-                        line_lower.contains("user") ||
-                        line_lower.contains("input") ||
-                        line_lower.contains("cmd") ||
-                        line_lower.contains("arg") ||
-                        line_lower.contains("command")
-                    });
-                    
-                    if has_tainted_capture {
-                        let parent_name = if let Some(pos) = function.name.find("::{closure#") {
-                            function.name[..pos].to_string()
-                        } else {
-                            "unknown_parent".to_string()
-                        };
-                        
+                    if parent_has_source && closure_has_sink && has_captures {
                         findings.push(Finding {
                             rule_id: self.metadata.id.clone(),
                             rule_name: self.metadata.name.clone(),
@@ -2683,24 +2608,91 @@ impl Rule for InterProceduralCommandInjectionRule {
                                 from parent function `{}` and passes it to command execution. \
                                 Attackers can inject shell metacharacters. \
                                 Validate input or avoid shell invocation.",
-                                function.name,
-                                parent_name
+                                closure.name,
+                                closure.parent_function
                             ),
-                            function: function.name.clone(),
-                            function_signature: function.signature.clone(),
+                            function: closure.name.clone(),
+                            function_signature: closure_fn.signature.clone(),
                             evidence: vec![
-                                format!("Closure captures variable(s) named with taint indicators"),
+                                format!("Parent function {} contains taint source", closure.parent_function),
+                                format!("Closure captures variable(s) from parent"),
                                 "Closure body contains command execution".to_string(),
                             ],
-                            span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
+                            span: closure_fn.span.clone(),
+                            ..Default::default()
                         });
                         
-                        reported_functions.insert(function.name.clone());
+                        reported_functions.insert(closure.name.clone());
                     }
+                }
+            }
+            
+            // Direct closure scan fallback
+            for function in &package.functions {
+                if !function.name.contains("::{closure#") {
+                    continue;
+                }
+                
+                if reported_functions.contains(&function.name) {
+                    continue;
+                }
+                
+                let body_str = function.body.join("\n");
+                
+                let has_command_sink = body_str.contains("Command::") ||
+                    body_str.contains("::spawn") ||
+                    body_str.contains("::output");
+                
+                if !has_command_sink {
+                    continue;
+                }
+                
+                let has_tainted_capture = body_str.lines().any(|line| {
+                    if !line.contains("debug ") || !line.contains("(*((*_1)") {
+                        return false;
+                    }
+                    let line_lower = line.to_lowercase();
+                    line_lower.contains("tainted") ||
+                    line_lower.contains("user") ||
+                    line_lower.contains("input") ||
+                    line_lower.contains("cmd") ||
+                    line_lower.contains("arg") ||
+                    line_lower.contains("command")
+                });
+                
+                if has_tainted_capture {
+                    let parent_name = if let Some(pos) = function.name.find("::{closure#") {
+                        function.name[..pos].to_string()
+                    } else {
+                        "unknown_parent".to_string()
+                    };
+                    
+                    findings.push(Finding {
+                        rule_id: self.metadata.id.clone(),
+                        rule_name: self.metadata.name.clone(),
+                        severity: Severity::High,
+                        message: format!(
+                            "Closure captures tainted data: `{}` captures untrusted input \
+                            from parent function `{}` and passes it to command execution. \
+                            Attackers can inject shell metacharacters. \
+                            Validate input or avoid shell invocation.",
+                            function.name,
+                            parent_name
+                        ),
+                        function: function.name.clone(),
+                        function_signature: function.signature.clone(),
+                        evidence: vec![
+                            format!("Closure captures variable(s) named with taint indicators"),
+                            "Closure body contains command execution".to_string(),
+                        ],
+                        span: function.span.clone(),
+                        confidence: Confidence::Medium,
+                        cwe_ids: Vec::new(),
+                        fix_suggestion: None,
+                        code_snippet: None,
+                    });
+                    
+                    reported_functions.insert(function.name.clone());
                 }
             }
         }

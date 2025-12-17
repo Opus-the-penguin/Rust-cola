@@ -18,7 +18,7 @@ use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
 
-use crate::{interprocedural, Confidence, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
+use crate::{Confidence, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use super::utils::filter_entry;
 
 // Shared input source patterns used by multiple rules
@@ -94,7 +94,7 @@ impl Rule for CleartextEnvVarRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -178,7 +178,7 @@ impl Rule for EnvVarLiteralRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -281,7 +281,7 @@ impl Rule for InvisibleUnicodeRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -375,7 +375,7 @@ impl Rule for UntrimmedStdinRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -495,7 +495,7 @@ impl Rule for InfiniteIteratorRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -670,7 +670,7 @@ impl Rule for DivisionByUntrustedRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -855,7 +855,7 @@ impl Rule for InsecureYamlDeserializationRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -892,43 +892,41 @@ impl Rule for InsecureYamlDeserializationRule {
             }
         }
 
-        // Inter-procedural analysis
-        if let Ok(mut inter_analysis) = interprocedural::InterProceduralAnalysis::new(package) {
-            if inter_analysis.analyze(package).is_ok() {
-                let flows = inter_analysis.detect_inter_procedural_flows(package);
-                let mut reported_functions: HashSet<String> = findings
-                    .iter().map(|f| f.function.clone()).collect();
-                
-                for flow in flows {
-                    if flow.sink_type != "yaml" {
-                        continue;
-                    }
-                    if flow.sink_function.contains("mir_extractor") || flow.sanitized {
-                        continue;
-                    }
-                    if reported_functions.contains(&flow.sink_function) {
-                        continue;
-                    }
-                    
-                    let sink_func = package.functions.iter().find(|f| f.name == flow.sink_function);
-                    
-                    findings.push(Finding {
-                        rule_id: self.metadata.id.clone(),
-                        rule_name: self.metadata.name.clone(),
-                        severity: Severity::Medium,
-                        message: format!(
-                            "Inter-procedural YAML injection: untrusted input from `{}` \
-                            flows to YAML deserialization in `{}`.",
-                            flow.source_function, flow.sink_function
-                        ),
-                        function: flow.sink_function.clone(),
-                        function_signature: sink_func.map(|f| f.signature.clone()).unwrap_or_default(),
-                        evidence: vec![flow.describe()],
-                        span: sink_func.map(|f| f.span.clone()).unwrap_or_default(),
-                        ..Default::default()
-                    });
-                    reported_functions.insert(flow.sink_function);
+        // Inter-procedural analysis (use shared analysis if available)
+        if let Some(analysis) = inter_analysis {
+            let flows = analysis.detect_inter_procedural_flows(package);
+            let mut reported_functions: HashSet<String> = findings
+                .iter().map(|f| f.function.clone()).collect();
+            
+            for flow in flows {
+                if flow.sink_type != "yaml" {
+                    continue;
                 }
+                if flow.sink_function.contains("mir_extractor") || flow.sanitized {
+                    continue;
+                }
+                if reported_functions.contains(&flow.sink_function) {
+                    continue;
+                }
+                
+                let sink_func = package.functions.iter().find(|f| f.name == flow.sink_function);
+                
+                findings.push(Finding {
+                    rule_id: self.metadata.id.clone(),
+                    rule_name: self.metadata.name.clone(),
+                    severity: Severity::Medium,
+                    message: format!(
+                        "Inter-procedural YAML injection: untrusted input from `{}` \
+                        flows to YAML deserialization in `{}`.",
+                        flow.source_function, flow.sink_function
+                    ),
+                    function: flow.sink_function.clone(),
+                    function_signature: sink_func.map(|f| f.signature.clone()).unwrap_or_default(),
+                    evidence: vec![flow.describe()],
+                    span: sink_func.map(|f| f.span.clone()).unwrap_or_default(),
+                    ..Default::default()
+                });
+                reported_functions.insert(flow.sink_function);
             }
         }
 
@@ -1022,7 +1020,7 @@ impl Rule for UnboundedReadRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -1218,7 +1216,7 @@ impl Rule for InsecureJsonTomlDeserializationRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -1489,7 +1487,7 @@ impl Rule for SerdeLengthMismatchRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -1658,7 +1656,7 @@ impl Rule for UncheckedTimestampMultiplicationRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }

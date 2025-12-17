@@ -403,7 +403,17 @@ pub struct AnalysisResult {
 
 pub trait Rule: Send + Sync {
     fn metadata(&self) -> &RuleMetadata;
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding>;
+    
+    /// Evaluate this rule against a MIR package.
+    /// 
+    /// The optional `inter_analysis` parameter provides shared interprocedural
+    /// analysis (call graph, function summaries) for rules that need cross-function
+    /// taint tracking. Rules that don't need it should ignore the parameter.
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        inter_analysis: Option<&interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding>;
 
     fn cache_key(&self) -> String {
         serde_json::to_string(self.metadata()).unwrap_or_default()
@@ -840,10 +850,36 @@ impl RuleEngine {
         let mut findings = Vec::new();
         let mut rules = Vec::new();
 
+        // Create shared interprocedural analysis once for all rules that need it.
+        // This avoids creating 5+ separate instances (one per injection rule),
+        // reducing memory usage significantly for large codebases.
+        //
+        // With batched parameter analysis (v0.9.3+), interprocedural analysis
+        // uses less memory but still O(N) where N is function count.
+        // Set a conservative threshold to avoid OOM on large codebases.
+        const MAX_FUNCTIONS_FOR_INTERPROCEDURAL: usize = 500;
+        
+        let inter_analysis = if package.functions.len() <= MAX_FUNCTIONS_FOR_INTERPROCEDURAL {
+            interprocedural::InterProceduralAnalysis::new(package)
+                .and_then(|mut analysis| {
+                    analysis.analyze(package)?;
+                    Ok(analysis)
+                })
+                .ok()
+        } else {
+            eprintln!(
+                "Note: Skipping interprocedural analysis for {} ({} functions > {} threshold)",
+                package.crate_name,
+                package.functions.len(),
+                MAX_FUNCTIONS_FOR_INTERPROCEDURAL
+            );
+            None
+        };
+
         for rule in &self.rules {
             let metadata = rule.metadata().clone();
             rules.push(metadata.clone());
-            findings.extend(rule.evaluate(package));
+            findings.extend(rule.evaluate(package, inter_analysis.as_ref()));
         }
 
         AnalysisResult { findings, rules }
@@ -1080,7 +1116,7 @@ impl Rule for DeclarativeRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         let mut findings = Vec::new();
         for function in &package.functions {
             if !self.matches(function) {
@@ -1158,7 +1194,7 @@ impl Rule for WasmRulePlaceholder {
         &self.metadata
     }
 
-    fn evaluate(&self, _package: &MirPackage) -> Vec<Finding> {
+    fn evaluate(&self, _package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
         Vec::new()
     }
 }
@@ -3484,7 +3520,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert_eq!(findings.len(), 1);
         assert!(findings[0]
             .evidence
@@ -3507,7 +3543,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert!(findings.is_empty());
     }
 
@@ -3526,7 +3562,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert_eq!(findings.len(), 1);
         assert!(findings[0]
             .evidence
@@ -3549,7 +3585,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert!(findings.is_empty());
     }
 
@@ -3568,7 +3604,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert_eq!(findings.len(), 1);
         assert!(findings[0]
             .evidence
@@ -3591,7 +3627,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert!(findings.is_empty());
     }
 
@@ -3610,7 +3646,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert_eq!(findings.len(), 1);
         assert!(findings[0]
             .evidence
@@ -3633,7 +3669,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert!(findings.is_empty());
     }
 
@@ -3654,7 +3690,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert_eq!(findings.len(), 1);
         assert!(findings[0]
             .evidence
@@ -3679,7 +3715,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert!(findings.is_empty());
     }
 
@@ -3700,7 +3736,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert!(findings.is_empty());
     }
 
@@ -3719,7 +3755,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert_eq!(findings.len(), 1);
         assert!(findings[0]
             .evidence
@@ -3742,7 +3778,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert!(findings.is_empty());
     }
 
@@ -3765,7 +3801,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert_eq!(findings.len(), 1);
         assert!(findings[0]
             .evidence
@@ -3796,7 +3832,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert!(findings.is_empty());
     }
 
@@ -3815,7 +3851,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert!(findings.is_empty());
     }
 
@@ -3838,7 +3874,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert_eq!(findings.len(), 1);
         assert!(findings[0]
             .evidence
@@ -3865,7 +3901,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert!(findings.is_empty());
     }
 
@@ -3888,7 +3924,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert!(findings.is_empty());
     }
 
@@ -3911,7 +3947,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert_eq!(findings.len(), 1);
         let finding = &findings[0];
         assert_eq!(finding.severity, Severity::High);
@@ -3941,7 +3977,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert_eq!(findings.len(), 1);
         let finding = &findings[0];
         assert_eq!(finding.severity, Severity::High);
@@ -3969,7 +4005,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert_eq!(findings.len(), 1);
         let finding = &findings[0];
         assert_eq!(finding.severity, Severity::Medium);
@@ -3998,7 +4034,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert_eq!(findings.len(), 1);
         // The finding should contain evidence about the taint flow
         assert!(findings[0].message.contains("Tainted data"));
@@ -4019,7 +4055,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert!(findings.is_empty());
     }
 
@@ -4041,7 +4077,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert_eq!(findings.len(), 1);
         assert!(findings[0]
             .evidence
@@ -4068,7 +4104,7 @@ rules:
             }],
         };
 
-        let findings = rule.evaluate(&package);
+        let findings = rule.evaluate(&package, None);
         assert_eq!(findings.len(), 1);
         let evidence = &findings[0].evidence;
         assert_eq!(evidence.len(), 2);

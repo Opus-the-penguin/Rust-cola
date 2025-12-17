@@ -838,7 +838,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-cola"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2388,7 +2388,7 @@ dependencies = [
 
 [[package]]
 name = "mir-advanced-rules"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "once_cell",
@@ -2398,7 +2398,7 @@ dependencies = [
 
 [[package]]
 name = "mir-extractor"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "assert_cmd",

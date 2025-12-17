@@ -2,7 +2,7 @@
 
 **Goal**: Complete UX and first-run-value enhancements for production release.
 
-**Current Version**: 0.9.2  
+**Current Version**: 0.9.3  
 **Target Version**: 1.0.0  
 **Rules**: 124 (115 RUSTCOLA + 9 ADV)  
 **Tests**: 200+ passing

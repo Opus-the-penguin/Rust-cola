@@ -1694,9 +1694,31 @@ fn generate_llm_prompt(
     writeln!(&mut content)?;
     writeln!(content, "1. Triage: Classify each finding as True Positive or False Positive")?;
     writeln!(content, "2. Severity: Rate using CVSS 3.1 (Critical 9.0+, High 7.0+, Medium 4.0+, Low <4.0)")?;
-    writeln!(content, "3. Exploitability: Analyze attack vector, complexity, impact")?;
+    writeln!(content, "3. Exploitability: Analyze how each finding could be exploited")?;
     writeln!(content, "4. Remediation: Provide code fixes for true positives")?;
     writeln!(content, "5. Prioritize: P0 (now), P1 (sprint), P2 (quarter), P3 (backlog)")?;
+    writeln!(&mut content)?;
+    
+    // Exploitability Analysis
+    writeln!(content, "## Exploitability Analysis")?;
+    writeln!(&mut content)?;
+    writeln!(content, "For each true positive, answer:")?;
+    writeln!(&mut content)?;
+    writeln!(content, "| Question | Answer |")?;
+    writeln!(content, "|----------|--------|")?;
+    writeln!(content, "| Prerequisites | What does attacker need? (network access, auth, specific input) |")?;
+    writeln!(content, "| Attack path | Step-by-step how exploitation occurs |")?;
+    writeln!(content, "| Reachability | Can attacker-controlled data reach this code? How? |")?;
+    writeln!(content, "| Constraints | What limits exploitation? (input validation, type system, environment) |")?;
+    writeln!(content, "| Practical | Is this exploitable in practice or only in theory? |")?;
+    writeln!(content, "| PoC feasible | Could a proof-of-concept be constructed? Describe briefly. |")?;
+    writeln!(&mut content)?;
+    writeln!(content, "Exploitability levels:")?;
+    writeln!(content, "- Proven: PoC exists or is trivially constructable")?;
+    writeln!(content, "- Likely: Clear attack path, no significant barriers")?;
+    writeln!(content, "- Possible: Requires specific conditions or chained vulnerabilities")?;
+    writeln!(content, "- Theoretical: Requires unlikely conditions or significant attacker capability")?;
+    writeln!(content, "- Unexploitable: No viable attack path (reclassify as False Positive)")?;
     writeln!(&mut content)?;
     
     // False Positive Requirements
@@ -1738,11 +1760,13 @@ fn generate_llm_prompt(
     writeln!(content, "- Severity: Critical (CVSS X.X)")?;
     writeln!(content, "- Location: file.rs:line")?;
     writeln!(content, "- Impact: what attacker achieves")?;
-    writeln!(content, "- Attack: vector, complexity")?;
+    writeln!(content, "- Exploitability: Proven/Likely/Possible/Theoretical")?;
+    writeln!(content, "- Prerequisites: what attacker needs")?;
+    writeln!(content, "- Attack path: step-by-step exploitation")?;
     writeln!(content, "- Vulnerable code and fix")?;
     writeln!(&mut content)?;
     writeln!(content, "## Medium and Low Findings")?;
-    writeln!(content, "Brief descriptions with fixes")?;
+    writeln!(content, "Brief descriptions with exploitability assessment and fixes")?;
     writeln!(&mut content)?;
     writeln!(content, "## False Positives")?;
     writeln!(content, "| Finding | Category | Evidence | Confidence |")?;

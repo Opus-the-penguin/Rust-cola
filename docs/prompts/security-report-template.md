@@ -34,10 +34,26 @@ For each true positive:
 | CVSS Score | X.X with justification |
 | Location | file.rs:line |
 | Impact | What attacker achieves |
-| Attack Vector | Network (unauth) / Network (auth) / Local |
-| Complexity | Trivial / Moderate / Complex |
 
-Include vulnerable code, fix, and attack scenario for High/Critical.
+## Exploitability Analysis
+
+For each true positive, answer:
+
+| Question | Answer |
+|----------|--------|
+| Prerequisites | What does attacker need? (network access, auth, specific input) |
+| Attack path | Step-by-step how exploitation occurs |
+| Reachability | Can attacker-controlled data reach this code? How? |
+| Constraints | What limits exploitation? (input validation, type system, environment) |
+| Practical | Is this exploitable in practice or only in theory? |
+| PoC feasible | Could a proof-of-concept be constructed? Describe briefly. |
+
+Exploitability levels:
+- Proven: PoC exists or is trivially constructable
+- Likely: Clear attack path, no significant barriers
+- Possible: Requires specific conditions or chained vulnerabilities
+- Theoretical: Requires unlikely conditions or significant attacker capability
+- Unexploitable: No viable attack path (reclassify as False Positive)
 
 ## False Positive Requirements
 
@@ -79,10 +95,17 @@ If confidence < 90%, classify as True Positive.
 - Risk: High/Medium/Low
 
 ## Critical and High Findings
-[Analysis with attack scenarios and fixes]
+### RULE_ID: Title
+- Severity: Critical (CVSS X.X)
+- Location: file.rs:line
+- Impact: what attacker achieves
+- Exploitability: Proven/Likely/Possible/Theoretical
+- Prerequisites: what attacker needs
+- Attack path: step-by-step exploitation
+- Vulnerable code and fix
 
 ## Medium and Low Findings
-[Brief descriptions with fixes]
+Brief descriptions with exploitability assessment and fixes
 
 ## False Positives
 | Finding | Category | Evidence | Confidence |

@@ -1,76 +1,129 @@
+# Rule Development Guide
 
-# Rule Development Guide (Short Version)
+Two ways to create custom rules: YAML rulepacks (recommended) or Rust code.
 
-This guide shows how to add a new heuristic rule to Rust-cola. Keep it simple and direct.
+---
 
-## 1. Get a Rule ID
-- Find the next free RUSTCOLA ID:
-  ```sh
-  grep 'id: "RUSTCOLA' mir-extractor/src/lib.rs | sort -u
-  ```
+## Option 1: YAML Rulepacks (Recommended)
 
-## 2. Add Your Rule
-- In `mir-extractor/src/lib.rs`, define your struct and implement the `Rule` trait.
-- Example:
-  ```rust
-  struct MyNewRule { metadata: RuleMetadata }
-  impl MyNewRule {
-      fn new() -> Self { /* fill metadata */ }
-  }
-  impl Rule for MyNewRule {
-      fn metadata(&self) -> &RuleMetadata { &self.metadata }
-      fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
-          if package.crate_name == "mir-extractor" { return Vec::new(); }
-          // Pattern match on function.body lines
-          // Push Finding if pattern matches
-          Vec::new()
-      }
-  }
-  ```
+Create a `.yaml` file with pattern-based rules. No compilation required.
 
-## 3. Register the Rule
-- Add to `with_builtin_rules()`:
-  ```rust
-  engine.register_rule(Box::new(MyNewRule::new()));
-  ```
+### Example Rulepack
 
-## 4. Test the Rule
-- Manual: Run on an example crate:
-  ```sh
-  cargo run -p cargo-cola -- --crate-path examples/simple --out-dir out/cola
-  cat out/cola/findings.json
-  ```
-- Integration: Add a test in `mir-extractor/src/lib.rs` under `#[cfg(test)]`.
-- Run:
-  ```sh
-  cargo test -p mir-extractor
-  ```
+```yaml
+# my-rules.yaml
+rules:
+  - id: ORG001
+    name: no-unwrap
+    short_description: Avoid unwrap in production
+    full_description: Calls to unwrap() can panic. Handle errors explicitly.
+    severity: medium
+    message: Replace unwrap() with proper error handling.
+    body_contains_any:
+      - "unwrap"
 
-## 5. Update Docs
-- Mark as shipped in `docs/security-rule-backlog.md`.
+  - id: ORG002
+    name: no-into-raw
+    short_description: Detect Box::into_raw usage
+    severity: high
+    body_contains_any:
+      - "into_raw"
+```
 
-## 6. Checklist
-- [ ] Unique RUSTCOLA ID
-- [ ] Rule name (kebab-case)
-- [ ] `full_description` in metadata
-- [ ] Severity set (start Medium/Low)
-- [ ] Help URI in metadata
-- [ ] Registered in `with_builtin_rules()`
-- [ ] Skips `mir-extractor` crate
-- [ ] Manual and integration tests
-- [ ] Docs updated
-- [ ] Evidence and message are clear
+### Load the Rulepack
 
-## Pattern Matching Tips
-- Use `.trim()` on MIR lines.
-- Match both `Box::` and `Box::<T>` forms.
-- Avoid broad patterns (e.g., just `unsafe`).
-- Prefer actionable, specific messages.
+```sh
+cargo cola --rulepack my-rules.yaml --crate-path ./my-crate
+```
 
-## Example Patterns
-- Function call: `if line.contains("Box::into_raw") { ... }`
-- Assignment: `if line.starts_with("_ =") && line.contains("::lock(") { ... }`
+Multiple rulepacks can be loaded:
 
-## Help
-- See existing rules in `mir-extractor/src/lib.rs`.
-- Ask in GitHub Issues if stuck.
+```sh
+cargo cola --rulepack team-rules.yaml --rulepack project-rules.yaml
+```
+
+### Available Match Conditions
+
+| Field | Description |
+|-------|-------------|
+| `body_contains_any` | Match if function body contains any pattern |
+| `body_contains_all` | Match if function body contains all patterns |
+| `function_name_contains_any` | Match if function name contains any pattern |
+| `function_name_contains_all` | Match if function name contains all patterns |
+
+### Required Fields
+
+| Field | Description |
+|-------|-------------|
+| `id` | Unique identifier (e.g., ORG001) |
+
+### Optional Fields
+
+| Field | Default |
+|-------|---------|
+| `name` | Same as id |
+| `short_description` | Same as id |
+| `full_description` | Auto-generated |
+| `severity` | medium |
+| `message` | Auto-generated |
+| `help_uri` | None |
+
+### Severity Values
+
+`critical`, `high`, `medium`, `low`, `note`
+
+---
+
+## Option 2: Rust Rules
+
+For complex logic (taint tracking, type analysis), write a Rust rule.
+
+### Steps
+
+1. Define a struct implementing `Rule` trait in `mir-extractor/src/rules/`
+2. Register in `with_builtin_rules()` in `mir-extractor/src/lib.rs`
+3. Add tests
+
+### Minimal Example
+
+```rust
+pub struct MyRule { metadata: RuleMetadata }
+
+impl MyRule {
+    pub fn new() -> Self {
+        Self {
+            metadata: RuleMetadata {
+                id: "RUSTCOLA999".to_string(),
+                name: "my-rule".to_string(),
+                short_description: "Brief description".to_string(),
+                full_description: "Detailed description".to_string(),
+                default_severity: Severity::Medium,
+                ..Default::default()
+            }
+        }
+    }
+}
+
+impl Rule for MyRule {
+    fn metadata(&self) -> &RuleMetadata { &self.metadata }
+    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+        let mut findings = Vec::new();
+        for function in &package.functions {
+            // Pattern matching logic here
+        }
+        findings
+    }
+}
+```
+
+### Test
+
+```sh
+cargo test -p mir-extractor
+```
+
+---
+
+## Example Rulepack File
+
+See `examples/rulepacks/example-basic.yaml` for a working example.

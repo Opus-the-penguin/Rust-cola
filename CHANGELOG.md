@@ -5,6 +5,15 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2025-12-16
+
+### Changed
+- Simplified LLM prompt template for clarity and brevity
+- Removed emojis, decorative symbols, and unnecessary formatting from generated prompts
+- Template reduced from 278 to 106 lines
+- Plain factual language throughout
+- Evidence-based false positive requirements preserved
+
 ## [0.8.8] - 2025-12-14
 
 ### Added

@@ -155,8 +155,11 @@ impl PathSensitiveTaintAnalysis {
         // println!("[DEBUG] Processing function: {}", function.name);
         let paths = self.cfg.get_all_paths();
         
+        // Memory optimization: Only keep paths that have findings (vulnerable sinks,
+        // return tainted, or sanitizers). Most paths are clean and don't need to be stored.
         let mut path_results = Vec::new();
         let mut has_any_vulnerable_path = false;
+        let total_paths = paths.len();
         
         for path in paths {
             // Use field-sensitive analysis by default
@@ -166,10 +169,11 @@ impl PathSensitiveTaintAnalysis {
                 has_any_vulnerable_path = true;
             }
             
-            path_results.push(result);
+            // Only store paths with actual findings to reduce memory
+            if result.has_vulnerable_sink || result.return_tainted || !result.sanitizer_calls.is_empty() {
+                path_results.push(result);
+            }
         }
-        
-        let total_paths = path_results.len();
         
         PathSensitiveResult {
             path_results,

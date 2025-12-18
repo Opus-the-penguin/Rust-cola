@@ -854,10 +854,13 @@ impl RuleEngine {
         // This avoids creating 5+ separate instances (one per injection rule),
         // reducing memory usage significantly for large codebases.
         //
-        // With batched parameter analysis (v0.9.3+), interprocedural analysis
-        // uses less memory but still O(N) where N is function count.
-        // Set a conservative threshold to avoid OOM on large codebases.
-        const MAX_FUNCTIONS_FOR_INTERPROCEDURAL: usize = 500;
+        // Memory usage is bounded by:
+        // - MAX_PATHS (1000) per function for path enumeration
+        // - MAX_FUNCTIONS threshold below
+        // 
+        // For crates exceeding the threshold, IPA is skipped but intra-procedural
+        // analysis still runs for all rules.
+        const MAX_FUNCTIONS_FOR_INTERPROCEDURAL: usize = 10000;
         
         let inter_analysis = if package.functions.len() <= MAX_FUNCTIONS_FOR_INTERPROCEDURAL {
             interprocedural::InterProceduralAnalysis::new(package)

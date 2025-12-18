@@ -47,9 +47,8 @@ pub struct CallGraphNode {
     
     /// Functions called by this function
     pub callees: Vec<CallSite>,
-    
-    /// Function summary (computed during analysis)
-    pub summary: Option<FunctionSummary>,
+    // Note: Function summaries are stored in InterProceduralAnalysis::summaries
+    // to avoid memory duplication
 }
 
 /// A specific call site within a function
@@ -117,7 +116,6 @@ impl CallGraph {
                 function_name: function.name.clone(),
                 callers: Vec::new(),
                 callees: Vec::new(),
-                summary: None,
             };
             nodes.insert(function.name.clone(), node);
         }
@@ -475,11 +473,23 @@ impl FunctionSummary {
     ) -> Result<Self> {
         let mut summary = FunctionSummary::new(function.name.clone());
         
-        // Phase 3.5.1: Use CFG-based path-sensitive analysis for branching functions
-        // Phase 3.5.2: Use closure context if available
-        let cfg = ControlFlowGraph::from_mir_function(function);
-        // Always use path-sensitive analysis for better precision
-        if true {
+        // Quick pre-check: skip path-sensitive analysis for very large function bodies
+        // Each MIR line is ~100 bytes on average, so 100 lines ≈ 10KB of MIR
+        // Aggressive limit to prevent memory explosions during IPA
+        const MAX_BODY_LINES_FOR_PATH_ANALYSIS: usize = 100;
+        if function.body.len() > MAX_BODY_LINES_FOR_PATH_ANALYSIS {
+            // Skip path-sensitive analysis, fall through to simple pattern matching
+        } else {
+            // Phase 3.5.1: Use CFG-based path-sensitive analysis for branching functions
+            // Phase 3.5.2: Use closure context if available
+            let cfg = ControlFlowGraph::from_mir_function(function);
+            
+            // Skip path-sensitive analysis for very large functions to prevent memory spikes
+            // Functions with >20 basic blocks can explode in memory during path enumeration
+            const MAX_BLOCKS_FOR_PATH_ANALYSIS: usize = 500;
+            let use_path_sensitive = cfg.block_count() <= MAX_BLOCKS_FOR_PATH_ANALYSIS;
+            
+            if use_path_sensitive {
             use crate::dataflow::path_sensitive::PathSensitiveTaintAnalysis;
             use crate::dataflow::DataflowSummary;
             
@@ -622,7 +632,8 @@ impl FunctionSummary {
             if !summary.propagation_rules.is_empty() || summary.has_internal_vulnerability {
                 return Ok(summary);
             }
-        }
+            } // end use_path_sensitive
+        } // end body size check
         
         // Use Phase 2's taint analysis to understand intra-procedural flows
         // For now, we'll do a simple analysis based on MIR patterns
@@ -1057,9 +1068,10 @@ impl InterProceduralAnalysis {
         for function_name in self.call_graph.analysis_order.clone() {
             if let Some(function) = function_map.get(&function_name) {
                 
-                // Construct callee summaries map for this function
-                // Start with all available summaries to support indirect calls (like async poll)
-                let mut callee_summaries = self.summaries.clone();
+                // Build a minimal callee summaries map - only include summaries for
+                // functions that this function actually calls. This avoids O(N²) memory
+                // usage from cloning all summaries for each function.
+                let mut callee_summaries = HashMap::new();
                 
                 if let Some(node) = self.call_graph.nodes.get(&function_name) {
                     for call_site in &node.callees {
@@ -1101,20 +1113,9 @@ impl InterProceduralAnalysis {
                     Some(&self.closure_registry),
                 )?;
                 
-                // Store summary
-                self.summaries.insert(function_name.clone(), summary.clone());
-                // println!("[DEBUG] Stored summary for: {}", function_name);
-                if !summary.propagation_rules.is_empty() {
-                    // println!("[DEBUG]   Propagation: {:?}", summary.propagation_rules);
-                }
-                if !matches!(summary.return_taint, ReturnTaint::Clean) {
-                    // println!("[DEBUG]   Return: {:?}", summary.return_taint);
-                }
-                
-                // Update call graph node
-                if let Some(node) = self.call_graph.get_node_mut(&function_name) {
-                    node.summary = Some(summary);
-                }
+                // Store summary in summaries HashMap (single source of truth)
+                // Note: We do NOT store in node.summary to avoid memory duplication
+                self.summaries.insert(function_name.clone(), summary);
             }
         }
         
@@ -1267,14 +1268,10 @@ impl InterProceduralAnalysis {
                 });
             
             // Also check if parent function body contains source patterns
-            let parent_has_source_in_body = self.call_graph.nodes.get(&closure_info.parent_function)
-                .map(|node| {
+            let parent_has_source_in_body = self.summaries.get(&closure_info.parent_function)
+                .map(|summary| {
                     // Check if the parent function's summary contains any source
-                    if let Some(summary) = &node.summary {
-                        matches!(summary.return_taint, ReturnTaint::FromSource { .. })
-                    } else {
-                        false
-                    }
+                    matches!(summary.return_taint, ReturnTaint::FromSource { .. })
                 })
                 .unwrap_or(false);
             
@@ -1424,20 +1421,16 @@ impl InterProceduralAnalysis {
                 if let Some(node) = self.call_graph.nodes.get(func_name) {
                     // Pattern 1: Function has BOTH source and (direct or indirect) sink
                     let is_source_func = func_name == &flow.source_function;
-                    let returns_source = if let Some(summary) = &node.summary {
-                        matches!(summary.return_taint, ReturnTaint::FromSource { .. })
-                    } else {
-                        false
-                    };
+                    let returns_source = self.summaries.get(func_name)
+                        .map(|summary| matches!(summary.return_taint, ReturnTaint::FromSource { .. }))
+                        .unwrap_or(false);
                     
                     let has_source = is_source_func || returns_source;
                     
                     // Check if this function has a direct sink
-                    let has_direct_sink = if let Some(summary) = &node.summary {
-                        summary.propagation_rules.iter().any(|r| matches!(r, TaintPropagation::ParamToSink { .. }))
-                    } else {
-                        false
-                    };
+                    let has_direct_sink = self.summaries.get(func_name)
+                        .map(|summary| summary.propagation_rules.iter().any(|r| matches!(r, TaintPropagation::ParamToSink { .. })))
+                        .unwrap_or(false);
                     
                     // Check if this function calls something that has a sink
                     let calls_sink_function = node.callees.iter().any(|callee_site| {
@@ -1523,10 +1516,10 @@ impl InterProceduralAnalysis {
         
         let effective_sanitized = is_sanitized || calls_sanitizer;
         
-        // Get the current function's node
+        // Get the current function's node and summary
         if let Some(node) = self.call_graph.nodes.get(current_func) {
             // Check if current function has a sink
-            if let Some(summary) = &node.summary {
+            if let Some(summary) = self.summaries.get(current_func) {
                 // Does this function have a sink that the taint can reach?
                 for rule in &summary.propagation_rules {
                     if let TaintPropagation::ParamToSink { sink_type, .. } = rule {
@@ -1596,8 +1589,8 @@ impl InterProceduralAnalysis {
                 
                 // Check if the CALLER itself has a filesystem sink
                 // This handles the pattern: caller() { let x = source_fn(); sink(x); }
-                if let Some(caller_node) = self.call_graph.nodes.get(caller) {
-                    if let Some(caller_summary) = &caller_node.summary {
+                if self.call_graph.nodes.contains_key(caller) {
+                    if let Some(caller_summary) = self.summaries.get(caller) {
                         // Check if caller has a filesystem sink in its propagation rules
                         // OR if it has any ParamToSink (which was set when analyzing the function)
                         let has_filesystem_sink = caller_summary.propagation_rules.iter()

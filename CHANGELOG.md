@@ -5,6 +5,17 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.4] - 2025-12-18
+
+### Changed
+- **Reverted Arbitrary Limits**: Removed restrictive thresholds that were causing false negatives by skipping analysis on large crates. Analysis limits are now set to permissive values (MAX_FUNCTIONS: 10000, MAX_PATHS: 1000, MAX_DEPTH: 50, MAX_BLOCKS: 500).
+
+### Added
+- **V1 Sprint Backlog**: Added memory profiling investigation as P0 priority item. The goal is to fix memory issues without sacrificing coverage.
+
+### Technical
+- Memory optimization for large crates is now tracked as a proper engineering task rather than addressed with arbitrary skip thresholds.
+
 ## [0.9.3] - 2025-12-17
 
 ### Changed

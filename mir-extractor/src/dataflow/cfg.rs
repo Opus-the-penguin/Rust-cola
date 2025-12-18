@@ -109,6 +109,11 @@ impl ControlFlowGraph {
         }
     }
     
+    /// Get the number of basic blocks in the CFG
+    pub fn block_count(&self) -> usize {
+        self.blocks.len()
+    }
+    
     /// Parse basic blocks from MIR body lines
     fn parse_basic_blocks(body: &[String]) -> HashMap<String, BasicBlock> {
         let mut blocks = HashMap::new();
@@ -364,7 +369,11 @@ impl ControlFlowGraph {
         let mut current_path = Vec::new();
         let mut visited = HashSet::new();
         
-        self.dfs_paths(&self.entry_block, &mut current_path, &mut visited, &mut paths, 0, 20);
+        // Aggressive limits to prevent memory explosion on large crates
+        // With 1000 functions x 2 analyses x 32 paths = 64,000 max path analyses
+        const MAX_PATHS: usize = 1000;
+        const MAX_DEPTH: usize = 50;
+        self.dfs_paths(&self.entry_block, &mut current_path, &mut visited, &mut paths, 0, MAX_DEPTH, MAX_PATHS);
         
         // println!("[DEBUG] Found {} paths", paths.len());
         paths
@@ -379,9 +388,10 @@ impl ControlFlowGraph {
         paths: &mut Vec<Vec<String>>,
         depth: usize,
         max_depth: usize,
+        max_paths: usize,
     ) {
-        // Prevent infinite loops and path explosion
-        if depth > max_depth || visited.contains(current_block) {
+        // Prevent infinite loops, path explosion, and excessive path count
+        if depth > max_depth || visited.contains(current_block) || paths.len() >= max_paths {
             return;
         }
         
@@ -394,6 +404,9 @@ impl ControlFlowGraph {
         } else if let Some(successors) = self.edges.get(current_block) {
             // Explore each successor
             for successor in successors {
+                if paths.len() >= max_paths {
+                    break; // Stop exploring if we hit the limit
+                }
                 self.dfs_paths(
                     successor,
                     current_path,
@@ -401,6 +414,7 @@ impl ControlFlowGraph {
                     paths,
                     depth + 1,
                     max_depth,
+                    max_paths,
                 );
             }
         }

@@ -473,23 +473,15 @@ impl FunctionSummary {
     ) -> Result<Self> {
         let mut summary = FunctionSummary::new(function.name.clone());
         
-        // Quick pre-check: skip path-sensitive analysis for very large function bodies
-        // Each MIR line is ~100 bytes on average, so 100 lines ≈ 10KB of MIR
-        // Aggressive limit to prevent memory explosions during IPA
-        const MAX_BODY_LINES_FOR_PATH_ANALYSIS: usize = 100;
-        if function.body.len() > MAX_BODY_LINES_FOR_PATH_ANALYSIS {
-            // Skip path-sensitive analysis, fall through to simple pattern matching
-        } else {
-            // Phase 3.5.1: Use CFG-based path-sensitive analysis for branching functions
-            // Phase 3.5.2: Use closure context if available
-            let cfg = ControlFlowGraph::from_mir_function(function);
-            
-            // Skip path-sensitive analysis for very large functions to prevent memory spikes
-            // Functions with >20 basic blocks can explode in memory during path enumeration
-            const MAX_BLOCKS_FOR_PATH_ANALYSIS: usize = 500;
-            let use_path_sensitive = cfg.block_count() <= MAX_BLOCKS_FOR_PATH_ANALYSIS;
-            
-            if use_path_sensitive {
+        // Phase 3.5.1: Use CFG-based path-sensitive analysis for branching functions
+        // Phase 3.5.2: Use closure context if available
+        let cfg = ControlFlowGraph::from_mir_function(function);
+        
+        // Skip path-sensitive analysis for very large functions to prevent memory spikes
+        const MAX_BLOCKS_FOR_PATH_ANALYSIS: usize = 500;
+        let use_path_sensitive = cfg.block_count() <= MAX_BLOCKS_FOR_PATH_ANALYSIS;
+        
+        if use_path_sensitive {
             use crate::dataflow::path_sensitive::PathSensitiveTaintAnalysis;
             use crate::dataflow::DataflowSummary;
             
@@ -632,8 +624,7 @@ impl FunctionSummary {
             if !summary.propagation_rules.is_empty() || summary.has_internal_vulnerability {
                 return Ok(summary);
             }
-            } // end use_path_sensitive
-        } // end body size check
+        } // end use_path_sensitive
         
         // Use Phase 2's taint analysis to understand intra-procedural flows
         // For now, we'll do a simple analysis based on MIR patterns
@@ -1057,6 +1048,8 @@ impl InterProceduralAnalysis {
     
     /// Analyze all functions and generate summaries
     pub fn analyze(&mut self, package: &MirPackage) -> Result<()> {
+        use crate::memory_profiler;
+        
         // Get function map for quick lookup
         let function_map: HashMap<String, &MirFunction> = package
             .functions
@@ -1064,8 +1057,19 @@ impl InterProceduralAnalysis {
             .map(|f| (f.name.clone(), f))
             .collect();
         
+        let total_functions = self.call_graph.analysis_order.len();
+        let checkpoint_interval = std::cmp::max(1, total_functions / 10); // Log every 10%
+        
+        memory_profiler::checkpoint_with_context("IPA analyze start", &format!("{} functions", total_functions));
+        
         // Analyze functions in bottom-up order (callees before callers)
-        for function_name in self.call_graph.analysis_order.clone() {
+        for (idx, function_name) in self.call_graph.analysis_order.clone().into_iter().enumerate() {
+            // Log progress every 10%
+            if idx % checkpoint_interval == 0 {
+                let pct = (idx * 100) / total_functions;
+                memory_profiler::checkpoint_with_context("IPA progress", &format!("{}% ({}/{})", pct, idx, total_functions));
+            }
+            
             if let Some(function) = function_map.get(&function_name) {
                 
                 // Build a minimal callee summaries map - only include summaries for

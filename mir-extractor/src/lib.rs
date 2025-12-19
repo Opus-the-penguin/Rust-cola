@@ -45,6 +45,7 @@ mod type_analyzer;
 mod prototypes;
 pub mod interprocedural;
 pub mod rules;
+pub mod memory_profiler;
 
 pub use dataflow::{Assignment, MirDataflow};
 #[cfg(feature = "hir-driver")]
@@ -850,6 +851,8 @@ impl RuleEngine {
         let mut findings = Vec::new();
         let mut rules = Vec::new();
 
+        memory_profiler::checkpoint_with_context("RuleEngine::run start", &package.crate_name);
+
         // Create shared interprocedural analysis once for all rules that need it.
         // This avoids creating 5+ separate instances (one per injection rule),
         // reducing memory usage significantly for large codebases.
@@ -863,9 +866,14 @@ impl RuleEngine {
         const MAX_FUNCTIONS_FOR_INTERPROCEDURAL: usize = 10000;
         
         let inter_analysis = if package.functions.len() <= MAX_FUNCTIONS_FOR_INTERPROCEDURAL {
+            memory_profiler::checkpoint("IPA: Starting analysis");
+            let _scope = memory_profiler::MemoryScope::new("IPA analysis");
+            
             interprocedural::InterProceduralAnalysis::new(package)
                 .and_then(|mut analysis| {
+                    memory_profiler::checkpoint("IPA: Call graph built");
                     analysis.analyze(package)?;
+                    memory_profiler::checkpoint("IPA: Analysis complete");
                     Ok(analysis)
                 })
                 .ok()
@@ -879,12 +887,25 @@ impl RuleEngine {
             None
         };
 
-        for rule in &self.rules {
+        memory_profiler::checkpoint("Starting rule evaluation");
+        
+        for (i, rule) in self.rules.iter().enumerate() {
             let metadata = rule.metadata().clone();
+            let rule_id = metadata.id.clone();
             rules.push(metadata.clone());
+            
+            if memory_profiler::is_enabled() && i % 5 == 0 {
+                memory_profiler::checkpoint_with_context(
+                    "Rule evaluation progress",
+                    &format!("{}/{} - starting {}", i, self.rules.len(), rule_id)
+                );
+            }
+            
             findings.extend(rule.evaluate(package, inter_analysis.as_ref()));
         }
 
+        memory_profiler::checkpoint("RuleEngine::run complete");
+        
         AnalysisResult { findings, rules }
     }
 

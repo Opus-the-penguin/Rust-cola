@@ -184,6 +184,9 @@ fn resolve_output_path(
 }
 
 fn main() -> Result<()> {
+    // Initialize memory profiler (enabled with RUSTCOLA_MEMORY_PROFILE=1)
+    mir_extractor::memory_profiler::init();
+    
     let args = Args::parse();
     let timestamp = Local::now().format("%Y%m%d-%H%M%S").to_string();
 
@@ -723,9 +726,12 @@ fn main() -> Result<()> {
 
     if aggregated_findings.is_empty() {
         println!("No findings — great job!");
+        mir_extractor::memory_profiler::final_report();
         return Ok(());
     }
 
+    mir_extractor::memory_profiler::final_report();
+    
     if fail_on_findings {
         std::process::exit(1);
     }

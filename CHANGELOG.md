@@ -5,6 +5,21 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.5] - 2025-12-18
+
+### Fixed
+- **ADV001 False Positive Reduction**: ADV001 (pointer escapes) no longer flags derive macro generated code. Previously, 100% of ADV001 findings on derive macros were false positives, accounting for ~60% of all findings on real-world crates like InfluxDB.
+
+### Added
+- `is_derive_macro_function()`: Detects `<impl at file:LINE:COL: LINE:COL>::method` patterns
+- `is_safe_trait_method()`: Detects safe trait implementations (PartialEq, Hash, Debug, Clone, etc.)
+- `should_skip_adv001()`: Combined filter for ADV001 false positive reduction
+- 13 unit tests for the new FP filtering logic
+
+### Technical
+- Safe trait methods whitelist: eq, ne, partial_cmp, cmp, hash, fmt, clone, clone_from, default
+- Trait patterns detected: PartialEq, PartialOrd, Ord, Eq, Hash, Hasher, Debug, Display, Clone, Default
+
 ## [0.9.4] - 2025-12-18
 
 ### Changed

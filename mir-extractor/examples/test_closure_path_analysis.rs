@@ -64,9 +64,10 @@ fn main() {
             
             // Build CFG for the closure
             let cfg = ControlFlowGraph::from_mir_function(closure_fn);
+            let (paths, _) = cfg.get_all_paths();
             println!("   CFG: {} basic blocks, {} paths",
                 cfg.blocks.len(),
-                cfg.get_all_paths().len()
+                paths.len()
             );
             
             // Run path-sensitive analysis with closure context

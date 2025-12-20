@@ -5,6 +5,30 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.6] - 2025-12-20
+
+### Fixed
+- **OOM Root Cause Identified and Fixed**: Resolved the memory explosion (60GB+) when analyzing large codebases like InfluxDB. Root cause was exponential path exploration in inter-procedural analysis due to `visited.remove()` combined with no depth limits.
+
+### Changed
+- **Inter-procedural Analysis Algorithm**: Removed `visited.remove()` from `find_paths_from_source()`. Each function is now visited exactly once per source exploration, changing complexity from O(branches^depth) to O(n).
+- **Configurable Analysis Limits**: Added well-documented, configurable limits to prevent memory exhaustion on extreme codebases while maintaining thorough analysis for typical vulnerabilities.
+
+### Added
+- **Analysis Limits** (configurable in `interprocedural.rs`):
+  - `MAX_PATH_DEPTH = 8`: Maximum call chain depth from source to sink
+  - `MAX_FLOWS_PER_SOURCE = 200`: Maximum taint flows per source function
+  - `MAX_VISITED = 1000`: Maximum functions visited per exploration
+  - `MAX_TOTAL_FLOWS = 5000`: Maximum total inter-procedural flows
+- **Flow Caching**: Inter-procedural flows are now computed once and cached, avoiding redundant computation across rules.
+- **CFG Complexity Guards**: Functions with >500 basic blocks or >100 branches skip exhaustive path enumeration (use summary-based analysis instead).
+- **README Limitations Section**: Documents the analysis limits, potential for false negatives in extreme cases, and how to increase limits on high-memory machines.
+
+### Technical
+- Successful full scan of InfluxDB: 24 crates, 11,178 functions, 2,619 findings, ~150MB peak memory (was 60GB+ crash)
+- Most real vulnerabilities have call chain depth < 5, so MAX_PATH_DEPTH=8 is generous
+- Limits are safety valves for edge cases; typical analysis doesn't hit them
+
 ## [0.9.5] - 2025-12-18
 
 ### Fixed

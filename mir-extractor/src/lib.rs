@@ -894,14 +894,24 @@ impl RuleEngine {
             let rule_id = metadata.id.clone();
             rules.push(metadata.clone());
             
-            if memory_profiler::is_enabled() && i % 5 == 0 {
+            // Profile EVERY rule to catch memory explosions
+            if memory_profiler::is_enabled() {
                 memory_profiler::checkpoint_with_context(
-                    "Rule evaluation progress",
-                    &format!("{}/{} - starting {}", i, self.rules.len(), rule_id)
+                    "Rule BEFORE",
+                    &format!("{}/{} {}", i, self.rules.len(), rule_id)
                 );
             }
             
-            findings.extend(rule.evaluate(package, inter_analysis.as_ref()));
+            let new_findings = rule.evaluate(package, inter_analysis.as_ref());
+            
+            if memory_profiler::is_enabled() {
+                memory_profiler::checkpoint_with_context(
+                    "Rule AFTER",
+                    &format!("{}/{} {} (+{} findings)", i, self.rules.len(), rule_id, new_findings.len())
+                );
+            }
+            
+            findings.extend(new_findings);
         }
 
         memory_profiler::checkpoint("RuleEngine::run complete");

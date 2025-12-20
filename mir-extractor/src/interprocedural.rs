@@ -19,6 +19,7 @@
 //!    maintain precision and avoid false positives.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::cell::RefCell;
 use anyhow::Result;
 
 use crate::{MirPackage, MirFunction};
@@ -1031,6 +1032,9 @@ pub struct InterProceduralAnalysis {
     
     /// Closure registry for tracking closures and captures
     pub closure_registry: ClosureRegistry,
+    
+    /// Cached inter-procedural flows (computed once on first call)
+    cached_flows: RefCell<Option<Vec<TaintPath>>>,
 }
 
 impl InterProceduralAnalysis {
@@ -1043,6 +1047,7 @@ impl InterProceduralAnalysis {
             call_graph,
             summaries: HashMap::new(),
             closure_registry,
+            cached_flows: RefCell::new(None),
         })
     }
     
@@ -1071,6 +1076,8 @@ impl InterProceduralAnalysis {
             }
             
             if let Some(function) = function_map.get(&function_name) {
+                // Memory spike detection: log functions that cause >100MB increase
+                let before_mb = memory_profiler::current_memory_mb();
                 
                 // Build a minimal callee summaries map - only include summaries for
                 // functions that this function actually calls. This avoids O(N²) memory
@@ -1120,6 +1127,19 @@ impl InterProceduralAnalysis {
                 // Store summary in summaries HashMap (single source of truth)
                 // Note: We do NOT store in node.summary to avoid memory duplication
                 self.summaries.insert(function_name.clone(), summary);
+                
+                // Memory spike detection: log functions that cause significant memory increase
+                let after_mb = memory_profiler::current_memory_mb();
+                let delta_mb = after_mb - before_mb;
+                if delta_mb > 50.0 && memory_profiler::is_enabled() {
+                    eprintln!(
+                        "[MEMORY] SPIKE: {} caused +{:.0} MB (now {:.0} MB) - body={} lines",
+                        function_name,
+                        delta_mb,
+                        after_mb,
+                        function.body.len()
+                    );
+                }
             }
         }
         
@@ -1153,12 +1173,58 @@ impl InterProceduralAnalysis {
         println!("  Functions with sanitization: {}", functions_with_sanitization);
     }
     
-    /// Detect inter-procedural taint flows
+    /// Detect inter-procedural taint flows (cached after first call)
     pub fn detect_inter_procedural_flows(&self, package: &MirPackage) -> Vec<TaintPath> {
+        // Check if we have cached flows
+        {
+            let cached = self.cached_flows.borrow();
+            if let Some(flows) = cached.as_ref() {
+                return flows.clone();
+            }
+        }
+        
+        // Compute flows
+        let flows = self.compute_inter_procedural_flows(package);
+        
+        // Cache the result
+        *self.cached_flows.borrow_mut() = Some(flows.clone());
+        
+        flows
+    }
+    
+    /// Internal: compute inter-procedural taint flows (called once)
+    fn compute_inter_procedural_flows(&self, package: &MirPackage) -> Vec<TaintPath> {
+        use crate::memory_profiler;
+        memory_profiler::checkpoint("IPA: Computing inter-procedural flows");
+        
         let mut flows = Vec::new();
+        
+        // CONFIGURABLE LIMIT: Maximum total inter-procedural flows reported.
+        // Increase on high-memory machines if you need exhaustive analysis.
+        // Most real analyses produce < 500 flows.
+        const MAX_TOTAL_FLOWS: usize = 5000;
+        
+        let num_summaries = self.summaries.len();
+        let mut processed = 0;
         
         // For each function with REAL sources, try to find paths to sinks
         for (source_func, source_summary) in &self.summaries {
+            processed += 1;
+            
+            // Early exit if we have too many flows
+            if flows.len() >= MAX_TOTAL_FLOWS {
+                eprintln!("Note: IPA flow limit reached ({} flows). Some inter-procedural flows may not be reported.", MAX_TOTAL_FLOWS);
+                break;
+            }
+            
+            // Progress logging every 10%
+            if memory_profiler::is_enabled() && processed % (num_summaries / 10).max(1) == 0 {
+                memory_profiler::checkpoint_with_context(
+                    "IPA flow computation",
+                    &format!("{}% ({}/{}), {} flows", 
+                        processed * 100 / num_summaries, processed, num_summaries, flows.len())
+                );
+            }
             
             // Case 1: Function has internal vulnerability (source -> sink within function)
             if source_summary.has_internal_vulnerability {
@@ -1211,6 +1277,8 @@ impl InterProceduralAnalysis {
         // Phase 3.5.2: Add flows from closures with tainted captures
         let closure_flows = self.detect_closure_taint_flows(package);
         flows.extend(closure_flows);
+        
+        memory_profiler::checkpoint_with_context("IPA: Computed flows", &format!("{} flows", flows.len()));
         
         flows
     }
@@ -1483,7 +1551,20 @@ impl InterProceduralAnalysis {
         }).collect()
     }
     
-    /// Find taint paths starting from a source function
+    /// Find taint paths starting from a source function.
+    /// 
+    /// # Memory Safety Limits
+    /// 
+    /// This function has built-in limits to prevent memory exhaustion on large codebases.
+    /// These limits may cause false negatives in extreme cases. See README.md for details.
+    /// 
+    /// To increase limits for high-memory machines, modify the constants below:
+    /// - `MAX_PATH_DEPTH`: Maximum call chain depth (default: 8)
+    /// - `MAX_FLOWS_PER_SOURCE`: Max flows per source (default: 200)  
+    /// - `MAX_VISITED`: Max functions visited per exploration (default: 1000)
+    /// 
+    /// Without these limits, analysis of dense call graphs (e.g., InfluxDB with 11K functions)
+    /// would require 60GB+ RAM due to exponential path exploration.
     fn find_paths_from_source(
         &self,
         current_func: &str,
@@ -1493,7 +1574,26 @@ impl InterProceduralAnalysis {
     ) -> Vec<TaintPath> {
         let mut flows = Vec::new();
         
-        // Avoid infinite recursion
+        // CONFIGURABLE LIMIT: Maximum call chain depth from source to sink.
+        // Increase for deeper analysis on high-memory machines.
+        // Most real vulnerabilities have depth < 5.
+        const MAX_PATH_DEPTH: usize = 8;
+        if path.len() > MAX_PATH_DEPTH {
+            return flows;
+        }
+        
+        // CONFIGURABLE LIMIT: Maximum flows tracked per source function.
+        // Increase if you suspect missed flows from a single source.
+        const MAX_FLOWS_PER_SOURCE: usize = 200;
+        
+        // CONFIGURABLE LIMIT: Maximum functions visited per source exploration.
+        // Prevents memory explosion in extremely dense call graphs.
+        const MAX_VISITED: usize = 1000;
+        if visited.len() >= MAX_VISITED {
+            return flows;
+        }
+        
+        // Avoid infinite recursion - once visited, never revisit
         if visited.contains(current_func) {
             return flows;
         }
@@ -1629,21 +1729,43 @@ impl InterProceduralAnalysis {
                                 sink_type,
                                 sanitized: effective_sanitized,
                             });
+                            
+                            // Early exit if we have too many flows
+                            if flows.len() >= MAX_FLOWS_PER_SOURCE {
+                                return flows;
+                            }
                         }
                     }
                 }
                 
+                // Early exit if we have too many flows
+                if flows.len() >= MAX_FLOWS_PER_SOURCE {
+                    return flows;
+                }
+                
                 // Recursively explore from the caller
-                flows.extend(self.find_paths_from_source(
+                let sub_flows = self.find_paths_from_source(
                     caller,
                     taint,
                     new_path,
                     visited,
-                ));
+                );
+                
+                // Only add flows if we haven't hit the limit
+                let remaining = MAX_FLOWS_PER_SOURCE.saturating_sub(flows.len());
+                flows.extend(sub_flows.into_iter().take(remaining));
+                
+                if flows.len() >= MAX_FLOWS_PER_SOURCE {
+                    return flows;
+                }
             }
         }
         
-        visited.remove(current_func);
+        // NOTE: We do NOT remove from visited here - this prevents exponential
+        // path exploration in complex call graphs. Each function is visited once
+        // per source function exploration. Combined with MAX_PATH_DEPTH, this
+        // ensures O(n) complexity instead of O(branches^depth).
+        
         flows
     }
     

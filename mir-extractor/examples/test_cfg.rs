@@ -47,7 +47,10 @@ fn main() {
     }
     
     println!("\n=== Execution Paths ===");
-    let paths = cfg.get_all_paths();
+    let (paths, skipped) = cfg.get_all_paths();
+    if skipped {
+        println!("CFG too complex for path enumeration");
+    }
     println!("Total paths: {}", paths.len());
     
     for (i, path) in paths.iter().enumerate() {

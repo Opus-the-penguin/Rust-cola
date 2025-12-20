@@ -276,7 +276,8 @@ fn test_inter_procedural_detection() {
                 let callees: Vec<_> = node.callees.iter().map(|c| c.callee.as_str()).collect();
                 println!("  Calls: {}", callees.join(", "));
             }
-            if let Some(summary) = &node.summary {
+            // Summaries are stored separately in analysis.summaries
+            if let Some(summary) = analysis.summaries.get(func_name) {
                 println!("  Return taint: {:?}", summary.return_taint);
                 if !summary.propagation_rules.is_empty() {
                     println!("  Propagation rules: {} rules", summary.propagation_rules.len());

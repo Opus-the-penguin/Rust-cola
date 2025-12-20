@@ -161,6 +161,41 @@ When `--with-audit` is enabled:
 - Known CVEs and security advisories are included in the report
 - Findings from both static analysis and dependency audit are merged
 
+## Limitations
+
+### Inter-procedural Analysis Depth Limits
+
+To prevent memory exhaustion on large codebases, inter-procedural taint analysis has built-in limits:
+
+| Limit | Default | Purpose |
+|-------|---------|---------|
+| `MAX_PATH_DEPTH` | 8 | Maximum call chain depth from source to sink |
+| `MAX_FLOWS_PER_SOURCE` | 200 | Maximum taint flows tracked per source function |
+| `MAX_VISITED` | 1000 | Maximum functions visited per source exploration |
+| `MAX_TOTAL_FLOWS` | 5000 | Maximum total inter-procedural flows reported |
+
+**Potential false negatives:** These limits may cause rust-cola to miss vulnerabilities in codebases with:
+- Very deep call chains (>8 functions between source and sink)
+- Extremely dense call graphs with many interconnected functions
+- Functions that call hundreds of other functions
+
+For most real-world vulnerabilities, these limits are generous—security-relevant flows typically span fewer than 5 function calls. However, if you suspect missed findings in a large codebase, you can:
+
+1. **Increase limits** by modifying constants in `mir-extractor/src/interprocedural.rs`:
+   ```rust
+   const MAX_PATH_DEPTH: usize = 8;      // Increase for deeper analysis
+   const MAX_FLOWS_PER_SOURCE: usize = 200;
+   const MAX_VISITED: usize = 1000;
+   const MAX_TOTAL_FLOWS: usize = 5000;
+   ```
+
+2. **Run on a machine with more memory** — on systems with 64GB+ RAM, limits can be relaxed significantly or removed entirely.
+
+3. **Analyze subsections** — target specific crates within a workspace rather than the entire project.
+
+These limits exist because exhaustive path exploration in dense call graphs has exponential complexity. Without them, analysis of large codebases like InfluxDB (11,000+ functions) would require 60GB+ of RAM.
+
 ## License
 
 MIT
+

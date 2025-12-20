@@ -153,7 +153,24 @@ impl PathSensitiveTaintAnalysis {
         callee_summaries: Option<&HashMap<String, DataflowSummary>>
     ) -> PathSensitiveResult {
         // println!("[DEBUG] Processing function: {}", function.name);
-        let paths = self.cfg.get_all_paths();
+        let (paths, skipped_due_to_complexity) = self.cfg.get_all_paths();
+        
+        // If CFG was too complex for path enumeration, log and return empty result
+        // (e.g., giant async closure with 2000+ basic blocks)
+        if skipped_due_to_complexity {
+            if std::env::var("RUSTCOLA_MEMORY_PROFILE").is_ok() {
+                eprintln!(
+                    "[MEMORY] Skipping path-sensitive analysis for complex CFG: {} blocks, {} branches",
+                    self.cfg.block_count(),
+                    self.cfg.branch_count()
+                );
+            }
+            return PathSensitiveResult {
+                path_results: Vec::new(),
+                has_any_vulnerable_path: false,
+                total_paths: 0,
+            };
+        }
         
         // Memory optimization: Only keep paths that have findings (vulnerable sinks,
         // return tainted, or sanitizers). Most paths are clean and don't need to be stored.

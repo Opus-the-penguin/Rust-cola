@@ -361,9 +361,47 @@ impl ControlFlowGraph {
         }
     }
     
+    /// Count branch points in the CFG (blocks with multiple successors)
+    pub fn branch_count(&self) -> usize {
+        self.edges.values().filter(|successors| successors.len() > 1).count()
+    }
+    
+    /// Check if this CFG is too complex for full path enumeration.
+    /// Returns true if enumeration should be skipped to prevent memory explosion.
+    /// 
+    /// The heuristic is based on empirical observation:
+    /// - influxdb3_id: 78 blocks, 20 branches → works fine (~100 MB)
+    /// - influxdb3 serve: 2442 blocks, 381 branches → 58 GB explosion
+    /// 
+    /// A CFG with B branches can have up to 2^B paths. With MAX_DEPTH=50,
+    /// we limit path length, but the DFS exploration tree still grows exponentially.
+    /// 
+    /// Safe thresholds (empirically derived):
+    /// - MAX_BLOCKS: 500 (well above typical functions, catches mega-closures)
+    /// - MAX_BRANCHES: 100 (limits exponential exploration)
+    pub fn is_too_complex_for_path_enumeration(&self) -> bool {
+        const MAX_BLOCKS_FOR_PATH_ENUM: usize = 500;
+        const MAX_BRANCHES_FOR_PATH_ENUM: usize = 100;
+        
+        self.blocks.len() > MAX_BLOCKS_FOR_PATH_ENUM || 
+        self.branch_count() > MAX_BRANCHES_FOR_PATH_ENUM
+    }
+    
     /// Enumerate all paths from entry to exit blocks
     /// Returns paths as sequences of block IDs
-    pub fn get_all_paths(&self) -> Vec<Vec<String>> {
+    /// 
+    /// For extremely complex CFGs (large async closures, state machines),
+    /// returns an empty vec to prevent memory explosion.
+    /// 
+    /// Returns (paths, was_skipped_due_to_complexity)
+    pub fn get_all_paths(&self) -> (Vec<Vec<String>>, bool) {
+        // Guard against memory explosion on huge CFGs
+        // (e.g., influxdb3's serve::command::{closure#0} with 2442 blocks, 381 branches)
+        if self.is_too_complex_for_path_enumeration() {
+            // Return empty - caller should fall back to path-insensitive analysis
+            return (Vec::new(), true);
+        }
+        
         // println!("[DEBUG] get_all_paths: entry={}, exit_blocks={:?}, blocks={}", self.entry_block, self.exit_blocks, self.blocks.len());
         let mut paths = Vec::new();
         let mut current_path = Vec::new();
@@ -376,7 +414,7 @@ impl ControlFlowGraph {
         self.dfs_paths(&self.entry_block, &mut current_path, &mut visited, &mut paths, 0, MAX_DEPTH, MAX_PATHS);
         
         // println!("[DEBUG] Found {} paths", paths.len());
-        paths
+        (paths, false)
     }
     
     /// Depth-first search to enumerate paths

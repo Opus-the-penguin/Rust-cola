@@ -93,7 +93,7 @@ fn test_partial_sanitization_path_analysis() {
     }
     
     // Enumerate all paths
-    let paths = cfg.get_all_paths();
+    let (paths, _skipped) = cfg.get_all_paths();
     println!("\n=== Paths ===");
     println!("Total paths: {}", paths.len());
     

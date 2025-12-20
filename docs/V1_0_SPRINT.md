@@ -2,7 +2,7 @@
 
 **Goal**: Complete UX and first-run-value enhancements for production release.
 
-**Current Version**: 0.9.3  
+**Current Version**: 0.9.6  
 **Target Version**: 1.0.0  
 **Rules**: 124 (115 RUSTCOLA + 9 ADV)  
 **Tests**: 200+ passing
@@ -25,12 +25,12 @@
 
 | Item | Description | Effort |
 |------|-------------|--------|
-| Large workspace support | Fix OOM on projects like InfluxDB (24 crates, 1000+ functions). Stream rule evaluation or chunk processing. | Large |
+| ~~Large workspace support~~ | ✅ **DONE (v0.9.6)** Fixed OOM on InfluxDB. Root cause: exponential path exploration in IPA. Solution: removed visited.remove(), added configurable depth limits. | ~~Large~~ |
 | CVSS-like scoring | Severity scores based on exploitability factors | Medium |
 | Code snippets in SARIF | Include source context in SARIF findings | Small |
 | Rule profiles | strict/balanced/permissive presets via config | Medium |
-| **Derive macro filtering** | ADV001 flags safe derive macro code (PartialEq, PartialOrd). Detect `<impl at file.rs:LINE:COL: LINE:COL>` function signatures and exclude. | Medium |
-| **Trait method borrow safety** | ADV001 "pointer escapes" triggers on references passed to trait methods (eq, partial_cmp). These are safe borrows, not escaping pointers. | Medium |
+| ~~Derive macro filtering~~ | ✅ **DONE (v0.9.5)** ADV001 now skips derive macro generated code. | ~~Medium~~ |
+| ~~Trait method borrow safety~~ | ✅ **DONE (v0.9.5)** ADV001 whitelists safe trait methods (eq, partial_cmp, hash, fmt, clone). | ~~Medium~~ |
 
 ### P1 - Should Have
 
@@ -47,6 +47,7 @@
 | Rich AST output | Enhance ast.json with function bodies, field types, full signatures for security researchers | Medium |
 | `cola init` wizard | Interactive config file generation | Medium |
 | IDE integration docs | VS Code, IntelliJ setup guides | Small |
+| **Multi-threaded analysis (exploratory)** | Parallelize crate/function analysis using Rayon. Would improve throughput but not memory usage. Considerations: thread-safe data structures (RefCell→RwLock), increased peak memory (each thread needs working set). Best for high-CPU machines with ample RAM. | Large |
 
 ---
 

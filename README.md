@@ -154,6 +154,7 @@ See `examples/cargo-cola.yaml` for a complete example.
 | `--crate-path <PATH>` | Target crate or workspace (default: `.`) |
 | `--out-dir <PATH>` | Output directory (default: `out/cola`) |
 | `--config <PATH>` | Path to configuration file (YAML format) |
+| `--fail-on-findings <bool>` | Exit with code 1 when findings are produced (default: `true`) |
 | `--output-for-llm <PATH>` | Path for LLM prompt file (alias for `--llm-prompt`) |
 | `--llm-prompt <PATH>` | Path for LLM prompt file (default: `out/cola/llm-prompt.md`) |
 | `--no-llm-prompt` | Suppress LLM prompt generation |
@@ -164,7 +165,7 @@ See `examples/cargo-cola.yaml` for a complete example.
 | `--no-report` | Suppress standalone report |
 | `--with-audit` | Run cargo-audit to check dependencies |
 | `--no-ast` | Suppress AST output |
-| `--no-hir` | Suppress HIR output (hir-driver feature) |
+| `--no-hir` | Suppress HIR output (requires `hir-driver` feature) |
 | `--sarif <PATH>` | Custom SARIF output path |
 | `--rulepack <PATH>` | Additional rules from YAML |
 

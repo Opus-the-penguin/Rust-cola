@@ -21,11 +21,56 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::cell::RefCell;
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 
 use crate::{MirPackage, MirFunction};
 use crate::dataflow::cfg::ControlFlowGraph;
 use crate::dataflow::closure::{ClosureRegistry, ClosureRegistryBuilder};
 use crate::dataflow::{TaintPropagation, DataflowSummary};
+
+/// Configuration for inter-procedural analysis (IPA) limits.
+/// 
+/// These limits control memory usage and analysis depth for taint tracking.
+/// Increase limits for more thorough analysis on high-memory machines.
+/// Decrease limits to analyze extremely large codebases with limited memory.
+/// 
+/// All fields have sensible defaults that work well for most codebases.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct IpaConfig {
+    /// Maximum call chain depth from source to sink (default: 8)
+    /// Most real vulnerabilities have depth < 5.
+    pub max_path_depth: usize,
+    
+    /// Maximum taint flows tracked per source function (default: 200)
+    /// Increase if you suspect missed flows from a single source.
+    pub max_flows_per_source: usize,
+    
+    /// Maximum functions visited per source exploration (default: 1000)
+    /// Prevents memory explosion in extremely dense call graphs.
+    pub max_visited: usize,
+    
+    /// Maximum total inter-procedural flows reported (default: 5000)
+    /// Most real analyses produce < 500 flows.
+    pub max_total_flows: usize,
+    
+    /// Maximum functions before skipping interprocedural analysis (default: 10000)
+    /// For crates exceeding this threshold, IPA is skipped but intra-procedural
+    /// analysis still runs for all rules.
+    pub max_functions_for_ipa: usize,
+}
+
+impl Default for IpaConfig {
+    fn default() -> Self {
+        Self {
+            max_path_depth: 8,
+            max_flows_per_source: 200,
+            max_visited: 1000,
+            max_total_flows: 5000,
+            max_functions_for_ipa: 10000,
+        }
+    }
+}
 
 /// Call graph representing function call relationships
 #[derive(Debug, Clone)]
@@ -1035,11 +1080,19 @@ pub struct InterProceduralAnalysis {
     
     /// Cached inter-procedural flows (computed once on first call)
     cached_flows: RefCell<Option<Vec<TaintPath>>>,
+    
+    /// Configuration for analysis limits
+    config: IpaConfig,
 }
 
 impl InterProceduralAnalysis {
-    /// Create a new inter-procedural analysis
+    /// Create a new inter-procedural analysis with default configuration
     pub fn new(package: &MirPackage) -> Result<Self> {
+        Self::with_config(package, IpaConfig::default())
+    }
+    
+    /// Create a new inter-procedural analysis with custom configuration
+    pub fn with_config(package: &MirPackage, config: IpaConfig) -> Result<Self> {
         let call_graph = CallGraph::from_mir_package(package)?;
         let closure_registry = ClosureRegistryBuilder::build_from_package(package);
         
@@ -1048,6 +1101,7 @@ impl InterProceduralAnalysis {
             summaries: HashMap::new(),
             closure_registry,
             cached_flows: RefCell::new(None),
+            config,
         })
     }
     
@@ -1199,11 +1253,6 @@ impl InterProceduralAnalysis {
         
         let mut flows = Vec::new();
         
-        // CONFIGURABLE LIMIT: Maximum total inter-procedural flows reported.
-        // Increase on high-memory machines if you need exhaustive analysis.
-        // Most real analyses produce < 500 flows.
-        const MAX_TOTAL_FLOWS: usize = 5000;
-        
         let num_summaries = self.summaries.len();
         let mut processed = 0;
         
@@ -1211,9 +1260,9 @@ impl InterProceduralAnalysis {
         for (source_func, source_summary) in &self.summaries {
             processed += 1;
             
-            // Early exit if we have too many flows
-            if flows.len() >= MAX_TOTAL_FLOWS {
-                eprintln!("Note: IPA flow limit reached ({} flows). Some inter-procedural flows may not be reported.", MAX_TOTAL_FLOWS);
+            // Use configurable limit from IpaConfig
+            if flows.len() >= self.config.max_total_flows {
+                eprintln!("Note: IPA flow limit reached ({} flows). Some inter-procedural flows may not be reported.", self.config.max_total_flows);
                 break;
             }
             
@@ -1555,13 +1604,11 @@ impl InterProceduralAnalysis {
     /// 
     /// # Memory Safety Limits
     /// 
-    /// This function has built-in limits to prevent memory exhaustion on large codebases.
+    /// This function uses configurable limits from `IpaConfig` to prevent memory exhaustion.
     /// These limits may cause false negatives in extreme cases. See README.md for details.
     /// 
-    /// To increase limits for high-memory machines, modify the constants below:
-    /// - `MAX_PATH_DEPTH`: Maximum call chain depth (default: 8)
-    /// - `MAX_FLOWS_PER_SOURCE`: Max flows per source (default: 200)  
-    /// - `MAX_VISITED`: Max functions visited per exploration (default: 1000)
+    /// To increase limits, pass a custom `IpaConfig` via `InterProceduralAnalysis::with_config()`,
+    /// or use a `cargo-cola.yaml` configuration file.
     /// 
     /// Without these limits, analysis of dense call graphs (e.g., InfluxDB with 11K functions)
     /// would require 60GB+ RAM due to exponential path exploration.
@@ -1574,22 +1621,13 @@ impl InterProceduralAnalysis {
     ) -> Vec<TaintPath> {
         let mut flows = Vec::new();
         
-        // CONFIGURABLE LIMIT: Maximum call chain depth from source to sink.
-        // Increase for deeper analysis on high-memory machines.
-        // Most real vulnerabilities have depth < 5.
-        const MAX_PATH_DEPTH: usize = 8;
-        if path.len() > MAX_PATH_DEPTH {
+        // Use configurable limit from IpaConfig
+        if path.len() > self.config.max_path_depth {
             return flows;
         }
         
-        // CONFIGURABLE LIMIT: Maximum flows tracked per source function.
-        // Increase if you suspect missed flows from a single source.
-        const MAX_FLOWS_PER_SOURCE: usize = 200;
-        
-        // CONFIGURABLE LIMIT: Maximum functions visited per source exploration.
-        // Prevents memory explosion in extremely dense call graphs.
-        const MAX_VISITED: usize = 1000;
-        if visited.len() >= MAX_VISITED {
+        // Use configurable limit from IpaConfig
+        if visited.len() >= self.config.max_visited {
             return flows;
         }
         
@@ -1731,7 +1769,7 @@ impl InterProceduralAnalysis {
                             });
                             
                             // Early exit if we have too many flows
-                            if flows.len() >= MAX_FLOWS_PER_SOURCE {
+                            if flows.len() >= self.config.max_flows_per_source {
                                 return flows;
                             }
                         }
@@ -1739,7 +1777,7 @@ impl InterProceduralAnalysis {
                 }
                 
                 // Early exit if we have too many flows
-                if flows.len() >= MAX_FLOWS_PER_SOURCE {
+                if flows.len() >= self.config.max_flows_per_source {
                     return flows;
                 }
                 
@@ -1752,10 +1790,10 @@ impl InterProceduralAnalysis {
                 );
                 
                 // Only add flows if we haven't hit the limit
-                let remaining = MAX_FLOWS_PER_SOURCE.saturating_sub(flows.len());
+                let remaining = self.config.max_flows_per_source.saturating_sub(flows.len());
                 flows.extend(sub_flows.into_iter().take(remaining));
                 
-                if flows.len() >= MAX_FLOWS_PER_SOURCE {
+                if flows.len() >= self.config.max_flows_per_source {
                     return flows;
                 }
             }
@@ -1763,7 +1801,7 @@ impl InterProceduralAnalysis {
         
         // NOTE: We do NOT remove from visited here - this prevents exponential
         // path exploration in complex call graphs. Each function is visited once
-        // per source function exploration. Combined with MAX_PATH_DEPTH, this
+        // per source function exploration. Combined with max_path_depth, this
         // ensures O(n) complexity instead of O(branches^depth).
         
         flows

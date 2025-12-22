@@ -124,12 +124,36 @@ Five rules use interprocedural taint tracking to detect vulnerabilities that spa
 
 The analysis builds a call graph from MIR, generates function summaries (sources, sinks, sanitizers), and propagates taint across function boundaries. This catches injection vulnerabilities where user input enters in one function and reaches a dangerous sink in another.
 
+### Depth Limits and Configuration
+
+To prevent memory exhaustion on large codebases, inter-procedural analysis has built-in limits. These can be configured via a YAML configuration file:
+
+```bash
+cargo-cola --config cargo-cola.yaml --crate-path .
+```
+
+**Example `cargo-cola.yaml`:**
+
+```yaml
+analysis:
+  max_path_depth: 8          # Maximum call chain depth (default: 8)
+  max_flows_per_source: 200  # Flows per source function (default: 200)
+  max_visited: 1000          # Functions visited per exploration (default: 1000)
+  max_total_flows: 5000      # Total inter-procedural flows (default: 5000)
+  max_functions_for_ipa: 10000  # Skip IPA for crates larger than this (default: 10000)
+```
+
+See `examples/cargo-cola.yaml` for a complete example.
+
+**Potential false negatives:** These limits may cause rust-cola to miss vulnerabilities in codebases with very deep call chains (>8 functions), extremely dense call graphs, or functions that call hundreds of other functions. For most real-world vulnerabilities, these limits are generous—security-relevant flows typically span fewer than 5 function calls.
+
 ## Options
 
 | Flag | Description |
 |------|-------------|
 | `--crate-path <PATH>` | Target crate or workspace (default: `.`) |
 | `--out-dir <PATH>` | Output directory (default: `out/cola`) |
+| `--config <PATH>` | Path to configuration file (YAML format) |
 | `--output-for-llm <PATH>` | Path for LLM prompt file (alias for `--llm-prompt`) |
 | `--llm-prompt <PATH>` | Path for LLM prompt file (default: `out/cola/llm-prompt.md`) |
 | `--no-llm-prompt` | Suppress LLM prompt generation |
@@ -160,40 +184,6 @@ When `--with-audit` is enabled:
 - cargo-audit scans `Cargo.lock` against the RustSec Advisory Database
 - Known CVEs and security advisories are included in the report
 - Findings from both static analysis and dependency audit are merged
-
-## Limitations
-
-### Inter-procedural Analysis Depth Limits
-
-To prevent memory exhaustion on large codebases, inter-procedural taint analysis has built-in limits:
-
-| Limit | Default | Purpose |
-|-------|---------|---------|
-| `MAX_PATH_DEPTH` | 8 | Maximum call chain depth from source to sink |
-| `MAX_FLOWS_PER_SOURCE` | 200 | Maximum taint flows tracked per source function |
-| `MAX_VISITED` | 1000 | Maximum functions visited per source exploration |
-| `MAX_TOTAL_FLOWS` | 5000 | Maximum total inter-procedural flows reported |
-
-**Potential false negatives:** These limits may cause rust-cola to miss vulnerabilities in codebases with:
-- Very deep call chains (>8 functions between source and sink)
-- Extremely dense call graphs with many interconnected functions
-- Functions that call hundreds of other functions
-
-For most real-world vulnerabilities, these limits are generous—security-relevant flows typically span fewer than 5 function calls. However, if you suspect missed findings in a large codebase, you can:
-
-1. **Increase limits** by modifying constants in `mir-extractor/src/interprocedural.rs`:
-   ```rust
-   const MAX_PATH_DEPTH: usize = 8;      // Increase for deeper analysis
-   const MAX_FLOWS_PER_SOURCE: usize = 200;
-   const MAX_VISITED: usize = 1000;
-   const MAX_TOTAL_FLOWS: usize = 5000;
-   ```
-
-2. **Run on a machine with more memory** — on systems with 64GB+ RAM, limits can be relaxed significantly or removed entirely.
-
-3. **Analyze subsections** — target specific crates within a workspace rather than the entire project.
-
-These limits exist because exhaustive path exploration in dense call graphs has exponential complexity. Without them, analysis of large codebases like InfluxDB (11,000+ functions) would require 60GB+ of RAM.
 
 ## License
 

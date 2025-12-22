@@ -1,6 +1,6 @@
 [package]
 name = "cargo-cola"
-version = "0.9.6"
+version = "0.9.7"
 edition = "2021"
 authors = ["Opus-the-penguin"]
 
@@ -14,6 +14,7 @@ clap = { version = "4", features = ["derive", "env"] }
 anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+serde_yaml = "0.9"
 mir-extractor = { path = "../mir-extractor" }
 mir-advanced-rules = { path = "../mir-advanced-rules", optional = true }
 cargo_metadata = "0.18"

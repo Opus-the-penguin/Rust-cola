@@ -1,0 +1,32 @@
+# Cargo-cola configuration file
+#
+# Place this file in your project root as `cargo-cola.yaml` or 
+# specify a custom path with `--config <path>`
+#
+# All settings are optional - defaults are used for any omitted values.
+
+# Inter-procedural analysis (IPA) configuration
+# These limits control memory usage and analysis depth for the taint tracking engine.
+# Increase limits for more thorough analysis on high-memory machines.
+# Decrease limits to analyze extremely large codebases with limited memory.
+analysis:
+  # Maximum call chain depth from source to sink (default: 8)
+  # Most real vulnerabilities have depth < 5. Increase for deeper analysis.
+  max_path_depth: 8
+  
+  # Maximum taint flows tracked per source function (default: 200)
+  # Increase if you suspect missed flows from a single source.
+  max_flows_per_source: 200
+  
+  # Maximum functions visited per source exploration (default: 1000)
+  # Prevents memory explosion in extremely dense call graphs.
+  max_visited: 1000
+  
+  # Maximum total inter-procedural flows reported (default: 5000)
+  # Most real analyses produce < 500 flows.
+  max_total_flows: 5000
+  
+  # Maximum functions before skipping interprocedural analysis (default: 10000)
+  # For crates exceeding this threshold, IPA is skipped but intra-procedural
+  # analysis still runs for all rules.
+  max_functions_for_ipa: 10000

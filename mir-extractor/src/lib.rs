@@ -830,17 +830,27 @@ pub struct SuppressionRule {
 pub struct RuleEngine {
     rules: Vec<Box<dyn Rule>>,
     pub suppressions: Vec<SuppressionRule>,
+    pub ipa_config: interprocedural::IpaConfig,
 }
 
 impl RuleEngine {
     pub fn new() -> Self {
-        Self { rules: Vec::new(), suppressions: Vec::new() }
+        Self { 
+            rules: Vec::new(), 
+            suppressions: Vec::new(),
+            ipa_config: interprocedural::IpaConfig::default(),
+        }
     }
 
     pub fn with_builtin_rules() -> Self {
         let mut engine = RuleEngine::new();
         register_builtin_rules(&mut engine);
         engine
+    }
+    
+    /// Set the inter-procedural analysis configuration
+    pub fn set_ipa_config(&mut self, config: interprocedural::IpaConfig) {
+        self.ipa_config = config;
     }
 
     pub fn register_rule(&mut self, rule: Box<dyn Rule>) {
@@ -857,19 +867,16 @@ impl RuleEngine {
         // This avoids creating 5+ separate instances (one per injection rule),
         // reducing memory usage significantly for large codebases.
         //
-        // Memory usage is bounded by:
-        // - MAX_PATHS (1000) per function for path enumeration
-        // - MAX_FUNCTIONS threshold below
+        // Memory usage is bounded by the limits in IpaConfig.
         // 
         // For crates exceeding the threshold, IPA is skipped but intra-procedural
         // analysis still runs for all rules.
-        const MAX_FUNCTIONS_FOR_INTERPROCEDURAL: usize = 10000;
         
-        let inter_analysis = if package.functions.len() <= MAX_FUNCTIONS_FOR_INTERPROCEDURAL {
+        let inter_analysis = if package.functions.len() <= self.ipa_config.max_functions_for_ipa {
             memory_profiler::checkpoint("IPA: Starting analysis");
             let _scope = memory_profiler::MemoryScope::new("IPA analysis");
             
-            interprocedural::InterProceduralAnalysis::new(package)
+            interprocedural::InterProceduralAnalysis::with_config(package, self.ipa_config.clone())
                 .and_then(|mut analysis| {
                     memory_profiler::checkpoint("IPA: Call graph built");
                     analysis.analyze(package)?;
@@ -882,7 +889,7 @@ impl RuleEngine {
                 "Note: Skipping interprocedural analysis for {} ({} functions > {} threshold)",
                 package.crate_name,
                 package.functions.len(),
-                MAX_FUNCTIONS_FOR_INTERPROCEDURAL
+                self.ipa_config.max_functions_for_ipa
             );
             None
         };

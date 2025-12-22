@@ -139,6 +139,19 @@ struct Args {
     /// Findings are merged into the report output
     #[arg(long = "with-audit", action = ArgAction::SetTrue)]
     with_audit: bool,
+
+    /// Path to cargo-cola configuration file (YAML format)
+    /// See examples/cargo-cola.yaml for available options
+    #[arg(long)]
+    config: Option<PathBuf>,
+}
+
+/// Configuration file format for cargo-cola
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+struct ColaConfig {
+    /// Inter-procedural analysis settings
+    analysis: mir_extractor::interprocedural::IpaConfig,
 }
 
 struct PackageOutput {
@@ -195,6 +208,16 @@ fn main() -> Result<()> {
     let fail_on_findings = args.fail_on_findings.unwrap_or(true);
     let cache_enabled = args.cache.unwrap_or(true);
 
+    // Load configuration file if specified
+    let cola_config: ColaConfig = if let Some(config_path) = &args.config {
+        let config_contents = fs::read_to_string(config_path)
+            .with_context(|| format!("read config file {}", config_path.display()))?;
+        serde_yaml::from_str(&config_contents)
+            .with_context(|| format!("parse config file {}", config_path.display()))?
+    } else {
+        ColaConfig::default()
+    };
+
     // Run cargo-audit if requested
     let audit_vulnerabilities = if args.with_audit {
         run_cargo_audit(&args.crate_path)?
@@ -232,6 +255,7 @@ fn main() -> Result<()> {
     }
 
     let mut engine = RuleEngine::with_builtin_rules();
+    engine.set_ipa_config(cola_config.analysis.clone());
 
     if !args.rulepack.is_empty() {
         println!(

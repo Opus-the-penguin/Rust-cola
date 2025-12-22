@@ -5,6 +5,24 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.7] - 2025-12-22
+
+### Added
+- **Configuration File Support**: Analysis limits are now configurable via YAML configuration file instead of requiring source code changes.
+  - New `--config <path>` CLI argument to specify configuration file
+  - Example configuration at `examples/cargo-cola.yaml`
+  - IPA limits configurable: `max_path_depth`, `max_flows_per_source`, `max_visited`, `max_total_flows`, `max_functions_for_ipa`
+- **`IpaConfig` Struct**: New public configuration struct in `mir_extractor::interprocedural::IpaConfig` with `Default` implementation
+- **`InterProceduralAnalysis::with_config()`**: New constructor accepting custom configuration
+- **`RuleEngine::set_ipa_config()`**: Method to configure IPA limits on the rule engine
+
+### Changed
+- **README Consolidated**: Combined "Interprocedural Analysis" and "Limitations" sections into unified documentation with configuration examples
+- **Hardcoded limits removed**: IPA depth limits now come from configuration, not source code constants
+
+### Dependencies
+- Added `serde_yaml` to cargo-cola for configuration file parsing
+
 ## [0.9.6] - 2025-12-20
 
 ### Fixed

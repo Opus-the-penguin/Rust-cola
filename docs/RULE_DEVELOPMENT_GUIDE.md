@@ -87,6 +87,9 @@ For complex logic (taint tracking, type analysis), write a Rust rule.
 ### Minimal Example
 
 ```rust
+use mir_extractor::{Finding, MirPackage, Rule, RuleMetadata, Severity};
+use mir_extractor::interprocedural::InterProceduralAnalysis;
+
 pub struct MyRule { metadata: RuleMetadata }
 
 impl MyRule {
@@ -106,7 +109,12 @@ impl MyRule {
 
 impl Rule for MyRule {
     fn metadata(&self) -> &RuleMetadata { &self.metadata }
-    fn evaluate(&self, package: &MirPackage) -> Vec<Finding> {
+    
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
         for function in &package.functions {
             // Pattern matching logic here
@@ -115,6 +123,8 @@ impl Rule for MyRule {
     }
 }
 ```
+
+**Note:** The `inter_analysis` parameter provides access to cross-function taint tracking for injection rules. Most rules can ignore it (use `_inter_analysis`).
 
 ### Test
 

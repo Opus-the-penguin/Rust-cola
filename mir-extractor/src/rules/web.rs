@@ -10,7 +10,7 @@
 //! - TLS verification disabled
 //! - Content-Length based allocations
 
-use crate::{Confidence, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
+use crate::{Exploitability, Confidence, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use crate::detect_content_length_allocations;
 use std::collections::HashSet;
 
@@ -36,6 +36,7 @@ impl NonHttpsUrlRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -77,6 +78,8 @@ impl Rule for NonHttpsUrlRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
             });
         }
 
@@ -148,6 +151,7 @@ impl DangerAcceptInvalidCertRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -198,6 +202,8 @@ impl Rule for DangerAcceptInvalidCertRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
             });
         }
 
@@ -280,6 +286,7 @@ impl OpensslVerifyNoneRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -328,6 +335,8 @@ impl Rule for OpensslVerifyNoneRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -358,6 +367,7 @@ impl CookieSecureAttributeRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -404,6 +414,8 @@ impl Rule for CookieSecureAttributeRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -434,6 +446,7 @@ impl CorsWildcardRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -472,6 +485,8 @@ impl Rule for CorsWildcardRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -502,6 +517,7 @@ impl ConnectionStringPasswordRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -542,6 +558,8 @@ impl Rule for ConnectionStringPasswordRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -572,6 +590,7 @@ impl PasswordFieldMaskingRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -621,6 +640,8 @@ impl Rule for PasswordFieldMaskingRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -651,6 +672,7 @@ impl CleartextLoggingRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -692,6 +714,8 @@ impl Rule for CleartextLoggingRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -735,6 +759,7 @@ impl TlsVerificationDisabledRule {
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
                 help_uri: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -858,6 +883,8 @@ impl Rule for TlsVerificationDisabledRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -894,6 +921,7 @@ impl AwsS3UnscopedAccessRule {
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
                 help_uri: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -1173,6 +1201,8 @@ impl Rule for AwsS3UnscopedAccessRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                             });
                             
                             break; // Only report once per S3 call
@@ -1208,6 +1238,7 @@ impl ContentLengthAllocationRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -1250,6 +1281,8 @@ impl Rule for ContentLengthAllocationRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }

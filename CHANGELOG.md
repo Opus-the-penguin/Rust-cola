@@ -5,6 +5,25 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.9] - 2025-12-22
+
+### Added
+- **CVSS-like Exploitability Scoring**: Findings now include exploitability metrics based on CVSS 3.1 factors.
+  - New enums: `AttackVector` (Network/Adjacent/Local/Physical), `AttackComplexity` (Low/High), `PrivilegesRequired` (None/Low/High), `UserInteraction` (None/Required)
+  - New `Exploitability` struct with `score()` method (computes 0.0-10.0)
+  - `cvss_vector()` method returns CVSS-style string (e.g., "AV:N/AC:L/PR:N/UI:N")
+  - All 118 `RuleMetadata` and 75 `Finding` struct literals updated with `exploitability` field
+
+- **Rule Profiles**: Filter findings by confidence+severity thresholds via configuration.
+  - New `RuleProfile` enum: `strict` (all), `balanced` (default), `permissive` (CI-friendly)
+  - Configurable via `profile: balanced` in `cargo-cola.yaml`
+  - `strict`: All findings, no filtering
+  - `balanced`: Exclude low-confidence + low-severity combo
+  - `permissive`: Only high-confidence OR high/critical severity
+
+### Changed
+- Updated `examples/cargo-cola.yaml` with `profile` documentation
+
 ## [0.9.8] - 2025-12-22
 
 ### Added

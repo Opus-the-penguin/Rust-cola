@@ -12,7 +12,7 @@
 
 #![allow(dead_code)]
 
-use crate::{Confidence, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity, SourceFile};
+use crate::{Exploitability, Confidence, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity, SourceFile};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -40,6 +40,7 @@ impl CrateWideAllowRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -134,6 +135,7 @@ impl MisorderedAssertEqRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -218,6 +220,7 @@ impl TryIoResultRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -305,6 +308,7 @@ impl LocalRefCellRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -393,6 +397,7 @@ impl UnnecessaryBorrowMutRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -489,6 +494,7 @@ impl DeadStoreArrayRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -647,6 +653,8 @@ impl Rule for DeadStoreArrayRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                         });
                         break;  // Only report first overwrite
                     }
@@ -680,6 +688,7 @@ impl OverscopedAllowRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -808,6 +817,7 @@ impl CommentedOutCodeRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -1001,6 +1011,7 @@ impl UnwrapInHotPathRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }

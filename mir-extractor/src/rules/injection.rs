@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::dataflow::taint::TaintAnalysis;
 use crate::rules::utils::{command_rule_should_skip, INPUT_SOURCE_PATTERNS, LOG_SINK_PATTERNS};
-use crate::{
+use crate::{Exploitability, 
     detect_command_invocations, extract_span_from_mir_line, Confidence, Finding, MirPackage, Rule,
     RuleMetadata, RuleOrigin, Severity,
 };
@@ -41,6 +41,7 @@ impl UntrustedEnvInputRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -99,6 +100,7 @@ impl CommandInjectionRiskRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -162,6 +164,8 @@ impl Rule for CommandInjectionRiskRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -191,6 +195,7 @@ impl CommandArgConcatenationRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -287,6 +292,8 @@ impl Rule for CommandArgConcatenationRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -321,6 +328,7 @@ impl LogInjectionRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -567,6 +575,8 @@ impl Rule for LogInjectionRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -603,6 +613,7 @@ impl RegexInjectionRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -954,6 +965,8 @@ impl Rule for RegexInjectionRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -989,6 +1002,7 @@ impl UncheckedIndexRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -1317,6 +1331,8 @@ impl Rule for UncheckedIndexRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -1364,6 +1380,7 @@ impl PathTraversalRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -1630,6 +1647,8 @@ impl Rule for PathTraversalRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -1735,6 +1754,7 @@ impl SsrfRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -1931,6 +1951,8 @@ impl Rule for SsrfRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -2026,6 +2048,7 @@ impl SqlInjectionRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -2376,6 +2399,8 @@ impl Rule for SqlInjectionRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -2470,6 +2495,7 @@ impl InterProceduralCommandInjectionRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -2690,6 +2716,8 @@ impl Rule for InterProceduralCommandInjectionRule {
                         cwe_ids: Vec::new(),
                         fix_suggestion: None,
                         code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                     });
                     
                     reported_functions.insert(function.name.clone());

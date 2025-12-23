@@ -11,7 +11,7 @@
 //! - Unwrap in Poll (RUSTCOLA041)
 
 use crate::detect_broadcast_unsync_payloads;
-use crate::{Confidence, Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
+use crate::{Exploitability, Confidence, Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use super::filter_entry;
 use super::utils::{StringLiteralState, strip_string_literals};
 use std::collections::HashSet;
@@ -48,6 +48,7 @@ impl NonThreadSafeTestRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -158,6 +159,8 @@ impl Rule for NonThreadSafeTestRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -190,6 +193,7 @@ impl BlockingSleepInAsyncRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -332,6 +336,7 @@ impl BlockingOpsInAsyncRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -565,6 +570,7 @@ impl MutexGuardAcrossAwaitRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -773,6 +779,7 @@ impl UnderscoreLockGuardRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -877,6 +884,8 @@ impl Rule for UnderscoreLockGuardRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                     });
                     continue;
                 }
@@ -922,6 +931,8 @@ impl Rule for UnderscoreLockGuardRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                                 });
                                 break;
                             }
@@ -957,6 +968,7 @@ impl BroadcastUnsyncPayloadRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -990,6 +1002,8 @@ impl Rule for BroadcastUnsyncPayloadRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -1020,6 +1034,7 @@ impl PanicInDropRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -1173,6 +1188,7 @@ impl UnwrapInPollRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -1345,6 +1361,7 @@ impl UnsafeSendSyncBoundsRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -1745,6 +1762,7 @@ impl NonCancellationSafeSelectRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -1914,6 +1932,7 @@ impl MissingSyncBoundOnCloneRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -2059,6 +2078,7 @@ impl PinContractViolationRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -2181,6 +2201,7 @@ impl OneshotRaceAfterCloseRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -2320,6 +2341,7 @@ impl AsyncSignalUnsafeInHandlerRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -2496,6 +2518,7 @@ impl OnceCellTocTouRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -2638,6 +2661,7 @@ impl PanicWhileHoldingLockRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -2811,6 +2835,7 @@ impl ClosureEscapingRefsRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -3000,6 +3025,7 @@ impl ExecutorStarvationRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -3185,6 +3211,7 @@ impl AsyncDropCorrectnessRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -3385,6 +3412,7 @@ impl PanicInDropImplRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -3569,6 +3597,7 @@ impl SpawnedTaskPanicRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }

@@ -2,7 +2,7 @@
 
 **Goal**: Complete UX and first-run-value enhancements for production release.
 
-**Current Version**: 0.9.8  
+**Current Version**: 0.9.9  
 **Target Version**: 1.0.0  
 **Rules**: 124 (115 RUSTCOLA + 9 ADV)  
 **Tests**: 200+ passing
@@ -26,9 +26,9 @@
 | Item | Description | Effort |
 |------|-------------|--------|
 | ~~Large workspace support~~ | ✅ **DONE (v0.9.6)** Fixed OOM on InfluxDB. Root cause: exponential path exploration in IPA. Solution: removed visited.remove(), added configurable depth limits. | ~~Large~~ |
-| CVSS-like scoring | Severity scores based on exploitability factors | Medium |
+| ~~CVSS-like scoring~~ | ✅ **DONE (v0.9.9)** Added `Exploitability` struct with AttackVector, AttackComplexity, PrivilegesRequired, UserInteraction. Computes 0.0-10.0 score. All 118 RuleMetadata and 75 Finding structs updated. | ~~Medium~~ |
 | ~~Code snippets in SARIF~~ | ✅ **DONE (v0.9.7)** Added `extract_snippet()` helper and `snippet.text` in SARIF regions. Also fixed 7 rules to populate span data. | ~~Small~~ |
-| Rule profiles | strict/balanced/permissive presets via config | Medium |
+| ~~Rule profiles~~ | ✅ **DONE (v0.9.9)** Added `RuleProfile` enum (strict/balanced/permissive). Configurable via `profile` in cargo-cola.yaml. Filters findings by confidence+severity. | ~~Medium~~ |
 | ~~Derive macro filtering~~ | ✅ **DONE (v0.9.5)** ADV001 now skips derive macro generated code. | ~~Medium~~ |
 | ~~Trait method borrow safety~~ | ✅ **DONE (v0.9.5)** ADV001 whitelists safe trait methods (eq, partial_cmp, hash, fmt, clone). | ~~Medium~~ |
 

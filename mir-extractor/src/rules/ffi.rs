@@ -7,7 +7,7 @@
 //! - FFI buffer leaks (RUSTCOLA016)
 //! - FFI pointer returns (RUSTCOLA073)
 
-use crate::{Confidence, Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
+use crate::{Exploitability, Confidence, Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use super::filter_entry;
 use super::utils::{StringLiteralState, strip_string_literals};
 use std::collections::{HashMap, HashSet};
@@ -40,6 +40,7 @@ impl AllocatorMismatchFfiRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -137,6 +138,8 @@ impl Rule for AllocatorMismatchFfiRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                             });
                         }
                     }
@@ -174,6 +177,8 @@ impl Rule for AllocatorMismatchFfiRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                             });
                         }
                     }
@@ -211,6 +216,8 @@ impl Rule for AllocatorMismatchFfiRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                             });
                         }
                     }
@@ -248,6 +255,7 @@ impl UnsafeFfiPointerReturnRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -311,6 +319,8 @@ impl Rule for UnsafeFfiPointerReturnRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -343,6 +353,7 @@ impl PackedFieldReferenceRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -511,6 +522,7 @@ impl UnsafeCStringPointerRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -618,6 +630,7 @@ impl CtorDtorStdApiRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -713,6 +726,7 @@ impl FfiBufferLeakRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -1015,6 +1029,7 @@ impl PanicInFfiBoundaryRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -1220,6 +1235,7 @@ impl EmbeddedInterpreterUsageRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -1368,6 +1384,7 @@ impl WasmLinearMemoryOobRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -1559,6 +1576,7 @@ impl WasmHostFunctionTrustRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -1721,6 +1739,7 @@ impl WasmCapabilityLeakRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }

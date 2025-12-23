@@ -152,6 +152,45 @@ struct Args {
 struct ColaConfig {
     /// Inter-procedural analysis settings
     analysis: mir_extractor::interprocedural::IpaConfig,
+    /// Rule profile: strict, balanced (default), or permissive
+    profile: RuleProfile,
+}
+
+/// Rule profile controls which findings are included in the output
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum RuleProfile {
+    /// All findings, no filtering - for thorough security audits
+    Strict,
+    /// Default: Filter out low-confidence, low-severity findings
+    Balanced,
+    /// Only high-confidence, high-severity findings - for CI pipelines
+    Permissive,
+}
+
+impl Default for RuleProfile {
+    fn default() -> Self {
+        RuleProfile::Balanced
+    }
+}
+
+impl RuleProfile {
+    /// Returns true if finding should be included based on profile
+    fn should_include(&self, finding: &mir_extractor::Finding) -> bool {
+        use mir_extractor::{Confidence, Severity};
+        match self {
+            RuleProfile::Strict => true, // Include everything
+            RuleProfile::Balanced => {
+                // Exclude low-confidence + low-severity combo
+                !(finding.confidence == Confidence::Low && finding.severity == Severity::Low)
+            }
+            RuleProfile::Permissive => {
+                // Only high-confidence OR high/critical severity
+                finding.confidence == Confidence::High 
+                    || finding.severity >= Severity::High
+            }
+        }
+    }
 }
 
 struct PackageOutput {
@@ -361,6 +400,18 @@ fn main() -> Result<()> {
 
         // Filter suppressed findings
         suppression::filter_suppressed_findings(&mut analysis.findings, &crate_root, &engine.suppressions);
+
+        // Apply rule profile filtering
+        let pre_filter_count = analysis.findings.len();
+        analysis.findings.retain(|f| cola_config.profile.should_include(f));
+        if analysis.findings.len() < pre_filter_count {
+            println!(
+                "  profile {:?}: filtered {} → {} findings",
+                cola_config.profile,
+                pre_filter_count,
+                analysis.findings.len()
+            );
+        }
 
         println!(
             "crate {}: processed {} functions, {} findings",
@@ -904,6 +955,7 @@ mod tests {
             origin: mir_extractor::RuleOrigin::BuiltIn,
             cwe_ids: Vec::new(),
             fix_suggestion: None,
+            exploitability: mir_extractor::Exploitability::default(),
         }];
 
         let findings = vec![Finding {

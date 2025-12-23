@@ -86,7 +86,7 @@ pub use supply_chain::{
     RustsecUnsoundDependencyRule, YankedCrateRule, CargoAuditableMetadataRule,
 };
 
-use crate::{MirFunction, MirPackage};
+use crate::{Exploitability, MirFunction, MirPackage};
 use walkdir::DirEntry;
 
 /// Helper function to collect MIR lines matching any of the given patterns.

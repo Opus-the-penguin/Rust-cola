@@ -140,6 +140,215 @@ impl Default for Confidence {
     }
 }
 
+// ============================================================================
+// CVSS-like Exploitability Metrics
+// ============================================================================
+
+/// Attack vector - how the vulnerability can be exploited
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum AttackVector {
+    /// Exploitable over the network (e.g., via HTTP request)
+    Network,
+    /// Requires adjacent network access (e.g., local network)
+    Adjacent,
+    /// Requires local access to the system
+    #[default]
+    Local,
+    /// Requires physical access to the device
+    Physical,
+}
+
+impl AttackVector {
+    /// CVSS v3.1 score contribution (0.0 - 0.85)
+    pub fn score(&self) -> f32 {
+        match self {
+            AttackVector::Network => 0.85,
+            AttackVector::Adjacent => 0.62,
+            AttackVector::Local => 0.55,
+            AttackVector::Physical => 0.20,
+        }
+    }
+    
+    pub fn label(&self) -> &'static str {
+        match self {
+            AttackVector::Network => "Network",
+            AttackVector::Adjacent => "Adjacent",
+            AttackVector::Local => "Local",
+            AttackVector::Physical => "Physical",
+        }
+    }
+}
+
+/// Attack complexity - conditions beyond attacker's control
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum AttackComplexity {
+    /// No special conditions required
+    #[default]
+    Low,
+    /// Requires specific conditions (race condition, specific config, etc.)
+    High,
+}
+
+impl AttackComplexity {
+    /// CVSS v3.1 score contribution
+    pub fn score(&self) -> f32 {
+        match self {
+            AttackComplexity::Low => 0.77,
+            AttackComplexity::High => 0.44,
+        }
+    }
+    
+    pub fn label(&self) -> &'static str {
+        match self {
+            AttackComplexity::Low => "Low",
+            AttackComplexity::High => "High",
+        }
+    }
+}
+
+/// Privileges required to exploit the vulnerability
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum PrivilegesRequired {
+    /// No privileges required (unauthenticated)
+    #[default]
+    None,
+    /// Low privileges (normal user)
+    Low,
+    /// High privileges (admin/root)
+    High,
+}
+
+impl PrivilegesRequired {
+    /// CVSS v3.1 score contribution
+    pub fn score(&self) -> f32 {
+        match self {
+            PrivilegesRequired::None => 0.85,
+            PrivilegesRequired::Low => 0.62,
+            PrivilegesRequired::High => 0.27,
+        }
+    }
+    
+    pub fn label(&self) -> &'static str {
+        match self {
+            PrivilegesRequired::None => "None",
+            PrivilegesRequired::Low => "Low",
+            PrivilegesRequired::High => "High",
+        }
+    }
+}
+
+/// Whether user interaction is required
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum UserInteraction {
+    /// No user interaction required
+    #[default]
+    None,
+    /// Requires user to perform some action (click link, open file)
+    Required,
+}
+
+impl UserInteraction {
+    /// CVSS v3.1 score contribution
+    pub fn score(&self) -> f32 {
+        match self {
+            UserInteraction::None => 0.85,
+            UserInteraction::Required => 0.62,
+        }
+    }
+    
+    pub fn label(&self) -> &'static str {
+        match self {
+            UserInteraction::None => "None",
+            UserInteraction::Required => "Required",
+        }
+    }
+}
+
+/// Exploitability metrics bundle (CVSS-like)
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct Exploitability {
+    pub attack_vector: AttackVector,
+    pub attack_complexity: AttackComplexity,
+    pub privileges_required: PrivilegesRequired,
+    pub user_interaction: UserInteraction,
+}
+
+impl Exploitability {
+    /// Create with all factors specified
+    pub fn new(
+        attack_vector: AttackVector,
+        attack_complexity: AttackComplexity,
+        privileges_required: PrivilegesRequired,
+        user_interaction: UserInteraction,
+    ) -> Self {
+        Self {
+            attack_vector,
+            attack_complexity,
+            privileges_required,
+            user_interaction,
+        }
+    }
+    
+    /// Network attack, low complexity, no auth, no user interaction (worst case)
+    pub fn network_unauthenticated() -> Self {
+        Self {
+            attack_vector: AttackVector::Network,
+            attack_complexity: AttackComplexity::Low,
+            privileges_required: PrivilegesRequired::None,
+            user_interaction: UserInteraction::None,
+        }
+    }
+    
+    /// Local attack requiring some privileges
+    pub fn local_privileged() -> Self {
+        Self {
+            attack_vector: AttackVector::Local,
+            attack_complexity: AttackComplexity::Low,
+            privileges_required: PrivilegesRequired::Low,
+            user_interaction: UserInteraction::None,
+        }
+    }
+    
+    /// Compute exploitability sub-score (0.0 - 3.9)
+    /// Based on CVSS v3.1 formula: 8.22 × AV × AC × PR × UI
+    pub fn score(&self) -> f32 {
+        8.22 * self.attack_vector.score()
+            * self.attack_complexity.score()
+            * self.privileges_required.score()
+            * self.user_interaction.score()
+    }
+    
+    /// Get a human-readable summary
+    pub fn summary(&self) -> String {
+        format!(
+            "AV:{}/AC:{}/PR:{}/UI:{}",
+            match self.attack_vector {
+                AttackVector::Network => "N",
+                AttackVector::Adjacent => "A",
+                AttackVector::Local => "L",
+                AttackVector::Physical => "P",
+            },
+            match self.attack_complexity {
+                AttackComplexity::Low => "L",
+                AttackComplexity::High => "H",
+            },
+            match self.privileges_required {
+                PrivilegesRequired::None => "N",
+                PrivilegesRequired::Low => "L",
+                PrivilegesRequired::High => "H",
+            },
+            match self.user_interaction {
+                UserInteraction::None => "N",
+                UserInteraction::Required => "R",
+            }
+        )
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RuleOrigin {
     BuiltIn,
@@ -172,6 +381,9 @@ pub struct RuleMetadata {
     /// Fix suggestion template
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fix_suggestion: Option<String>,
+    /// CVSS-like exploitability metrics for this rule
+    #[serde(default)]
+    pub exploitability: Exploitability,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -205,6 +417,12 @@ pub struct Finding {
     /// Code snippet showing the vulnerable code
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code_snippet: Option<String>,
+    /// CVSS-like exploitability metrics
+    #[serde(default)]
+    pub exploitability: Exploitability,
+    /// Computed exploitability score (0.0 - 3.9)
+    #[serde(default)]
+    pub exploitability_score: f32,
 }
 
 impl Finding {
@@ -219,6 +437,8 @@ impl Finding {
         evidence: Vec<String>,
         span: Option<SourceSpan>,
     ) -> Self {
+        let exploitability = Exploitability::default();
+        let exploitability_score = exploitability.score();
         Self {
             rule_id: rule_id.into(),
             rule_name: rule_name.into(),
@@ -232,6 +452,8 @@ impl Finding {
             cwe_ids: Vec::new(),
             fix_suggestion: None,
             code_snippet: None,
+            exploitability,
+            exploitability_score,
         }
     }
     
@@ -258,10 +480,18 @@ impl Finding {
         self.code_snippet = Some(snippet.into());
         self
     }
+    
+    /// Set exploitability metrics and compute score
+    pub fn with_exploitability(mut self, exploitability: Exploitability) -> Self {
+        self.exploitability = exploitability;
+        self.exploitability_score = exploitability.score();
+        self
+    }
 }
 
 impl Default for Finding {
     fn default() -> Self {
+        let exploitability = Exploitability::default();
         Self {
             rule_id: String::new(),
             rule_name: String::new(),
@@ -275,6 +505,8 @@ impl Default for Finding {
             cwe_ids: Vec::new(),
             fix_suggestion: None,
             code_snippet: None,
+            exploitability_score: exploitability.score(),
+            exploitability,
         }
     }
 }
@@ -1061,6 +1293,7 @@ impl DeclarativeRule {
             origin: RuleOrigin::RulePack { source: origin },
             cwe_ids: Vec::new(),
             fix_suggestion: None,
+            exploitability: Exploitability::default(),
         };
 
         Self {
@@ -1174,6 +1407,7 @@ impl Rule for DeclarativeRule {
                 )
             });
             let evidence = self.gather_evidence(function);
+            let exploitability = self.metadata.exploitability;
 
             findings.push(Finding {
                 rule_id: self.metadata.id.clone(),
@@ -1188,6 +1422,8 @@ impl Rule for DeclarativeRule {
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
                 code_snippet: None,
+                exploitability_score: exploitability.score(),
+                exploitability,
             });
         }
 
@@ -1224,6 +1460,7 @@ impl WasmRulePlaceholder {
             origin: RuleOrigin::Wasm { module: module_utf8 },
             cwe_ids: Vec::new(),
             fix_suggestion: None,
+            exploitability: Exploitability::default(),
         };
 
         Self { metadata }
@@ -3130,8 +3367,10 @@ fn <impl at C:\\workspace\\demo\\src\\lib.rs:40:1: 40:32>::vec_set_len(_1: &mut 
             origin: RuleOrigin::BuiltIn,
             cwe_ids: Vec::new(),
             fix_suggestion: None,
+            exploitability: Exploitability::default(),
         };
 
+        let exploitability = Exploitability::default();
         let finding = Finding {
             rule_id: rule.id.clone(),
             rule_name: rule.name.clone(),
@@ -3145,6 +3384,8 @@ fn <impl at C:\\workspace\\demo\\src\\lib.rs:40:1: 40:32>::vec_set_len(_1: &mut 
             cwe_ids: Vec::new(),
             fix_suggestion: None,
             code_snippet: None,
+            exploitability_score: exploitability.score(),
+            exploitability,
         };
 
         let analysis = AnalysisResult {
@@ -3210,8 +3451,10 @@ fn <impl at C:\\workspace\\demo\\src\\lib.rs:40:1: 40:32>::vec_set_len(_1: &mut 
             origin: RuleOrigin::BuiltIn,
             cwe_ids: Vec::new(),
             fix_suggestion: None,
+            exploitability: Exploitability::default(),
         };
 
+        let exploitability = Exploitability::default();
         let finding = Finding {
             rule_id: rule.id.clone(),
             rule_name: rule.name.clone(),
@@ -3225,6 +3468,8 @@ fn <impl at C:\\workspace\\demo\\src\\lib.rs:40:1: 40:32>::vec_set_len(_1: &mut 
             cwe_ids: Vec::new(),
             fix_suggestion: None,
             code_snippet: None,
+            exploitability_score: exploitability.score(),
+            exploitability,
         };
 
         let analysis = AnalysisResult {

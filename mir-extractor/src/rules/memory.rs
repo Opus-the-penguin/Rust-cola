@@ -9,7 +9,7 @@
 //! - Null pointer transmutes
 //! - ZST pointer arithmetic
 
-use crate::{Confidence, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
+use crate::{Exploitability, Confidence, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use crate::detect_truncating_len_casts;
 use super::collect_matches;
 use super::utils::filter_entry;
@@ -301,6 +301,7 @@ impl BoxIntoRawRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -349,6 +350,8 @@ impl Rule for BoxIntoRawRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
             });
         }
 
@@ -377,6 +380,7 @@ impl TransmuteRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -453,6 +457,8 @@ impl Rule for TransmuteRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -481,6 +487,7 @@ impl UnsafeUsageRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -549,6 +556,8 @@ impl Rule for UnsafeUsageRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
             });
         }
 
@@ -577,6 +586,7 @@ impl NullPointerTransmuteRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -627,6 +637,8 @@ impl Rule for NullPointerTransmuteRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
             });
         }
 
@@ -655,6 +667,7 @@ impl ZSTPointerArithmeticRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -705,6 +718,8 @@ impl Rule for ZSTPointerArithmeticRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
             });
         }
 
@@ -738,6 +753,7 @@ impl VecSetLenRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -807,6 +823,8 @@ impl Rule for VecSetLenRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
             });
         }
 
@@ -844,6 +862,7 @@ impl MaybeUninitAssumeInitRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -885,6 +904,8 @@ impl Rule for MaybeUninitAssumeInitRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
             });
         }
 
@@ -929,6 +950,7 @@ impl MemUninitZeroedRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -980,6 +1002,8 @@ impl Rule for MemUninitZeroedRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
             });
         }
 
@@ -1008,6 +1032,7 @@ impl NonNullNewUncheckedRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -1048,6 +1073,8 @@ impl Rule for NonNullNewUncheckedRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -1077,6 +1104,7 @@ impl MemForgetGuardRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -1126,6 +1154,8 @@ impl Rule for MemForgetGuardRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -1155,6 +1185,7 @@ impl StaticMutGlobalRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -1200,6 +1231,8 @@ impl Rule for StaticMutGlobalRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
             });
         }
 
@@ -1228,6 +1261,7 @@ impl TransmuteLifetimeChangeRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -1496,6 +1530,7 @@ impl RawPointerEscapeRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -1784,6 +1819,7 @@ impl VecSetLenMisuseRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -1948,6 +1984,7 @@ impl LengthTruncationCastRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -1997,6 +2034,8 @@ impl Rule for LengthTruncationCastRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -2031,6 +2070,7 @@ impl MaybeUninitAssumeInitDataflowRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -2157,6 +2197,8 @@ impl Rule for MaybeUninitAssumeInitDataflowRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -2191,6 +2233,7 @@ impl SliceElementSizeMismatchRule {
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
                 help_uri: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -2393,6 +2436,8 @@ impl Rule for SliceElementSizeMismatchRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                         });
                         continue;
                     }
@@ -2418,6 +2463,8 @@ impl Rule for SliceElementSizeMismatchRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                         });
                         continue;
                     }
@@ -2499,6 +2546,8 @@ impl Rule for SliceElementSizeMismatchRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                         });
                     }
                     
@@ -2524,6 +2573,8 @@ impl Rule for SliceElementSizeMismatchRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                         });
                     }
                 }
@@ -2560,6 +2611,7 @@ impl SliceFromRawPartsRule {
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
                 help_uri: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -2831,6 +2883,8 @@ impl Rule for SliceFromRawPartsRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                     });
                     continue;
                 }
@@ -2862,6 +2916,8 @@ impl Rule for SliceFromRawPartsRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                     });
                     continue;
                 }
@@ -2884,6 +2940,8 @@ impl Rule for SliceFromRawPartsRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                     });
                     continue;
                 }
@@ -2911,6 +2969,8 @@ impl Rule for SliceFromRawPartsRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                     });
                 }
             }
@@ -2945,6 +3005,7 @@ impl VarianceTransmuteUnsoundRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -3045,6 +3106,8 @@ impl Rule for VarianceTransmuteUnsoundRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                     });
                     continue;
                 }
@@ -3066,6 +3129,8 @@ impl Rule for VarianceTransmuteUnsoundRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                     });
                     continue;
                 }
@@ -3087,6 +3152,8 @@ impl Rule for VarianceTransmuteUnsoundRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
+                exploitability: Exploitability::default(),
+                exploitability_score: Exploitability::default().score(),
                     });
                 }
             }
@@ -3124,6 +3191,7 @@ impl ReturnedRefToLocalRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -3338,6 +3406,7 @@ impl SelfReferentialStructRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -3521,6 +3590,7 @@ impl UnsafeCellAliasingRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -3690,6 +3760,7 @@ impl LazyInitPanicPoisonRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }

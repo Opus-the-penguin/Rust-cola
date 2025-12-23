@@ -5,6 +5,13 @@
 #
 # All settings are optional - defaults are used for any omitted values.
 
+# Rule profile controls which findings are included in output
+# Options:
+#   strict     - All findings, no filtering (thorough security audits)
+#   balanced   - Exclude low-confidence + low-severity (default)
+#   permissive - Only high-confidence OR high/critical severity (CI pipelines)
+profile: balanced
+
 # Inter-procedural analysis (IPA) configuration
 # These limits control memory usage and analysis depth for the taint tracking engine.
 # Increase limits for more thorough analysis on high-memory machines.

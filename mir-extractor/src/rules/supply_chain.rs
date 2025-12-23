@@ -6,7 +6,7 @@
 //! - Cargo auditable metadata
 //! - Proc-macro side effects
 
-use crate::{Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
+use crate::{Exploitability, Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use semver::{Version, VersionReq};
 use std::collections::HashSet;
 use std::ffi::OsStr;
@@ -45,6 +45,7 @@ impl RustsecUnsoundDependencyRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -215,6 +216,7 @@ impl YankedCrateRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -331,6 +333,7 @@ impl CargoAuditableMetadataRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }
@@ -647,6 +650,7 @@ impl ProcMacroSideEffectsRule {
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
                 fix_suggestion: None,
+                exploitability: Exploitability::default(),
             },
         }
     }

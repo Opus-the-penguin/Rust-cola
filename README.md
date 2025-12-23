@@ -63,11 +63,6 @@ cargo build --release
 
 Binary: `target/release/cargo-cola`
 
-## Documentation
-
-- [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md): Custom rules, YAML rulepacks, and suppression.
-- [Rules Master Plan](docs/RULES_MASTER_PLAN.md): Current status, roadmap, and backlog of security rules.
-
 ## Output Artifacts
 
 By default, all artifacts are written to `out/cola/`:
@@ -90,7 +85,7 @@ Use `--no-ast`, `--no-hir`, or `--no-llm-prompt` to suppress specific outputs.
 
 If an output file already exists, a timestamped version is created to avoid overwriting.
 
-## What It Detects
+## Rules
 
 124 rules grouped by vulnerability category:
 
@@ -107,6 +102,8 @@ If an output file already exists, a timestamped version is created to avoid over
 | **Code Quality** | 9 | Dead stores, assertions, crate-wide allow, RefCell, commented code, unwrap in hot paths |
 | **Supply Chain** | 4 | RUSTSEC advisories, yanked crates, auditable dependencies, proc-macro side effects |
 | **Advanced Dataflow** | 9 | Use-after-free, taint propagation, integer overflow, uncontrolled allocation |
+
+See the [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md) for custom rules, YAML rulepacks, and suppression.
 
 ## Why It Requires Compilation
 

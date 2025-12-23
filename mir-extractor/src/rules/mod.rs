@@ -11,6 +11,10 @@
 //! - `code_quality`: Code quality issues (dead stores, commented code, assertions)
 //! - `web`: Web security issues (TLS, CORS, cookies, passwords)
 //! - `supply_chain`: Supply chain security (RUSTSEC, yanked crates, auditable)
+//! - `advanced_memory`: Deep dataflow memory analysis (use-after-free, null deref)
+//! - `advanced_input`: Dataflow input validation (binary deser, regex DoS, allocation)
+//! - `advanced_async`: Async safety (template injection, Send bounds, span guards)
+//! - `advanced_utils`: Shared utilities for advanced dataflow rules
 //! - `utils`: Shared utilities for rule implementations
 
 pub mod crypto;
@@ -23,6 +27,10 @@ pub mod resource;
 pub mod code_quality;
 pub mod web;
 pub mod supply_chain;
+pub mod advanced_memory;
+pub mod advanced_input;
+pub mod advanced_async;
+pub mod advanced_utils;
 pub mod utils;
 
 // Re-export registration functions
@@ -36,6 +44,9 @@ pub use resource::register_resource_rules;
 pub use code_quality::register_code_quality_rules;
 pub use web::register_web_rules;
 pub use supply_chain::register_supply_chain_rules;
+pub use advanced_memory::register_advanced_memory_rules;
+pub use advanced_input::register_advanced_input_rules;
+pub use advanced_async::register_advanced_async_rules;
 
 // Re-export rule structs for direct access
 pub use crypto::{
@@ -85,8 +96,16 @@ pub use web::{
 pub use supply_chain::{
     RustsecUnsoundDependencyRule, YankedCrateRule, CargoAuditableMetadataRule,
 };
+pub use advanced_memory::DanglingPointerUseAfterFreeRule;
+pub use advanced_input::{
+    InsecureBinaryDeserializationRule, RegexBacktrackingDosRule,
+    UncontrolledAllocationSizeRule, IntegerOverflowRule,
+};
+pub use advanced_async::{
+    TemplateInjectionRule, UnsafeSendAcrossAsyncBoundaryRule, AwaitSpanGuardRule,
+};
 
-use crate::{Exploitability, MirFunction, MirPackage};
+use crate::{MirFunction, MirPackage};
 use walkdir::DirEntry;
 
 /// Helper function to collect MIR lines matching any of the given patterns.

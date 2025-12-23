@@ -5,9 +5,8 @@ edition = "2021"
 authors = ["Opus-the-penguin"]
 
 [features]
-default = ["advanced-rules"]
+default = []
 hir-driver = ["mir-extractor/hir-driver"]
-advanced-rules = ["dep:mir-advanced-rules"]
 
 [dependencies]
 clap = { version = "4", features = ["derive", "env"] }
@@ -16,7 +15,6 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 mir-extractor = { path = "../mir-extractor" }
-mir-advanced-rules = { path = "../mir-advanced-rules", optional = true }
 cargo_metadata = "0.18"
 reqwest = { version = "0.11", features = ["blocking", "json"] }
 walkdir = "2.5"

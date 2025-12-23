@@ -1503,7 +1503,10 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     rules::register_web_rules(engine);
     rules::register_supply_chain_rules(engine);
     rules::register_injection_rules(engine);
-    // All rules now registered via module registration functions
+    // Advanced dataflow-based rules (migrated from mir-advanced-rules)
+    rules::register_advanced_memory_rules(engine);
+    rules::register_advanced_input_rules(engine);
+    rules::register_advanced_async_rules(engine);
 }
 
 

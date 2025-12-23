@@ -2,7 +2,7 @@
 
 **Goal**: Complete UX and first-run-value enhancements for production release.
 
-**Current Version**: 0.9.6  
+**Current Version**: 0.9.8  
 **Target Version**: 1.0.0  
 **Rules**: 124 (115 RUSTCOLA + 9 ADV)  
 **Tests**: 200+ passing
@@ -27,7 +27,7 @@
 |------|-------------|--------|
 | ~~Large workspace support~~ | ✅ **DONE (v0.9.6)** Fixed OOM on InfluxDB. Root cause: exponential path exploration in IPA. Solution: removed visited.remove(), added configurable depth limits. | ~~Large~~ |
 | CVSS-like scoring | Severity scores based on exploitability factors | Medium |
-| Code snippets in SARIF | Include source context in SARIF findings | Small |
+| ~~Code snippets in SARIF~~ | ✅ **DONE (v0.9.7)** Added `extract_snippet()` helper and `snippet.text` in SARIF regions. Also fixed 7 rules to populate span data. | ~~Small~~ |
 | Rule profiles | strict/balanced/permissive presets via config | Medium |
 | ~~Derive macro filtering~~ | ✅ **DONE (v0.9.5)** ADV001 now skips derive macro generated code. | ~~Medium~~ |
 | ~~Trait method borrow safety~~ | ✅ **DONE (v0.9.5)** ADV001 whitelists safe trait methods (eq, partial_cmp, hash, fmt, clone). | ~~Medium~~ |

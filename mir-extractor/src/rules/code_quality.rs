@@ -94,7 +94,7 @@ impl Rule for CrateWideAllowRule {
                         function: function.name.clone(),
                         function_signature: function.signature.clone(),
                         evidence: vec![line.clone()],
-                        span: None,
+                        span: function.span.clone(),
                     ..Default::default()
                     });
                     reported = true;
@@ -185,7 +185,7 @@ impl Rule for MisorderedAssertEqRule {
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence,
-                    span: None,
+                    span: function.span.clone(),
                     ..Default::default()
                 });
             }
@@ -271,7 +271,7 @@ impl Rule for TryIoResultRule {
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence,
-                    span: None,
+                    span: function.span.clone(),
                     ..Default::default()
                 });
             }
@@ -359,7 +359,7 @@ impl Rule for LocalRefCellRule {
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence,
-                    span: None,
+                    span: function.span.clone(),
                     ..Default::default()
                 });
             }
@@ -455,7 +455,7 @@ impl Rule for UnnecessaryBorrowMutRule {
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence,
-                    span: None,
+                    span: function.span.clone(),
                     ..Default::default()
                 });
             }

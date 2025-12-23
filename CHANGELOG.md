@@ -5,6 +5,20 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.8] - 2025-12-22
+
+### Added
+- **Code Snippets in SARIF Output**: SARIF findings now include source code snippets for easier review.
+  - New `extract_snippet()` helper function to read source files and extract lines around a span
+  - SARIF `region` objects now include `snippet.text` when span data is available
+  - New test `sarif_report_includes_code_snippet` validates snippet extraction
+
+### Fixed
+- **Span Data in 7 Function-Based Rules**: Updated rules to properly populate span data (was `span: None`):
+  - `code_quality.rs`: Crate-wide allow, misordered assert, try io result, local refcell, unnecessary borrow_mut
+  - `ffi.rs`: Constructor/destructor std calls
+  - `input.rs`: Infinite iterator
+
 ## [0.9.7] - 2025-12-22
 
 ### Added

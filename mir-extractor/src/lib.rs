@@ -2511,7 +2511,40 @@ fn artifact_uri_for(package: &MirPackage, function_name: &str) -> String {
     file_uri_from_path(&crate_root.join("src/lib.rs"))
 }
 
+/// Extract a code snippet from a source file for SARIF output.
+/// Returns the lines from start_line to end_line (1-indexed, inclusive).
+/// Falls back to None if the file cannot be read.
+fn extract_snippet(crate_root: &Path, file_path: &str, start_line: u32, end_line: u32) -> Option<String> {
+    // Resolve file path - may be relative to crate root or absolute
+    let path = if Path::new(file_path).is_absolute() {
+        PathBuf::from(file_path)
+    } else {
+        crate_root.join(file_path)
+    };
+    
+    let content = fs::read_to_string(&path).ok()?;
+    let lines: Vec<&str> = content.lines().collect();
+    
+    // Convert to 0-indexed
+    let start = (start_line.saturating_sub(1)) as usize;
+    let end = end_line as usize;
+    
+    if start >= lines.len() {
+        return None;
+    }
+    
+    let end = end.min(lines.len());
+    let snippet_lines: Vec<&str> = lines[start..end].to_vec();
+    
+    if snippet_lines.is_empty() {
+        None
+    } else {
+        Some(snippet_lines.join("\n"))
+    }
+}
+
 pub fn sarif_report(package: &MirPackage, analysis: &AnalysisResult) -> serde_json::Value {
+    let crate_root = Path::new(&package.crate_root);
     let rule_index: HashMap<&str, &RuleMetadata> = analysis
         .rules
         .iter()
@@ -2538,6 +2571,11 @@ pub fn sarif_report(package: &MirPackage, analysis: &AnalysisResult) -> serde_js
                 region.insert("startColumn".to_string(), json!(span.start_column));
                 region.insert("endLine".to_string(), json!(span.end_line));
                 region.insert("endColumn".to_string(), json!(span.end_column));
+
+                // Extract code snippet for SARIF output
+                if let Some(snippet_text) = extract_snippet(crate_root, &span.file, span.start_line, span.end_line) {
+                    region.insert("snippet".to_string(), json!({"text": snippet_text}));
+                }
 
                 let path = Path::new(&span.file);
                 file_uri_from_path(path)
@@ -3128,6 +3166,85 @@ fn <impl at C:\\workspace\\demo\\src\\lib.rs:40:1: 40:32>::vec_set_len(_1: &mut 
             .expect("uri missing");
         let expected_uri = file_uri_from_path(Path::new(&span.file));
         assert_eq!(artifact_uri, expected_uri);
+    }
+
+    #[test]
+    fn sarif_report_includes_code_snippet() {
+        use std::io::Write;
+        
+        // Create a temp directory with a source file
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let src_dir = temp_dir.path().join("src");
+        std::fs::create_dir_all(&src_dir).expect("create src dir");
+        
+        let source_code = r#"fn main() {
+    let password = "secret123";
+    println!("{}", password);
+}
+"#;
+        let lib_rs = src_dir.join("lib.rs");
+        let mut file = std::fs::File::create(&lib_rs).expect("create lib.rs");
+        file.write_all(source_code.as_bytes()).expect("write source");
+        
+        let span = SourceSpan {
+            file: "src/lib.rs".to_string(),
+            start_line: 2,
+            start_column: 5,
+            end_line: 2,
+            end_column: 30,
+        };
+
+        let package = MirPackage {
+            crate_name: "demo".to_string(),
+            crate_root: temp_dir.path().to_string_lossy().to_string(),
+            functions: Vec::new(),
+        };
+
+        let rule = RuleMetadata {
+            id: "TEST002".to_string(),
+            name: "hardcoded-secret".to_string(),
+            short_description: "Hardcoded secret".to_string(),
+            full_description: "Hardcoded secret detected".to_string(),
+            help_uri: None,
+            default_severity: Severity::High,
+            origin: RuleOrigin::BuiltIn,
+            cwe_ids: Vec::new(),
+            fix_suggestion: None,
+        };
+
+        let finding = Finding {
+            rule_id: rule.id.clone(),
+            rule_name: rule.name.clone(),
+            severity: rule.default_severity,
+            confidence: Confidence::High,
+            message: "Hardcoded password detected".to_string(),
+            function: "demo::main".to_string(),
+            function_signature: "fn demo::main()".to_string(),
+            evidence: vec![],
+            span: Some(span),
+            cwe_ids: Vec::new(),
+            fix_suggestion: None,
+            code_snippet: None,
+        };
+
+        let analysis = AnalysisResult {
+            findings: vec![finding],
+            rules: vec![rule],
+        };
+
+        let sarif = sarif_report(&package, &analysis);
+        let result = &sarif["runs"][0]["results"][0];
+        let region = &result["locations"][0]["physicalLocation"]["region"];
+
+        // Verify snippet is included
+        let snippet = &region["snippet"]["text"];
+        assert!(snippet.is_string(), "snippet.text should be a string");
+        let snippet_text = snippet.as_str().unwrap();
+        assert!(
+            snippet_text.contains("password"),
+            "snippet should contain the code: {}",
+            snippet_text
+        );
     }
 
     #[cfg(windows)]

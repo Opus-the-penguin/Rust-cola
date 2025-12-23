@@ -679,7 +679,7 @@ impl Rule for CtorDtorStdApiRule {
                         function: function.name.clone(),
                         function_signature: function.signature.clone(),
                         evidence,
-                        span: None,
+                        span: function.span.clone(),
                     ..Default::default()
                     });
                 }

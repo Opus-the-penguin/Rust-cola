@@ -12,6 +12,13 @@ Requires the nightly Rust toolchain.
 
 Rust-cola is designed to work with an LLM (Large Language Model) for best results. The LLM filters false positives, rates severity, assesses exploitability, and suggests remediations—turning raw findings into an actionable security report.
 
+```mermaid
+flowchart LR
+    A[**cargo-cola**<br/>Analyze Rust<br/>Crate MIR] --> B[**Artifact Set**<br/>• findings.sarif<br/>• mir.json<br/>• ast.json<br/>• llm-prompt.md]
+    B --> C[**LLM**<br/>• Validate FPs<br/>• Exploitability<br/>• Severity<br/>• Remediation]
+    C --> D[**Final Report**<br/>• Confirmed Findings<br/>• Severity Scores<br/>• Fix Guidance]
+```
+
 **Manual Workflow (Recommended):**
 
 1. Run the scan on your target project:

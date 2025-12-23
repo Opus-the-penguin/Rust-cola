@@ -45,11 +45,11 @@ struct Args {
     #[arg(long)]
     mir_json: Option<PathBuf>,
 
-    /// Optional path for the findings JSON output (defaults to <out_dir>/findings.json)
+    /// Optional path for the raw findings JSON output (defaults to <out_dir>/raw-findings.json)
     #[arg(long)]
     findings_json: Option<PathBuf>,
 
-    /// Optional path to emit SARIF 2.1.0 output (defaults to <out_dir>/cola.sarif if not provided)
+    /// Optional path to emit raw SARIF 2.1.0 output (defaults to <out_dir>/raw-findings.sarif if not provided)
     #[arg(long)]
     sarif: Option<PathBuf>,
 
@@ -117,8 +117,8 @@ struct Args {
     #[arg(long, default_value = "4096")]
     llm_max_tokens: u32,
 
-    /// Generate a standalone human-readable security report (no LLM required)
-    /// Defaults to <out_dir>/reports/report.md if no path specified
+    /// Generate a standalone raw human-readable security report (no LLM required)
+    /// Defaults to <out_dir>/reports/raw-report.md if no path specified
     #[arg(long, num_args = 0..=1, default_missing_value = "")]
     report: Option<PathBuf>,
 
@@ -388,13 +388,13 @@ fn main() -> Result<()> {
     let findings_path = resolve_output_path(
         args.findings_json.clone(),
         &args.out_dir,
-        "findings.json",
+        "raw-findings.json",
         &timestamp,
     );
     let sarif_path = resolve_output_path(
         args.sarif.clone(),
         &args.out_dir,
-        "cola.sarif",
+        "raw-findings.sarif",
         &timestamp,
     );
 
@@ -427,7 +427,7 @@ fn main() -> Result<()> {
             let resolved_path = resolve_output_path(
                 args.report.clone(),
                 &args.out_dir,
-                "report.md",
+                "raw-report.md",
                 &timestamp,
             );
             generate_standalone_report(
@@ -633,7 +633,7 @@ fn main() -> Result<()> {
         let resolved_path = resolve_output_path(
             args.report.clone(),
             &args.out_dir,
-            "report.md",
+            "raw-report.md",
             &timestamp,
         );
         generate_standalone_report(
@@ -736,7 +736,7 @@ fn main() -> Result<()> {
         println!("- LLM Report: {}", llm_path.display());
     }
     if let Some(report_path) = &args.report {
-        let resolved = resolve_report_path(report_path, &args.out_dir, "report.md");
+        let resolved = resolve_report_path(report_path, &args.out_dir, "raw-report.md");
         println!("- Standalone Report: {}", resolved.display());
     }
     if let Some(prompt_path) = &args.llm_prompt {

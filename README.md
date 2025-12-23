@@ -14,7 +14,7 @@ Rust-cola is designed to work with an LLM (Large Language Model) for best result
 
 ```mermaid
 flowchart LR
-    A[**cargo-cola**<br/>Analyze Rust<br/>Crate MIR] --> B[**Artifact Set**<br/>• findings.sarif<br/>• mir.json<br/>• ast.json<br/>• llm-prompt.md]
+    A[**cargo-cola**<br/>Analyze Rust<br/>Crate MIR] --> B[**Artifact Set**<br/>• raw-findings.sarif<br/>• mir.json<br/>• ast.json<br/>• llm-prompt.md]
     B --> C[**LLM**<br/>• Validate FPs<br/>• Exploitability<br/>• Severity<br/>• Remediation]
     C --> D[**Final Report**<br/>• Confirmed Findings<br/>• Severity Scores<br/>• Fix Guidance]
 ```
@@ -23,10 +23,10 @@ flowchart LR
 
 1. Run the scan on your target project:
    ```bash
-   cargo-cola --crate-path /path/to/project --output-for-llm out/cola/security-analysis.md
+   cargo-cola --crate-path /path/to/project
    ```
 
-2. Open the generated file `out/cola/security-analysis.md`.
+2. Open the generated file `out/cola/llm-prompt.md`.
 
 3. Copy the contents into your AI coding assistant (Claude, ChatGPT, Copilot) with a prompt like:
    > "Analyze these security findings and generate a prioritized report."
@@ -47,10 +47,10 @@ Works with any OpenAI-compatible API (Anthropic, Ollama, local models via Ollama
 ### Standalone (no LLM)
 
 ```bash
-cargo-cola --crate-path . --report out/cola/report.md
+cargo-cola --crate-path . --report out/cola/raw-report.md
 ```
 
-Generates a report with heuristic triage. Useful for CI integration or when LLM access is unavailable, but requires manual review of findings.
+Generates a raw report with heuristic triage. Useful for CI integration or when LLM access is unavailable, but requires manual review of findings.
 
 ## Installation
 
@@ -78,10 +78,13 @@ By default, all artifacts are written to `out/cola/`:
 | `mir.json` | MIR extraction (functions, blocks, statements) |
 | `ast.json` | AST extraction (modules, functions, structs) |
 | `hir.json` | HIR extraction (requires `--features hir-driver`) |
-| `findings.json` | Raw findings from all rules |
-| `cola.sarif` | SARIF 2.1.0 for CI integration |
+| `raw-findings.json` | Raw findings from all rules (pre-LLM validation) |
+| `raw-findings.sarif` | Raw SARIF 2.1.0 output (pre-LLM validation) |
+| `raw-report.md` | Standalone report without LLM validation |
 | `llm-prompt.md` | Prompt file for manual LLM submission |
-| `report.md` | Standalone report (when `--report` is used) |
+| `report.md` | LLM-validated report (when `--llm-report` is used) |
+
+**Raw vs Validated:** Files prefixed with `raw-` contain all findings before LLM analysis. Use these for deep investigation or when LLM access is unavailable. The LLM-validated outputs contain only confirmed findings with severity scores and remediation guidance.
 
 Use `--no-ast`, `--no-hir`, or `--no-llm-prompt` to suppress specific outputs.
 

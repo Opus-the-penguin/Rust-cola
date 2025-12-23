@@ -39,6 +39,7 @@
 | `--fast` mode | Skip expensive analyses for quick feedback | Medium |
 | Performance benchmarks | Document baseline performance metrics | Small |
 | **FP heuristic expansion** | `compute_false_positive_likelihood` only checks test/example/mock. Add: derive macros, compiler-generated code, safe borrow patterns. | Medium |
+| **Pruned SARIF generation** | LLM outputs list of confirmed finding IDs; cargo-cola filters `raw-findings.sarif` → `findings.sarif` with only validated findings. Enables clean CI integration post-LLM review. | Medium |
 
 ### P2 - Nice to Have
 

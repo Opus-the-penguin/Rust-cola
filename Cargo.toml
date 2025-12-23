@@ -2,7 +2,6 @@
 members = [
     "cargo-cola",
     "mir-extractor",
-    "mir-advanced-rules",
     "examples/simple",
     "examples/openoptions-truncate",
     "examples/allocator-mismatch-ffi",

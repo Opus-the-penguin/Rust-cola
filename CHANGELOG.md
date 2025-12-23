@@ -5,6 +5,33 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.10] - 2025-12-22
+
+### Changed
+- **Unified Rule Architecture**: Migrated all 8 advanced rules from `mir-advanced-rules` crate to `mir-extractor`.
+  - New rule IDs: RUSTCOLA200-207 (replacing ADV001-ADV009)
+  - RUSTCOLA200: DanglingPointerUseAfterFreeRule (use-after-free detection)
+  - RUSTCOLA201: InsecureBinaryDeserializationRule (bincode/postcard/etc.)
+  - RUSTCOLA202: RegexBacktrackingDosRule (ReDoS patterns)
+  - RUSTCOLA203: UncontrolledAllocationSizeRule (allocation DoS)
+  - RUSTCOLA204: IntegerOverflowRule (arithmetic overflow)
+  - RUSTCOLA205: TemplateInjectionRule (template engines)
+  - RUSTCOLA206: UnsafeSendAcrossAsyncBoundaryRule (async Send safety)
+  - RUSTCOLA207: AwaitSpanGuardRule (tracing span guards across await)
+  - ADV002 was duplicate of RUSTCOLA091 (not migrated)
+
+### Removed
+- **`mir-advanced-rules` crate**: Removed from workspace (dead code after migration)
+- **`advanced-rules` feature flag**: No longer needed in cargo-cola
+- **Dual-trait architecture**: All rules now use unified `Rule` trait
+
+### Added
+- New modules in `mir-extractor/src/rules/`:
+  - `advanced_memory.rs` - Deep memory dataflow analysis (RUSTCOLA200)
+  - `advanced_utils.rs` - Shared utilities for advanced rules
+  - `advanced_input.rs` - Input validation rules (RUSTCOLA201-204)
+  - `advanced_async.rs` - Async/web security rules (RUSTCOLA205-207)
+
 ## [0.9.9] - 2025-12-22
 
 ### Added

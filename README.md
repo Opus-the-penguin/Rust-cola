@@ -1,8 +1,8 @@
 # Rust-cola
 
-Security static analyzer for Rust. Compiles source code to extract MIR (Mid-level Intermediate Representation) and HIR (High-level Intermediate Representation)—internal compiler formats that reveal issues difficult to find in source-level scanners.
+Security static analyzer for Rust. Compiles source code to extract MIR (Mid-level Intermediate Representation)—an internal compiler format that reveals issues difficult to find in source-level scanners.
 
-**Note:** The environment running cargo-cola must be able to compile the target code. This is required to extract the intermediate representations for deep analysis.
+**Note:** The environment running cargo-cola must be able to compile the target code. This is required to extract the MIR for deep analysis.
 
 Requires the nightly Rust toolchain.
 
@@ -72,7 +72,7 @@ By default, all artifacts are written to `out/cola/`:
 | `manifest.json` | Metadata and paths for all generated artifacts |
 | `mir.json` | MIR extraction (functions, blocks, statements) |
 | `ast.json` | AST extraction (modules, functions, structs) |
-| `hir.json` | HIR extraction (requires `--features hir-driver`) |
+| `hir.json` | HIR extraction for researchers (optional, requires `--features hir-driver`) |
 | `raw-findings.json` | Raw findings from all rules (pre-LLM validation) |
 | `raw-findings.sarif` | Raw SARIF 2.1.0 output (pre-LLM validation) |
 | `raw-report.md` | Standalone report without LLM validation |
@@ -81,7 +81,7 @@ By default, all artifacts are written to `out/cola/`:
 
 **Raw vs Validated:** Files prefixed with `raw-` contain all findings before LLM analysis. Use these for deep investigation or when LLM access is unavailable. The LLM-validated outputs contain only confirmed findings with severity scores and remediation guidance.
 
-Use `--no-ast`, `--no-hir`, or `--no-llm-prompt` to suppress specific outputs.
+Use `--no-ast` or `--no-llm-prompt` to suppress specific outputs.
 
 If an output file already exists, a timestamped version is created to avoid overwriting.
 
@@ -107,15 +107,15 @@ See the [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md) for custom rule
 
 ## Why It Requires Compilation
 
-Rust-cola analyzes MIR (Mid-level IR) and HIR (High-level IR) from the compiler. This requires the target code to compile, but enables much deeper and more accurate security analysis than source-level or AST-based tools:
+Rust-cola analyzes MIR (Mid-level IR) from the compiler. This requires the target code to compile, but enables much deeper and more accurate security analysis than source-level or AST-based tools:
 
-- **Expanded macros:** Many vulnerabilities are hidden in macro-generated code. Only MIR/HIR show the fully expanded program.
+- **Expanded macros:** Many vulnerabilities are hidden in macro-generated code. Only MIR shows the fully expanded program.
 - **Resolved generics and trait implementations:** Security issues in generic code or trait-based dispatch are visible only after type resolution.
-- **Accurate type and lifetime information:** MIR/HIR expose the real types, lifetimes, and borrow checking, allowing detection of memory safety issues, use-after-free, and data races.
+- **Accurate type and lifetime information:** MIR exposes the real types, lifetimes, and borrow checking, allowing detection of memory safety issues, use-after-free, and data races.
 - **Control/data flow and interprocedural analysis:** MIR enables tracking of tainted data across function boundaries, async/await, and complex control flow, supporting detection of injection, deserialization, and concurrency bugs.
 - **Detection of unsafe code and FFI issues:** MIR reveals low-level operations, pointer manipulation, and FFI boundaries that are invisible in the AST.
 
-Source-level and AST-based scanners can only see the surface structure of the code. They miss vulnerabilities that depend on macro expansion, type inference, trait resolution, or complex data/control flow. By requiring compilation and analyzing MIR/HIR, Rust-cola can detect a broader and more precise set of security issues, including those unique to Rust's type system and memory model.
+Source-level and AST-based scanners can only see the surface structure of the code. They miss vulnerabilities that depend on macro expansion, type inference, trait resolution, or complex data/control flow. By requiring compilation and analyzing MIR, Rust-cola can detect a broader and more precise set of security issues, including those unique to Rust's type system and memory model.
 
 ## Interprocedural Analysis
 
@@ -172,7 +172,6 @@ See `examples/cargo-cola.yaml` for a complete example.
 | `--no-report` | Suppress standalone report |
 | `--with-audit` | Run cargo-audit to check dependencies |
 | `--no-ast` | Suppress AST output |
-| `--no-hir` | Suppress HIR output (requires `hir-driver` feature) |
 | `--sarif <PATH>` | Custom SARIF output path |
 | `--rulepack <PATH>` | Additional rules from YAML |
 

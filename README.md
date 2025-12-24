@@ -174,6 +174,20 @@ See `examples/cargo-cola.yaml` for a complete example.
 | `--sarif <PATH>` | Custom SARIF output path |
 | `--rulepack <PATH>` | Additional rules from YAML |
 
+## Performance
+
+Benchmarks on Apple M1 (8-core, 16GB RAM):
+
+| Crate | LOC | Findings | Time | Memory |
+|-------|-----|----------|------|--------|
+| ci-test-crate | 39 | 1 | 0.2s | <50MB |
+| influxdb3_authz | 430 | 8 | 1.6s | ~100MB |
+| influxdb3_server | 5,708 | 111 | 18s | 459MB |
+
+**Typical analysis rate:** ~300 LOC/second including full interprocedural analysis.
+
+Memory usage scales with crate size. Large workspaces (10K+ functions) may require 1-2GB RAM. Analysis limits are configurable via `cargo-cola.yaml` to control memory usage on constrained systems.
+
 ## Dependency Auditing
 
 Rust-cola can integrate with [cargo-audit](https://rustsec.org/) to check your dependencies for known vulnerabilities:

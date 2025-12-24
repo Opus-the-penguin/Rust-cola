@@ -1,6 +1,6 @@
 [package]
 name = "cargo-cola"
-version = "0.9.11"
+version = "1.0.0"
 edition = "2021"
 authors = ["Opus-the-penguin"]
 

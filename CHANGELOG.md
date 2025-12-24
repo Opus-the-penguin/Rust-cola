@@ -5,6 +5,31 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2025-12-24
+
+### 🎉 First Stable Release
+
+cargo-cola v1.0.0 is the first production-ready release of the Rust security static analyzer.
+
+### Highlights
+- **126 security rules** covering memory safety, concurrency, injection, cryptography, FFI, and more
+- **Interprocedural taint tracking** for SQL injection, SSRF, path traversal, and command injection
+- **LLM-assisted analysis** workflow with structured prompts for AI-powered security review
+- **SARIF 2.1.0 output** with code snippets for IDE and CI integration
+- **CVSS-like exploitability scoring** for finding prioritization
+- **Configurable rule profiles** (strict/balanced/permissive) for different use cases
+
+### Performance
+Benchmarks on Apple M1:
+| Crate Size | Analysis Time | Memory |
+|------------|---------------|--------|
+| ~400 LOC | 1.6s | ~100MB |
+| ~6K LOC | 18s | ~460MB |
+
+### Since v0.9.11
+- Added performance benchmarks to README
+- Finalized documentation for v1.0 release
+
 ## [0.9.11] - 2025-12-24
 
 ### Fixed

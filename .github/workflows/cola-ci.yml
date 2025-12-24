@@ -57,8 +57,8 @@ jobs:
             --sarif target/cola/cola.sarif \
             --fail-on-findings false
 
-      - name: Upload SARIF results from Rust-cola
-        uses: github/codeql-action/upload-sarif@v3
+      - name: Upload SARIF as artifact
+        uses: actions/upload-artifact@v4
         with:
-          sarif_file: target/cola/cola.sarif
-          category: rust-cola-findings
+          name: cola-sarif-results
+          path: target/cola/cola.sarif

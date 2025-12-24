@@ -1759,16 +1759,25 @@ impl SsrfRule {
         }
     }
     
+    // Sinks: Outbound HTTP request methods that actually make network calls
+    // NOTE: http::Request and hyper::Request are types for INCOMING requests,
+    // not outbound calls - reading Request::uri() is just parsing, not SSRF
     const HTTP_SINKS: &'static [&'static str] = &[
+        // reqwest - the most common HTTP client
         "reqwest::blocking::get", "reqwest::get", "blocking::get",
         "Client>::get", "Client>::post", "Client>::put", "Client>::delete",
-        "Client>::patch", "Client>::head", "ClientBuilder", "RequestBuilder>::send",
+        "Client>::patch", "Client>::head", "RequestBuilder>::send",
+        // ureq - lightweight HTTP client
         "ureq::get", "ureq::post", "ureq::put", "ureq::delete", "ureq::request",
-        "Agent>::get", "Agent>::post", "Request>::call", "hyper::Client",
-        "hyper::Request", "Request>::builder", "Uri::from_str", "http::Request",
+        "Agent>::get", "Agent>::post", "Request>::call",
+        // hyper client (outbound)
+        "hyper::Client",
+        // Generic patterns for constructing outbound requests
         "get::<&String>", "get::<&str>", "post::<&String>", "post::<&str>",
     ];
     
+    // Sources: User-controlled input that could contain malicious URLs
+    // NOTE: Removed generic "Request" to avoid flagging every HTTP handler
     const UNTRUSTED_SOURCES: &'static [&'static str] = &[
         "env::var(", "env::var_os(", "std::env::var(", "std::env::var_os(",
         " = var(", " = var::", "var::<&str>", "var_os::<", "env::args()",
@@ -1776,7 +1785,13 @@ impl SsrfRule {
         " = stdin()", "Stdin::lock(", "Stdin>::lock", "BufRead>::read_line(",
         "read_line(move", "io::stdin()", "Lines>::next(", "fs::read_to_string(",
         "read_to_string(move", "read_to_string::", "BufReader>::read",
-        "Read>::read", "Request", "Form", "Query", "Json", "Path",
+        "Read>::read",
+        // Web framework extractors that contain user input
+        "axum::extract::Query", "axum::extract::Path", "axum::extract::Form",
+        "axum::Json", "actix_web::web::Query", "actix_web::web::Path",
+        "actix_web::web::Form", "actix_web::web::Json",
+        // Request body parsing (user data)
+        "body::to_bytes", "hyper::body::to_bytes", "BodyExt>::collect",
     ];
     
     const SANITIZERS: &'static [&'static str] = &[

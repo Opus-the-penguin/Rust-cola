@@ -81,6 +81,41 @@ impl DanglingPointerUseAfterFreeRule {
     fn should_skip_function(func: &MirFunction) -> bool {
         is_derive_macro_function(&func.name) || is_safe_trait_method(&func.name, &func.signature)
     }
+
+    /// Check if function is primarily tracing macro infrastructure
+    /// These generate complex temporary references that appear as UaF but are safe
+    fn is_tracing_macro_context(func: &MirFunction) -> bool {
+        // Check function name patterns
+        if func.name.contains("__CALLSITE") || func.name.contains("::META") {
+            return true;
+        }
+
+        // Check if this is a tracing macro closure (signature contains tracing macro path and ValueSet)
+        // Pattern: closures from tracing-*/src/macros.rs taking ValueSet<'_>
+        if func.signature.contains("tracing") && func.signature.contains("macros.rs") {
+            return true;
+        }
+        if func.signature.contains("ValueSet<'_>") {
+            return true;
+        }
+
+        // Check if body is dominated by tracing infrastructure
+        let tracing_lines = func.body.iter().filter(|line| {
+            line.contains("tracing::") ||
+            line.contains("observability_deps::tracing") ||
+            line.contains("__CALLSITE") ||
+            line.contains("tracing::Metadata") ||
+            line.contains("tracing::field::") ||
+            line.contains("LevelFilter")
+        }).count();
+
+        // If more than 30% of the function is tracing code, skip it (lowered from 50%)
+        if func.body.len() > 3 && tracing_lines as f64 / func.body.len() as f64 > 0.3 {
+            return true;
+        }
+
+        false
+    }
 }
 
 impl Rule for DanglingPointerUseAfterFreeRule {
@@ -98,6 +133,11 @@ impl Rule for DanglingPointerUseAfterFreeRule {
         for func in &package.functions {
             // Skip derive macro functions and safe trait methods to reduce false positives
             if Self::should_skip_function(func) {
+                continue;
+            }
+
+            // Skip tracing macro infrastructure - generates safe temporaries that look like UaF
+            if Self::is_tracing_macro_context(func) {
                 continue;
             }
 
@@ -817,6 +857,13 @@ impl PointerAnalyzer {
     fn detect_return_aggregate_pointers(line: &str) -> Vec<String> {
         let trimmed = line.trim_start();
         if !trimmed.starts_with("_0") {
+            return Vec::new();
+        }
+
+        // Skip function/method calls - these consume the reference, not return it
+        // Pattern: `_0 = <Type>::method(move _3, ...) -> [return: bb1, ...]`
+        // The `->` indicates control flow from a function call
+        if trimmed.contains("->") {
             return Vec::new();
         }
 

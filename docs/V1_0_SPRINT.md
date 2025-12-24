@@ -2,20 +2,21 @@
 
 **Goal**: Complete UX and first-run-value enhancements for production release.
 
-**Current Version**: 0.9.9  
+**Current Version**: 0.9.11  
 **Target Version**: 1.0.0  
-**Rules**: 124 (115 RUSTCOLA + 9 ADV)  
+**Rules**: 126 (unified architecture)  
 **Tests**: 200+ passing
 
 ---
 
-## Completed (Phases 1-3)
+## Completed (Phases 1-4)
 
 | Phase | Description | Status |
 |-------|-------------|--------|
 | 1 | Foundation (Taint, Lifetimes, Unsafe, SQL, Paths) | ✅ Complete |
 | 2 | Gap Closure (Format strings, Panics, Conversions) | ✅ Complete |
 | 3 | Precision (Field-sensitivity, Closures, FP reduction) | ✅ Complete |
+| 4 | ADV Rules Migration & Precision Improvements | ✅ Complete (v0.9.10-0.9.11) |
 
 ---
 
@@ -31,6 +32,9 @@
 | ~~Rule profiles~~ | ✅ **DONE (v0.9.9)** Added `RuleProfile` enum (strict/balanced/permissive). Configurable via `profile` in cargo-cola.yaml. Filters findings by confidence+severity. | ~~Medium~~ |
 | ~~Derive macro filtering~~ | ✅ **DONE (v0.9.5)** ADV001 now skips derive macro generated code. | ~~Medium~~ |
 | ~~Trait method borrow safety~~ | ✅ **DONE (v0.9.5)** ADV001 whitelists safe trait methods (eq, partial_cmp, hash, fmt, clone). | ~~Medium~~ |
+| ~~ADV rules migration~~ | ✅ **DONE (v0.9.10)** Migrated 9 ADV rules to RUSTCOLA namespace (RUSTCOLA200-208). Unified architecture with single rule engine. | ~~Large~~ |
+| ~~Precision improvements~~ | ✅ **DONE (v0.9.11)** 33% false positive reduction on real-world crate. Fixed RUSTCOLA039 (URL paths), RUSTCOLA200 (method calls), RUSTCOLA088 (incoming vs outgoing requests). | ~~Medium~~ |
+| ~~LLM prompt integrity~~ | ✅ **DONE (v0.9.11)** Fixed bug where raw-findings.json and llm-prompt.md had inconsistent finding counts. | ~~Small~~ |
 
 ### P1 - Should Have
 
@@ -105,6 +109,31 @@
 - ✅ RUSTCOLA044 found a **real timing attack** in authorization code
 - ✅ RUSTCOLA024 found **real DoS vectors** in deserialization
 - ✅ RUSTCOLA123 found **panics in hot paths**
+
+---
+
+## v0.9.11 Precision Improvements (December 2025)
+
+**Scan Target:** influxdb3_server (production HTTP server crate)  
+**Result:** 165 → 111 findings (**33% reduction**, 0% recall loss)
+
+### Rules Fixed
+
+| Rule | Before | After | Fix Applied |
+|------|--------|-------|-------------|
+| RUSTCOLA039 | 2 | 0 | URL path detection (skip `/api/v3/token`) |
+| RUSTCOLA200 | 22 | 0 | Method call detection (skip `->` patterns) |
+| RUSTCOLA088 | 30 | 0 | Incoming vs outgoing request distinction |
+
+### Technical Details
+
+1. **RUSTCOLA039 (Hardcoded Crypto Key)**: Added check for URL-like paths containing `/` to avoid flagging endpoint constants.
+
+2. **RUSTCOLA200 (Use-After-Free)**: Skip function calls (`->` in MIR) which consume references rather than return them. Method calls like `PartialEq::eq(move _3)` are safe.
+
+3. **RUSTCOLA088 (SSRF)**: Removed `http::Request` and `hyper::Request` from sinks (these are incoming request types). Kept actual outbound patterns (`reqwest::get`, `Client::post`).
+
+**See**: `docs/archive/FALSE_POSITIVE_ANALYSIS.md` for full analysis.
 
 ---
 

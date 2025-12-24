@@ -409,6 +409,10 @@ impl HardcodedCryptoKeyRule {
             return true;
         }
         if right_side.starts_with('"') && right_side.len() > 30 {
+            // Filter out URL paths - these are not secrets
+            if Self::is_likely_url_path(right_side) {
+                return false;
+            }
             return true;
         }
         if right_side.starts_with('"') && right_side.chars().filter(|c| c.is_ascii_hexdigit()).count() > 20 {
@@ -416,6 +420,25 @@ impl HardcodedCryptoKeyRule {
         }
 
         false
+    }
+
+    /// Check if a string value looks like a URL path rather than a secret
+    fn is_likely_url_path(value: &str) -> bool {
+        let lower = value.to_lowercase();
+        // URL paths start with "/" or contain path patterns
+        lower.contains("\"/") ||           // Starts with /
+        lower.contains("http://") ||
+        lower.contains("https://") ||
+        lower.contains("/api/") ||
+        lower.contains("/v1/") ||
+        lower.contains("/v2/") ||
+        lower.contains("/v3/") ||
+        lower.contains("/v4/") ||
+        lower.contains("/auth/") ||
+        lower.contains("/oauth/") ||
+        lower.contains("/token/") ||       // Token endpoint path
+        lower.contains("/configure/") ||
+        lower.contains("/admin/")
     }
 
     fn has_word_boundary_match(text: &str, pattern: &str) -> bool {

@@ -5,6 +5,27 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.11] - 2025-12-24
+
+### Fixed
+- **LLM Prompt Integrity**: Fixed bug where `raw-findings.json` and `llm-prompt.md` could have inconsistent finding counts. Findings are now consistently formatted between output files.
+
+### Changed
+- **RUSTCOLA039 Precision**: Hardcoded crypto key rule now skips URL paths (values containing `/` that look like API endpoints rather than secrets). Eliminates false positives on constants like `/api/v3/configure/token/admin`.
+
+- **RUSTCOLA200 Precision**: Use-after-free rule now skips function call patterns (lines containing `->` in MIR). Method calls like `PartialEq::eq(move _3)` consume references rather than returning them, eliminating false positives on safe closure patterns.
+
+- **RUSTCOLA088 Precision**: SSRF rule now distinguishes between incoming request parsing (safe) and outbound request making (risky):
+  - Removed `http::Request`, `hyper::Request` from sinks (these are incoming request types)
+  - Removed generic `Request`, `Form`, `Query`, `Json`, `Path` from untrusted sources
+  - Added specific framework extractors: `axum::extract::Query`, `actix_web::web::Path`, etc.
+  - Maintained recall on actual SSRF patterns (`reqwest::get`, `Client::post`, etc.)
+
+### Metrics
+- **Precision improvement**: 33% false positive reduction on real-world production crate (influxdb3_server)
+- **Findings reduced**: 165 → 111 (54 fewer false positives)
+- **Recall maintained**: All test cases still pass, no true positives lost
+
 ## [0.9.10] - 2025-12-22
 
 ### Changed

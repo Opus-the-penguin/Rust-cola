@@ -325,6 +325,83 @@ Deferred to v2.x release cycle:
 - **Baseline Diffing** - Only show new findings since last scan
 - **Team Features** - Shared findings database, assignment, tracking
 - **Compliance Mapping** - Map findings to SOC2, ISO27001, etc.
+- **RustyCode Training Data** - Proprietary synthetic dataset for LLM fine-tuning
+
+---
+
+## RustyCode: Proprietary Training Data
+
+**Target: v2.x**
+
+RustyCode is proprietary synthetic training data designed to fine-tune the built-in LLM for Rust-specific security analysis.
+
+### Motivation
+
+General-purpose LLMs lack deep understanding of:
+- Rust's ownership/borrowing model and its security implications
+- Unsafe code patterns and their exploitation vectors
+- Rust-specific vulnerability classes (transmute misuse, FFI boundary issues, etc.)
+- Context-aware severity assessment for Rust codebases
+
+### Dataset Categories
+
+1. **Vulnerable Code Samples**
+   - Synthetic examples of each vulnerability class cargo-cola detects
+   - Real-world-inspired patterns (anonymized/synthesized from public advisories)
+   - Edge cases and subtle variations
+
+2. **Fix Demonstrations**
+   - Before/after pairs showing proper remediation
+   - Multiple fix strategies per vulnerability type
+   - Idiomatic Rust patterns
+
+3. **Reasoning Traces**
+   - Step-by-step analysis of why code is vulnerable
+   - Exploitation scenario narratives
+   - False positive reasoning (why similar code is safe)
+
+4. **Severity Calibration**
+   - Examples with ground-truth severity labels
+   - Context factors that affect severity (public API, unsafe block, etc.)
+   - CVSS-like scoring rationale
+
+### Generation Strategy
+
+```
+Phase 1: Seed Examples
+├── Extract patterns from cargo-cola's 126+ rules
+├── Generate variations using templates
+└── Validate with cargo-cola itself (self-consistency)
+
+Phase 2: Advisory Mining
+├── Parse RustSec advisories
+├── Synthesize similar-but-distinct examples
+└── Generate fix demonstrations
+
+Phase 3: Adversarial Examples
+├── Create near-miss false positives
+├── Generate obfuscated vulnerable patterns
+└── Test LLM discrimination ability
+
+Phase 4: Reasoning Annotation
+├── Add chain-of-thought explanations
+├── Include severity justifications
+└── Document exploitation scenarios
+```
+
+### Quality Assurance
+
+- All synthetic code must compile (or fail compilation in expected ways)
+- Vulnerable examples must trigger cargo-cola detection
+- Fixed examples must pass cargo-cola cleanly
+- Human review of reasoning traces for accuracy
+
+### Intellectual Property
+
+RustyCode is proprietary training data, providing competitive advantage:
+- Not derived from copyrighted codebases
+- Synthesized specifically for cargo-cola's rule set
+- Enables fine-tuned model to outperform general LLMs on Rust security
 
 ---
 

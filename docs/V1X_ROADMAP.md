@@ -17,10 +17,12 @@ Transform cargo-cola from a scan-and-prompt tool into a **fully autonomous secur
 | Phase | Name | Description | Priority |
 |-------|------|-------------|----------|
 | 1 | **Local LLM Integration** | Eliminate manual LLM step with embedded Code Llama | P0 |
-| 2 | **Agent Architecture** | Specialized AI agents for each analysis task | P0 |
+| 2A | **Scanner Agent Pipeline** | Decompose analyzer: Source → Compiler → Rules → IPA → Findings | P0 |
+| 2B | **LLM Agent Pipeline** | Specialized AI agents: Precision → Exploit → Severity → Remediation → Report | P0 |
 | 3 | **Rules Refresh** | Precision/recall tuning + new rules expansion | P1 |
 | 4 | **User Interface** | Simple UI for non-technical users | P1 |
 | — | *Developer Workflows* | *IDE, CI/CD integration (v2.x)* | *Future* |
+| — | *RustyCode* | *Proprietary synthetic training data (v2.x)* | *Future* |
 
 ---
 
@@ -71,6 +73,133 @@ One command. No manual steps. No API keys.
 ---
 
 ## Phase 2: Agent Architecture
+
+The agent architecture encompasses two distinct pipelines:
+1. **Scanner Agents** - Decomposed security analysis (code → raw findings)
+2. **LLM Agents** - Post-scan analysis and reporting (raw findings → final report)
+
+### 2A: Scanner Agent Pipeline
+
+The security analyzer itself can be decomposed into discrete phases, each with focused responsibilities. Some phases are purely deterministic (no LLM), while others may optionally engage an LLM for error recovery.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        SCANNER AGENT PIPELINE                                │
+│                                                                              │
+│  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐  │
+│  │   SOURCE     │   │   COMPILER   │   │    RULES     │   │     IPA      │  │
+│  │   AGENT      │ → │    AGENT     │ → │    ENGINE    │ → │    ENGINE    │  │
+│  │              │   │              │   │    AGENT     │   │    AGENT     │  │
+│  │ • Clone repo │   │ • Build crate│   │              │   │              │  │
+│  │ • Resolve    │   │ • Extract AST│   │ • Pattern    │   │ • Taint      │  │
+│  │   dependencies│  │ • Extract MIR│   │   matching   │   │   tracking   │  │
+│  │ • Workspace  │   │ • Handle     │   │ • Type-based │   │ • Source →   │  │
+│  │   detection  │   │   errors     │   │   rules      │   │   Sink       │  │
+│  │              │   │              │   │ • MIR rules  │   │ • Injection  │  │
+│  │ [No LLM]     │   │ [LLM: debug] │   │              │   │   detection  │  │
+│  │              │   │              │   │ [No LLM]     │   │              │  │
+│  └──────────────┘   └──────────────┘   └──────────────┘   │ [No LLM]     │  │
+│         ↓                  ↓                  ↓           └──────────────┘  │
+│    source files      MIR + metadata     pattern findings         ↓          │
+│                                                            taint findings   │
+│                                                                  ↓          │
+│                      ┌──────────────────────────────────────────────────┐   │
+│                      │              FINDINGS SYNTHESIZER                │   │
+│                      │                                                  │   │
+│                      │  • Merge pattern + taint findings                │   │
+│                      │  • Deduplicate overlapping detections            │   │
+│                      │  • Generate raw-findings.json                    │   │
+│                      │  • Generate LLM prompt for next pipeline         │   │
+│                      │                                                  │   │
+│                      │  [No LLM]                                        │   │
+│                      └──────────────────────────────────────────────────┘   │
+│                                           ↓                                  │
+│                                  raw-findings.json                          │
+│                                  llm-prompt.md                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                        ↓
+                            (LLM Agent Pipeline - 2B)
+```
+
+#### Scanner Agent 1: Source Agent
+**Purpose:** Acquire and prepare source code for analysis
+
+**Responsibilities:**
+- Clone repository or accept local path
+- Detect Cargo workspace structure
+- Resolve dependencies (fetch crates.io deps)
+- Identify analysis targets (which crates to scan)
+- Handle monorepo structures
+
+**LLM Integration:** None (deterministic)
+
+**Output:** Prepared workspace with resolved dependencies
+
+#### Scanner Agent 2: Compiler Agent  
+**Purpose:** Build crate and extract intermediate representations
+
+**Responsibilities:**
+- Invoke `cargo build` with appropriate flags
+- Extract AST (Abstract Syntax Tree)
+- Extract MIR (Mid-level Intermediate Representation)
+- Extract type information and trait bounds
+- Handle compilation errors gracefully
+
+**LLM Integration:** Optional - engage LLM to diagnose and suggest fixes for:
+- Missing dependencies
+- Feature flag issues
+- Incompatible toolchain versions
+- Platform-specific compilation failures
+
+**Output:** MIR dump + type metadata + AST for all crates
+
+#### Scanner Agent 3: Rules Engine Agent
+**Purpose:** Execute pattern-based vulnerability detection
+
+**Responsibilities:**
+- Load and validate rule definitions (126+ rules)
+- Execute pattern matching rules against AST
+- Execute MIR-based rules for dataflow analysis
+- Execute type-system rules (trait bounds, generics)
+- Apply rule-specific filters to reduce false positives
+
+**LLM Integration:** None (deterministic rule execution)
+
+**Output:** Pattern-based findings with evidence
+
+#### Scanner Agent 4: IPA (Inter-Procedural Analysis) Engine Agent
+**Purpose:** Detect vulnerabilities requiring cross-function analysis
+
+**Responsibilities:**
+- Build call graph across crate boundaries
+- Implement taint propagation infrastructure
+- Track data flow from sources to sinks
+- Detect injection vulnerabilities (SQL, command, path traversal)
+- Detect SSRF, TOCTOU, and other flow-sensitive bugs
+- Handle async/await control flow
+
+**LLM Integration:** None (deterministic dataflow analysis)
+
+**Output:** Taint-based findings with source→sink traces
+
+#### Scanner Agent 5: Findings Synthesizer
+**Purpose:** Merge and prepare findings for LLM analysis
+
+**Responsibilities:**
+- Merge pattern findings + taint findings
+- Deduplicate overlapping detections
+- Enrich findings with source context (surrounding code)
+- Generate `raw-findings.json` (structured data)
+- Generate `llm-prompt.md` (human-readable for LLM consumption)
+- Calculate scan metadata (timing, coverage, etc.)
+
+**LLM Integration:** None (deterministic)
+
+**Output:** `raw-findings.json` + `llm-prompt.md` → feeds into LLM Agent Pipeline
+
+---
+
+### 2B: LLM Agent Pipeline
 
 ### Problem
 The current LLM prompt asks one model to do everything:

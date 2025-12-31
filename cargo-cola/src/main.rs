@@ -1749,26 +1749,76 @@ fn generate_llm_prompt(
     writeln!(content, "5. Prioritize: P0 (now), P1 (sprint), P2 (quarter), P3 (backlog)")?;
     writeln!(&mut content)?;
     
-    // Exploitability Analysis
-    writeln!(content, "## Exploitability Analysis")?;
+    // Exploitability Analysis - Enhanced for depth and clarity
+    writeln!(content, "## Exploitability Analysis (DETAILED)")?;
     writeln!(&mut content)?;
-    writeln!(content, "For each true positive, answer:")?;
+    writeln!(content, "For EACH finding classified as True Positive, provide a DETAILED exploitability analysis.")?;
+    writeln!(content, "Do NOT use single-word answers like 'theoretical' or 'unlikely'. Explain your reasoning.")?;
     writeln!(&mut content)?;
-    writeln!(content, "| Question | Answer |")?;
-    writeln!(content, "|----------|--------|")?;
-    writeln!(content, "| Prerequisites | What does attacker need? (network access, auth, specific input) |")?;
-    writeln!(content, "| Attack path | Step-by-step how exploitation occurs |")?;
-    writeln!(content, "| Reachability | Can attacker-controlled data reach this code? How? |")?;
-    writeln!(content, "| Constraints | What limits exploitation? (input validation, type system, environment) |")?;
-    writeln!(content, "| Practical | Is this exploitable in practice or only in theory? |")?;
-    writeln!(content, "| PoC feasible | Could a proof-of-concept be constructed? Describe briefly. |")?;
+    
+    writeln!(content, "### Required Analysis Framework")?;
     writeln!(&mut content)?;
-    writeln!(content, "Exploitability levels:")?;
-    writeln!(content, "- Proven: PoC exists or is trivially constructable")?;
-    writeln!(content, "- Likely: Clear attack path, no significant barriers")?;
-    writeln!(content, "- Possible: Requires specific conditions or chained vulnerabilities")?;
-    writeln!(content, "- Theoretical: Requires unlikely conditions or significant attacker capability")?;
-    writeln!(content, "- Unexploitable: No viable attack path (reclassify as False Positive)")?;
+    writeln!(content, "**1. Attack Surface Assessment**")?;
+    writeln!(content, "- Is this code reachable from external input? (HTTP request, CLI args, file input, env vars, IPC)")?;
+    writeln!(content, "- What is the call chain from entry point to vulnerable code?")?;
+    writeln!(content, "- Is authentication/authorization required to reach this code path?")?;
+    writeln!(&mut content)?;
+    
+    writeln!(content, "**2. Taint Flow Analysis**")?;
+    writeln!(content, "- Can attacker-controlled data reach the vulnerable sink?")?;
+    writeln!(content, "- What transformations/sanitizations occur between source and sink?")?;
+    writeln!(content, "- Are there validation checks that would block malicious input?")?;
+    writeln!(&mut content)?;
+    
+    writeln!(content, "**3. Exploitation Constraints**")?;
+    writeln!(content, "- What specific conditions must be true for exploitation? (e.g., specific input format, race condition timing, memory layout)")?;
+    writeln!(content, "- Does Rust's type system or borrow checker prevent exploitation?")?;
+    writeln!(content, "- Are there runtime checks (bounds checking, Option/Result handling) that limit impact?")?;
+    writeln!(&mut content)?;
+    
+    writeln!(content, "**4. Exploitation Scenario**")?;
+    writeln!(content, "If exploitable, describe a concrete attack scenario:")?;
+    writeln!(content, "- Step 1: Attacker does X...")?;
+    writeln!(content, "- Step 2: This causes Y...")?;
+    writeln!(content, "- Step 3: Result is Z (RCE, data leak, DoS, etc.)")?;
+    writeln!(&mut content)?;
+    writeln!(content, "If NOT exploitable, explain WHY with specific evidence from the code.")?;
+    writeln!(&mut content)?;
+    
+    writeln!(content, "**5. Proof-of-Concept Feasibility**")?;
+    writeln!(content, "- Could a PoC be constructed? If yes, describe the approach.")?;
+    writeln!(content, "- If no, what specifically prevents PoC construction?")?;
+    writeln!(&mut content)?;
+    
+    writeln!(content, "### Exploitability Levels (with required justification)")?;
+    writeln!(&mut content)?;
+    writeln!(content, "| Level | Definition | Required Justification |")?;
+    writeln!(content, "|-------|------------|------------------------|")?;
+    writeln!(content, "| **Proven** | PoC exists or is trivially constructable | Describe the PoC steps |")?;
+    writeln!(content, "| **Likely** | Clear attack path, no significant barriers | Show the attack path with call chain |")?;
+    writeln!(content, "| **Possible** | Requires specific conditions or chained vulns | List the specific conditions required |")?;
+    writeln!(content, "| **Theoretical** | Requires unlikely conditions | Explain WHY conditions are unlikely |")?;
+    writeln!(content, "| **Unexploitable** | No viable attack path | Cite specific code that prevents exploitation |")?;
+    writeln!(&mut content)?;
+    
+    writeln!(content, "### Example Analysis (Good vs Bad)")?;
+    writeln!(&mut content)?;
+    writeln!(content, "❌ **BAD (too terse):**")?;
+    writeln!(content, "> Exploitability: Theoretical. Unlikely to be exploited in practice.")?;
+    writeln!(&mut content)?;
+    writeln!(content, "✅ **GOOD (detailed reasoning):**")?;
+    writeln!(content, "> Exploitability: **Theoretical**")?;
+    writeln!(content, "> ")?;
+    writeln!(content, "> **Reasoning:** While this SQL query uses string interpolation, the input comes from")?;
+    writeln!(content, "> `config.database_name` which is loaded from a TOML file at startup (see config.rs:45).")?;
+    writeln!(content, "> An attacker would need write access to the config file, which requires filesystem access")?;
+    writeln!(content, "> to the server. At that point, the attacker has more direct attack vectors available.")?;
+    writeln!(content, "> ")?;
+    writeln!(content, "> **Conditions required:** (1) Write access to server filesystem, (2) Application restart")?;
+    writeln!(content, "> to reload config, (3) Knowledge of internal config format.")?;
+    writeln!(content, "> ")?;
+    writeln!(content, "> **Why unlikely:** These conditions imply prior compromise of the server, making SQL")?;
+    writeln!(content, "> injection moot. Recommend fixing anyway as defense-in-depth.")?;
     writeln!(&mut content)?;
     
     // False Positive Requirements
@@ -1807,20 +1857,27 @@ fn generate_llm_prompt(
     writeln!(&mut content)?;
     writeln!(content, "## Critical and High Findings")?;
     writeln!(content, "### RULE_ID: Title")?;
-    writeln!(content, "- Severity: Critical (CVSS X.X)")?;
-    writeln!(content, "- Location: file.rs:line")?;
-    writeln!(content, "- Impact: what attacker achieves")?;
-    writeln!(content, "- Exploitability: Proven/Likely/Possible/Theoretical")?;
-    writeln!(content, "- Prerequisites: what attacker needs")?;
-    writeln!(content, "- Attack path: step-by-step exploitation")?;
+    writeln!(content, "- **Severity:** Critical (CVSS X.X)")?;
+    writeln!(content, "- **Location:** file.rs:line")?;
+    writeln!(content, "- **Impact:** what attacker achieves")?;
+    writeln!(content, "- **Exploitability:** Proven/Likely/Possible/Theoretical")?;
+    writeln!(&mut content)?;
+    writeln!(content, "#### Exploitability Analysis")?;
+    writeln!(content, "**Attack Surface:** How is this code reachable? (entry point, auth required?)")?;
+    writeln!(content, "**Taint Flow:** Can attacker-controlled data reach this sink? What sanitization exists?")?;
+    writeln!(content, "**Constraints:** What limits exploitation? (Rust type system, validation, environment)")?;
+    writeln!(content, "**Exploitation Scenario:** Step-by-step how an attacker would exploit this")?;
+    writeln!(content, "**PoC Feasibility:** Can a proof-of-concept be constructed? How?")?;
+    writeln!(&mut content)?;
+    writeln!(content, "#### Remediation")?;
     writeln!(content, "- Vulnerable code and fix")?;
     writeln!(&mut content)?;
     writeln!(content, "## Medium and Low Findings")?;
-    writeln!(content, "Brief descriptions with exploitability assessment and fixes")?;
+    writeln!(content, "Same format as above, with detailed exploitability reasoning")?;
     writeln!(&mut content)?;
     writeln!(content, "## False Positives")?;
-    writeln!(content, "| Finding | Category | Evidence | Confidence |")?;
-    writeln!(content, "|---------|----------|----------|------------|")?;
+    writeln!(content, "| Finding | Category | Evidence | Why Unexploitable | Confidence |")?;
+    writeln!(content, "|---------|----------|----------|-------------------|------------|")?;
     writeln!(&mut content)?;
     writeln!(content, "## Remediation Priority")?;
     writeln!(content, "- P0: critical, P1: high, P2: medium, P3: low")?;

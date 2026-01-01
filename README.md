@@ -205,6 +205,18 @@ When `--with-audit` is enabled:
 - Known CVEs and security advisories are included in the report
 - Findings from both static analysis and dependency audit are merged
 
+## Etymology
+
+**Rust** — The programming language.
+
+**cola** — Two meanings:
+
+1. **Acronym:** **CO**de **L**exical **A**nalyzer
+
+2. **The beverage:** Cola drinks (Coca-Cola, Pepsi, etc.) contain phosphoric acid, which chemically converts iron oxide (rust) into a water-soluble compound that's easy to scrub away. It's a classic life hack for cleaning rusty tools and bolts.
+
+Hence **Rust-cola**: the security analyzer that *cleans Rust code* of security vulnerabilities. 🦀🥤
+
 ## License
 
 MIT

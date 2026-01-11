@@ -8,5 +8,8 @@ This is an open source project maintained by volunteers. We'll do our best to re
 
 ## Scope
 
-- ✅ `cargo-cola` CLI and `mir-extractor` library
-- ❌ `examples/` directory (intentionally contains vulnerable code for testing)
+In scope:
+- `cargo-cola` CLI and `mir-extractor` library
+
+Out of scope:
+- `examples/` directory (intentionally contains vulnerable code for testing)

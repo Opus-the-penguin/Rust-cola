@@ -381,7 +381,3 @@ cargo-cola --crate-path . --max-findings 500
 - [Rule Development Guide](RULE_DEVELOPMENT_GUIDE.md) — Create custom rules
 - [Research: Detection Levels](research/rule-detection-levels.md) — Rule sophistication taxonomy
 - [Research: Taint Tracking](research/taint-tracking-design.md) — Interprocedural analysis architecture
-
----
-
-*Happy hunting.* 🦀

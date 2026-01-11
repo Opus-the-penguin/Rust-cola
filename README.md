@@ -103,7 +103,7 @@ If an output file already exists, a timestamped version is created to avoid over
 | **Cryptography** | 8 | Weak hashes (MD5/SHA1), weak ciphers, hardcoded keys, timing attacks, PRNG bias |
 | **Supply Chain** | 4 | RUSTSEC advisories, yanked crates, auditable dependencies, proc-macro side effects |
 
-📖 **[User Guide](docs/USER_GUIDE.md)** — Theory of operation, LLM integration, CI/CD, configuration, troubleshooting.
+See the **[User Guide](docs/USER_GUIDE.md)** for theory of operation, LLM integration, CI/CD, configuration, and troubleshooting.
 
 See the [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md) for custom rules, YAML rulepacks, and suppression.
 
@@ -218,7 +218,7 @@ When `--with-audit` is enabled:
 
 2. **The beverage:** Cola drinks (Coca-Cola, Pepsi, etc.) contain phosphoric acid, which chemically converts iron oxide (rust) into a water-soluble compound that's easy to scrub away. It's a classic life hack for cleaning rusty tools and bolts.
 
-Hence **Rust-cola**: the security analyzer that *cleans Rust code* of security vulnerabilities. 🦀🥤
+Hence **Rust-cola**: the security analyzer that cleans Rust code of security vulnerabilities.
 
 ## License
 

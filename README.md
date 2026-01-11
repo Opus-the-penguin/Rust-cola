@@ -67,7 +67,7 @@ Binary: `target/release/cargo-cola`
 
 ## Output Artifacts
 
-By default, all artifacts are written to `out/cola/`:
+By default, all artifacts are written to `out/cola/` **relative to your current working directory** (not the target crate):
 
 | File | Description |
 |------|-------------|

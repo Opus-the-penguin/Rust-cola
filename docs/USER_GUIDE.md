@@ -75,7 +75,12 @@ cd /path/to/your-project
 cargo-cola
 ```
 
-That's it. Results land in `out/cola/`.
+That's it. Results land in `out/cola/` (relative to your current directory).
+
+**Tip:** To output alongside your target crate:
+```bash
+cargo-cola --crate-path ./my-crate --out-dir ./my-crate/out/cola
+```
 
 ---
 

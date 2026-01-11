@@ -63,6 +63,8 @@ cargo build --release
 
 Binary: `target/release/cargo-cola`
 
+> **Note:** The `examples/` directory contains intentionally vulnerable code patterns for testing Rust-COLA's detection capabilities. These crates may have unmaintained or vulnerable dependencies by design and are not part of the distributed tool.
+
 ## Output Artifacts
 
 By default, all artifacts are written to `out/cola/`:

@@ -1,0 +1,59 @@
+# cargo-deny configuration
+# https://embarkstudios.github.io/cargo-deny/
+
+# This file configures cargo-deny for the Rust-COLA workspace.
+# The examples/ directory contains intentionally vulnerable code patterns
+# for testing detection capabilities, so we exclude them from audits.
+
+[advisories]
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+vulnerability = "deny"
+unmaintained = "warn"
+yanked = "warn"
+notice = "warn"
+
+# Ignore advisories for crates only used in example/test code
+# These examples intentionally demonstrate vulnerable patterns
+ignore = [
+    # adler - unmaintained, used by weak-hashing-extended example
+    "RUSTSEC-2025-0056",
+    # async-std - discontinued, used by mutex-guard-await example  
+    "RUSTSEC-2025-0052",
+    # rustls-pemfile - unmaintained, used by aws-s3-unscoped example
+    "RUSTSEC-2025-0134",
+]
+
+[licenses]
+unlicensed = "deny"
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "CC0-1.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "BSL-1.0",
+    "MPL-2.0",
+]
+copyleft = "warn"
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+
+# Skip checking example crates for duplicate versions
+skip-tree = [
+    # Example crates may have older/different dependency versions
+    { name = "weak-hashing-extended" },
+    { name = "mutex-guard-await" },
+    { name = "aws-s3-unscoped" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

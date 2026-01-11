@@ -28,10 +28,9 @@ flowchart LR
 
 2. Open the generated file `out/cola/llm-prompt.md`.
 
-3. Copy the contents into your AI coding assistant (Claude, ChatGPT, Copilot) with a prompt like:
-   > "Analyze these security findings and generate a prioritized report."
+3. Copy the contents into your AI coding assistant (Claude, ChatGPT, Copilot).
 
-4. The LLM will classify findings, dismiss false positives, and provide remediation steps.
+4. Save the LLM's response as `security-report.md` in the same directory (the prompt includes save instructions).
 
 **Automated:** Call an LLM API directly:
 

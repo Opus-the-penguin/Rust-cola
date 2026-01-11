@@ -1723,6 +1723,14 @@ fn generate_llm_prompt(
     writeln!(content, "**Analysis Date:** {} | **Tool:** Rust-COLA v1.0 | **Findings:** {}", date_str, findings.len())?;
     writeln!(&mut content)?;
 
+    // ===== SAVE INSTRUCTIONS =====
+    writeln!(content, "> **📝 Save Instructions:** After analysis, save the generated report as `security-report.md`")?;
+    writeln!(content, "> in the same directory as this prompt file (`{}`), or use the automated option:", path.parent().map(|p| p.display().to_string()).unwrap_or_else(|| ".".to_string()))?;
+    writeln!(content, "> ```")?;
+    writeln!(content, "> cargo-cola --crate-path <PROJECT> --llm-report {}/security-report.md", path.parent().map(|p| p.display().to_string()).unwrap_or_else(|| "out/cola".to_string()))?;
+    writeln!(content, "> ```")?;
+    writeln!(&mut content)?;
+
     // ===== ROLE & OBJECTIVE =====
     writeln!(content, "## Your Role")?;
     writeln!(&mut content)?;

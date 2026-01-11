@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **User Guide**: Comprehensive `docs/USER_GUIDE.md` covering theory of operation, LLM integration, CI/CD, configuration, suppression, and troubleshooting
+- **Save Instructions**: LLM prompt now includes instructions for saving the generated report
 
 ### Changed
 - **LLM Prompt Overhaul**: Redesigned `llm-prompt.md` generation for enterprise-ready security reports:
@@ -25,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed `docs/V1X_ROADMAP.md` (work transferred to separate project)
 - Removed internal development docs (`docs/archive/`)
 - Removed prototype research files (hir-extraction-plan, rustsec prototypes)
+- Removed unused `.github/codeql/` configuration (CodeQL not currently enabled)
 
 ## [1.0.0] - 2025-12-24
 

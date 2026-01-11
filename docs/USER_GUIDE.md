@@ -144,8 +144,8 @@ cargo-cola --crate-path .
 
 Then:
 1. Open `out/cola/llm-prompt.md`
-2. Paste into Claude/ChatGPT with: "Analyze these security findings."
-3. Review the LLM's structured report
+2. Paste into Claude/ChatGPT (the prompt includes all instructions)
+3. Save the LLM's response as `security-report.md` in the same directory
 
 ### Option 2: API Integration
 

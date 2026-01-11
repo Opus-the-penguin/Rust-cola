@@ -2,6 +2,12 @@
 name = "mir-extractor"
 version = "1.0.0"
 edition = "2021"
+authors = ["The Rust-cola Contributors"]
+description = "MIR extraction and security rule engine for Rust-cola"
+repository = "https://github.com/Opus-the-penguin/Rust-cola"
+license = "MIT"
+keywords = ["mir", "rust", "security", "static-analysis"]
+categories = ["development-tools"]
 build = "build.rs"
 
 [features]

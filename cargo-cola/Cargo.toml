@@ -2,7 +2,13 @@
 name = "cargo-cola"
 version = "1.0.0"
 edition = "2021"
-authors = ["Opus-the-penguin"]
+authors = ["The Rust-cola Contributors"]
+description = "Security static analyzer for Rust. Analyzes MIR to detect vulnerabilities."
+repository = "https://github.com/Opus-the-penguin/Rust-cola"
+license = "MIT"
+readme = "../README.md"
+keywords = ["security", "static-analysis", "rust", "vulnerability", "sast"]
+categories = ["development-tools", "command-line-utilities"]
 
 [features]
 default = []

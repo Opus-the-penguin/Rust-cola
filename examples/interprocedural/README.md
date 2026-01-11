@@ -109,8 +109,8 @@ See `examples/interprocedural/src/lib.rs` for 17 test cases covering:
 ### Prerequisites
 
 ```bash
-# Ensure you have Phase 2 working
-cd /Users/peteralbert/Projects/Rust-cola
+# Ensure you have the test suite passing
+cd Rust-cola
 cargo test --package mir-extractor
 
 # Build the test suite

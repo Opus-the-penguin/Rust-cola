@@ -104,6 +104,8 @@ If an output file already exists, a timestamped version is created to avoid over
 | **Cryptography** | 8 | Weak hashes (MD5/SHA1), weak ciphers, hardcoded keys, timing attacks, PRNG bias |
 | **Supply Chain** | 4 | RUSTSEC advisories, yanked crates, auditable dependencies, proc-macro side effects |
 
+📖 **[User Guide](docs/USER_GUIDE.md)** — Theory of operation, LLM integration, CI/CD, configuration, troubleshooting.
+
 See the [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md) for custom rules, YAML rulepacks, and suppression.
 
 ## Why It Requires Compilation

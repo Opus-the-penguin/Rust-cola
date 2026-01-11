@@ -5,6 +5,21 @@ All notable changes to Rust-COLA will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **LLM Prompt Overhaul**: Redesigned `llm-prompt.md` generation for enterprise-ready security reports:
+  - Added aggressive pruning instructions with automatic false positive criteria (test code, examples, constants, dead code)
+  - Added reachability classification (EXPOSED, INDIRECT, AUTHENTICATED, INTERNAL, CONFIG-DRIVEN) with severity modifiers
+  - Added impact taxonomy (RCE, AUTH, MEM, INJ, PRIV, DATA, PATH, SSRF, DOS, INFO, QUAL)
+  - Replaced raw CVSS with contextual severity model: `Final = Base + Reachability + Context`
+  - Added remediation section requiring compilable code fixes with effort estimates
+  - Added enterprise output format with executive summary, risk matrix, and remediation roadmap
+  - Added final verification checklist
+
+### Removed
+- Removed `docs/V1X_ROADMAP.md` (work transferred to separate project)
+
 ## [1.0.0] - 2025-12-24
 
 ### 🎉 First Stable Release

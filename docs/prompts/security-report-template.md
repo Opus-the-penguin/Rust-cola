@@ -2,174 +2,119 @@
 
 Template for `cargo-cola --llm-prompt` output.
 
-## Objectives
+## Overview
 
-1. Triage: Classify findings as True Positive or False Positive
-2. Severity: Rate using CVSS 3.1
-3. Exploitability: Analyze attack vectors
-4. Remediation: Provide code fixes
-5. Report: Prioritized output
+Rust-COLA generates an LLM prompt file (`llm-prompt.md`) that guides AI assistants through security finding analysis. The prompt is designed to produce enterprise-ready security reports with actionable remediation.
 
-## Prompt
+## Prompt Structure
+
+The generated prompt includes these sections in order:
+
+### 1. Role & Objective
+Establishes the LLM as a senior security engineer producing a report for security team, engineering leads, and leadership.
+
+### 2. Step 1: Aggressive Pruning (FIRST)
+Mandatory false positive elimination before analysis:
+
+| Criterion | How to Identify |
+|-----------|-----------------|
+| Test Code | Path contains `/tests/`, `_test.rs`, `#[test]` |
+| Example Code | Path contains `/examples/`, `/demo/` |
+| Benchmark Code | Path contains `/benches/`, `_bench.rs` |
+| Build Scripts | File is `build.rs` |
+| Compile-time Constants | Value is string literal, `const`, `static` |
+| Dead Code | Function never called, disabled feature flag |
+| Documented Unsafe | Has `// SAFETY:` comment |
+
+### 3. Step 2: Reachability Classification
+
+| Reachability | Definition | Severity Impact |
+|--------------|------------|-----------------|
+| EXPOSED | Direct path from untrusted input | Full severity |
+| INDIRECT | Reachable via call chain | -1 if sanitized |
+| AUTHENTICATED | Behind auth checks | -1 level |
+| INTERNAL | Only internal callers | -2 levels |
+| CONFIG-DRIVEN | From config files | Context-dependent |
+
+### 4. Step 3: Impact Taxonomy
+
+| Impact Type | Code | Typical Severity |
+|-------------|------|------------------|
+| Remote Code Execution | RCE | Critical |
+| Authentication Bypass | AUTH | Critical |
+| Memory Corruption | MEM | Critical |
+| SQL/Command Injection | INJ | Critical-High |
+| Privilege Escalation | PRIV | High |
+| Sensitive Data Exposure | DATA | High |
+| Path Traversal | PATH | High-Medium |
+| SSRF | SSRF | High-Medium |
+| Denial of Service | DOS | Medium |
+| Information Disclosure | INFO | Low |
+
+### 5. Step 4: Contextual Severity Model
 
 ```
-You are a security engineer triaging static analysis findings.
-Produce a security report with evidence-based classifications.
+Final Severity = Base Severity + Reachability Modifier + Context Modifier
+```
 
-## Tasks
+Replaces raw CVSS with context-aware severity that considers:
+- Base impact type
+- Reachability (exposed vs internal)
+- Existing controls (auth, rate limiting)
 
-1. Identify true positives requiring fixes
-2. Dismiss false positives with evidence (see requirements)
-3. Rate severity using CVSS 3.1
-4. Provide code fixes
-5. Prioritize actions
+### 6. Step 5: Remediation with Code
 
-## True Positive Analysis
+Each true positive requires:
+- Vulnerable code snippet
+- Fixed code snippet (compilable Rust)
+- Recommended libraries
+- Effort estimate
+- Breaking change notes
 
-For each true positive:
+### 7. Required Output Format
 
-| Field | Content |
-|-------|---------|
-| Severity | Critical / High / Medium / Low |
-| CVSS Score | X.X with justification |
-| Location | file.rs:line |
-| Impact | What attacker achieves |
+Enterprise-ready report structure:
 
-## Exploitability Analysis (DETAILED)
-
-For EACH finding classified as True Positive, provide a DETAILED exploitability analysis.
-Do NOT use single-word answers like "theoretical" or "unlikely". Explain your reasoning.
-
-### Required Analysis Framework
-
-**1. Attack Surface Assessment**
-- Is this code reachable from external input? (HTTP request, CLI args, file input, env vars, IPC)
-- What is the call chain from entry point to vulnerable code?
-- Is authentication/authorization required to reach this code path?
-
-**2. Taint Flow Analysis**
-- Can attacker-controlled data reach the vulnerable sink?
-- What transformations/sanitizations occur between source and sink?
-- Are there validation checks that would block malicious input?
-
-**3. Exploitation Constraints**
-- What specific conditions must be true for exploitation? (e.g., specific input format, race condition timing, memory layout)
-- Does Rust's type system or borrow checker prevent exploitation?
-- Are there runtime checks (bounds checking, Option/Result handling) that limit impact?
-
-**4. Exploitation Scenario**
-If exploitable, describe a concrete attack scenario:
-- Step 1: Attacker does X...
-- Step 2: This causes Y...
-- Step 3: Result is Z (RCE, data leak, DoS, etc.)
-
-If NOT exploitable, explain WHY with specific evidence from the code.
-
-**5. Proof-of-Concept Feasibility**
-- Could a PoC be constructed? If yes, describe the approach.
-- If no, what specifically prevents PoC construction?
-
-### Exploitability Levels (with required justification)
-
-| Level | Definition | Required Justification |
-|-------|------------|------------------------|
-| **Proven** | PoC exists or is trivially constructable | Describe the PoC steps |
-| **Likely** | Clear attack path, no significant barriers | Show the attack path with call chain |
-| **Possible** | Requires specific conditions or chained vulns | List the specific conditions required |
-| **Theoretical** | Requires unlikely conditions | Explain WHY conditions are unlikely |
-| **Unexploitable** | No viable attack path | Cite specific code that prevents exploitation |
-
-### Example Analysis (Good vs Bad)
-
-❌ **BAD (too terse):**
-> Exploitability: Theoretical. Unlikely to be exploited in practice.
-
-✅ **GOOD (detailed reasoning):**
-> Exploitability: **Theoretical**
-> 
-> **Reasoning:** While this SQL query uses string interpolation, the input comes from
-> `config.database_name` which is loaded from a TOML file at startup (see config.rs:45).
-> An attacker would need write access to the config file, which requires filesystem access
-> to the server. At that point, the attacker has more direct attack vectors available.
-> 
-> **Conditions required:** (1) Write access to server filesystem, (2) Application restart
-> to reload config, (3) Knowledge of internal config format.
-> 
-> **Why unlikely:** These conditions imply prior compromise of the server, making SQL
-> injection moot. Recommend fixing anyway as defense-in-depth.
-
-## False Positive Requirements
-
-Default to True Positive when uncertain.
-
-For each false positive:
-
-| Field | Required |
-|-------|----------|
-| Category | Test code / Constant value / Sanitized / Intentional |
-| Evidence | Quote file path or code proving safety |
-| Why unexploitable | Reason attacker cannot abuse this |
-| Confidence | High (>90%) / Medium (70-90%) / Low (<70%) |
-
-Evidence by category:
-- Test code: Path contains /tests/, #[test], #[cfg(test)]
-- Constant: Literal string, not env/args/stdin
-- Sanitized: Quote the sanitization code
-- Intentional: Quote safety comment or API contract
-
-If confidence < 90%, classify as True Positive.
-
-## Severity (CVSS 3.1)
-
-| Level | Score | Criteria |
-|-------|-------|----------|
-| Critical | 9.0-10.0 | RCE, auth bypass, full data exfil |
-| High | 7.0-8.9 | Privesc, data exposure, critical DoS |
-| Medium | 4.0-6.9 | Limited exposure, conditional DoS |
-| Low | 0.1-3.9 | Info disclosure, code quality |
-
-## Output Format
-
-# Security Report: {PROJECT}
+```markdown
+# Security Assessment Report: {PROJECT}
 
 ## Executive Summary
-- Findings: X total, Y true positives, Z false positives
-- Critical issues: list or None
-- Risk: High/Medium/Low
+- Risk Rating
+- 2-3 sentence summary
+- Findings overview table
 
-## Critical and High Findings
-### RULE_ID: Title
-- **Severity:** Critical (CVSS X.X)
-- **Location:** file.rs:line
-- **Impact:** what attacker achieves
-- **Exploitability:** Proven/Likely/Possible/Theoretical
+## Critical & High Severity Findings
+[Detailed analysis with attack paths and code fixes]
 
-#### Exploitability Analysis
-**Attack Surface:** How is this code reachable? (entry point, auth required?)
-**Taint Flow:** Can attacker-controlled data reach this sink? What sanitization exists?
-**Constraints:** What limits exploitation? (Rust type system, validation, environment)
-**Exploitation Scenario:** Step-by-step how an attacker would exploit this
-**PoC Feasibility:** Can a proof-of-concept be constructed? How?
+## Medium Severity Findings
+[Analysis with remediation]
 
-#### Remediation
-- Vulnerable code and fix
+## Low Severity Findings
+[Summary table]
 
-## Medium and Low Findings
-Same format as above, with detailed exploitability reasoning
+## Remediation Roadmap
+| Priority | Finding | Effort | Target |
+|----------|---------|--------|--------|
+| P0 | ... | ... | Immediate |
+| P1 | ... | ... | Sprint |
 
-## False Positives
-| Finding | Category | Evidence | Why Unexploitable | Confidence |
+## Appendix A: False Positives Dismissed
+[Evidence-backed dismissals]
 
-## Remediation Priority
-- P0 (now): Critical
-- P1 (sprint): High
-- P2 (quarter): Medium
-- P3 (backlog): Low
-
-## Findings to Analyze
-
-{FINDINGS}
+## Appendix B: Methodology
 ```
+
+### 8. Findings Data
+
+Findings are presented with:
+- Rule ID and severity
+- Function and file location
+- Context hints (test code, example, etc.)
+- Code evidence
+
+### 9. Final Checklist
+
+Verification checklist before report submission.
 
 ## Usage
 
@@ -177,3 +122,9 @@ Same format as above, with detailed exploitability reasoning
 cargo-cola --crate-path ./project
 # Output: out/cola/llm-prompt.md
 ```
+
+Copy the contents of `llm-prompt.md` into your AI assistant (Copilot, Claude, ChatGPT) to generate the security report.
+
+## Customization
+
+The prompt can be customized by modifying `generate_llm_prompt()` in `cargo-cola/src/main.rs`.

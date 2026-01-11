@@ -1715,223 +1715,405 @@ fn generate_llm_prompt(
 
     let mut content = String::new();
 
-    // Header
-    writeln!(content, "# Security Analysis: {}", project_name)?;
+    // Get current date
+    let date_str = chrono::Local::now().format("%Y-%m-%d").to_string();
+
+    // ===== HEADER =====
+    writeln!(content, "# Security Analysis Request: {}", project_name)?;
+    writeln!(content, "**Analysis Date:** {} | **Tool:** Rust-COLA v1.0 | **Findings:** {}", date_str, findings.len())?;
     writeln!(&mut content)?;
 
-    // Include audit vulnerabilities if present
+    // ===== ROLE & OBJECTIVE =====
+    writeln!(content, "## Your Role")?;
+    writeln!(&mut content)?;
+    writeln!(content, "You are a senior application security engineer performing a security assessment.")?;
+    writeln!(content, "Your goal is to transform these static analysis findings into an **actionable, executive-ready security report**.")?;
+    writeln!(&mut content)?;
+    writeln!(content, "The report will be reviewed by:")?;
+    writeln!(content, "- **Security team**: Need technical details and remediation code")?;
+    writeln!(content, "- **Engineering leads**: Need priority and effort estimates")?;
+    writeln!(content, "- **Leadership**: Need executive summary and risk posture")?;
+    writeln!(&mut content)?;
+
+    // ===== PRUNING INSTRUCTIONS (MANDATORY - FIRST) =====
+    writeln!(content, "---")?;
+    writeln!(content, "## Step 1: Aggressive Pruning (DO THIS FIRST)")?;
+    writeln!(&mut content)?;
+    writeln!(content, "Before any analysis, **prune false positives aggressively**. A concise report with real issues is more valuable than a comprehensive report with noise.")?;
+    writeln!(&mut content)?;
+    writeln!(content, "### Automatic False Positive Criteria")?;
+    writeln!(&mut content)?;
+    writeln!(content, "**Dismiss immediately** (with brief evidence citation) if ANY of these apply:")?;
+    writeln!(&mut content)?;
+    writeln!(content, "| Criterion | How to Identify | Example Evidence |")?;
+    writeln!(content, "|-----------|-----------------|------------------|")?;
+    writeln!(content, "| **Test Code** | Path contains `/tests/`, `/test_`, `_test.rs`, `#[test]`, `#[cfg(test)]` | \"File: src/tests/db_test.rs\" |")?;
+    writeln!(content, "| **Example/Demo Code** | Path contains `/examples/`, `/demo/`, `/sample/` | \"File: examples/basic_usage.rs\" |")?;
+    writeln!(content, "| **Benchmark Code** | Path contains `/benches/`, `_bench.rs` | \"File: benches/perf.rs\" |")?;
+    writeln!(content, "| **Build Scripts** | File is `build.rs` (unless executing external commands) | \"File: build.rs\" |")?;
+    writeln!(content, "| **Compile-time Constants** | Value is string literal, `const`, or `static` with no runtime input | \"const QUERY: &str = ...\" |")?;
+    writeln!(content, "| **Dead Code** | Function is never called, behind `#[cfg(feature = \"...\")]` that's disabled | \"No callers found\" |")?;
+    writeln!(content, "| **Documented Unsafe** | Has `// SAFETY:` comment explaining why it's safe | \"SAFETY: bounds checked above\" |")?;
+    writeln!(&mut content)?;
+    writeln!(content, "### Lower Priority (Keep but Deprioritize)")?;
+    writeln!(&mut content)?;
+    writeln!(content, "Move to **Low/P3** (not dismissed) if:")?;
+    writeln!(content, "- Requires authenticated access AND has rate limiting")?;
+    writeln!(content, "- Impact limited to self-DoS (user can only crash their own request)")?;
+    writeln!(content, "- Defense-in-depth issue where primary controls exist")?;
+    writeln!(&mut content)?;
+    writeln!(content, "### Pruning Output")?;
+    writeln!(&mut content)?;
+    writeln!(content, "After pruning, report: \"Pruned X of Y findings as false positives. Z findings require analysis.\"")?;
+    writeln!(&mut content)?;
+
+    // ===== REACHABILITY CLASSIFICATION =====
+    writeln!(content, "---")?;
+    writeln!(content, "## Step 2: Reachability Analysis")?;
+    writeln!(&mut content)?;
+    writeln!(content, "For each remaining finding, classify reachability. This determines if a vulnerability is exploitable or theoretical.")?;
+    writeln!(&mut content)?;
+    writeln!(content, "| Reachability | Definition | Severity Impact | Action |")?;
+    writeln!(content, "|--------------|------------|-----------------|--------|")?;
+    writeln!(content, "| **EXPOSED** | Direct path from untrusted input (HTTP handler params, CLI args, stdin, file upload) | Full severity | Immediate fix required |")?;
+    writeln!(content, "| **INDIRECT** | Reachable via call chain from entry point; may have intermediate processing | -1 severity level if sanitized | Trace the call chain |")?;
+    writeln!(content, "| **AUTHENTICATED** | Behind authentication/authorization checks | -1 severity level | Note auth requirements |")?;
+    writeln!(content, "| **INTERNAL** | Only callable from trusted internal code, not exposed to users | -2 severity levels (min: Low) | Defense-in-depth fix |")?;
+    writeln!(content, "| **CONFIG-DRIVEN** | Input comes from config files, env vars at startup | Context-dependent | Assess config access model |")?;
+    writeln!(&mut content)?;
+    writeln!(content, "### Reachability Evidence Required")?;
+    writeln!(&mut content)?;
+    writeln!(content, "For EXPOSED/INDIRECT findings, show the path:")?;
+    writeln!(content, "```")?;
+    writeln!(content, "Entry: POST /api/users (handler: create_user)")?;
+    writeln!(content, "  → calls validate_input(body.name)")?;
+    writeln!(content, "  → calls db::insert_user(name)  // ← vulnerable sink")?;
+    writeln!(content, "Taint: body.name flows to SQL query without parameterization")?;
+    writeln!(content, "```")?;
+    writeln!(&mut content)?;
+
+    // ===== IMPACT TAXONOMY =====
+    writeln!(content, "---")?;
+    writeln!(content, "## Step 3: Impact Classification")?;
+    writeln!(&mut content)?;
+    writeln!(content, "Classify each true positive by impact type:")?;
+    writeln!(&mut content)?;
+    writeln!(content, "| Impact Type | Code | Description | Typical Severity |")?;
+    writeln!(content, "|-------------|------|-------------|------------------|")?;
+    writeln!(content, "| **Remote Code Execution** | RCE | Attacker executes arbitrary code | Critical |")?;
+    writeln!(content, "| **Authentication Bypass** | AUTH | Circumvent login/access controls | Critical |")?;
+    writeln!(content, "| **Memory Corruption** | MEM | Use-after-free, buffer overflow, undefined behavior | Critical |")?;
+    writeln!(content, "| **SQL/Command Injection** | INJ | Execute arbitrary queries/commands | Critical-High |")?;
+    writeln!(content, "| **Privilege Escalation** | PRIV | Gain elevated permissions | High |")?;
+    writeln!(content, "| **Sensitive Data Exposure** | DATA | Leak credentials, PII, secrets | High |")?;
+    writeln!(content, "| **Path Traversal** | PATH | Access files outside intended directory | High-Medium |")?;
+    writeln!(content, "| **Server-Side Request Forgery** | SSRF | Make server fetch attacker-controlled URLs | High-Medium |")?;
+    writeln!(content, "| **Denial of Service** | DOS | Crash, hang, or resource exhaust | Medium |")?;
+    writeln!(content, "| **Data Integrity** | INTEG | Unauthorized data modification | Medium |")?;
+    writeln!(content, "| **Information Disclosure** | INFO | Leak non-sensitive internal details | Low |")?;
+    writeln!(content, "| **Code Quality** | QUAL | Maintainability, not security-exploitable | Low |")?;
+    writeln!(&mut content)?;
+
+    // ===== CONTEXTUAL SEVERITY MODEL =====
+    writeln!(content, "---")?;
+    writeln!(content, "## Step 4: Contextual Severity Rating")?;
+    writeln!(&mut content)?;
+    writeln!(content, "Use this model instead of raw CVSS. Final severity considers reachability and context.")?;
+    writeln!(&mut content)?;
+    writeln!(content, "```")?;
+    writeln!(content, "Final Severity = Base Severity + Reachability Modifier + Context Modifier")?;
+    writeln!(content, "```")?;
+    writeln!(&mut content)?;
+    writeln!(content, "### Base Severity (from Impact Type)")?;
+    writeln!(&mut content)?;
+    writeln!(content, "| Base | Impact Types |")?;
+    writeln!(content, "|------|-------------|")?;
+    writeln!(content, "| Critical | RCE, AUTH bypass, MEM corruption with control |")?;
+    writeln!(content, "| High | INJ (SQL/Cmd), PRIV escalation, DATA exposure (credentials/PII) |")?;
+    writeln!(content, "| Medium | SSRF, PATH traversal, DOS, DATA exposure (non-sensitive) |")?;
+    writeln!(content, "| Low | INFO disclosure, QUAL issues |")?;
+    writeln!(&mut content)?;
+    writeln!(content, "### Reachability Modifier")?;
+    writeln!(&mut content)?;
+    writeln!(content, "| Reachability | Modifier |")?;
+    writeln!(content, "|--------------|----------|")?;
+    writeln!(content, "| EXPOSED | No change |")?;
+    writeln!(content, "| INDIRECT (no sanitization) | No change |")?;
+    writeln!(content, "| INDIRECT (partial sanitization) | -1 level |")?;
+    writeln!(content, "| AUTHENTICATED | -1 level |")?;
+    writeln!(content, "| INTERNAL only | -2 levels (min: Low) |")?;
+    writeln!(content, "| CONFIG-DRIVEN (trusted source) | -2 levels |")?;
+    writeln!(&mut content)?;
+    writeln!(content, "### Context Modifiers")?;
+    writeln!(&mut content)?;
+    writeln!(content, "| Context | Modifier |")?;
+    writeln!(content, "|---------|----------|")?;
+    writeln!(content, "| Rate limiting present | -1 level for DOS |")?;
+    writeln!(content, "| Input validation exists (but incomplete) | Note in analysis |")?;
+    writeln!(content, "| Defense-in-depth (other controls exist) | Note, don't reduce |")?;
+    writeln!(content, "| Rust's borrow checker prevents exploitation | Can dismiss if proven |")?;
+    writeln!(&mut content)?;
+
+    // ===== REMEDIATION REQUIREMENTS =====
+    writeln!(content, "---")?;
+    writeln!(content, "## Step 5: Remediation with Code")?;
+    writeln!(&mut content)?;
+    writeln!(content, "For each true positive, provide **concrete code fixes**:")?;
+    writeln!(&mut content)?;
+    writeln!(content, "### Required Format")?;
+    writeln!(&mut content)?;
+    writeln!(content, "````markdown")?;
+    writeln!(content, "#### Remediation")?;
+    writeln!(&mut content)?;
+    writeln!(content, "**Vulnerable Code:**")?;
+    writeln!(content, "```rust")?;
+    writeln!(content, "// Current: SQL injection via string interpolation")?;
+    writeln!(content, "let query = format!(\"SELECT * FROM users WHERE id = {{}}\", user_id);")?;
+    writeln!(content, "conn.execute(&query)?;")?;
+    writeln!(content, "```")?;
+    writeln!(&mut content)?;
+    writeln!(content, "**Fixed Code:**")?;
+    writeln!(content, "```rust")?;
+    writeln!(content, "// Fixed: Parameterized query prevents injection")?;
+    writeln!(content, "sqlx::query(\"SELECT * FROM users WHERE id = $1\")")?;
+    writeln!(content, "    .bind(user_id)")?;
+    writeln!(content, "    .fetch_one(&pool)")?;
+    writeln!(content, "    .await?;")?;
+    writeln!(content, "```")?;
+    writeln!(&mut content)?;
+    writeln!(content, "**Recommended Libraries:** `sqlx` with compile-time query checking")?;
+    writeln!(content, "**Effort Estimate:** ~2 hours (includes testing)")?;
+    writeln!(content, "**Breaking Changes:** None - same return type")?;
+    writeln!(content, "````")?;
+    writeln!(&mut content)?;
+    writeln!(content, "### Remediation Quality Checklist")?;
+    writeln!(&mut content)?;
+    writeln!(content, "- [ ] Code compiles (valid Rust syntax)")?;
+    writeln!(content, "- [ ] Uses idiomatic Rust patterns")?;
+    writeln!(content, "- [ ] Recommends well-maintained crates (check if unsure)")?;
+    writeln!(content, "- [ ] Includes error handling")?;
+    writeln!(content, "- [ ] Notes any API/behavior changes")?;
+    writeln!(&mut content)?;
+
+    // ===== OUTPUT FORMAT (ENTERPRISE) =====
+    writeln!(content, "---")?;
+    writeln!(content, "## Required Output Format")?;
+    writeln!(&mut content)?;
+    writeln!(content, "Generate the report in this exact structure:")?;
+    writeln!(&mut content)?;
+    writeln!(content, "````markdown")?;
+    writeln!(content, "# Security Assessment Report: {}", project_name)?;
+    writeln!(&mut content)?;
+    writeln!(content, "**Date:** {} | **Assessed By:** AI-Assisted Analysis | **Tool:** Rust-COLA v1.0", date_str)?;
+    writeln!(&mut content)?;
+    writeln!(content, "---")?;
+    writeln!(&mut content)?;
+    writeln!(content, "## Executive Summary")?;
+    writeln!(&mut content)?;
+    writeln!(content, "**Risk Rating:** [CRITICAL | HIGH | MEDIUM | LOW]")?;
+    writeln!(&mut content)?;
+    writeln!(content, "[2-3 sentence summary for leadership. State the most important finding and recommended immediate action.]")?;
+    writeln!(&mut content)?;
+    writeln!(content, "### Findings Overview")?;
+    writeln!(&mut content)?;
+    writeln!(content, "| Severity | Count | Exploitable | Requires Immediate Action |")?;
+    writeln!(content, "|----------|-------|-------------|---------------------------|")?;
+    writeln!(content, "| Critical | X | X | Yes |")?;
+    writeln!(content, "| High | X | X | Yes - within 1 sprint |")?;
+    writeln!(content, "| Medium | X | X | Within 30 days |")?;
+    writeln!(content, "| Low | X | - | Backlog |")?;
+    writeln!(content, "| **Total** | X | X | |")?;
+    writeln!(&mut content)?;
+    writeln!(content, "### Key Findings")?;
+    writeln!(&mut content)?;
+    writeln!(content, "1. **[Most critical finding]** - [one-line description]")?;
+    writeln!(content, "2. **[Second priority]** - [one-line description]")?;
+    writeln!(content, "3. **[Third priority]** - [one-line description]")?;
+    writeln!(&mut content)?;
+    writeln!(content, "---")?;
+    writeln!(&mut content)?;
+    writeln!(content, "## Critical & High Severity Findings")?;
+    writeln!(&mut content)?;
+    writeln!(content, "### [RULE_ID]: [Title]")?;
+    writeln!(&mut content)?;
+    writeln!(content, "| Attribute | Value |")?;
+    writeln!(content, "|-----------|-------|")?;
+    writeln!(content, "| **Severity** | Critical/High |")?;
+    writeln!(content, "| **Impact Type** | [RCE/AUTH/INJ/etc.] |")?;
+    writeln!(content, "| **Reachability** | [EXPOSED/INDIRECT/etc.] |")?;
+    writeln!(content, "| **Location** | `file.rs:line` |")?;
+    writeln!(content, "| **Exploitability** | [Proven/Likely/Possible] |")?;
+    writeln!(&mut content)?;
+    writeln!(content, "**Description:** [What the vulnerability is and why it matters]")?;
+    writeln!(&mut content)?;
+    writeln!(content, "**Attack Path:**")?;
+    writeln!(content, "```")?;
+    writeln!(content, "Entry: [entry point]")?;
+    writeln!(content, "  → [call chain]")?;
+    writeln!(content, "  → [vulnerable sink]")?;
+    writeln!(content, "```")?;
+    writeln!(&mut content)?;
+    writeln!(content, "**Business Impact:** [What an attacker could achieve]")?;
+    writeln!(&mut content)?;
+    writeln!(content, "#### Remediation")?;
+    writeln!(&mut content)?;
+    writeln!(content, "**Vulnerable Code:**")?;
+    writeln!(content, "```rust")?;
+    writeln!(content, "[exact vulnerable code]")?;
+    writeln!(content, "```")?;
+    writeln!(&mut content)?;
+    writeln!(content, "**Fixed Code:**")?;
+    writeln!(content, "```rust")?;
+    writeln!(content, "[corrected code with comments]")?;
+    writeln!(content, "```")?;
+    writeln!(&mut content)?;
+    writeln!(content, "**Effort:** [X hours] | **Priority:** P0/P1")?;
+    writeln!(&mut content)?;
+    writeln!(content, "---")?;
+    writeln!(&mut content)?;
+    writeln!(content, "## Medium Severity Findings")?;
+    writeln!(&mut content)?;
+    writeln!(content, "[Same format as above, can be more condensed]")?;
+    writeln!(&mut content)?;
+    writeln!(content, "---")?;
+    writeln!(&mut content)?;
+    writeln!(content, "## Low Severity Findings")?;
+    writeln!(&mut content)?;
+    writeln!(content, "| ID | Finding | Location | Impact | Effort |")?;
+    writeln!(content, "|----|---------|----------|--------|--------|")?;
+    writeln!(content, "| RUSTCOLAXX | [description] | file.rs:line | [impact] | [X hours] |")?;
+    writeln!(&mut content)?;
+    writeln!(content, "---")?;
+    writeln!(&mut content)?;
+    writeln!(content, "## Remediation Roadmap")?;
+    writeln!(&mut content)?;
+    writeln!(content, "| Priority | Finding | Effort | Target |")?;
+    writeln!(content, "|----------|---------|--------|--------|")?;
+    writeln!(content, "| **P0** (Immediate) | [finding] | [hours] | Before next deploy |")?;
+    writeln!(content, "| **P1** (Sprint) | [finding] | [hours] | This sprint |")?;
+    writeln!(content, "| **P2** (30 days) | [finding] | [hours] | This month |")?;
+    writeln!(content, "| **P3** (Backlog) | [finding] | [hours] | When convenient |")?;
+    writeln!(&mut content)?;
+    writeln!(content, "---")?;
+    writeln!(&mut content)?;
+    writeln!(content, "## Appendix A: False Positives Dismissed")?;
+    writeln!(&mut content)?;
+    writeln!(content, "| Finding | Reason | Evidence |")?;
+    writeln!(content, "|---------|--------|----------|")?;
+    writeln!(content, "| [RULE_ID] | [Test code/Constant/etc.] | [file path or code quote] |")?;
+    writeln!(&mut content)?;
+    writeln!(content, "---")?;
+    writeln!(&mut content)?;
+    writeln!(content, "## Appendix B: Methodology")?;
+    writeln!(&mut content)?;
+    writeln!(content, "This assessment was performed using Rust-COLA static analysis on MIR (Mid-level IR),")?;
+    writeln!(content, "followed by AI-assisted triage for false positive elimination and exploitability analysis.")?;
+    writeln!(content, "````")?;
+    writeln!(&mut content)?;
+
+    // ===== DEPENDENCY VULNERABILITIES (if any) =====
     if !audit_vulns.is_empty() {
+        writeln!(content, "---")?;
         writeln!(content, "## Dependency Vulnerabilities (cargo-audit)")?;
         writeln!(&mut content)?;
-        writeln!(content, "| ID | Package | Version | Severity | Title |")?;
-        writeln!(content, "|-----|---------|---------|----------|-------|")?;
+        writeln!(content, "Include these in your report under a \"Dependency Vulnerabilities\" section:")?;
+        writeln!(&mut content)?;
+        writeln!(content, "| Advisory | Package | Version | Severity | Title |")?;
+        writeln!(content, "|----------|---------|---------|----------|-------|")?;
         for vuln in audit_vulns {
             let severity = vuln.severity.as_deref().unwrap_or("unknown");
             writeln!(content, "| {} | {} | {} | {} | {} |",
                 vuln.id, vuln.package, vuln.version, severity, vuln.title)?;
         }
         writeln!(&mut content)?;
-        writeln!(content, "---")?;
-        writeln!(&mut content)?;
     }
 
-    // Streamlined prompt
-    writeln!(content, "You are a security engineer triaging {} static analysis findings.", findings.len())?;
-    writeln!(content, "Produce a security report with evidence-based classifications.")?;
-    writeln!(&mut content)?;
-    
-    writeln!(content, "## Tasks")?;
-    writeln!(&mut content)?;
-    writeln!(content, "1. Triage: Classify each finding as True Positive or False Positive")?;
-    writeln!(content, "2. Severity: Rate using CVSS 3.1 (Critical 9.0+, High 7.0+, Medium 4.0+, Low <4.0)")?;
-    writeln!(content, "3. Exploitability: Analyze how each finding could be exploited")?;
-    writeln!(content, "4. Remediation: Provide code fixes for true positives")?;
-    writeln!(content, "5. Prioritize: P0 (now), P1 (sprint), P2 (quarter), P3 (backlog)")?;
-    writeln!(&mut content)?;
-    
-    // Exploitability Analysis - Enhanced for depth and clarity
-    writeln!(content, "## Exploitability Analysis (DETAILED)")?;
-    writeln!(&mut content)?;
-    writeln!(content, "For EACH finding classified as True Positive, provide a DETAILED exploitability analysis.")?;
-    writeln!(content, "Do NOT use single-word answers like 'theoretical' or 'unlikely'. Explain your reasoning.")?;
-    writeln!(&mut content)?;
-    
-    writeln!(content, "### Required Analysis Framework")?;
-    writeln!(&mut content)?;
-    writeln!(content, "**1. Attack Surface Assessment**")?;
-    writeln!(content, "- Is this code reachable from external input? (HTTP request, CLI args, file input, env vars, IPC)")?;
-    writeln!(content, "- What is the call chain from entry point to vulnerable code?")?;
-    writeln!(content, "- Is authentication/authorization required to reach this code path?")?;
-    writeln!(&mut content)?;
-    
-    writeln!(content, "**2. Taint Flow Analysis**")?;
-    writeln!(content, "- Can attacker-controlled data reach the vulnerable sink?")?;
-    writeln!(content, "- What transformations/sanitizations occur between source and sink?")?;
-    writeln!(content, "- Are there validation checks that would block malicious input?")?;
-    writeln!(&mut content)?;
-    
-    writeln!(content, "**3. Exploitation Constraints**")?;
-    writeln!(content, "- What specific conditions must be true for exploitation? (e.g., specific input format, race condition timing, memory layout)")?;
-    writeln!(content, "- Does Rust's type system or borrow checker prevent exploitation?")?;
-    writeln!(content, "- Are there runtime checks (bounds checking, Option/Result handling) that limit impact?")?;
-    writeln!(&mut content)?;
-    
-    writeln!(content, "**4. Exploitation Scenario**")?;
-    writeln!(content, "If exploitable, describe a concrete attack scenario:")?;
-    writeln!(content, "- Step 1: Attacker does X...")?;
-    writeln!(content, "- Step 2: This causes Y...")?;
-    writeln!(content, "- Step 3: Result is Z (RCE, data leak, DoS, etc.)")?;
-    writeln!(&mut content)?;
-    writeln!(content, "If NOT exploitable, explain WHY with specific evidence from the code.")?;
-    writeln!(&mut content)?;
-    
-    writeln!(content, "**5. Proof-of-Concept Feasibility**")?;
-    writeln!(content, "- Could a PoC be constructed? If yes, describe the approach.")?;
-    writeln!(content, "- If no, what specifically prevents PoC construction?")?;
-    writeln!(&mut content)?;
-    
-    writeln!(content, "### Exploitability Levels (with required justification)")?;
-    writeln!(&mut content)?;
-    writeln!(content, "| Level | Definition | Required Justification |")?;
-    writeln!(content, "|-------|------------|------------------------|")?;
-    writeln!(content, "| **Proven** | PoC exists or is trivially constructable | Describe the PoC steps |")?;
-    writeln!(content, "| **Likely** | Clear attack path, no significant barriers | Show the attack path with call chain |")?;
-    writeln!(content, "| **Possible** | Requires specific conditions or chained vulns | List the specific conditions required |")?;
-    writeln!(content, "| **Theoretical** | Requires unlikely conditions | Explain WHY conditions are unlikely |")?;
-    writeln!(content, "| **Unexploitable** | No viable attack path | Cite specific code that prevents exploitation |")?;
-    writeln!(&mut content)?;
-    
-    writeln!(content, "### Example Analysis (Good vs Bad)")?;
-    writeln!(&mut content)?;
-    writeln!(content, "❌ **BAD (too terse):**")?;
-    writeln!(content, "> Exploitability: Theoretical. Unlikely to be exploited in practice.")?;
-    writeln!(&mut content)?;
-    writeln!(content, "✅ **GOOD (detailed reasoning):**")?;
-    writeln!(content, "> Exploitability: **Theoretical**")?;
-    writeln!(content, "> ")?;
-    writeln!(content, "> **Reasoning:** While this SQL query uses string interpolation, the input comes from")?;
-    writeln!(content, "> `config.database_name` which is loaded from a TOML file at startup (see config.rs:45).")?;
-    writeln!(content, "> An attacker would need write access to the config file, which requires filesystem access")?;
-    writeln!(content, "> to the server. At that point, the attacker has more direct attack vectors available.")?;
-    writeln!(content, "> ")?;
-    writeln!(content, "> **Conditions required:** (1) Write access to server filesystem, (2) Application restart")?;
-    writeln!(content, "> to reload config, (3) Knowledge of internal config format.")?;
-    writeln!(content, "> ")?;
-    writeln!(content, "> **Why unlikely:** These conditions imply prior compromise of the server, making SQL")?;
-    writeln!(content, "> injection moot. Recommend fixing anyway as defense-in-depth.")?;
-    writeln!(&mut content)?;
-    
-    // False Positive Requirements
-    writeln!(content, "## False Positive Requirements")?;
-    writeln!(&mut content)?;
-    writeln!(content, "Default to True Positive when uncertain.")?;
-    writeln!(&mut content)?;
-    writeln!(content, "For each False Positive:")?;
-    writeln!(&mut content)?;
-    writeln!(content, "| Field | Required |")?;
-    writeln!(content, "|-------|----------|")?;
-    writeln!(content, "| Category | Test code / Constant value / Sanitized / Intentional |")?;
-    writeln!(content, "| Evidence | Quote file path or code proving safety |")?;
-    writeln!(content, "| Why unexploitable | Reason attacker cannot abuse this |")?;
-    writeln!(content, "| Confidence | High (>90%) / Medium (70-90%) / Low (<70%) |")?;
-    writeln!(&mut content)?;
-    writeln!(content, "Evidence by category:")?;
-    writeln!(content, "- Test code: Path contains /tests/, #[test], #[cfg(test)]")?;
-    writeln!(content, "- Constant: Literal string, not env/args/stdin")?;
-    writeln!(content, "- Sanitized: Quote the sanitization code")?;
-    writeln!(content, "- Intentional: Quote safety comment or API contract")?;
-    writeln!(&mut content)?;
-    writeln!(content, "If confidence < 90%, classify as True Positive.")?;
-    writeln!(&mut content)?;
-
-    // Output format
-    writeln!(content, "## Output Format")?;
-    writeln!(&mut content)?;
-    writeln!(content, "```markdown")?;
-    writeln!(content, "# Security Report: {}", project_name)?;
-    writeln!(&mut content)?;
-    writeln!(content, "## Executive Summary")?;
-    writeln!(content, "- Findings: X total, Y true positives, Z false positives")?;
-    writeln!(content, "- Critical issues: list or None")?;
-    writeln!(content, "- Risk: High/Medium/Low")?;
-    writeln!(&mut content)?;
-    writeln!(content, "## Critical and High Findings")?;
-    writeln!(content, "### RULE_ID: Title")?;
-    writeln!(content, "- **Severity:** Critical (CVSS X.X)")?;
-    writeln!(content, "- **Location:** file.rs:line")?;
-    writeln!(content, "- **Impact:** what attacker achieves")?;
-    writeln!(content, "- **Exploitability:** Proven/Likely/Possible/Theoretical")?;
-    writeln!(&mut content)?;
-    writeln!(content, "#### Exploitability Analysis")?;
-    writeln!(content, "**Attack Surface:** How is this code reachable? (entry point, auth required?)")?;
-    writeln!(content, "**Taint Flow:** Can attacker-controlled data reach this sink? What sanitization exists?")?;
-    writeln!(content, "**Constraints:** What limits exploitation? (Rust type system, validation, environment)")?;
-    writeln!(content, "**Exploitation Scenario:** Step-by-step how an attacker would exploit this")?;
-    writeln!(content, "**PoC Feasibility:** Can a proof-of-concept be constructed? How?")?;
-    writeln!(&mut content)?;
-    writeln!(content, "#### Remediation")?;
-    writeln!(content, "- Vulnerable code and fix")?;
-    writeln!(&mut content)?;
-    writeln!(content, "## Medium and Low Findings")?;
-    writeln!(content, "Same format as above, with detailed exploitability reasoning")?;
-    writeln!(&mut content)?;
-    writeln!(content, "## False Positives")?;
-    writeln!(content, "| Finding | Category | Evidence | Why Unexploitable | Confidence |")?;
-    writeln!(content, "|---------|----------|----------|-------------------|------------|")?;
-    writeln!(&mut content)?;
-    writeln!(content, "## Remediation Priority")?;
-    writeln!(content, "- P0: critical, P1: high, P2: medium, P3: low")?;
-    writeln!(content, "```")?;
-    writeln!(&mut content)?;
-
+    // ===== FINDINGS DATA =====
     writeln!(content, "---")?;
-    writeln!(&mut content)?;
     writeln!(content, "## Findings to Analyze")?;
     writeln!(&mut content)?;
 
-    // Include findings (up to 100)
     let findings_limit = 100;
     let show_all = findings.len() <= findings_limit;
     
     if !show_all {
-        writeln!(content, "*Showing {} of {} findings.*", findings_limit, findings.len())?;
+        writeln!(content, "⚠️ *Showing {} of {} findings. Focus on highest severity first.*", findings_limit, findings.len())?;
         writeln!(&mut content)?;
     }
 
+    writeln!(content, "Total findings: **{}**", findings.len())?;
+    writeln!(&mut content)?;
+
+    // Group findings by severity for better organization
+    let critical_high: Vec<_> = findings.iter()
+        .filter(|f| matches!(f.severity, mir_extractor::Severity::Critical | mir_extractor::Severity::High))
+        .collect();
+    let medium: Vec<_> = findings.iter()
+        .filter(|f| matches!(f.severity, mir_extractor::Severity::Medium))
+        .collect();
+    let low_info: Vec<_> = findings.iter()
+        .filter(|f| matches!(f.severity, mir_extractor::Severity::Low))
+        .collect();
+
+    writeln!(content, "- Critical/High: {}", critical_high.len())?;
+    writeln!(content, "- Medium: {}", medium.len())?;
+    writeln!(content, "- Low/Info: {}", low_info.len())?;
+    writeln!(&mut content)?;
+
+    // Output findings
     for (i, finding) in findings.iter().take(findings_limit).enumerate() {
-        writeln!(content, "### {}. {} ({:?})", i + 1, finding.rule_id, finding.severity)?;
+        writeln!(content, "### Finding {}: {} ({:?})", i + 1, finding.rule_id, finding.severity)?;
+        writeln!(&mut content)?;
         writeln!(content, "| Attribute | Value |")?;
         writeln!(content, "|-----------|-------|")?;
-        writeln!(content, "| Rule | {} |", finding.rule_id)?;
-        writeln!(content, "| Severity | {:?} |", finding.severity)?;
-        writeln!(content, "| Function | {} |", finding.function)?;
+        writeln!(content, "| **Rule ID** | {} |", finding.rule_id)?;
+        writeln!(content, "| **Severity** | {:?} |", finding.severity)?;
+        writeln!(content, "| **Function** | `{}` |", finding.function)?;
         if let Some(span) = &finding.span {
-            writeln!(content, "| File | {}:{} |", span.file, span.start_line)?;
+            writeln!(content, "| **Location** | `{}:{}` |", span.file, span.start_line)?;
+            
+            // Add context hints for pruning
             let file_lower = span.file.to_lowercase();
             if file_lower.contains("test") || file_lower.contains("/tests/") {
-                writeln!(content, "| Context | Test code |")?;
-            } else if file_lower.contains("example") {
-                writeln!(content, "| Context | Example code |")?;
-            } else if file_lower.contains("build.rs") {
-                writeln!(content, "| Context | Build script |")?;
+                writeln!(content, "| **Context** | ⚠️ Test code - likely false positive |")?;
+            } else if file_lower.contains("example") || file_lower.contains("/examples/") {
+                writeln!(content, "| **Context** | ⚠️ Example code - likely false positive |")?;
+            } else if file_lower.contains("bench") || file_lower.contains("/benches/") {
+                writeln!(content, "| **Context** | ⚠️ Benchmark code - likely false positive |")?;
+            } else if span.file.ends_with("build.rs") {
+                writeln!(content, "| **Context** | Build script - assess if running external commands |")?;
             }
         }
-        writeln!(content)?;
-        writeln!(content, "Issue: {}", finding.message)?;
-        writeln!(content)?;
+        writeln!(&mut content)?;
+        writeln!(content, "**Issue:** {}", finding.message)?;
+        writeln!(&mut content)?;
         
         if !finding.evidence.is_empty() {
-            writeln!(content, "Evidence:")?;
+            writeln!(content, "**Evidence:**")?;
             writeln!(content, "```rust")?;
-            for ev in finding.evidence.iter().take(6) {
+            for ev in finding.evidence.iter().take(8) {
                 writeln!(content, "{}", ev.trim())?;
             }
             writeln!(content, "```")?;
         }
-        writeln!(content)?;
+        writeln!(&mut content)?;
         writeln!(content, "---")?;
         writeln!(&mut content)?;
     }
+
+    // ===== FINAL REMINDERS =====
+    writeln!(content, "## Final Checklist")?;
+    writeln!(&mut content)?;
+    writeln!(content, "Before submitting your report, verify:")?;
+    writeln!(&mut content)?;
+    writeln!(content, "- [ ] All test/example/benchmark code findings dismissed with evidence")?;
+    writeln!(content, "- [ ] Each true positive has reachability classification")?;
+    writeln!(content, "- [ ] Each true positive has impact type (RCE/INJ/DOS/etc.)")?;
+    writeln!(content, "- [ ] Severity reflects reachability, not just base CVSS")?;
+    writeln!(content, "- [ ] Remediation includes compilable code fixes")?;
+    writeln!(content, "- [ ] Executive summary is 2-3 sentences max")?;
+    writeln!(content, "- [ ] Roadmap has clear priorities and effort estimates")?;
+    writeln!(&mut content)?;
 
     // Write file
     if let Some(parent) = path.parent() {

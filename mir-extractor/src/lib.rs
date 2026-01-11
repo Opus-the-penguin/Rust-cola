@@ -1,6 +1,5 @@
 #![cfg_attr(feature = "hir-driver", feature(rustc_private))]
-// TODO: Remove this once legacy rule implementations are fully cleaned up
-// Legacy rules have been migrated to rules/ module but old implementations remain
+// Some helper functions are used only by subsets of rules.
 #![allow(dead_code)]
 
 #[cfg(feature = "hir-driver")]

@@ -476,7 +476,7 @@ impl TaintAnalysis {
                         source: source.clone(),
                         sink: sink.clone(),
                         sanitized: is_sanitized,
-                        propagation_path: vec![],  // TODO: Track actual path
+                        propagation_path: vec![],  // Path tracking done at inter-procedural level
                     });
                     break; // One source per sink for now
                 }

@@ -46,15 +46,9 @@ impl<'tcx> TypeAnalyzer<'tcx> {
     /// }
     /// ```
     pub fn implements_trait(&mut self, _ty_name: &str, _trait_name: &str) -> Result<bool> {
-        // TODO: Trait checking requires complex trait solver integration
-        // The trait solver API has changed in recent rustc nightlies
-        // For now, this is stubbed - trait information should be extracted
-        // during HIR/MIR analysis and stored in metadata
-        //
-        // Future implementation options:
-        // 1. Use rustc's trait solver (needs API research for current nightly)
-        // 2. Pre-compute trait implementations during HIR extraction
-        // 3. Use DefId-based API instead of string-based
+        // Trait checking requires the rustc trait solver, which has unstable APIs.
+        // Current approach: extract trait bounds during HIR analysis and store in metadata.
+        // This method is reserved for future direct trait queries.
         anyhow::bail!("implements_trait not yet implemented - use HIR metadata for Send/Sync info")
     }
 
@@ -160,8 +154,8 @@ impl<'tcx> TypeAnalyzer<'tcx> {
     /// 
     /// Internal helper to convert type names to DefIds for rustc queries.
     fn resolve_type(&self, ty_name: &str) -> Result<DefId> {
-        // TODO: Implement type name resolution
-        // This is complex - may need symbol table lookup
+        // Type name to DefId resolution requires symbol table integration.
+        // Currently unused - callers use DefId directly from MIR extraction.
         anyhow::bail!("Type resolution not yet implemented: {}", ty_name)
     }
 

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **User Guide**: Comprehensive `docs/USER_GUIDE.md` covering theory of operation, LLM integration, CI/CD, configuration, suppression, and troubleshooting
+
 ### Changed
 - **LLM Prompt Overhaul**: Redesigned `llm-prompt.md` generation for enterprise-ready security reports:
   - Added aggressive pruning instructions with automatic false positive criteria (test code, examples, constants, dead code)
@@ -16,9 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added remediation section requiring compilable code fixes with effort estimates
   - Added enterprise output format with executive summary, risk matrix, and remediation roadmap
   - Added final verification checklist
+- Renamed `docs/prompts/security-report-template.md` → `llm-prompt-reference.md` with code-is-authoritative note
 
 ### Removed
 - Removed `docs/V1X_ROADMAP.md` (work transferred to separate project)
+- Removed internal development docs (`docs/archive/`)
+- Removed prototype research files (hir-extraction-plan, rustsec prototypes)
 
 ## [1.0.0] - 2025-12-24
 

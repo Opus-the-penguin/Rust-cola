@@ -1,6 +1,6 @@
 # Rust-cola User Guide
 
-A concise guide to finding security bugs in Rust code. ☕
+A concise guide to finding security bugs in Rust code.
 
 ---
 
@@ -200,7 +200,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Install Rust
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly
       
@@ -275,10 +275,10 @@ cargo-cola --config cargo-cola.yaml --crate-path .
 
 ```rust
 fn dangerous_but_intentional() {
-    // rust-cola: ignore RUSTCOLA001
+    // rust-cola:ignore RUSTCOLA001
     let raw = Box::into_raw(boxed);
     
-    // rust-cola: ignore-next-line
+    // rust-cola:ignore
     unsafe { do_something_scary(); }
 }
 ```
@@ -369,10 +369,7 @@ Check `mir.json` to see the actual MIR being analyzed. Macros often generate sur
 
 ### "SARIF not uploading to GitHub"
 
-Ensure the SARIF file exists and the path is correct. GitHub limits SARIF to 10MB—filter large results:
-```bash
-cargo-cola --crate-path . --max-findings 500
-```
+Ensure the SARIF file exists and the path is correct. GitHub limits SARIF to 10MB.
 
 ---
 

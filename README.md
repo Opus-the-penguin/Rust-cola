@@ -14,13 +14,6 @@ Requires the nightly Rust toolchain.
 
 Rust-cola works best with an LLM. The LLM filters false positives, rates severity, assesses exploitability, and suggests fixes.
 
-```mermaid
-flowchart LR
-    A[**cargo-cola**<br/>Analyze Rust<br/>Crate MIR] --> B[**Artifact Set**<br/>• raw-findings.sarif<br/>• mir.json<br/>• ast.json<br/>• llm-prompt.md]
-    B --> C[**LLM**<br/>• Validate FPs<br/>• Exploitability<br/>• Severity<br/>• Remediation]
-    C --> D[**Final Report**<br/>• Confirmed Findings<br/>• Severity Scores<br/>• Fix Guidance]
-```
-
 **Workflow:**
 
     cargo-cola → Artifact Set → LLM → Final Report

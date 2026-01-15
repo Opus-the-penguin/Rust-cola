@@ -1,4 +1,4 @@
-# Rust-cola
+# Rust-cola (Proof of Concept)
 
 Security static analyzer for Rust. Compiles source code to extract MIR (Mid-level Intermediate Representation)—an internal compiler format that reveals issues difficult to find in source-level scanners.
 

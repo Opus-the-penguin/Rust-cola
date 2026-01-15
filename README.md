@@ -20,7 +20,7 @@ Rust-cola works best with an LLM. The LLM filters false positives, rates severit
     
     1. cargo-cola analyzes MIR and produces raw findings
     2. Artifact set: raw-findings.sarif, mir.json, ast.json, llm-prompt.md
-    3. LLM validates findings, assesses exploitability, rates severity
+    3. LLM validates findings, assesses exploitability, rates severity, suggests remediation code
     4. Final report: confirmed findings with severity scores and fix guidance
 
 **Manual Workflow (Recommended):**

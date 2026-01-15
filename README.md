@@ -21,6 +21,15 @@ flowchart LR
     C --> D[**Final Report**<br/>• Confirmed Findings<br/>• Severity Scores<br/>• Fix Guidance]
 ```
 
+**Workflow:**
+
+    cargo-cola → Artifact Set → LLM → Final Report
+    
+    1. cargo-cola analyzes MIR and produces raw findings
+    2. Artifact set: raw-findings.sarif, mir.json, ast.json, llm-prompt.md
+    3. LLM validates findings, assesses exploitability, rates severity
+    4. Final report: confirmed findings with severity scores and fix guidance
+
 **Manual Workflow (Recommended):**
 
 1. Run the scan on your target project:

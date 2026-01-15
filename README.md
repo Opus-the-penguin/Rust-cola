@@ -1,6 +1,8 @@
 # Rust-cola (Proof of Concept)
 
-Security static analyzer for Rust. Compiles source code to extract MIR (Mid-level Intermediate Representation)—an internal compiler format that reveals issues difficult to find in source-level scanners.
+Experimental security static analyzer for Rust. Compiles source code to extract MIR (Mid-level Intermediate Representation), an internal compiler format where Rust's deep semantics and safety guarantees become explicit.
+
+By analyzing MIR rather than source code or AST, Rust-cola can identify security vulnerabilities that source-level static analyzers struggle to detect—such as complex data flow across function boundaries, issues within unsafe blocks, type-confused transmutes, and patterns that only emerge after generics are monomorphized.
 
 **Note:** The environment running cargo-cola must be able to compile the target code. This is required to extract the MIR for deep analysis.
 

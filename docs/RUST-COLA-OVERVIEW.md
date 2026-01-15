@@ -2,7 +2,7 @@
 
 ## What It Is
 
-Rust-cola is an experimental security static analyzer for Rust code. It is a proof of concept.
+Rust-cola is a security static analyzer for Rust code.
 
 ## How It Works
 
@@ -63,13 +63,8 @@ Five rules track tainted data across function boundaries to detect injection vul
 | Requires compilation | Yes | No |
 | LLM-assisted triage | Yes | Typically no |
 
-## Limitations
+## Requirements
 
-- Requires the target code to compile
-- Requires nightly Rust toolchain
-- Experimental and under active development
+- Target code must compile
+- Nightly Rust toolchain
 - LLM validation is optional but recommended for best results
-
-## Status
-
-Proof of concept. Not production-ready.

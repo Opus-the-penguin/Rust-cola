@@ -1,10 +1,10 @@
 # Rust-cola (Proof of Concept)
 
-Experimental security static analyzer for Rust. Compiles source code to extract MIR (Mid-level Intermediate Representation), an internal compiler format where Rust's deep semantics and safety guarantees become explicit.
+Experimental security static analyzer for Rust. Compiles source code to extract MIR (Mid-level Intermediate Representation), an internal compiler format that makes data flow and unsafe operations explicit.
 
-By analyzing MIR rather than source code or AST, Rust-cola can identify security vulnerabilities that source-level static analyzers struggle to detect—such as complex data flow across function boundaries, issues within unsafe blocks, type-confused transmutes, and patterns that only emerge after generics are monomorphized.
+Analyzing MIR instead of source code or AST can help find issues that source-level analyzers miss, such as data flow across functions, problems in unsafe blocks, and patterns that only appear after generics are resolved.
 
-**Note:** The environment running cargo-cola must be able to compile the target code. This is required to extract the MIR for deep analysis.
+**Note:** The environment running cargo-cola must be able to compile the target code. This is required to extract MIR.
 
 Requires the nightly Rust toolchain.
 
@@ -12,7 +12,7 @@ Requires the nightly Rust toolchain.
 
 ### Recommended: LLM-assisted analysis
 
-Rust-cola is designed to work with an LLM (Large Language Model) for best results. The LLM filters false positives, rates severity, assesses exploitability, and suggests remediations—turning raw findings into an actionable security report.
+Rust-cola works best with an LLM. The LLM filters false positives, rates severity, assesses exploitability, and suggests fixes.
 
 ```mermaid
 flowchart LR

@@ -1,8 +1,6 @@
 # Rust-cola (Proof of Concept)
 
-Experimental security static analyzer for Rust. Compiles source code to extract MIR (Mid-level Intermediate Representation), an internal compiler format that makes data flow and unsafe operations explicit.
-
-Analyzing MIR instead of source code or AST can help find issues that source-level analyzers miss, such as data flow across functions, problems in unsafe blocks, and patterns that only appear after generics are resolved.
+Experimental security scanner for Rust. Works by compiling your code and analyzing the compiler's intermediate representation (MIR), which can reveal issues that source-level tools might miss.
 
 **Note:** The environment running cargo-cola must be able to compile the target code. This is required to extract MIR.
 
@@ -12,16 +10,7 @@ Requires the nightly Rust toolchain.
 
 ### Recommended: LLM-assisted analysis
 
-Rust-cola works best with an LLM. The LLM filters false positives, rates severity, assesses exploitability, and suggests fixes.
-
-**Workflow:**
-
-    cargo-cola → Artifact Set → LLM → Final Report
-    
-    1. cargo-cola analyzes MIR and produces raw findings
-    2. Artifact set: raw-findings.sarif, mir.json, ast.json, llm-prompt.md
-    3. LLM validates findings, assesses exploitability, rates severity, suggests remediation code
-    4. Final report: confirmed findings with severity scores and fix guidance
+Rust-cola works best with an LLM. The LLM helps filter false positives, rate severity, and suggest fixes.
 
 **Manual Workflow (Recommended):**
 
@@ -113,29 +102,23 @@ See the [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md) for custom rule
 
 ## Why It Requires Compilation
 
-Rust-cola analyzes MIR (Mid-level IR) from the compiler. This requires the target code to compile, but enables much deeper and more accurate security analysis than source-level or AST-based tools:
+Rust-cola analyzes MIR (Mid-level IR) from the compiler. This requires the target code to compile, but lets it see things source-level tools can't:
 
-- **Expanded macros:** Many vulnerabilities are hidden in macro-generated code. Only MIR shows the fully expanded program.
-- **Resolved generics and trait implementations:** Security issues in generic code or trait-based dispatch are visible only after type resolution.
-- **Accurate type and lifetime information:** MIR exposes the real types, lifetimes, and borrow checking, allowing detection of memory safety issues, use-after-free, and data races.
-- **Control/data flow and interprocedural analysis:** MIR enables tracking of tainted data across function boundaries, async/await, and complex control flow, supporting detection of injection, deserialization, and concurrency bugs.
-- **Detection of unsafe code and FFI issues:** MIR reveals low-level operations, pointer manipulation, and FFI boundaries that are invisible in the AST.
-
-Source-level and AST-based scanners can only see the surface structure of the code. They miss vulnerabilities that depend on macro expansion, type inference, trait resolution, or complex data/control flow. By requiring compilation and analyzing MIR, Rust-cola can detect a broader and more precise set of security issues, including those unique to Rust's type system and memory model.
+- **Expanded macros** — vulnerabilities hidden in macro-generated code become visible
+- **Resolved types and generics** — issues in generic code or trait dispatch are caught after type resolution
+- **Data flow across functions** — tracks tainted data through call chains, async/await, and complex control flow
 
 ## Interprocedural Analysis
 
-Five rules use interprocedural taint tracking to detect vulnerabilities that span multiple functions:
+Five rules track data flow across function calls to detect injection vulnerabilities:
 
-| Rule | ID | Description |
-|------|-----|-------------|
-| Path Traversal | RUSTCOLA086 | Tracks user input flowing to filesystem operations across function calls |
-| SQL Injection | RUSTCOLA087 | Detects tainted data reaching SQL query construction through call chains |
-| SSRF | RUSTCOLA088 | Follows untrusted input to HTTP request URLs across boundaries |
-| YAML Injection | RUSTCOLA089 | Tracks external input to YAML deserialization sinks |
-| Command Injection | RUSTCOLA098 | Inter-procedural variant detecting tainted data in shell commands |
-
-The analysis builds a call graph from MIR, generates function summaries (sources, sinks, sanitizers), and propagates taint across function boundaries. This catches injection vulnerabilities where user input enters in one function and reaches a dangerous sink in another.
+| Rule | ID |
+|------|-----|
+| Path Traversal | RUSTCOLA086 |
+| SQL Injection | RUSTCOLA087 |
+| SSRF | RUSTCOLA088 |
+| YAML Injection | RUSTCOLA089 |
+| Command Injection | RUSTCOLA098 |
 
 ### Depth Limits and Configuration
 
@@ -158,7 +141,7 @@ analysis:
 
 See `examples/cargo-cola.yaml` for a complete example.
 
-**Potential false negatives:** These limits may cause rust-cola to miss vulnerabilities in codebases with very deep call chains (>8 functions), extremely dense call graphs, or functions that call hundreds of other functions. For most real-world vulnerabilities, these limits are generous—security-relevant flows typically span fewer than 5 function calls.
+**Note:** These limits may cause missed findings in codebases with very deep call chains. For most real-world vulnerabilities, the defaults are sufficient.
 
 ## Options
 

@@ -247,8 +247,6 @@ Copilot runs the command, reads the generated prompt, and writes the final repor
 
 ### Acknowledgments
 
-This project was written out of respect for the Rust community.
-
 This project would not exist without AI tools: Claude (Opus and Sonnet), ChatGPT, and GitHub Copilot. The human involved is a recovering C++ programmer with a systems engineering background. Enough to guide the architecture and intent, but not enough to build this alone.
 
 There is much that can be iterated upon. I hope it is useful, or at least inspirational. Please [file issues](https://github.com/Opus-the-penguin/Rust-cola/issues).

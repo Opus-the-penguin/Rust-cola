@@ -220,11 +220,30 @@ There are various depths to which vulnerability detection logic can be iterated 
 | **Dataflow** | Intra-function value tracking | High | Uninitialized memory use |
 | **Interprocedural** | Cross-function taint tracking | Highest | SQL injection chains |
 
-Currently, the majority of rules in Rust-cola are at the **Heuristic** level, which means the rules engine will find things, but many will be false positives based on context that Rust-cola's current implementation does not understand. Hence, an LLM is employed with a context-enriched prompt to help with triage and precision. It is not perfect, but it is useful.
+Current distribution of the 126 rules:
 
-This project was written both out of respect for the Rust community—I've been watching it mature and become a de facto language of choice for systems engineering—and also as a tool to help audit Rust code at my current company, whose flagship product, [InfluxDB 3](https://github.com/influxdata/influxdb), is a Rust project.
+| Level | Rules | Percentage |
+|-------|-------|------------|
+| Heuristic | 63 | 50% |
+| Structural | 26 | 21% |
+| Dataflow | 32 | 25% |
+| Interprocedural | 5 | 4% |
 
-There is much that can be iterated upon, but I wanted to share it in hopes that it is useful, or at least inspirational. Good luck, and please [file issues](https://github.com/Opus-the-penguin/Rust-cola/issues)!
+The majority of rules are at the **Heuristic** level, which means the rules engine will find things, but many will be false positives based on context that Rust-cola's current implementation does not understand. Hence, an LLM is employed with a context-enriched prompt to help with triage and precision. It is not perfect, but it is useful.
+
+### Paths for Improvement
+
+**Enhancing rules:** Infrastructure exists for more sophisticated analysis—call graphs, taint propagation, dataflow frameworks—that heuristic rules could be upgraded to leverage. Moving a rule from heuristic to structural or dataflow analysis would reduce false positives at the source. See the [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md) for details on the available infrastructure.
+
+**Enriching the LLM prompt:** The quality of the LLM-generated report depends heavily on the context provided. The prompt template (`llm-prompt.md`) can be customized to include domain-specific knowledge about your codebase—threat models, trusted boundaries, deployment context—which helps the LLM make better triage decisions. The more context Rust-cola emits (and the more you augment it), the better the final report will be.
+
+### Acknowledgments
+
+This project was written out of respect for the Rust community and as a tool to help audit Rust code at my current company, whose flagship product, [InfluxDB 3](https://github.com/influxdata/influxdb), is a Rust project.
+
+This project would not exist without significant assistance from AI tools: Claude (Opus and Sonnet), ChatGPT, and GitHub Copilot. The human involved is a recovering C++ programmer with a systems engineering background—enough to guide the architecture and intent, but not enough to build this alone.
+
+There is much that can be iterated upon. I hope it is useful, or at least inspirational. Please [file issues](https://github.com/Opus-the-penguin/Rust-cola/issues).
 
 ## License
 

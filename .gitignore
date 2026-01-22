@@ -9,3 +9,11 @@ test_output/
 # Cached analysis outputs
 **/mir/
 **/*.cola-cache.json
+
+# Generated files
+*.pdf
+
+# VS Code extension
+vscode-extension/node_modules/
+vscode-extension/*.vsix
+vscode-extension/package-lock.json

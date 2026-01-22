@@ -202,7 +202,7 @@ Hence **Rust-cola**: the security analyzer that cleans Rust code of security vul
 
 Rust-cola is an experimental proof of concept. It explores two ideas:
 
-1. **Can LLMs help build security analyzers?** — Rules, prompts, and much of this codebase were written with AI assistance.
+1. **Can LLMs help build security analyzers?** — Rules and codebase were written with AI assistance.
 2. **Is MIR a better scan target than source code?** — Rust's intermediate representation sees through macros and resolves types, which source scanners can't do.
 
 It's not a complete product. It's functional as a rules engine that finds vulnerable patterns, but precision varies by rule.

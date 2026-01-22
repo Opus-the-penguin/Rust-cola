@@ -130,6 +130,8 @@ This file is designed for LLM consumption. It contains:
 
 Copy this entire file into Claude, ChatGPT, or your preferred LLM.
 
+**Adding context:** For better results, append relevant documents after the prompt: threat models, architecture diagrams, deployment context, or trusted boundary definitions. The more context the LLM has about your system, the better it can assess severity and filter false positives.
+
 ---
 
 ## LLM Integration

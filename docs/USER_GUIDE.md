@@ -243,6 +243,8 @@ cargo-cola --crate-path . --fail-on-findings true --no-llm-prompt
 
 cargo-cola works without configuration. The `cargo-cola.yaml` file is optional and only needed to customize analysis limits or add suppressions.
 
+**Analysis limits** control how far interprocedural taint tracking explores. Deeper/wider exploration catches more issues but uses more memory and time. The defaults work for most projects. For very large codebases, you may need to reduce limits to avoid running out of memory.
+
 Create `cargo-cola.yaml` in your project root to override defaults:
 
 ```yaml

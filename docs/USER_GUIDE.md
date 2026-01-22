@@ -189,6 +189,8 @@ Any OpenAI-compatible API works.
 
 ## CI/CD Integration
 
+Run cargo-cola on every commit to catch issues early. Optionally upload SARIF results to GitHub's Security tab for visibility in pull requests.
+
 ### GitHub Actions
 
 ```yaml

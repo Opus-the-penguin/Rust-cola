@@ -324,7 +324,7 @@ npm install
 npm run build
 ```
 
-Then in VS Code: Extensions → Install from VSIX → select the built `.vsix` file.
+This produces a `.vsix` file (the VS Code extension package format). Install it: Extensions → "..." menu → "Install from VSIX" → select the file.
 
 ### Usage
 

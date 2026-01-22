@@ -1,6 +1,6 @@
 # Rust-cola VS Code Extension
 
-A VS Code extension for running Rust-cola security scans with AI-powered analysis via GitHub Copilot.
+A VS Code extension for running Rust-cola security scans with GitHub Copilot integration.
 
 ## Features
 
@@ -61,23 +61,23 @@ Then press F5 in VS Code to launch the extension in a development host.
 2. Run the command "Rust-cola: Scan Current Workspace"
 3. View findings in the output
 
-### AI-Powered Security Analysis
+### Using Copilot Chat
 
 1. Open a Rust project in VS Code
 2. Open GitHub Copilot Chat
 3. Type `@rustcola /scan`
-4. Claude will run the scan and analyze the findings, producing a curated security report
+4. Copilot will run the scan and analyze the findings
 
 ### Example Output
 
 ```
 @rustcola /scan
 
-🔍 Starting Rust-cola security scan...
+Starting Rust-cola security scan...
 
-✅ Scan complete! Found 42 findings.
+Scan complete. Found 42 findings.
 
-📊 Generated LLM analysis context. Analyzing findings...
+Analyzing findings...
 
 ## Executive Summary
 

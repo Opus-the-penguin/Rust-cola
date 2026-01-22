@@ -6,7 +6,7 @@
 
 ## Overview
 
-`cargo-cola` generates `out/cola/llm-prompt.md` — a structured prompt that guides LLMs through security finding analysis. The prompt produces enterprise-ready reports with prioritized findings and code fixes.
+`cargo-cola` generates `out/cola/llm-prompt.md` - a structured prompt that guides LLMs through security finding analysis. The prompt helps produce reports with prioritized findings and code fixes.
 
 ## Generated Structure
 
@@ -75,7 +75,7 @@ Each true positive requires:
 
 ### 7. Required Output Format
 
-Enterprise-ready report structure:
+Report structure:
 
 ```markdown
 # Security Assessment Report: {PROJECT}

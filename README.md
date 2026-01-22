@@ -251,11 +251,6 @@ There is much that can be iterated upon. I hope it is useful, or at least inspir
 |----------|-------------|
 | [User Guide](docs/USER_GUIDE.md) | Installation, usage, configuration, CI/CD integration |
 | [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md) | Creating custom rules, YAML rulepacks, suppression |
-| [Overview](docs/RUST-COLA-OVERVIEW.md) | Architecture and design philosophy |
-| [LLM Prompt Reference](docs/prompts/llm-prompt-reference.md) | Structure of the generated LLM prompt |
-| [Detection Levels](docs/research/rule-detection-levels.md) | Rule sophistication taxonomy |
-| [Taint Tracking Design](docs/research/taint-tracking-design.md) | Interprocedural analysis architecture |
-| [Advanced Rules Plan](docs/research/advanced_rule_implementation_plan.md) | Roadmap for rule improvements |
 
 ## License
 

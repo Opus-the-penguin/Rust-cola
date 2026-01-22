@@ -2,7 +2,7 @@
 
 ## What It Is
 
-Rust-cola is an AI-powered security static analyzer for Rust code.
+Rust-cola is a security static analyzer for Rust code that uses LLM assistance for triage.
 
 AI is involved at three stages:
 

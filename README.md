@@ -25,16 +25,7 @@ Rust-cola works best with an LLM. The LLM helps filter false positives, rate sev
 
 3. The prompt tells the LLM to save its report to `out/cola/security-report.md`.
 
-**Automated:** Call an LLM API directly:
-
-```bash
-export RUSTCOLA_LLM_API_KEY=sk-...
-cargo-cola --crate-path . --llm-report out/cola/report.md \
-  --llm-endpoint https://api.openai.com/v1/chat/completions \
-  --llm-model gpt-4
-```
-
-Works with any OpenAI-compatible API (Anthropic, Ollama, local models via Ollama, etc.).
+**Automated (experimental):** There's also `--llm-endpoint` and `--llm-model` flags to call an LLM API directly, but the manual workflow above is more reliable.
 
 ### Standalone (no LLM)
 

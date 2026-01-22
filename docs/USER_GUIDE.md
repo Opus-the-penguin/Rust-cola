@@ -149,31 +149,9 @@ Then point your LLM at `out/cola/llm-prompt.md`:
 
 The prompt tells the LLM to save its report to `out/cola/security-report.md`.
 
-### Option 2: API Integration
+### Option 2: API Integration (Experimental)
 
-```bash
-export RUSTCOLA_LLM_API_KEY=sk-your-key
-
-# OpenAI
-cargo-cola --crate-path . \
-  --llm-report out/cola/report.md \
-  --llm-endpoint https://api.openai.com/v1/chat/completions \
-  --llm-model gpt-4
-
-# Anthropic (Claude)
-cargo-cola --crate-path . \
-  --llm-report out/cola/report.md \
-  --llm-endpoint https://api.anthropic.com/v1/messages \
-  --llm-model claude-sonnet-4-20250514
-
-# Local (Ollama)
-cargo-cola --crate-path . \
-  --llm-report out/cola/report.md \
-  --llm-endpoint http://localhost:11434/v1/chat/completions \
-  --llm-model llama3
-```
-
-Any OpenAI-compatible API works.
+There are `--llm-endpoint`, `--llm-model`, and `--llm-report` flags for direct API integration, but the manual workflow is more reliable. Set `RUSTCOLA_LLM_API_KEY` environment variable for authentication.
 
 ### What the LLM Does
 

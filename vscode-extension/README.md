@@ -1,5 +1,7 @@
 # Rust-cola VS Code Extension
 
+**Status: Experimental. This extension has not been tested and may not work.**
+
 A VS Code extension for running Rust-cola security scans with GitHub Copilot integration.
 
 ## Features

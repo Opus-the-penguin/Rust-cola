@@ -19,11 +19,11 @@ Rust-cola works best with an LLM. The LLM helps filter false positives, rate sev
    cargo-cola --crate-path /path/to/project
    ```
 
-2. Open the generated file `out/cola/llm-prompt.md`.
+2. Point your LLM at `out/cola/llm-prompt.md`:
+   - **VS Code + Copilot:** Reference the file in chat
+   - **Claude/ChatGPT:** Upload or paste the file contents
 
-3. Copy the contents into your AI coding assistant (Claude, ChatGPT, Copilot).
-
-4. Save the LLM's response as `security-report.md` in the same directory (the prompt includes save instructions).
+3. The prompt tells the LLM to save its report to `out/cola/security-report.md`.
 
 **Automated:** Call an LLM API directly:
 

@@ -143,10 +143,11 @@ Rust-cola is designed for LLM-assisted analysis. Raw findings have false positiv
 cargo-cola --crate-path .
 ```
 
-Then:
-1. Open `out/cola/llm-prompt.md`
-2. Paste into Claude/ChatGPT (the prompt includes all instructions)
-3. Save the LLM's response as `security-report.md` in the same directory
+Then point your LLM at `out/cola/llm-prompt.md`:
+- **VS Code + Copilot:** Reference the file in chat
+- **Claude/ChatGPT:** Upload or paste the file contents
+
+The prompt tells the LLM to save its report to `out/cola/security-report.md`.
 
 ### Option 2: API Integration
 

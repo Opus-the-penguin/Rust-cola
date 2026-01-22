@@ -240,7 +240,7 @@ cargo-cola --crate-path . --fail-on-findings true --no-llm-prompt
 
 ## Configuration
 
-cargo-cola works without configuration. The `cargo-cola.yaml` file is optional and only needed to customize analysis limits or add suppressions.
+cargo-cola works without configuration. The `cargo-cola.yaml` file is optional and only needed to customize analysis limits.
 
 **Analysis limits** control how far interprocedural taint tracking explores. Deeper/wider exploration catches more issues but uses more memory and time. The defaults work for most projects. For very large codebases, you may need to reduce limits to avoid running out of memory.
 
@@ -254,19 +254,6 @@ analysis:
   max_visited: 1000           # Functions per exploration (default: 1000)
   max_total_flows: 5000       # Total flows tracked (default: 5000)
   max_functions_for_ipa: 10000  # Skip IPA for huge crates (default: 10000)
-
-suppressions:
-  # Suppress by rule ID
-  - rule: RUSTCOLA042
-    reason: "Cookie security handled at load balancer"
-  
-  # Suppress by file pattern
-  - file: "**/tests/**"
-    reason: "Test code"
-  
-  # Suppress by function
-  - function: "legacy_handler"
-    reason: "Deprecated, scheduled for removal"
 ```
 
 Run with config:
@@ -290,23 +277,22 @@ fn dangerous_but_intentional() {
 }
 ```
 
-### Config Suppression
+### Rulepack Suppression
 
-See [Configuration](#configuration) above.
-
-### Rulepack Exclusion
-
-Disable specific rules via rulepack:
+Suppress specific rules via rulepack:
 
 ```yaml
-# disable-rules.yaml
-disabled_rules:
-  - RUSTCOLA042  # Cookie security
-  - RUSTCOLA043  # CORS
+# my-suppressions.yaml
+suppressions:
+  - rule_id: RUSTCOLA042
+    reason: "Cookie security handled at load balancer"
+  - rule_id: RUSTCOLA043
+    file: "**/tests/**"
+    reason: "Test code"
 ```
 
 ```bash
-cargo-cola --rulepack disable-rules.yaml --crate-path .
+cargo-cola --rulepack my-suppressions.yaml --crate-path .
 ```
 
 ---
@@ -341,8 +327,8 @@ Or skip IPA entirely with `max_functions_for_ipa: 0`.
 
 ### "Too many false positives"
 
-1. Use LLM analysis—it filters most FPs
-2. Suppress known-good patterns via config
+1. Use LLM analysis — it filters most FPs
+2. Suppress known-good patterns via rulepacks
 3. Report persistent FPs: [GitHub Issues](https://github.com/Opus-the-penguin/Rust-cola/issues)
 
 ### "Finding doesn't make sense"
@@ -358,5 +344,3 @@ Ensure the SARIF file exists and the path is correct. GitHub limits SARIF to 10M
 ## Further Reading
 
 - [Rule Development Guide](RULE_DEVELOPMENT_GUIDE.md) — Create custom rules
-- [Research: Detection Levels](research/rule-detection-levels.md) — Rule sophistication taxonomy
-- [Research: Taint Tracking](research/taint-tracking-design.md) — Interprocedural analysis architecture

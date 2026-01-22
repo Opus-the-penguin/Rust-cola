@@ -209,7 +209,12 @@ Hence **Rust-cola**: the security analyzer that cleans Rust code of security vul
 
 ## Why Rust-cola Was Created
 
-Rust-cola was created to add to the ecosystem of Rust safety and security tools. It is not a complete product. It is still in its inception stage, but it is functional as a static rules engine that discovers vulnerable patterns in Rust code.
+Rust-cola is an experimental proof of concept. It explores two ideas:
+
+1. **Can LLMs help build security analyzers?** — Rules, prompts, and much of this codebase were written with AI assistance.
+2. **Is MIR a better scan target than source code?** — Rust's intermediate representation sees through macros and resolves types, which source scanners can't do.
+
+It's not a complete product. It's functional as a rules engine that finds vulnerable patterns, but precision varies by rule.
 
 There are various depths to which vulnerability detection logic can be iterated upon to improve precision. One way to classify this is the following table from the [User Guide](docs/USER_GUIDE.md#detection-levels):
 

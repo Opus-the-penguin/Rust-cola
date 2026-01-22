@@ -13,8 +13,7 @@ A concise guide to finding security bugs in Rust code.
 5. [CI/CD Integration](#cicd-integration)
 6. [Configuration](#configuration)
 7. [Suppressing Findings](#suppressing-findings)
-8. [VS Code Extension](#vs-code-extension)
-9. [Troubleshooting](#troubleshooting)
+8. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -308,31 +307,6 @@ disabled_rules:
 
 ```bash
 cargo-cola --rulepack disable-rules.yaml --crate-path .
-```
-
----
-
-## VS Code Extension
-
-The `vscode-extension/` directory contains a Copilot Chat extension for in-editor analysis.
-
-### Installation
-
-```bash
-cd vscode-extension
-npm install
-npm run build
-```
-
-This produces a `.vsix` file (the VS Code extension package format). Install it: Extensions → "..." menu → "Install from VSIX" → select the file.
-
-### Usage
-
-In Copilot Chat:
-```
-@rustcola scan this file
-@rustcola explain finding RUSTCOLA087
-@rustcola suggest fix for line 42
 ```
 
 ---

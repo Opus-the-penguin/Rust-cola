@@ -241,7 +241,9 @@ cargo-cola --crate-path . --fail-on-findings true --no-llm-prompt
 
 ## Configuration
 
-Create `cargo-cola.yaml` in your project root:
+cargo-cola works without configuration. The `cargo-cola.yaml` file is optional and only needed to customize analysis limits or add suppressions.
+
+Create `cargo-cola.yaml` in your project root to override defaults:
 
 ```yaml
 analysis:

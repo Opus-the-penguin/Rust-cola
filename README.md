@@ -203,7 +203,7 @@ Hence **Rust-cola**: the security analyzer that cleans Rust code of security vul
 Rust-cola is an experimental proof of concept. It explores three ideas:
 
 1. **Can LLMs help build security analyzers?** Rules and codebase were written with AI assistance.
-2. **Is MIR a better scan target than source code?** MIR is generated after macro expansion, type resolution, and borrow checking. Rust's ownership and lifetime rules are already enforced, so the analyzer sees code that the compiler has already validated for memory safety. Source scanners don't have this context.
+2. **Is MIR a better scan target than source code?** MIR is generated after macro expansion, type resolution, and borrow checking. Source scanners don't have this.
 3. **Can LLMs improve precision by triaging findings?** A static rules engine is exhaustive: it finds every matching pattern in the code. That's useful for documentation, training, and trending. But not every pattern is exploitable. LLMs can assess context to help prioritize what actually needs fixing.
 
 It's not a complete product. It's functional as a rules engine that finds vulnerable patterns, but precision varies by rule.

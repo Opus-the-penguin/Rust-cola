@@ -171,8 +171,8 @@ Benchmarks on Apple M1 (8-core, 16GB RAM):
 | Crate | LOC | Findings | Time | Memory |
 |-------|-----|----------|------|--------|
 | ci-test-crate | 39 | 1 | 0.2s | <50MB |
-| influxdb3_authz | 430 | 8 | 1.6s | ~100MB |
-| influxdb3_server | 5,708 | 111 | 18s | 459MB |
+| small-crate | ~500 | 8 | 1.6s | ~100MB |
+| medium-crate | ~5,000 | 100+ | 18s | ~500MB |
 
 **Typical analysis rate:** ~300 LOC/second including full interprocedural analysis.
 
@@ -239,7 +239,7 @@ Most rules are at the **Heuristic** level. They will find things, but many will 
 
 ### Acknowledgments
 
-This project was written out of respect for the Rust community and as a tool to help audit Rust code at my current company, whose flagship product, [InfluxDB 3](https://github.com/influxdata/influxdb), is a Rust project.
+This project was written out of respect for the Rust community.
 
 This project would not exist without AI tools: Claude (Opus and Sonnet), ChatGPT, and GitHub Copilot. The human involved is a recovering C++ programmer with a systems engineering background. Enough to guide the architecture and intent, but not enough to build this alone.
 

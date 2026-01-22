@@ -207,6 +207,25 @@ When `--with-audit` is enabled:
 
 Hence **Rust-cola**: the security analyzer that cleans Rust code of security vulnerabilities.
 
+## Why Rust-cola Was Created
+
+Rust-cola was created to add to the ecosystem of Rust safety and security tools. It is not a complete product—it is still in its inception stage—but it is functional as a static rules engine that discovers vulnerable patterns in Rust code.
+
+There are various depths to which vulnerability detection logic can be iterated upon to improve precision. One way to classify this is the following table from the [User Guide](docs/USER_GUIDE.md#detection-levels):
+
+| Level | Method | Precision | Example |
+|-------|--------|-----------|---------|
+| **Heuristic** | Pattern matching on MIR text | Good | `transmute`, `into_raw` |
+| **Structural** | MIR statement/terminator analysis | Better | Mutex guard across await |
+| **Dataflow** | Intra-function value tracking | High | Uninitialized memory use |
+| **Interprocedural** | Cross-function taint tracking | Highest | SQL injection chains |
+
+Currently, the majority of rules in Rust-cola are at the **Heuristic** level, which means the rules engine will find things, but many will be false positives based on context that Rust-cola's current implementation does not understand. Hence, an LLM is employed with a context-enriched prompt to help with triage and precision. It is not perfect, but it is useful.
+
+This project was written both out of respect for the Rust community—I've been watching it mature and become a de facto language of choice for systems engineering—and also as a tool to help audit Rust code at my current company, whose flagship product, [InfluxDB 3](https://github.com/influxdata/influxdb), is a Rust project.
+
+There is much that can be iterated upon, but I wanted to share it in hopes that it is useful, or at least inspirational. Good luck, and please [file issues](https://github.com/Opus-the-penguin/Rust-cola/issues)!
+
 ## License
 
 MIT

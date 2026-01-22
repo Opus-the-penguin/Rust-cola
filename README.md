@@ -200,10 +200,11 @@ Hence **Rust-cola**: the security analyzer that cleans Rust code of security vul
 
 ## Why Rust-cola Was Created
 
-Rust-cola is an experimental proof of concept. It explores two ideas:
+Rust-cola is an experimental proof of concept. It explores three ideas:
 
 1. **Can LLMs help build security analyzers?** — Rules and codebase were written with AI assistance.
 2. **Is MIR a better scan target than source code?** — Rust's intermediate representation sees through macros and resolves types, which source scanners can't do.
+3. **Can LLMs improve precision by triaging findings?** — Static analysis generates false positives. LLMs can filter them by reasoning about context, reachability, and intent.
 
 It's not a complete product. It's functional as a rules engine that finds vulnerable patterns, but precision varies by rule.
 

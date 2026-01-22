@@ -237,6 +237,14 @@ Most rules are at the **Heuristic** level. They will find things, but many will 
 
 **Enriching the LLM prompt:** The quality of the LLM report depends on the context provided. The prompt template (`llm-prompt.md`) can be customized to include domain-specific knowledge about your codebase: threat models, trusted boundaries, deployment context. The more context, the better the report.
 
+### How I Use It
+
+I use VS Code with GitHub Copilot. Instead of running `cargo-cola` manually and copy/pasting the generated prompt into a separate LLM chat, I ask Copilot Chat to run the scan and process the results in one go:
+
+> "Run cargo-cola on ./my-crate, output to ./my-crate/out/cola, then read the llm-prompt.md and generate the security report."
+
+Copilot runs the command, reads the generated prompt, and writes the final report. Since the project is open in VS Code, the LLM also has access to the source code for additional context. This eliminates the manual copy/paste workflow.
+
 ### Acknowledgments
 
 This project was written out of respect for the Rust community.

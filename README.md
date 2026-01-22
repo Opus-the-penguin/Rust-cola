@@ -209,7 +209,7 @@ Hence **Rust-cola**: the security analyzer that cleans Rust code of security vul
 
 ## Why Rust-cola Was Created
 
-Rust-cola was created to add to the ecosystem of Rust safety and security tools. It is not a complete product—it is still in its inception stage—but it is functional as a static rules engine that discovers vulnerable patterns in Rust code.
+Rust-cola was created to add to the ecosystem of Rust safety and security tools. It is not a complete product. It is still in its inception stage, but it is functional as a static rules engine that discovers vulnerable patterns in Rust code.
 
 There are various depths to which vulnerability detection logic can be iterated upon to improve precision. One way to classify this is the following table from the [User Guide](docs/USER_GUIDE.md#detection-levels):
 
@@ -229,19 +229,19 @@ Current distribution of the 126 rules:
 | Dataflow | 32 | 25% |
 | Interprocedural | 5 | 4% |
 
-The majority of rules are at the **Heuristic** level, which means the rules engine will find things, but many will be false positives based on context that Rust-cola's current implementation does not understand. Hence, an LLM is employed with a context-enriched prompt to help with triage and precision. It is not perfect, but it is useful.
+Most rules are at the **Heuristic** level. They will find things, but many will be false positives because Rust-cola does not yet understand enough context. An LLM is employed with a context-enriched prompt to help with triage. It is not perfect, but it is useful.
 
 ### Paths for Improvement
 
-**Enhancing rules:** Infrastructure exists for more sophisticated analysis—call graphs, taint propagation, dataflow frameworks—that heuristic rules could be upgraded to leverage. Moving a rule from heuristic to structural or dataflow analysis would reduce false positives at the source. See the [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md) for details on the available infrastructure.
+**Enhancing rules:** Infrastructure exists for more sophisticated analysis (call graphs, taint propagation, dataflow frameworks) that heuristic rules could leverage. Moving a rule from heuristic to structural or dataflow would reduce false positives at the source. See the [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md) for details.
 
-**Enriching the LLM prompt:** The quality of the LLM-generated report depends heavily on the context provided. The prompt template (`llm-prompt.md`) can be customized to include domain-specific knowledge about your codebase—threat models, trusted boundaries, deployment context—which helps the LLM make better triage decisions. The more context Rust-cola emits (and the more you augment it), the better the final report will be.
+**Enriching the LLM prompt:** The quality of the LLM report depends on the context provided. The prompt template (`llm-prompt.md`) can be customized to include domain-specific knowledge about your codebase: threat models, trusted boundaries, deployment context. The more context, the better the report.
 
 ### Acknowledgments
 
 This project was written out of respect for the Rust community and as a tool to help audit Rust code at my current company, whose flagship product, [InfluxDB 3](https://github.com/influxdata/influxdb), is a Rust project.
 
-This project would not exist without significant assistance from AI tools: Claude (Opus and Sonnet), ChatGPT, and GitHub Copilot. The human involved is a recovering C++ programmer with a systems engineering background—enough to guide the architecture and intent, but not enough to build this alone.
+This project would not exist without AI tools: Claude (Opus and Sonnet), ChatGPT, and GitHub Copilot. The human involved is a recovering C++ programmer with a systems engineering background. Enough to guide the architecture and intent, but not enough to build this alone.
 
 There is much that can be iterated upon. I hope it is useful, or at least inspirational. Please [file issues](https://github.com/Opus-the-penguin/Rust-cola/issues).
 

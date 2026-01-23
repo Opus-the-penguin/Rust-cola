@@ -110,6 +110,10 @@ struct Args {
     #[arg(long, default_value = "4096")]
     llm_max_tokens: u32,
 
+    /// Temperature for LLM responses (0.0 = deterministic)
+    #[arg(long, default_value = "0.0")]
+    llm_temperature: f32,
+
     /// Generate a standalone raw human-readable security report (no LLM required)
     /// Defaults to <out_dir>/reports/raw-report.md if no path specified
     #[arg(long, num_args = 0..=1, default_missing_value = "")]
@@ -442,12 +446,14 @@ fn main() -> Result<()> {
                 model: args.llm_model.clone(),
                 api_key: args.llm_api_key.clone().unwrap_or_default(),
                 max_tokens: args.llm_max_tokens,
+                temperature: args.llm_temperature,
             });
             generate_llm_analysis(
                 llm_path,
                 &output.package.crate_name,
                 &output.analysis.findings,
                 &output.analysis.rules,
+                &audit_vulnerabilities,
                 llm_config.as_ref(),
             )?;
             println!("- LLM Report: {}", llm_path.display());
@@ -578,462 +584,6 @@ fn main() -> Result<()> {
     let total_functions: usize = package_outputs
         .iter()
         .map(|output| output.package.functions.len())
-        .sum();
-
-    let mut aggregated_findings: Vec<Finding> = Vec::new();
-    let mut aggregated_rules = Vec::new();
-    let mut seen_rule_ids = HashSet::new();
-    let mut sarif_reports = Vec::new();
-    let mut packages = Vec::new();
-
-    for output in &package_outputs {
-        aggregated_findings.extend(output.analysis.findings.clone());
-        for rule in &output.analysis.rules {
-            if seen_rule_ids.insert(rule.id.clone()) {
-                aggregated_rules.push(rule.clone());
-            }
-        }
-        sarif_reports.push(output.sarif.clone());
-        packages.push(output.package.clone());
-    }
-
-    let aggregated_sarif = merge_sarif_reports(&sarif_reports)?;
-
-    write_workspace_mir_json(&mir_json_path, &workspace_root, &packages)?;
-    write_findings_json(&findings_path, &aggregated_findings)?;
-    write_sarif_json(&sarif_path, &aggregated_sarif)?;
-
-    // Write AST JSON (workspace mode - automatic unless --no-ast)
-    let workspace_ast_path: Option<PathBuf> = if !args.no_ast {
-        let ast_path = resolve_output_path(
-            args.ast_json.clone(),
-            &args.out_dir,
-            "ast.json",
-            &timestamp,
-        );
-        let mut ast_packages = Vec::new();
-        for output in &package_outputs {
-            let crate_root = PathBuf::from(&output.package.crate_root);
-            if let Ok(ast_package) = collect_ast_package(&crate_root, &output.package.crate_name) {
-                ast_packages.push(ast_package);
-            }
-        }
-        if !ast_packages.is_empty() {
-            let workspace_ast = WorkspaceAst {
-                workspace_root: workspace_root.display().to_string(),
-                packages: ast_packages,
-            };
-            write_workspace_ast_json(&ast_path, &workspace_ast)?;
-            println!("- AST JSON: {}", ast_path.display());
-            Some(ast_path)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    // Generate LLM report if requested (workspace mode)
-    if let Some(llm_path) = &args.llm_report {
-        let project_name = workspace_root
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("workspace");
-        let llm_config = args.llm_endpoint.as_ref().map(|endpoint| LlmConfig {
-            endpoint: endpoint.clone(),
-            model: args.llm_model.clone(),
-            api_key: args.llm_api_key.clone().unwrap_or_default(),
-            max_tokens: args.llm_max_tokens,
-        });
-        generate_llm_analysis(
-            llm_path,
-            project_name,
-            &aggregated_findings,
-            &aggregated_rules,
-            llm_config.as_ref(),
-        )?;
-    }
-
-    // Generate standalone report (automatic unless --no-report) (workspace mode)
-    let project_name = workspace_root
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("workspace");
-
-    let workspace_report_path: Option<PathBuf> = if !args.no_report || args.report.is_some() {
-        let resolved_path = resolve_output_path(
-            args.report.clone(),
-            &args.out_dir,
-            "raw-report.md",
-            &timestamp,
-        );
-        generate_standalone_report(
-            &resolved_path,
-            project_name,
-            &aggregated_findings,
-            &aggregated_rules,
-            &audit_vulnerabilities,
-        )?;
-        println!("- Report: {}", resolved_path.display());
-        Some(resolved_path)
-    } else {
-        None
-    };
-
-    // Generate LLM prompt (automatic unless --no-llm-prompt) (workspace mode)
-    let workspace_llm_prompt_path: Option<PathBuf> = if !args.no_llm_prompt {
-        let prompt_path = resolve_output_path(
-            args.llm_prompt.clone(),
-            &args.out_dir,
-            "llm-prompt.md",
-            &timestamp,
-        );
-        generate_llm_prompt(
-            &prompt_path,
-            project_name,
-            &aggregated_findings,
-            &aggregated_rules,
-            &audit_vulnerabilities,
-        )?;
-        println!("- LLM Prompt: {}", prompt_path.display());
-        Some(prompt_path)
-    } else {
-        None
-    };
-
-    // Write HIR JSON (workspace mode - automatic when hir-driver feature is enabled)
-    #[cfg(feature = "hir-driver")]
-    let hir_summary_path: Option<PathBuf> = {
-        // For workspaces, create a combined HIR file similar to AST
-        let hir_path = resolve_output_path(
-            args.hir_json.clone(),
-            &args.out_dir,
-            "hir.json",
-            &timestamp,
-        );
-        
-        let mut hir_packages = Vec::new();
-        for output in &package_outputs {
-            if let Some(hir_package) = &output.hir {
-                hir_packages.push(hir_package.clone());
-            }
-        }
-        
-        if !hir_packages.is_empty() {
-            // Write combined HIR as array of packages
-            let combined = serde_json::json!({
-                "workspace_root": workspace_root.display().to_string(),
-                "packages": hir_packages
-            });
-            let json = serde_json::to_string_pretty(&combined)
-                .context("serialize workspace HIR")?;
-            fs::write(&hir_path, json)
-                .with_context(|| format!("write workspace HIR to {}", hir_path.display()))?;
-            println!("- HIR JSON: {}", hir_path.display());
-            Some(hir_path)
-        } else {
-            eprintln!("cargo-cola: no HIR captured for any crates in workspace");
-            None
-        }
-    };
-    #[cfg(not(feature = "hir-driver"))]
-    let hir_summary_path: Option<PathBuf> = None;
-
-    // Write manifest.json (workspace mode)
-    write_manifest(
-        &args.out_dir,
-        project_name,
-        total_functions,
-        aggregated_findings.len(),
-        &mir_json_path,
-        &findings_path,
-        &sarif_path,
-        workspace_ast_path.as_deref(),
-        hir_summary_path.as_deref(),
-        workspace_llm_prompt_path.as_deref(),
-        workspace_report_path.as_deref(),
-    )?;
-
-    println!(
-        "Analysis complete across {} crates: {} functions processed, {} findings.",
-        package_outputs.len(),
-        total_functions,
-        aggregated_findings.len()
-    );
-    println!("- MIR JSON: {}", mir_json_path.display());
-    println!("- Findings JSON: {}", findings_path.display());
-    println!("- SARIF: {}", sarif_path.display());
-    if let Some(llm_path) = &args.llm_report {
-        println!("- LLM Report: {}", llm_path.display());
-    }
-    if let Some(report_path) = &args.report {
-        let resolved = resolve_report_path(report_path, &args.out_dir, "raw-report.md");
-        println!("- Standalone Report: {}", resolved.display());
-    }
-    if let Some(prompt_path) = &args.llm_prompt {
-        let resolved = resolve_report_path(prompt_path, &args.out_dir, "llm-prompt.md");
-        println!("- LLM Prompt: {}", resolved.display());
-    }
-
-    if let Some(rendered) = format_findings_output(&aggregated_findings, &aggregated_rules) {
-        print!("{}", rendered);
-    }
-
-    if aggregated_findings.is_empty() {
-        println!("No findings — great job!");
-        mir_extractor::memory_profiler::final_report();
-        return Ok(());
-    }
-
-    mir_extractor::memory_profiler::final_report();
-    
-    if fail_on_findings {
-        std::process::exit(1);
-    }
-
-    Ok(())
-}
-
-fn print_summary_single(
-    mir_path: &Path,
-    findings_path: &Path,
-    sarif_path: &Path,
-    function_count: usize,
-    findings: &[Finding],
-    rules: &[mir_extractor::RuleMetadata],
-    hir_path: Option<&Path>,
-    ast_path: Option<&Path>,
-    report_path: Option<&Path>,
-    llm_prompt_path: Option<&Path>,
-) {
-    println!(
-        "Analysis complete: {} functions processed, {} findings.",
-        function_count,
-        findings.len()
-    );
-    println!("- MIR JSON: {}", mir_path.display());
-    println!("- Findings JSON: {}", findings_path.display());
-    println!("- SARIF: {}", sarif_path.display());
-    if let Some(path) = hir_path {
-        println!("- HIR JSON: {}", path.display());
-    }
-    if let Some(path) = ast_path {
-        println!("- AST JSON: {}", path.display());
-    }
-    if let Some(path) = report_path {
-        println!("- Report: {}", path.display());
-    }
-    if let Some(path) = llm_prompt_path {
-        println!("- LLM Prompt: {}", path.display());
-    }
-
-    if let Some(rendered) = format_findings_output(findings, rules) {
-        print!("{}", rendered);
-    }
-}
-
-fn format_findings_output(
-    findings: &[Finding],
-    rules: &[mir_extractor::RuleMetadata],
-) -> Option<String> {
-    if findings.is_empty() {
-        return None;
-    }
-
-    use std::fmt::Write as _;
-
-    let mut buffer = String::new();
-    let _ = writeln!(&mut buffer, "Findings:");
-
-    for finding in findings {
-        let rule_name = rules
-            .iter()
-            .find(|rule| rule.id == finding.rule_id)
-            .map(|rule| rule.name.as_str())
-            .unwrap_or("unknown-rule");
-        let location_display = finding
-            .span
-            .as_ref()
-            .map(|span| format_span(span))
-            .unwrap_or_else(|| finding.function.clone());
-        let _ = writeln!(
-            &mut buffer,
-            "- [{}|{}|{:?}] {} @ {}",
-            finding.rule_id, rule_name, finding.severity, finding.message, location_display
-        );
-
-        let _ = writeln!(&mut buffer, "    function: {}", finding.function_signature);
-
-        for evidence in &finding.evidence {
-            let _ = writeln!(&mut buffer, "    evidence: {}", evidence.trim());
-        }
-    }
-
-    Some(buffer)
-}
-
-fn format_span(span: &SourceSpan) -> String {
-    let path = Path::new(&span.file);
-    let display = path.display();
-
-    if span.start_line == span.end_line {
-        if span.start_column == span.end_column {
-            format!("{}:{}:{}", display, span.start_line, span.start_column)
-        } else {
-            format!(
-                "{}:{}:{}-{}",
-                display, span.start_line, span.start_column, span.end_column
-            )
-        }
-    } else {
-        format!(
-            "{}:{}:{}-{}:{}",
-            display, span.start_line, span.start_column, span.end_line, span.end_column
-        )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn format_span_displays_single_line_range() {
-        let span = SourceSpan {
-            file: "C:/workspace/demo/src/lib.rs".to_string(),
-            start_line: 10,
-            start_column: 5,
-            end_line: 10,
-            end_column: 17,
-        };
-
-        assert_eq!(format_span(&span), "C:/workspace/demo/src/lib.rs:10:5-17");
-    }
-
-    #[test]
-    fn format_span_displays_multi_line_range() {
-        let span = SourceSpan {
-            file: "C:/workspace/demo/src/lib.rs".to_string(),
-            start_line: 3,
-            start_column: 1,
-            end_line: 5,
-            end_column: 8,
-        };
-
-        assert_eq!(format_span(&span), "C:/workspace/demo/src/lib.rs:3:1-5:8");
-    }
-
-    #[test]
-    fn format_findings_output_includes_span_location() {
-        let rules = vec![mir_extractor::RuleMetadata {
-            id: "TEST001".to_string(),
-            name: "demo-rule".to_string(),
-            short_description: "demo short".to_string(),
-            full_description: "demo full".to_string(),
-            help_uri: None,
-            default_severity: mir_extractor::Severity::Medium,
-            origin: mir_extractor::RuleOrigin::BuiltIn,
-            cwe_ids: Vec::new(),
-            fix_suggestion: None,
-            exploitability: mir_extractor::Exploitability::default(),
-        }];
-
-        let findings = vec![Finding {
-            rule_id: "TEST001".to_string(),
-            rule_name: "demo-rule".to_string(),
-            severity: mir_extractor::Severity::Medium,
-            message: "Example finding".to_string(),
-            function: "demo::example".to_string(),
-            function_signature: "fn demo::example()".to_string(),
-            evidence: vec!["evidence line".to_string()],
-            span: Some(SourceSpan {
-                file: "C:/workspace/demo/src/lib.rs".to_string(),
-                start_line: 8,
-                start_column: 1,
-                end_line: 8,
-                end_column: 4,
-            }),
-            ..Default::default()
-        }];
-
-        let rendered = format_findings_output(&findings, &rules).expect("should render output");
-        assert!(rendered.contains("Findings:"));
-        assert!(rendered.contains("- [TEST001|demo-rule|"));
-        assert!(rendered.contains("@ C:/workspace/demo/src/lib.rs:8:1-4"));
-        assert!(rendered.contains("function: fn demo::example()"));
-        assert!(rendered.contains("evidence: evidence line"));
-    }
-
-    #[test]
-    fn format_findings_output_returns_none_for_empty_list() {
-        let rules = Vec::new();
-        assert!(format_findings_output(&[], &rules).is_none());
-    }
-}
-
-fn resolve_crate_roots(path: &Path) -> Result<(Vec<PathBuf>, PathBuf)> {
-    let canonical = if path.exists() {
-        fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
-    } else {
-        path.to_path_buf()
-    };
-
-    let mut cmd = MetadataCommand::new();
-    if canonical.is_file() {
-        cmd.manifest_path(&canonical);
-    } else {
-        cmd.current_dir(&canonical);
-    }
-    cmd.no_deps();
-
-    let metadata = cmd.exec().context("fetch cargo metadata")?;
-    let workspace_root = metadata.workspace_root.clone().into_std_path_buf();
-
-    // If there's a root package (single crate, not workspace), use it
-    if let Some(pkg) = metadata.root_package() {
-        let manifest_path = pkg.manifest_path.clone().into_std_path_buf();
-        let crate_root = manifest_path
-            .parent()
-            .ok_or_else(|| anyhow!("package manifest has no parent directory"))?
-            .to_path_buf();
-        return Ok((vec![crate_root], workspace_root));
-    }
-
-    // For workspaces: check if the user specified a path to a specific member
-    // If so, only scan that member, not the entire workspace
-    let member_ids: HashSet<_> = metadata.workspace_members.iter().cloned().collect();
-    let mut members = Vec::new();
-
-    for pkg in &metadata.packages {
-        if !member_ids.contains(&pkg.id) {
-            continue;
-        }
-
-        let manifest_path = pkg.manifest_path.clone();
-        let crate_root = manifest_path
-            .parent()
-            .ok_or_else(|| anyhow!("workspace package {} has no parent", pkg.name))?
-            .to_path_buf()
-            .into_std_path_buf();
-        members.push((pkg.name.clone(), crate_root));
-    }
-
-    // Check if the user-specified path matches a specific workspace member
-    // If so, only scan that member instead of the entire workspace
-    let user_canonical = fs::canonicalize(&canonical).unwrap_or_else(|_| canonical.clone());
-    let matching_member: Vec<_> = members
-        .iter()
-        .filter(|(_, member_path)| {
-            let member_canonical = fs::canonicalize(member_path).unwrap_or_else(|_| member_path.clone());
-            member_canonical == user_canonical || user_canonical.starts_with(&member_canonical)
-        })
-        .cloned()
-        .collect();
-
-    if matching_member.len() == 1 {
-        // User pointed to a specific workspace member - only scan that one
-        let crate_roots = matching_member.into_iter().map(|(_, path)| path).collect();
-        return Ok((crate_roots, workspace_root));
     }
 
     // No specific member matched - scan all workspace members
@@ -1219,6 +769,7 @@ struct LlmConfig {
     model: String,
     api_key: String,
     max_tokens: u32,
+    temperature: f32,
 }
 
 /// Call an LLM API to analyze findings and generate a curated security report.
@@ -1284,6 +835,7 @@ fn call_llm_api(config: &LlmConfig, prompt: &str) -> Result<String> {
         json!({
             "model": config.model,
             "max_tokens": config.max_tokens,
+            "temperature": config.temperature,
             "messages": [{
                 "role": "user",
                 "content": prompt
@@ -1299,12 +851,12 @@ fn call_llm_api(config: &LlmConfig, prompt: &str) -> Result<String> {
                     "content": "You are a senior security engineer specializing in Rust security analysis. Produce clear, actionable security reports with code fixes."
                 },
                 {
-                    "role": "user", 
+                    "role": "user",
                     "content": prompt
                 }
             ],
             "max_tokens": config.max_tokens,
-            "temperature": 0.3
+            "temperature": config.temperature
         })
     };
 
@@ -1358,68 +910,19 @@ fn generate_llm_analysis(
     project_name: &str,
     findings: &[Finding],
     rules: &[mir_extractor::RuleMetadata],
+    audit_vulns: &[AuditVulnerability],
     llm_config: Option<&LlmConfig>,
 ) -> Result<()> {
     use std::fmt::Write as _;
 
-    // First, generate the prompt content (same as write_llm_report)
-    let mut prompt_content = String::new();
-    
-    // Build the analysis prompt
-    writeln!(&mut prompt_content, "Analyze the following {} security findings from the Rust project '{}'.", 
-        findings.len(), project_name)?;
-    writeln!(&mut prompt_content)?;
-    writeln!(&mut prompt_content, "## Instructions")?;
-    writeln!(&mut prompt_content)?;
-    writeln!(&mut prompt_content, "Produce a security report with:")?;
-    writeln!(&mut prompt_content, "1. **Executive Summary** - Total findings, true positives vs false positives, top 3 critical issues")?;
-    writeln!(&mut prompt_content, "2. **True Positives** - For each real vulnerability:")?;
-    writeln!(&mut prompt_content, "   - Severity (Critical/High/Medium/Low), CVSS estimate")?;
-    writeln!(&mut prompt_content, "   - Attack scenario")?;
-    writeln!(&mut prompt_content, "   - **Vulnerable code** (from evidence)")?;
-    writeln!(&mut prompt_content, "   - **Recommended fix** with corrected Rust code")?;
-    writeln!(&mut prompt_content, "3. **False Positives** - Explain why each is likely a false detection")?;
-    writeln!(&mut prompt_content, "4. **Remediation Priority** - P0 (immediate), P1 (sprint), P2 (quarter)")?;
-    writeln!(&mut prompt_content)?;
-    writeln!(&mut prompt_content, "### Fix Patterns Reference")?;
-    writeln!(&mut prompt_content, "- SQL Injection: Use `.bind()` or `?` placeholders")?;
-    writeln!(&mut prompt_content, "- Path Traversal: `path.canonicalize()?.starts_with(base)`")?;
-    writeln!(&mut prompt_content, "- Regex Injection: `regex::escape(&input)`")?;
-    writeln!(&mut prompt_content, "- SSRF: Validate URL host against allowlist")?;
-    writeln!(&mut prompt_content, "- Unbounded Allocation: Add size check before allocation")?;
-    writeln!(&mut prompt_content)?;
-
-    // Rule reference
-    writeln!(&mut prompt_content, "## Rule Reference")?;
-    writeln!(&mut prompt_content)?;
-    for rule in rules {
-        writeln!(&mut prompt_content, "- **{}** ({}): {} [Severity: {:?}]", 
-            rule.id, rule.name, rule.short_description, rule.default_severity)?;
-    }
-    writeln!(&mut prompt_content)?;
-
-    // Findings
-    writeln!(&mut prompt_content, "## Findings to Analyze")?;
-    writeln!(&mut prompt_content)?;
-    
-    for (i, finding) in findings.iter().enumerate() {
-        writeln!(&mut prompt_content, "### Finding {}: {} - {}", i + 1, finding.rule_id, finding.rule_name)?;
-        writeln!(&mut prompt_content, "- **Severity:** {:?}", finding.severity)?;
-        writeln!(&mut prompt_content, "- **Function:** `{}`", finding.function)?;
-        if let Some(span) = &finding.span {
-            writeln!(&mut prompt_content, "- **File:** {}:{}-{}", span.file, span.start_line, span.end_line)?;
-        }
-        writeln!(&mut prompt_content, "- **Message:** {}", finding.message)?;
-        if !finding.evidence.is_empty() {
-            writeln!(&mut prompt_content, "- **Evidence:**")?;
-            for ev in &finding.evidence {
-                writeln!(&mut prompt_content, "```")?;
-                writeln!(&mut prompt_content, "{}", ev.trim())?;
-                writeln!(&mut prompt_content, "```")?;
-            }
-        }
-        writeln!(&mut prompt_content)?;
-    }
+    let prompt_content = build_llm_prompt_content(
+        project_name,
+        findings,
+        audit_vulns,
+        None,
+        false,
+        Some(rules),
+    )?;
 
     // If LLM config provided, call the API
     let final_content = if let Some(config) = llm_config {
@@ -1701,16 +1204,15 @@ fn generate_standalone_report(
     Ok(())
 }
 
-/// Generate an LLM prompt file for use with IDE-integrated AI assistants
-/// This creates a markdown file with findings formatted as a prompt ready to paste
-/// into Copilot Chat, Cursor, or any other AI assistant integrated into the IDE.
-fn generate_llm_prompt(
-    path: &Path,
+/// Build the canonical LLM prompt content shared by manual and automated workflows.
+fn build_llm_prompt_content(
     project_name: &str,
     findings: &[Finding],
-    _rules: &[mir_extractor::RuleMetadata],
     audit_vulns: &[AuditVulnerability],
-) -> Result<()> {
+    prompt_path: Option<&Path>,
+    include_save_instructions: bool,
+    rule_reference: Option<&[mir_extractor::RuleMetadata]>,
+) -> Result<String> {
     use std::fmt::Write as _;
 
     let mut content = String::new();
@@ -1724,12 +1226,22 @@ fn generate_llm_prompt(
     writeln!(&mut content)?;
 
     // ===== SAVE INSTRUCTIONS =====
-    writeln!(content, "> **Save Instructions:** After analysis, save the generated report as `security-report.md`")?;
-    writeln!(content, "> in the same directory as this prompt file (`{}`), or use the automated option:", path.parent().map(|p| p.display().to_string()).unwrap_or_else(|| ".".to_string()))?;
-    writeln!(content, "> ```")?;
-    writeln!(content, "> cargo-cola --crate-path <PROJECT> --llm-report {}/security-report.md", path.parent().map(|p| p.display().to_string()).unwrap_or_else(|| "out/cola".to_string()))?;
-    writeln!(content, "> ```")?;
-    writeln!(&mut content)?;
+    if include_save_instructions {
+        let prompt_dir_display = prompt_path
+            .and_then(|p| p.parent())
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| ".".to_string());
+        let report_dir_display = prompt_path
+            .and_then(|p| p.parent())
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "out/cola".to_string());
+        writeln!(content, "> **Save Instructions:** After analysis, save the generated report as `security-report.md`")?;
+        writeln!(content, "> in the same directory as this prompt file (`{}`), or use the automated option:", prompt_dir_display)?;
+        writeln!(content, "> ```")?;
+        writeln!(content, "> cargo-cola --crate-path <PROJECT> --llm-report {}/security-report.md", report_dir_display)?;
+        writeln!(content, "> ```")?;
+        writeln!(&mut content)?;
+    }
 
     // ===== ROLE & OBJECTIVE =====
     writeln!(content, "## Your Role")?;
@@ -1743,35 +1255,41 @@ fn generate_llm_prompt(
     writeln!(content, "- **Leadership**: Need executive summary and risk posture")?;
     writeln!(&mut content)?;
 
-    // ===== MANDATORY SOURCE VERIFICATION (STEP 0) =====
+    // ===== SOURCE VERIFICATION (STEP 0) =====
     writeln!(content, "---")?;
-    writeln!(content, "## Step 0: Source Code Verification (MANDATORY)")?;
+    writeln!(content, "## Step 0: Source Verification (MANDATORY)")?;
     writeln!(&mut content)?;
     writeln!(content, "⚠️ **CRITICAL: You MUST read the actual source file before analyzing ANY finding.**")?;
     writeln!(&mut content)?;
     writeln!(content, "### Why This Matters")?;
     writeln!(&mut content)?;
-    writeln!(content, "Static analysis tools report line numbers and code patterns, but:")?;
+    writeln!(content, "Static analysis tools report line numbers and patterns, but:")?;
     writeln!(content, "- The reported line may have changed since analysis")?;
-    writeln!(content, "- The evidence snippets may be MIR (intermediate representation), not source code")?;
+    writeln!(content, "- Evidence snippets may be MIR, not the real source")?;
     writeln!(content, "- Context around the line is essential for accurate assessment")?;
     writeln!(&mut content)?;
     writeln!(content, "### Verification Checklist")?;
     writeln!(&mut content)?;
-    writeln!(content, "For EVERY finding you include in the report:")?;
+    writeln!(content, "For EVERY finding you keep in the report:")?;
     writeln!(&mut content)?;
     writeln!(content, "| Step | Action | If You Cannot Complete |")?;
     writeln!(content, "|------|--------|------------------------|")?;
-    writeln!(content, "| **1. Read the file** | Use file read tools to get the actual source at the reported line | Mark finding as UNVERIFIED |")?;
-    writeln!(content, "| **2. Confirm the pattern** | Verify the vulnerable code pattern exists as reported | Dismiss as false positive |")?;
-    writeln!(content, "| **3. Check context** | Read 20-50 lines around the finding for guards, limits, or sanitization | Note any mitigations found |")?;
-    writeln!(content, "| **4. Trace call chain** | For EXPOSED/INDIRECT, verify entry points actually call this code | Downgrade reachability if uncertain |")?;
+    writeln!(content, "| **1. Read the file** | Fetch the actual source at the reported lines | Mark finding as UNVERIFIED |")?;
+    writeln!(content, "| **2. Confirm the pattern** | Ensure the vulnerable construct truly exists | Dismiss as false positive |")?;
+    writeln!(content, "| **3. Check context** | Read 20-50 surrounding lines for guards/sanitizers | Note mitigations found |")?;
+    writeln!(content, "| **4. Trace call chain** | Verify the entry point reaches this code | Downgrade reachability if uncertain |")?;
+    writeln!(&mut content)?;
+    writeln!(content, "### Before analyzing anything else:")?;
+    writeln!(&mut content)?;
+    writeln!(content, "1. Cross-check every file + line reference against the entries in **Findings to Analyze**.")?;
+    writeln!(content, "2. Only quote code that appears in the provided Evidence blocks or verified source reads. Do **not** invent or reformat snippets.")?;
+    writeln!(content, "3. If a file path, line number, or snippet cannot be matched verbatim to the prompt or verified source, exclude the finding (note it as dismissed for lack of evidence).")?;
     writeln!(&mut content)?;
     writeln!(content, "### NEVER Do This")?;
     writeln!(&mut content)?;
     writeln!(content, "❌ **NEVER synthesize or guess what code looks like**")?;
-    writeln!(content, "❌ **NEVER copy code snippets from the tool output without verification**")?;
-    writeln!(content, "❌ **NEVER write \"Vulnerable Code:\" blocks without reading the actual file**")?;
+    writeln!(content, "❌ **NEVER copy code snippets from tool output without verification**")?;
+    writeln!(content, "❌ **NEVER write `Vulnerable Code` sections without reading the actual file**")?;
     writeln!(content, "❌ **NEVER invent variable names, function signatures, or code patterns**")?;
     writeln!(&mut content)?;
     writeln!(content, "### Required Evidence Format")?;
@@ -1784,6 +1302,7 @@ fn generate_llm_prompt(
     writeln!(content, "```")?;
     writeln!(content, "```")?;
     writeln!(&mut content)?;
+    writeln!(content, "This verification step prevents hallucinated file paths and keeps conclusions grounded in static analysis output plus real source context.")?;
 
     // ===== PRUNING INSTRUCTIONS (MANDATORY - FIRST) =====
     writeln!(content, "---")?;
@@ -1980,6 +1499,7 @@ fn generate_llm_prompt(
     writeln!(content, "## Required Output Format")?;
     writeln!(&mut content)?;
     writeln!(content, "Generate the report in this exact structure:")?;
+    writeln!(content, "> Do not create new findings, functions, files, or line numbers beyond what is present in the Findings table. If information is missing, state 'Insufficient data in prompt' instead of guessing.")?;
     writeln!(&mut content)?;
     writeln!(content, "````markdown")?;
     writeln!(content, "# Security Assessment Report: {}", project_name)?;
@@ -2091,6 +1611,19 @@ fn generate_llm_prompt(
     writeln!(content, "````")?;
     writeln!(&mut content)?;
 
+    if let Some(rules) = rule_reference {
+        if !rules.is_empty() {
+            writeln!(content, "---")?;
+            writeln!(content, "## Rule Reference")?;
+            writeln!(&mut content)?;
+            for rule in rules {
+                writeln!(content, "- **{}** ({}): {} [Severity: {:?}]",
+                    rule.id, rule.name, rule.short_description, rule.default_severity)?;
+            }
+            writeln!(&mut content)?;
+        }
+    }
+
     // ===== DEPENDENCY VULNERABILITIES (if any) =====
     if !audit_vulns.is_empty() {
         writeln!(content, "---")?;
@@ -2181,6 +1714,16 @@ fn generate_llm_prompt(
         writeln!(&mut content)?;
     }
 
+    // ===== OUTPUT VERIFICATION =====
+    writeln!(content, "## Step 6: Output Verification")?;
+    writeln!(&mut content)?;
+    writeln!(content, "Before delivering the report:")?;
+    writeln!(content, "- Re-read your draft and highlight every code/file reference.")?;
+    writeln!(content, "- Confirm each path + line exists in the Findings table and the quoted snippet matches the provided Evidence block exactly (no invention or rewording).")?;
+    writeln!(content, "- Ensure every Exploitable/Not exploitable statement agrees with the reachability table created in Step 2.")?;
+    writeln!(content, "- If any reference cannot be tied back to the static findings, replace it with `Unknown – not present in static findings` and explain the gap instead of speculating.")?;
+    writeln!(&mut content)?;
+
     // ===== FINAL REMINDERS =====
     writeln!(content, "## Final Checklist")?;
     writeln!(&mut content)?;
@@ -2199,7 +1742,28 @@ fn generate_llm_prompt(
     writeln!(content, "- [ ] Roadmap has clear priorities and effort estimates")?;
     writeln!(&mut content)?;
 
-    // Write file
+    Ok(content)
+}
+
+/// Generate an LLM prompt file for use with IDE-integrated AI assistants
+/// This creates a markdown file with findings formatted as a prompt ready to paste
+/// into Copilot Chat, Cursor, or any other AI assistant integrated into the IDE.
+fn generate_llm_prompt(
+    path: &Path,
+    project_name: &str,
+    findings: &[Finding],
+    _rules: &[mir_extractor::RuleMetadata],
+    audit_vulns: &[AuditVulnerability],
+) -> Result<()> {
+    let content = build_llm_prompt_content(
+        project_name,
+        findings,
+        audit_vulns,
+        Some(path),
+        true,
+        None,
+    )?;
+
     if let Some(parent) = path.parent() {
         if !parent.exists() {
             fs::create_dir_all(parent)?;
@@ -2208,9 +1772,9 @@ fn generate_llm_prompt(
     let mut file = File::create(path)
         .with_context(|| format!("create LLM prompt at {}", path.display()))?;
     file.write_all(content.as_bytes())?;
-    
+
     eprintln!("  LLM prompt written to: {}", path.display());
-    
+
     Ok(())
 }
 

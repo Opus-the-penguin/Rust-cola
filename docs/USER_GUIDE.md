@@ -151,7 +151,7 @@ The prompt tells the LLM to save its report to `out/cola/security-report.md`.
 
 ### Option 2: API Integration (Experimental)
 
-There are `--llm-endpoint`, `--llm-model`, and `--llm-report` flags for direct API integration, but the manual workflow is more reliable. Set `RUSTCOLA_LLM_API_KEY` environment variable for authentication.
+There are `--llm-endpoint`, `--llm-model`, `--llm-temperature`, and `--llm-report` flags for direct API integration, but the manual workflow is more reliable. Set `RUSTCOLA_LLM_API_KEY` environment variable for authentication. Lower temperatures (close to 0.0) keep results deterministic; higher values allow more creative summaries.
 
 ### What the LLM Does
 

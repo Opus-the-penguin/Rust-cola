@@ -22,7 +22,7 @@ A concise guide to finding security bugs in Rust code.
 Rust-cola doesn't scan source code—it analyzes MIR (Mid-level Intermediate Representation), the compiler's internal format after macro expansion, type resolution, and borrow checking.
 
 ```
-Source Code → rustc → MIR → Rust-cola → Findings
+Source Code → rustc → MIR → Rust-cola → Findings → LLM triage → Security report
 ```
 
 **Why this matters:**

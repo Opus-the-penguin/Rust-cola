@@ -1,4 +1,8 @@
 [workspace]
+default-members = [
+    "cargo-cola",
+    "mir-extractor",
+]
 members = [
     "cargo-cola",
     "mir-extractor",

@@ -1743,11 +1743,53 @@ fn generate_llm_prompt(
     writeln!(content, "- **Leadership**: Need executive summary and risk posture")?;
     writeln!(&mut content)?;
 
+    // ===== MANDATORY SOURCE VERIFICATION (STEP 0) =====
+    writeln!(content, "---")?;
+    writeln!(content, "## Step 0: Source Code Verification (MANDATORY)")?;
+    writeln!(&mut content)?;
+    writeln!(content, "⚠️ **CRITICAL: You MUST read the actual source file before analyzing ANY finding.**")?;
+    writeln!(&mut content)?;
+    writeln!(content, "### Why This Matters")?;
+    writeln!(&mut content)?;
+    writeln!(content, "Static analysis tools report line numbers and code patterns, but:")?;
+    writeln!(content, "- The reported line may have changed since analysis")?;
+    writeln!(content, "- The evidence snippets may be MIR (intermediate representation), not source code")?;
+    writeln!(content, "- Context around the line is essential for accurate assessment")?;
+    writeln!(&mut content)?;
+    writeln!(content, "### Verification Checklist")?;
+    writeln!(&mut content)?;
+    writeln!(content, "For EVERY finding you include in the report:")?;
+    writeln!(&mut content)?;
+    writeln!(content, "| Step | Action | If You Cannot Complete |")?;
+    writeln!(content, "|------|--------|------------------------|")?;
+    writeln!(content, "| **1. Read the file** | Use file read tools to get the actual source at the reported line | Mark finding as UNVERIFIED |")?;
+    writeln!(content, "| **2. Confirm the pattern** | Verify the vulnerable code pattern exists as reported | Dismiss as false positive |")?;
+    writeln!(content, "| **3. Check context** | Read 20-50 lines around the finding for guards, limits, or sanitization | Note any mitigations found |")?;
+    writeln!(content, "| **4. Trace call chain** | For EXPOSED/INDIRECT, verify entry points actually call this code | Downgrade reachability if uncertain |")?;
+    writeln!(&mut content)?;
+    writeln!(content, "### NEVER Do This")?;
+    writeln!(&mut content)?;
+    writeln!(content, "❌ **NEVER synthesize or guess what code looks like**")?;
+    writeln!(content, "❌ **NEVER copy code snippets from the tool output without verification**")?;
+    writeln!(content, "❌ **NEVER write \"Vulnerable Code:\" blocks without reading the actual file**")?;
+    writeln!(content, "❌ **NEVER invent variable names, function signatures, or code patterns**")?;
+    writeln!(&mut content)?;
+    writeln!(content, "### Required Evidence Format")?;
+    writeln!(&mut content)?;
+    writeln!(content, "When showing vulnerable code, include verification:")?;
+    writeln!(content, "```")?;
+    writeln!(content, "**Verified Source** (read from `src/handler.rs` lines 145-152):")?;
+    writeln!(content, "```rust")?;
+    writeln!(content, "// ACTUAL CODE from source file")?;
+    writeln!(content, "```")?;
+    writeln!(content, "```")?;
+    writeln!(&mut content)?;
+
     // ===== PRUNING INSTRUCTIONS (MANDATORY - FIRST) =====
     writeln!(content, "---")?;
-    writeln!(content, "## Step 1: Aggressive Pruning (DO THIS FIRST)")?;
+    writeln!(content, "## Step 1: Aggressive Pruning")?;
     writeln!(&mut content)?;
-    writeln!(content, "Before any analysis, **prune false positives aggressively**. A concise report with real issues is more valuable than a comprehensive report with noise.")?;
+    writeln!(content, "After verifying findings exist, **prune false positives aggressively**. A concise report with real issues is more valuable than a comprehensive report with noise.")?;
     writeln!(&mut content)?;
     writeln!(content, "### Automatic False Positive Criteria")?;
     writeln!(&mut content)?;
@@ -1924,6 +1966,8 @@ fn generate_llm_prompt(
     writeln!(&mut content)?;
     writeln!(content, "### Remediation Quality Checklist")?;
     writeln!(&mut content)?;
+    writeln!(content, "- [ ] **SOURCE VERIFIED**: Code snippet was read from actual source file, not synthesized")?;
+    writeln!(content, "- [ ] **LINE CONFIRMED**: The reported line number matches the vulnerable pattern")?;
     writeln!(content, "- [ ] Code compiles (valid Rust syntax)")?;
     writeln!(content, "- [ ] Uses idiomatic Rust patterns")?;
     writeln!(content, "- [ ] Recommends well-maintained crates (check if unsure)")?;
@@ -2142,6 +2186,8 @@ fn generate_llm_prompt(
     writeln!(&mut content)?;
     writeln!(content, "Before submitting your report, verify:")?;
     writeln!(&mut content)?;
+    writeln!(content, "- [ ] **CRITICAL: Every code snippet was read from actual source files, NOT synthesized**")?;
+    writeln!(content, "- [ ] **CRITICAL: Line numbers verified against source - finding exists at reported location**")?;
     writeln!(content, "- [ ] All test/example/benchmark code findings dismissed with evidence")?;
     writeln!(content, "- [ ] Each true positive has reachability classification")?;
     writeln!(content, "- [ ] **CRITICAL: Each AUTHENTICATED claim has evidence (middleware location, no bypass flags)**")?;

@@ -150,7 +150,7 @@ See `examples/cargo-cola.yaml` for a complete example.
 | `--llm-report <PATH>` | Generate report via LLM API |
 | `--llm-endpoint <URL>` | LLM API endpoint |
 | `--llm-model <NAME>` | Model name (e.g., gpt-4, llama3) |
-| `--llm-temperature <FLOAT>` | Sampling temperature (0.0 is deterministic; higher values allow more creative but less consistent output) |
+| `--llm-temperature <FLOAT>` | Sampling temperature for LLM responses (default: `0.0`, range: `0.0`–`1.0`). `0.0` is fully deterministic for reproducible reports; higher values increase creativity but reduce consistency |
 | `--report <PATH>` | Generate standalone heuristic report |
 | `--no-report` | Suppress standalone report |
 | `--with-audit` | Run cargo-audit to check dependencies |

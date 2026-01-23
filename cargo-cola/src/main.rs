@@ -1800,6 +1800,34 @@ fn generate_llm_prompt(
     writeln!(content, "```")?;
     writeln!(&mut content)?;
 
+    // ===== MANDATORY AUTHENTICATION VERIFICATION =====
+    writeln!(content, "### ⚠️ MANDATORY: Authentication Verification Checklist")?;
+    writeln!(&mut content)?;
+    writeln!(content, "**Before classifying ANY finding as AUTHENTICATED, you MUST verify ALL of the following:**")?;
+    writeln!(&mut content)?;
+    writeln!(content, "| Check | How to Verify | If Uncertain |")?;
+    writeln!(content, "|-------|---------------|--------------|")?;
+    writeln!(content, "| **1. Auth middleware exists** | Search for `auth`, `authenticate`, `authorize`, `bearer`, `token` in HTTP handler chain | Assume EXPOSED |")?;
+    writeln!(content, "| **2. Auth is mandatory** | Check for `--without-auth`, `--no-auth`, `DISABLE_AUTH` flags/env vars | Assume EXPOSED (worst-case) |")?;
+    writeln!(content, "| **3. Endpoint is protected** | Verify endpoint is NOT in any auth bypass list (`public_routes`, `skip_auth`, etc.) | Assume EXPOSED |")?;
+    writeln!(content, "| **4. Auth cannot be bypassed** | Check for debug modes, test modes, or feature flags that disable auth | Note as CONFIG-DEPENDENT |")?;
+    writeln!(&mut content)?;
+    writeln!(content, "**Required Evidence Format for AUTHENTICATED classification:**")?;
+    writeln!(content, "```")?;
+    writeln!(content, "Authentication Status: AUTHENTICATED")?;
+    writeln!(content, "Evidence:")?;
+    writeln!(content, "  - Middleware: `AuthMiddleware` applied at router level (src/http.rs:45)")?;
+    writeln!(content, "  - No bypass flags found for this endpoint")?;
+    writeln!(content, "  - Endpoint NOT in public_routes list")?;
+    writeln!(content, "  - Auth required by default (--without-auth flag exists but disabled by default)")?;
+    writeln!(content, "Caveat: Exploitable if server started with --without-auth flag")?;
+    writeln!(content, "```")?;
+    writeln!(&mut content)?;
+    writeln!(content, "**If auth can be disabled via config, state BOTH scenarios:**")?;
+    writeln!(content, "> \"Reachability: EXPOSED when `--without-auth` is used; AUTHENTICATED in default configuration.\"")?;
+    writeln!(content, "> \"Severity assessment uses worst-case (EXPOSED) for final rating.\"")?;
+    writeln!(&mut content)?;
+
     // ===== IMPACT TAXONOMY =====
     writeln!(content, "---")?;
     writeln!(content, "## Step 3: Impact Classification")?;
@@ -2116,6 +2144,8 @@ fn generate_llm_prompt(
     writeln!(&mut content)?;
     writeln!(content, "- [ ] All test/example/benchmark code findings dismissed with evidence")?;
     writeln!(content, "- [ ] Each true positive has reachability classification")?;
+    writeln!(content, "- [ ] **CRITICAL: Each AUTHENTICATED claim has evidence (middleware location, no bypass flags)**")?;
+    writeln!(content, "- [ ] **CRITICAL: Auth bypass flags (--without-auth, etc.) documented if they exist**")?;
     writeln!(content, "- [ ] Each true positive has impact type (RCE/INJ/DOS/etc.)")?;
     writeln!(content, "- [ ] Severity reflects reachability, not just base CVSS")?;
     writeln!(content, "- [ ] Remediation includes compilable code fixes")?;

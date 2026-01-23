@@ -38,6 +38,17 @@ Mandatory false positive elimination before analysis:
 | INTERNAL | Only internal callers | -2 levels |
 | CONFIG-DRIVEN | From config files | Context-dependent |
 
+#### ⚠️ MANDATORY: Authentication Verification Checklist
+
+Before classifying ANY finding as AUTHENTICATED, the analyst MUST verify:
+
+1. **Auth middleware exists** - Search for `auth`, `authenticate`, `bearer`, `token` in handler chain
+2. **Auth is mandatory** - Check for `--without-auth`, `DISABLE_AUTH` flags/env vars
+3. **Endpoint is protected** - Verify endpoint is NOT in any auth bypass list
+4. **Auth cannot be bypassed** - Check for debug modes or feature flags that disable auth
+
+If auth can be disabled via config, the prompt requires stating BOTH scenarios and using worst-case for severity rating.
+
 ### 4. Step 3: Impact Taxonomy
 
 | Impact Type | Code | Typical Severity |

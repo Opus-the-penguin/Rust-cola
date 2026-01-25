@@ -11,12 +11,15 @@
 
 #![allow(dead_code)]
 
+use crate::line_has_world_writable_mode;
+use crate::prototypes;
+use crate::{
+    Confidence, Exploitability, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin,
+    Severity,
+};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
-use crate::{Exploitability, Confidence, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
-use crate::prototypes;
-use crate::line_has_world_writable_mode;
 
 // ============================================================================
 // RUSTCOLA067: Spawned Child Process Not Waited On
@@ -37,7 +40,8 @@ impl SpawnedChildNoWaitRule {
                 full_description: "Detects child processes spawned via Command::spawn() that are \
                     not waited on via wait(), status(), or wait_with_output(). Failing to wait \
                     on spawned children creates zombie processes that consume system resources. \
-                    Implements Clippy's zombie_processes lint.".to_string(),
+                    Implements Clippy's zombie_processes lint."
+                    .to_string(),
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
@@ -54,7 +58,11 @@ impl Rule for SpawnedChildNoWaitRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -68,15 +76,15 @@ impl Rule for SpawnedChildNoWaitRule {
 
             let body_str = function.body.join("\n");
             let lower = body_str.to_lowercase();
-            
+
             let spawn_count = lower.matches("::spawn(").count();
             if spawn_count == 0 {
                 continue;
             }
-            
+
             let wait_count = lower.matches("child::wait(").count()
                 + lower.matches("::wait_with_output(").count();
-            
+
             let mut child_status_count = 0;
             for line in &function.body {
                 let line_lower = line.to_lowercase();
@@ -84,17 +92,18 @@ impl Rule for SpawnedChildNoWaitRule {
                     child_status_count += 1;
                 }
             }
-            
+
             let total_wait_count = wait_count + child_status_count;
-            
+
             if spawn_count > total_wait_count {
-                let evidence: Vec<String> = function.body
+                let evidence: Vec<String> = function
+                    .body
                     .iter()
                     .filter(|line| line.to_lowercase().contains("::spawn("))
                     .take(5)
                     .map(|line| line.trim().to_string())
                     .collect();
-                
+
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
@@ -112,8 +121,8 @@ impl Rule for SpawnedChildNoWaitRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -140,7 +149,8 @@ impl PermissionsSetReadonlyFalseRule {
                 short_description: "Permissions::set_readonly(false) detected".to_string(),
                 full_description: "Flags calls to std::fs::Permissions::set_readonly(false) \
                     which downgrade filesystem permissions and can leave files world-writable \
-                    on Unix targets.".to_string(),
+                    on Unix targets."
+                    .to_string(),
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
@@ -157,7 +167,11 @@ impl Rule for PermissionsSetReadonlyFalseRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -189,10 +203,10 @@ impl Rule for PermissionsSetReadonlyFalseRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
+                confidence: Confidence::Medium,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
+                code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
             });
@@ -218,8 +232,10 @@ impl WorldWritableModeRule {
                 id: "RUSTCOLA029".to_string(),
                 name: "world-writable-mode".to_string(),
                 short_description: "World-writable file mode detected".to_string(),
-                full_description: "Detects explicit world-writable permission masks (e.g., 0o777/0o666) \
-                    passed to PermissionsExt::set_mode, OpenOptionsExt::mode, or similar builders.".to_string(),
+                full_description:
+                    "Detects explicit world-writable permission masks (e.g., 0o777/0o666) \
+                    passed to PermissionsExt::set_mode, OpenOptionsExt::mode, or similar builders."
+                        .to_string(),
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
@@ -236,7 +252,11 @@ impl Rule for WorldWritableModeRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -265,10 +285,10 @@ impl Rule for WorldWritableModeRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
+                confidence: Confidence::Medium,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
+                code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
             });
@@ -317,7 +337,11 @@ impl Rule for OpenOptionsMissingTruncateRule {
         format!("{}:v1", self.metadata.id)
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -339,23 +363,30 @@ impl Rule for OpenOptionsMissingTruncateRule {
 
                 if let Some(start) = open_options_start_line {
                     if idx <= start + 20 {
-                        if line.contains(".write(true)") || (line.contains("OpenOptions::write") && line.contains("const true")) {
+                        if line.contains(".write(true)")
+                            || (line.contains("OpenOptions::write") && line.contains("const true"))
+                        {
                             has_write_true = true;
                             if !evidence_lines.iter().any(|e| e.contains(line.trim())) {
                                 evidence_lines.push(line.trim().to_string());
                             }
                         }
-                        
-                        if line.contains(".create(true)") || (line.contains("OpenOptions::create") && line.contains("const true")) {
+
+                        if line.contains(".create(true)")
+                            || (line.contains("OpenOptions::create") && line.contains("const true"))
+                        {
                             has_create_true = true;
                             if !evidence_lines.iter().any(|e| e.contains(line.trim())) {
                                 evidence_lines.push(line.trim().to_string());
                             }
                         }
-                        
-                        if line.contains(".truncate(true)") || line.contains(".append(true)") ||
-                           (line.contains("OpenOptions::truncate") && line.contains("const true")) ||
-                           (line.contains("OpenOptions::append") && line.contains("const true")) {
+
+                        if line.contains(".truncate(true)")
+                            || line.contains(".append(true)")
+                            || (line.contains("OpenOptions::truncate")
+                                && line.contains("const true"))
+                            || (line.contains("OpenOptions::append") && line.contains("const true"))
+                        {
                             has_truncate_or_append = true;
                         }
 
@@ -410,10 +441,12 @@ impl UnixPermissionsNotOctalRule {
                 id: "RUSTCOLA055".to_string(),
                 name: "unix-permissions-not-octal".to_string(),
                 short_description: "Unix file permissions not in octal notation".to_string(),
-                full_description: "Detects Unix file permissions passed as decimal literals instead \
+                full_description:
+                    "Detects Unix file permissions passed as decimal literals instead \
                     of octal notation. Decimal literals like 644 or 755 are confusing because they \
                     look like octal but are interpreted as decimal. Use explicit octal notation \
-                    with 0o prefix (e.g., 0o644, 0o755).".to_string(),
+                    with 0o prefix (e.g., 0o644, 0o755)."
+                        .to_string(),
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
@@ -426,23 +459,21 @@ impl UnixPermissionsNotOctalRule {
 
     fn looks_like_decimal_permission(&self, function: &MirFunction) -> bool {
         let body_str = format!("{:?}", function.body);
-        
+
         let has_permission_api = body_str.contains("from_mode")
             || body_str.contains("set_mode")
             || body_str.contains("chmod")
             || body_str.contains("DirBuilder");
-        
+
         if !has_permission_api {
             return false;
         }
-        
+
         let suspicious_decimals = [
-            "644_u32", "755_u32", "777_u32", "666_u32",
-            "600_u32", "700_u32", "750_u32", "640_u32",
-            "= 644", "= 755", "= 777", "= 666",
-            "= 600", "= 700", "= 750", "= 640",
+            "644_u32", "755_u32", "777_u32", "666_u32", "600_u32", "700_u32", "750_u32", "640_u32",
+            "= 644", "= 755", "= 777", "= 666", "= 600", "= 700", "= 750", "= 640",
         ];
-        
+
         for pattern in &suspicious_decimals {
             if body_str.contains(pattern) {
                 let context_check = format!("0o{}", pattern);
@@ -451,7 +482,7 @@ impl UnixPermissionsNotOctalRule {
                 }
             }
         }
-        
+
         false
     }
 }
@@ -461,7 +492,11 @@ impl Rule for UnixPermissionsNotOctalRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -470,24 +505,31 @@ impl Rule for UnixPermissionsNotOctalRule {
                 let mut evidence = Vec::new();
 
                 for line in body_str.lines().take(200) {
-                    if (line.contains("from_mode") || line.contains("set_mode") 
-                        || line.contains("chmod") || line.contains("DirBuilder"))
-                        && (line.contains("644") || line.contains("755") 
-                            || line.contains("777") || line.contains("666")
-                            || line.contains("600") || line.contains("700")) {
+                    if (line.contains("from_mode")
+                        || line.contains("set_mode")
+                        || line.contains("chmod")
+                        || line.contains("DirBuilder"))
+                        && (line.contains("644")
+                            || line.contains("755")
+                            || line.contains("777")
+                            || line.contains("666")
+                            || line.contains("600")
+                            || line.contains("700"))
+                    {
                         evidence.push(line.trim().to_string());
                         if evidence.len() >= 3 {
                             break;
                         }
                     }
                 }
-                
+
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
                     severity: self.metadata.default_severity,
                     message: "Unix file permissions use decimal notation instead of octal. \
-                        Use 0o prefix (e.g., 0o644 for rw-r--r--, 0o755 for rwxr-xr-x).".to_string(),
+                        Use 0o prefix (e.g., 0o644 for rw-r--r--, 0o755 for rwxr-xr-x)."
+                        .to_string(),
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence,
@@ -531,29 +573,36 @@ impl OpenOptionsInconsistentFlagsRule {
 
     fn check_openoptions_flags(&self, function: &MirFunction) -> Option<String> {
         let body_str = function.body.join("\n");
-        
+
         if !body_str.contains("OpenOptions") {
             return None;
         }
-        
-        let has_write = body_str.contains(".write(true)") || (body_str.contains("OpenOptions::write") && body_str.contains("const true"));
-        let has_create = body_str.contains(".create(true)") || (body_str.contains("OpenOptions::create") && body_str.contains("const true"));
-        let has_create_new = body_str.contains(".create_new(true)") || (body_str.contains("OpenOptions::create_new") && body_str.contains("const true"));
-        let has_truncate = body_str.contains(".truncate(true)") || (body_str.contains("OpenOptions::truncate") && body_str.contains("const true"));
-        let has_append = body_str.contains(".append(true)") || (body_str.contains("OpenOptions::append") && body_str.contains("const true"));
-        
+
+        let has_write = body_str.contains(".write(true)")
+            || (body_str.contains("OpenOptions::write") && body_str.contains("const true"));
+        let has_create = body_str.contains(".create(true)")
+            || (body_str.contains("OpenOptions::create") && body_str.contains("const true"));
+        let has_create_new = body_str.contains(".create_new(true)")
+            || (body_str.contains("OpenOptions::create_new") && body_str.contains("const true"));
+        let has_truncate = body_str.contains(".truncate(true)")
+            || (body_str.contains("OpenOptions::truncate") && body_str.contains("const true"));
+        let has_append = body_str.contains(".append(true)")
+            || (body_str.contains("OpenOptions::append") && body_str.contains("const true"));
+
         if (has_create || has_create_new) && !has_write && !has_append {
             return Some("create(true) without write(true) or append(true). File will be created but not writable.".to_string());
         }
-        
+
         if has_truncate && !has_write && !has_append {
             return Some("truncate(true) without write(true). This would truncate the file but not allow writing.".to_string());
         }
-        
+
         if has_append && has_truncate {
-            return Some("append(true) with truncate(true). These flags are contradictory.".to_string());
+            return Some(
+                "append(true) with truncate(true). These flags are contradictory.".to_string(),
+            );
         }
-        
+
         None
     }
 }
@@ -563,7 +612,11 @@ impl Rule for OpenOptionsInconsistentFlagsRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -571,21 +624,27 @@ impl Rule for OpenOptionsInconsistentFlagsRule {
                 let mut evidence = Vec::new();
 
                 for line in &function.body {
-                    if line.contains("OpenOptions") || line.contains(".write") 
-                        || line.contains(".create") || line.contains(".truncate")
-                        || line.contains(".append") {
+                    if line.contains("OpenOptions")
+                        || line.contains(".write")
+                        || line.contains(".create")
+                        || line.contains(".truncate")
+                        || line.contains(".append")
+                    {
                         evidence.push(line.trim().to_string());
                         if evidence.len() >= 5 {
                             break;
                         }
                     }
                 }
-                
+
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
                     severity: self.metadata.default_severity,
-                    message: format!("OpenOptions has inconsistent flag combination: {}", issue_description),
+                    message: format!(
+                        "OpenOptions has inconsistent flag combination: {}",
+                        issue_description
+                    ),
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence,
@@ -614,10 +673,12 @@ impl AbsolutePathInJoinRule {
             metadata: RuleMetadata {
                 id: "RUSTCOLA058".to_string(),
                 name: "absolute-path-in-join".to_string(),
-                short_description: "Absolute path passed to Path::join() or PathBuf::push()".to_string(),
+                short_description: "Absolute path passed to Path::join() or PathBuf::push()"
+                    .to_string(),
                 full_description: "Detects when Path::join() or PathBuf::push() receives an \
                     absolute path argument. Absolute paths nullify the base path, defeating \
-                    sanitization and potentially enabling path traversal attacks.".to_string(),
+                    sanitization and potentially enabling path traversal attacks."
+                    .to_string(),
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
@@ -630,28 +691,41 @@ impl AbsolutePathInJoinRule {
 
     fn looks_like_absolute_path_join(&self, function: &MirFunction) -> bool {
         let body_str = format!("{:?}", function.body);
-        
-        let has_path_ops = body_str.contains("Path::join") || 
-                          body_str.contains("PathBuf::join") ||
-                          body_str.contains("PathBuf::push");
-        
+
+        let has_path_ops = body_str.contains("Path::join")
+            || body_str.contains("PathBuf::join")
+            || body_str.contains("PathBuf::push");
+
         if !has_path_ops {
             return false;
         }
-        
+
         let absolute_patterns = [
-            "\"/", "\"C:", "\"D:", "\"E:", "\"F:",
-            "\"/etc", "\"/usr", "\"/var", "\"/tmp", "\"/home",
-            "\"/root", "\"/sys", "\"/proc", "\"/dev",
-            "\"C:\\\\", "\"/Users", "\"/Applications",
+            "\"/",
+            "\"C:",
+            "\"D:",
+            "\"E:",
+            "\"F:",
+            "\"/etc",
+            "\"/usr",
+            "\"/var",
+            "\"/tmp",
+            "\"/home",
+            "\"/root",
+            "\"/sys",
+            "\"/proc",
+            "\"/dev",
+            "\"C:\\\\",
+            "\"/Users",
+            "\"/Applications",
         ];
-        
+
         for pattern in &absolute_patterns {
             if body_str.contains(pattern) {
                 return true;
             }
         }
-        
+
         false
     }
 }
@@ -661,7 +735,11 @@ impl Rule for AbsolutePathInJoinRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -669,19 +747,19 @@ impl Rule for AbsolutePathInJoinRule {
                 let mut evidence = Vec::new();
 
                 for line in &function.body {
-                    let has_join_or_push = (line.contains("Path::join") || 
-                                           line.contains("PathBuf::join") || 
-                                           line.contains("PathBuf::push")) &&
-                                          line.contains("const");
-                    
+                    let has_join_or_push = (line.contains("Path::join")
+                        || line.contains("PathBuf::join")
+                        || line.contains("PathBuf::push"))
+                        && line.contains("const");
+
                     if !has_join_or_push {
                         continue;
                     }
-                    
-                    let has_absolute = line.contains("const \"/") || 
-                                      line.contains("const \"C:") || 
-                                      line.contains("const \"D:");
-                    
+
+                    let has_absolute = line.contains("const \"/")
+                        || line.contains("const \"C:")
+                        || line.contains("const \"D:");
+
                     if has_absolute {
                         evidence.push(line.trim().to_string());
                         if evidence.len() >= 5 {
@@ -689,19 +767,20 @@ impl Rule for AbsolutePathInJoinRule {
                         }
                     }
                 }
-                
+
                 if !evidence.is_empty() {
                     findings.push(Finding {
                         rule_id: self.metadata.id.clone(),
                         rule_name: self.metadata.name.clone(),
                         severity: self.metadata.default_severity,
                         message: "Absolute path passed to Path::join() or PathBuf::push(). \
-                            This nullifies the base path, potentially enabling path traversal.".to_string(),
+                            This nullifies the base path, potentially enabling path traversal."
+                            .to_string(),
                         function: function.name.clone(),
                         function_signature: function.signature.clone(),
                         evidence,
                         span: None,
-                    ..Default::default()
+                        ..Default::default()
                     });
                 }
             }
@@ -744,7 +823,11 @@ impl Rule for HardcodedHomePathRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -758,34 +841,29 @@ impl Rule for HardcodedHomePathRule {
             }
 
             let body_str = function.body.join("\n");
-            
+
             // Patterns for hard-coded home directory paths
             // Unix/Linux: /home/username
-            // macOS: /Users/username  
+            // macOS: /Users/username
             // Windows: C:\Users\username or C:/Users/username
             // Tilde with username: ~username (but not ~/something)
-            let home_patterns = [
-                "\"/home/",
-                "\"/Users/",
-                "\"C:\\\\Users\\\\",
-                "\"C:/Users/",
-            ];
-            
+            let home_patterns = ["\"/home/", "\"/Users/", "\"C:\\\\Users\\\\", "\"C:/Users/"];
+
             let mut found_hardcoded = false;
-            
+
             for pattern in &home_patterns {
                 if body_str.contains(pattern) {
                     found_hardcoded = true;
                     break;
                 }
             }
-            
+
             // Check for ~username (tilde with username, not just ~/)
             // Look for "~ followed by non-slash characters
             if body_str.contains("\"~") && !body_str.contains("\"~/") {
                 found_hardcoded = true;
             }
-            
+
             if !found_hardcoded {
                 continue;
             }
@@ -795,13 +873,13 @@ impl Rule for HardcodedHomePathRule {
                 .body
                 .iter()
                 .filter(|line| {
-                    home_patterns.iter().any(|p| line.contains(p)) ||
-                    (line.contains("\"~") && !line.contains("\"~/"))
+                    home_patterns.iter().any(|p| line.contains(p))
+                        || (line.contains("\"~") && !line.contains("\"~/"))
                 })
                 .take(5)
                 .map(|line| line.trim().to_string())
                 .collect();
-            
+
             if evidence.is_empty() {
                 continue;
             }
@@ -873,7 +951,6 @@ impl BuildScriptNetworkRule {
             ("attohttpc::", "attohttpc HTTP client"),
             ("minreq::", "minreq HTTP client"),
             ("isahc::", "isahc HTTP client"),
-            
             // Network primitives
             ("TcpStream::connect", "raw TCP connection"),
             ("UdpSocket::bind", "raw UDP socket"),
@@ -881,15 +958,20 @@ impl BuildScriptNetworkRule {
             ("tokio::net::", "tokio network access"),
             ("async_std::net::", "async-std network access"),
             ("to_socket_addrs", "DNS lookup"),
-            
             // Dangerous commands
             ("Command::new(\"curl\")", "curl command"),
             ("Command::new(\"wget\")", "wget command"),
             ("Command::new(\"fetch\")", "fetch command"),
-            ("Command::new(\"git\")", "git command (may clone from network)"),
+            (
+                "Command::new(\"git\")",
+                "git command (may clone from network)",
+            ),
             ("Command::new(\"npm\")", "npm command (network access)"),
             ("Command::new(\"pip\")", "pip command (network access)"),
-            ("Command::new(\"cargo\")", "cargo command (may download crates)"),
+            (
+                "Command::new(\"cargo\")",
+                "cargo command (may download crates)",
+            ),
         ]
     }
 
@@ -913,7 +995,11 @@ impl Rule for BuildScriptNetworkRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -1022,7 +1108,11 @@ impl Rule for UnboundedAllocationRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -1071,8 +1161,8 @@ impl Rule for UnboundedAllocationRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }

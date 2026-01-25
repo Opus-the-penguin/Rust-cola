@@ -21,7 +21,7 @@ use std::time::Duration;
 /// BAD: std::sync::Mutex::lock() in async function blocks the executor
 pub async fn bad_sync_mutex_lock() {
     let mutex = Mutex::new(42);
-    let guard = mutex.lock().unwrap();  // BLOCKING!
+    let guard = mutex.lock().unwrap(); // BLOCKING!
     println!("Value: {}", *guard);
 }
 
@@ -29,91 +29,91 @@ pub async fn bad_sync_mutex_lock() {
 pub async fn bad_multiple_mutex_locks() {
     let m1 = Mutex::new(1);
     let m2 = Mutex::new(2);
-    let g1 = m1.lock().unwrap();  // BLOCKING!
-    let g2 = m2.lock().unwrap();  // BLOCKING!
+    let g1 = m1.lock().unwrap(); // BLOCKING!
+    let g2 = m2.lock().unwrap(); // BLOCKING!
     println!("{} {}", *g1, *g2);
 }
 
 /// BAD: std::fs::read_to_string in async function
 pub async fn bad_fs_read() -> std::io::Result<String> {
-    fs::read_to_string("/etc/hosts")  // BLOCKING!
+    fs::read_to_string("/etc/hosts") // BLOCKING!
 }
 
 /// BAD: std::fs::write in async function
 pub async fn bad_fs_write() -> std::io::Result<()> {
-    fs::write("/tmp/test.txt", "data")  // BLOCKING!
+    fs::write("/tmp/test.txt", "data") // BLOCKING!
 }
 
 /// BAD: std::fs::read in async function
 pub async fn bad_fs_read_bytes() -> std::io::Result<Vec<u8>> {
-    fs::read("/etc/hosts")  // BLOCKING!
+    fs::read("/etc/hosts") // BLOCKING!
 }
 
 /// BAD: std::fs::remove_file in async function
 pub async fn bad_fs_remove() -> std::io::Result<()> {
-    fs::remove_file("/tmp/test.txt")  // BLOCKING!
+    fs::remove_file("/tmp/test.txt") // BLOCKING!
 }
 
 /// BAD: std::fs::create_dir_all in async function
 pub async fn bad_fs_create_dir() -> std::io::Result<()> {
-    fs::create_dir_all("/tmp/test/nested")  // BLOCKING!
+    fs::create_dir_all("/tmp/test/nested") // BLOCKING!
 }
 
 /// BAD: std::fs::metadata in async function
 pub async fn bad_fs_metadata() -> std::io::Result<fs::Metadata> {
-    fs::metadata("/etc/hosts")  // BLOCKING!
+    fs::metadata("/etc/hosts") // BLOCKING!
 }
 
 /// BAD: std::fs::copy in async function
 pub async fn bad_fs_copy() -> std::io::Result<u64> {
-    fs::copy("/etc/hosts", "/tmp/hosts.bak")  // BLOCKING!
+    fs::copy("/etc/hosts", "/tmp/hosts.bak") // BLOCKING!
 }
 
 /// BAD: std::fs::rename in async function
 pub async fn bad_fs_rename() -> std::io::Result<()> {
-    fs::rename("/tmp/old.txt", "/tmp/new.txt")  // BLOCKING!
+    fs::rename("/tmp/old.txt", "/tmp/new.txt") // BLOCKING!
 }
 
 /// BAD: std::net::TcpStream::connect in async function
 pub async fn bad_tcp_connect() -> std::io::Result<TcpStream> {
-    TcpStream::connect("127.0.0.1:8080")  // BLOCKING!
+    TcpStream::connect("127.0.0.1:8080") // BLOCKING!
 }
 
 /// BAD: std::net::TcpListener::bind in async function
 pub async fn bad_tcp_bind() -> std::io::Result<TcpListener> {
-    TcpListener::bind("127.0.0.1:8080")  // BLOCKING!
+    TcpListener::bind("127.0.0.1:8080") // BLOCKING!
 }
 
 /// BAD: std::io::stdin().read_line in async function
 pub async fn bad_stdin_read() -> std::io::Result<String> {
     let mut buffer = String::new();
-    std::io::stdin().read_line(&mut buffer)?;  // BLOCKING!
+    std::io::stdin().read_line(&mut buffer)?; // BLOCKING!
     Ok(buffer)
 }
 
 /// BAD: std::io::stdout().write_all in async function
 pub async fn bad_stdout_write() -> std::io::Result<()> {
-    std::io::stdout().write_all(b"Hello\n")  // BLOCKING!
+    std::io::stdout().write_all(b"Hello\n") // BLOCKING!
 }
 
 /// BAD: File::open + read in async function
 pub async fn bad_file_open_read() -> std::io::Result<String> {
-    let mut file = fs::File::open("/etc/hosts")?;  // BLOCKING!
+    let mut file = fs::File::open("/etc/hosts")?; // BLOCKING!
     let mut contents = String::new();
-    file.read_to_string(&mut contents)?;  // BLOCKING!
+    file.read_to_string(&mut contents)?; // BLOCKING!
     Ok(contents)
 }
 
 /// BAD: File::create + write in async function
 pub async fn bad_file_create_write() -> std::io::Result<()> {
-    let mut file = fs::File::create("/tmp/test.txt")?;  // BLOCKING!
-    file.write_all(b"Hello")?;  // BLOCKING!
+    let mut file = fs::File::create("/tmp/test.txt")?; // BLOCKING!
+    file.write_all(b"Hello")?; // BLOCKING!
     Ok(())
 }
 
 /// BAD: thread::sleep in async (covered by RUSTCOLA037, included for completeness)
 pub async fn bad_thread_sleep() {
-    std::thread::sleep(Duration::from_secs(1));  // BLOCKING!
+    std::thread::sleep(Duration::from_secs(1)); // BLOCKING!
 }
 
 // ============================================================================
@@ -123,7 +123,7 @@ pub async fn bad_thread_sleep() {
 /// SAFE: tokio::sync::Mutex is async-aware
 pub async fn safe_tokio_mutex() {
     let mutex = tokio::sync::Mutex::new(42);
-    let guard = mutex.lock().await;  // Non-blocking!
+    let guard = mutex.lock().await; // Non-blocking!
     println!("Value: {}", *guard);
 }
 
@@ -164,9 +164,9 @@ pub async fn safe_tokio_stdin() -> std::io::Result<String> {
 
 /// SAFE: spawn_blocking for intentional blocking ops
 pub async fn safe_spawn_blocking_fs() -> std::io::Result<String> {
-    tokio::task::spawn_blocking(|| {
-        fs::read_to_string("/etc/hosts")
-    }).await.unwrap()
+    tokio::task::spawn_blocking(|| fs::read_to_string("/etc/hosts"))
+        .await
+        .unwrap()
 }
 
 /// SAFE: spawn_blocking for sync mutex
@@ -176,26 +176,26 @@ pub async fn safe_spawn_blocking_mutex() {
     tokio::task::spawn_blocking(move || {
         let guard = m.lock().unwrap();
         println!("Value: {}", *guard);
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
 }
 
 /// SAFE: block_in_place for blocking ops (multi-threaded runtime only)
 pub async fn safe_block_in_place_fs() -> std::io::Result<String> {
-    tokio::task::block_in_place(|| {
-        fs::read_to_string("/etc/hosts")
-    })
+    tokio::task::block_in_place(|| fs::read_to_string("/etc/hosts"))
 }
 
 /// SAFE: Sync mutex in non-async function (not our concern)
 pub fn sync_function_mutex() {
     let mutex = Mutex::new(42);
-    let guard = mutex.lock().unwrap();  // Fine in sync context
+    let guard = mutex.lock().unwrap(); // Fine in sync context
     println!("Value: {}", *guard);
 }
 
 /// SAFE: Sync fs in non-async function (not our concern)
 pub fn sync_function_fs() -> std::io::Result<String> {
-    fs::read_to_string("/etc/hosts")  // Fine in sync context
+    fs::read_to_string("/etc/hosts") // Fine in sync context
 }
 
 fn main() {

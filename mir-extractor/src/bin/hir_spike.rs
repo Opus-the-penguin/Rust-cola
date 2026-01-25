@@ -65,15 +65,14 @@ fn run() -> Result<()> {
     }
 
     let wrapper_path = env::current_exe().context("locate hir-spike executable")?;
-    run_cargo_rustc(
-        &manifest_dir,
-        &selection,
-        &wrapper_path,
-        &capture_path,
-    )?;
+    run_cargo_rustc(&manifest_dir, &selection, &wrapper_path, &capture_path)?;
 
-    let args = read_captured_args(&capture_path)
-        .with_context(|| format!("read captured rustc invocation from {}", capture_path.display()))?;
+    let args = read_captured_args(&capture_path).with_context(|| {
+        format!(
+            "read captured rustc invocation from {}",
+            capture_path.display()
+        )
+    })?;
     if args.len() < 2 {
         return Err(anyhow!(
             "captured rustc invocation missing arguments; expected at least path and one flag"
@@ -106,8 +105,8 @@ fn run() -> Result<()> {
 }
 
 fn resolve_manifest_path(arg: &Path) -> Result<PathBuf> {
-    let canonical = fs::canonicalize(arg)
-        .with_context(|| format!("canonicalize path {}", arg.display()))?;
+    let canonical =
+        fs::canonicalize(arg).with_context(|| format!("canonicalize path {}", arg.display()))?;
     if canonical.is_file() {
         Ok(canonical)
     } else {
@@ -163,7 +162,11 @@ fn select_target(package: &Package) -> Result<TargetSelection> {
             continue;
         }
 
-        if target.kind.iter().any(|kind| kind == "lib" || kind == "proc-macro") {
+        if target
+            .kind
+            .iter()
+            .any(|kind| kind == "lib" || kind == "proc-macro")
+        {
             preferred = Some(target);
             break;
         }
@@ -261,8 +264,7 @@ fn run_cargo_rustc(
 }
 
 fn read_captured_args(path: &Path) -> Result<Vec<String>> {
-    let data = fs::read(path)
-        .with_context(|| format!("read capture file {}", path.display()))?;
+    let data = fs::read(path).with_context(|| format!("read capture file {}", path.display()))?;
     if data.is_empty() {
         return Err(anyhow!(
             "rustc invocation was not captured; ensure the target crate compiled"
@@ -353,8 +355,8 @@ mod wrapper {
                 .context("persist captured rustc arguments")?;
         }
 
-        let status = invoke_rustc(&rustc_path, &rustc_args)
-            .context("invoke real rustc from wrapper")?;
+        let status =
+            invoke_rustc(&rustc_path, &rustc_args).context("invoke real rustc from wrapper")?;
         Ok(status.code().unwrap_or(1))
     }
 

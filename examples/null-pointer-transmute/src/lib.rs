@@ -105,16 +105,16 @@ mod tests {
         unsafe {
             let x = 42u32;
             let _f = transmute_int_to_float(x);
-            
+
             let val = 100i32;
             let ptr = &val as *const i32;
             let _u = non_null_ptr_transmute(ptr);
             let _p = ptr_to_ptr_transmute(ptr as *const u8);
-            
+
             let arr = [1u8, 2, 3, 4];
             let _n = array_transmute(arr);
         }
-        
+
         let _null = proper_null_creation();
         let val = 42;
         let _nn = non_null_usage(val);

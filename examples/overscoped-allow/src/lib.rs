@@ -3,19 +3,14 @@
 
 // BAD: Blanket suppression of all warnings across entire crate
 #![allow(warnings)]
-
 // BAD: Suppressing unsafe_code across entire crate
 #![allow(unsafe_code)]
-
 // BAD: Suppressing dead_code across entire crate (could hide bypassed validation)
 #![allow(dead_code)]
-
 // BAD: Suppressing unused_must_use across entire crate (error handling)
 #![allow(unused_must_use)]
-
 // BAD: Suppressing clippy::all across entire crate
 #![allow(clippy::all)]
-
 // BAD: Suppressing clippy::unwrap_used across entire crate
 #![allow(clippy::unwrap_used)]
 

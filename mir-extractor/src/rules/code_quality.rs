@@ -12,7 +12,10 @@
 
 #![allow(dead_code)]
 
-use crate::{Exploitability, Confidence, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity, SourceFile};
+use crate::{
+    Confidence, Exploitability, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin,
+    Severity, SourceFile,
+};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -34,7 +37,8 @@ impl CrateWideAllowRule {
                 short_description: "Crate-wide allow attribute disables lints".to_string(),
                 full_description: "Detects crate-level #![allow(...)] attributes that disable \
                     lints for the entire crate. This reduces security coverage. Use more \
-                    targeted #[allow(...)] on specific items instead.".to_string(),
+                    targeted #[allow(...)] on specific items instead."
+                    .to_string(),
                 help_uri: None,
                 default_severity: Severity::Low,
                 origin: RuleOrigin::BuiltIn,
@@ -69,7 +73,11 @@ impl Rule for CrateWideAllowRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
         let mut reported = false;
 
@@ -96,7 +104,7 @@ impl Rule for CrateWideAllowRule {
                         function_signature: function.signature.clone(),
                         evidence: vec![line.clone()],
                         span: function.span.clone(),
-                    ..Default::default()
+                        ..Default::default()
                     });
                     reported = true;
                     break;
@@ -143,20 +151,20 @@ impl MisorderedAssertEqRule {
     fn looks_like_misordered_assert(&self, function: &MirFunction) -> bool {
         let mut has_misordered_promoted = false;
         let mut has_assert_failed = false;
-        
+
         for line in &function.body {
             let trimmed = line.trim();
-            
+
             // Check for promoted constant in FIRST position (_3)
             if trimmed.starts_with("_3 = const") && trimmed.contains("::promoted[") {
                 has_misordered_promoted = true;
             }
-            
+
             if trimmed.contains("assert_failed") {
                 has_assert_failed = true;
             }
         }
-        
+
         has_misordered_promoted && has_assert_failed
     }
 }
@@ -166,7 +174,11 @@ impl Rule for MisorderedAssertEqRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -177,13 +189,14 @@ impl Rule for MisorderedAssertEqRule {
                         evidence.push(line.clone());
                     }
                 }
-                
+
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
                     severity: self.metadata.default_severity,
                     message: "assert_eq! may have misordered arguments. Convention is \
-                        assert_eq!(actual, expected) where 'expected' is typically a literal.".to_string(),
+                        assert_eq!(actual, expected) where 'expected' is typically a literal."
+                        .to_string(),
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence,
@@ -228,18 +241,19 @@ impl TryIoResultRule {
     fn looks_like_io_result_try(&self, function: &MirFunction) -> bool {
         let mut has_io_error_type = false;
         let mut has_discriminant_check = false;
-        
-        if function.signature.contains("std::io::Error") || function.signature.contains("io::Error") {
+
+        if function.signature.contains("std::io::Error") || function.signature.contains("io::Error")
+        {
             has_io_error_type = true;
         }
-        
+
         for line in &function.body {
             if line.contains("discriminant(") {
                 has_discriminant_check = true;
                 break;
             }
         }
-        
+
         has_io_error_type && has_discriminant_check
     }
 }
@@ -249,28 +263,34 @@ impl Rule for TryIoResultRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
             if self.looks_like_io_result_try(function) {
                 let mut evidence = vec![];
                 for line in &function.body {
-                    if line.to_lowercase().contains("io::error") 
-                        || line.to_lowercase().contains("discriminant") {
+                    if line.to_lowercase().contains("io::error")
+                        || line.to_lowercase().contains("discriminant")
+                    {
                         evidence.push(line.clone());
                         if evidence.len() >= 3 {
                             break;
                         }
                     }
                 }
-                
+
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
                     severity: self.metadata.default_severity,
                     message: "Using ? operator on io::Result may lose error context. \
-                        Consider using .map_err() to add file paths or operation details.".to_string(),
+                        Consider using .map_err() to add file paths or operation details."
+                        .to_string(),
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence,
@@ -302,7 +322,8 @@ impl LocalRefCellRule {
                 short_description: "RefCell used for local mutable state".to_string(),
                 full_description: "Detects RefCell<T> used for purely local mutable state where \
                     a regular mutable variable would suffice. RefCell adds runtime borrow \
-                    checking overhead and panic risk.".to_string(),
+                    checking overhead and panic risk."
+                    .to_string(),
                 help_uri: None,
                 default_severity: Severity::Low,
                 origin: RuleOrigin::BuiltIn,
@@ -316,19 +337,21 @@ impl LocalRefCellRule {
     fn looks_like_local_refcell(&self, function: &MirFunction) -> bool {
         let mut has_refcell_new = false;
         let mut has_borrow_mut = false;
-        
+
         for line in &function.body {
             let lower = line.to_lowercase();
-            
+
             if lower.contains("refcell") && lower.contains("::new") {
                 has_refcell_new = true;
             }
-            
-            if lower.contains("borrow_mut") || (lower.contains("borrow(") && !lower.contains("borrow_mut")) {
+
+            if lower.contains("borrow_mut")
+                || (lower.contains("borrow(") && !lower.contains("borrow_mut"))
+            {
                 has_borrow_mut = true;
             }
         }
-        
+
         has_refcell_new && has_borrow_mut
     }
 }
@@ -338,28 +361,34 @@ impl Rule for LocalRefCellRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
             if self.looks_like_local_refcell(function) {
                 let mut evidence = vec![];
                 for line in &function.body {
-                    if line.to_lowercase().contains("refcell") 
-                        || line.to_lowercase().contains("borrow") {
+                    if line.to_lowercase().contains("refcell")
+                        || line.to_lowercase().contains("borrow")
+                    {
                         evidence.push(line.clone());
                         if evidence.len() >= 3 {
                             break;
                         }
                     }
                 }
-                
+
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
                     severity: self.metadata.default_severity,
                     message: "RefCell used for local mutable state. Consider using a regular \
-                        mutable variable. RefCell adds runtime overhead and panic risk.".to_string(),
+                        mutable variable. RefCell adds runtime overhead and panic risk."
+                        .to_string(),
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence,
@@ -391,7 +420,8 @@ impl UnnecessaryBorrowMutRule {
                 short_description: "Unnecessary borrow_mut() on RefCell".to_string(),
                 full_description: "Detects RefCell::borrow_mut() calls where the mutable borrow \
                     is never actually used for mutation. Using borrow_mut() when borrow() suffices \
-                    creates unnecessary runtime overhead and increases panic risk.".to_string(),
+                    creates unnecessary runtime overhead and increases panic risk."
+                    .to_string(),
                 help_uri: None,
                 default_severity: Severity::Low,
                 origin: RuleOrigin::BuiltIn,
@@ -404,28 +434,38 @@ impl UnnecessaryBorrowMutRule {
 
     fn looks_like_unnecessary_borrow_mut(&self, function: &MirFunction) -> bool {
         let body_str = function.body.join("\n");
-        
+
         if function.name.contains("::new") {
             return false;
         }
-        
+
         let has_borrow_mut = body_str.contains("RefCell") && body_str.contains("borrow_mut");
         if !has_borrow_mut {
             return false;
         }
-        
+
         // Check for actual mutation patterns
         let mutation_methods = [
-            "::push(", "::insert(", "::remove(", "::clear(", "::extend(",
-            "::swap(", "::sort(", "::reverse(", "::drain(", "::append(",
-            "::pop(", "::entry(", "::get_mut(",
+            "::push(",
+            "::insert(",
+            "::remove(",
+            "::clear(",
+            "::extend(",
+            "::swap(",
+            "::sort(",
+            "::reverse(",
+            "::drain(",
+            "::append(",
+            "::pop(",
+            "::entry(",
+            "::get_mut(",
         ];
         let has_mutation_method = mutation_methods.iter().any(|m| body_str.contains(m));
         let has_refmut_deref_mut = body_str.contains("RefMut") && body_str.contains("DerefMut");
         let has_index_mut = body_str.contains("IndexMut") || body_str.contains("index_mut");
-        
+
         let has_mutation = has_mutation_method || has_refmut_deref_mut || has_index_mut;
-        
+
         has_borrow_mut && !has_mutation
     }
 }
@@ -435,7 +475,11 @@ impl Rule for UnnecessaryBorrowMutRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -450,13 +494,15 @@ impl Rule for UnnecessaryBorrowMutRule {
                         }
                     }
                 }
-                
+
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
                     severity: self.metadata.default_severity,
-                    message: "RefCell::borrow_mut() called but mutable borrow may not be necessary. \
-                        If only read (not modified), use borrow() instead.".to_string(),
+                    message:
+                        "RefCell::borrow_mut() called but mutable borrow may not be necessary. \
+                        If only read (not modified), use borrow() instead."
+                            .to_string(),
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence,
@@ -488,7 +534,8 @@ impl DeadStoreArrayRule {
                 short_description: "Dead store in array".to_string(),
                 full_description: "Detects array elements that are written but never read before \
                     being overwritten or going out of scope. Dead stores can indicate logic errors \
-                    or wasted computation.".to_string(),
+                    or wasted computation."
+                    .to_string(),
                 help_uri: None,
                 default_severity: Severity::Low,
                 origin: RuleOrigin::BuiltIn,
@@ -501,16 +548,16 @@ impl DeadStoreArrayRule {
 
     fn is_array_write(line: &str) -> Option<(&str, &str)> {
         let trimmed = line.trim();
-        
+
         if let Some(eq_pos) = trimmed.find(" = ") {
             let left_side = trimmed[..eq_pos].trim();
-            
+
             if let Some(bracket_start) = left_side.find('[') {
                 if let Some(bracket_end) = left_side.find(']') {
                     if bracket_start < bracket_end && bracket_end == left_side.len() - 1 {
                         let var = left_side[..bracket_start].trim();
                         let index = left_side[bracket_start + 1..bracket_end].trim();
-                        
+
                         if var.starts_with('_') && !index.is_empty() {
                             return Some((var, index));
                         }
@@ -518,13 +565,13 @@ impl DeadStoreArrayRule {
                 }
             }
         }
-        
+
         None
     }
 
     fn is_array_read(line: &str, var: &str) -> bool {
         let trimmed = line.trim();
-        
+
         // Check for array passed to function
         if trimmed.contains("(copy ") || trimmed.contains("(&") || trimmed.contains("(move ") {
             let patterns = [
@@ -536,12 +583,12 @@ impl DeadStoreArrayRule {
                 return true;
             }
         }
-        
+
         let pattern = format!("{}[", var);
         if !trimmed.contains(&pattern) {
             return false;
         }
-        
+
         // Exclude writes (left side of assignment)
         if let Some(eq_pos) = trimmed.find(" = ") {
             let left_side = trimmed[..eq_pos].trim();
@@ -552,7 +599,7 @@ impl DeadStoreArrayRule {
                 return true;
             }
         }
-        
+
         trimmed.contains(&pattern)
     }
 }
@@ -562,7 +609,11 @@ impl Rule for DeadStoreArrayRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -576,9 +627,9 @@ impl Rule for DeadStoreArrayRule {
             if function.signature.contains("&mut [") {
                 continue;
             }
-            
+
             let mut const_values: HashMap<String, String> = HashMap::new();
-            
+
             for line in &function.body {
                 let trimmed = line.trim();
                 if let Some(eq_pos) = trimmed.find(" = const ") {
@@ -590,49 +641,61 @@ impl Rule for DeadStoreArrayRule {
                     }
                 }
             }
-            
+
             let mut all_writes: Vec<(usize, String, String, String)> = Vec::new();
-            
+
             for (line_idx, line) in function.body.iter().enumerate() {
                 let trimmed = line.trim();
                 if let Some((var, index)) = Self::is_array_write(trimmed) {
-                    let resolved_index = const_values.get(index).unwrap_or(&index.to_string()).clone();
+                    let resolved_index = const_values
+                        .get(index)
+                        .unwrap_or(&index.to_string())
+                        .clone();
                     all_writes.push((line_idx, var.to_string(), resolved_index, line.clone()));
                 }
             }
-            
-            for (i, (write_line_idx, write_var, write_resolved_idx, write_line)) in all_writes.iter().enumerate() {
+
+            for (i, (write_line_idx, write_var, write_resolved_idx, write_line)) in
+                all_writes.iter().enumerate()
+            {
                 let key = format!("{}[{}]", write_var, write_resolved_idx);
-                
-                for (j, (overwrite_line_idx, overwrite_var, overwrite_resolved_idx, overwrite_line)) in all_writes.iter().enumerate() {
+
+                for (
+                    j,
+                    (overwrite_line_idx, overwrite_var, overwrite_resolved_idx, overwrite_line),
+                ) in all_writes.iter().enumerate()
+                {
                     if j <= i {
                         continue;
                     }
-                    
+
                     let overwrite_key = format!("{}[{}]", overwrite_var, overwrite_resolved_idx);
                     if key != overwrite_key {
                         continue;
                     }
-                    
+
                     let mut has_read_between = false;
                     for (between_idx, between_line) in function.body.iter().enumerate() {
                         if between_idx <= *write_line_idx || between_idx >= *overwrite_line_idx {
                             continue;
                         }
-                        
+
                         let trimmed = between_line.trim();
-                        if trimmed.starts_with("bb") || trimmed.starts_with("goto") 
-                            || trimmed.starts_with("assert") || trimmed.starts_with("switchInt")
-                            || trimmed.starts_with("return") {
+                        if trimmed.starts_with("bb")
+                            || trimmed.starts_with("goto")
+                            || trimmed.starts_with("assert")
+                            || trimmed.starts_with("switchInt")
+                            || trimmed.starts_with("return")
+                        {
                             continue;
                         }
-                        
+
                         if Self::is_array_read(trimmed, write_var) {
                             has_read_between = true;
                             break;
                         }
                     }
-                    
+
                     if !has_read_between {
                         findings.push(Finding {
                             rule_id: self.metadata.id.clone(),
@@ -656,7 +719,7 @@ impl Rule for DeadStoreArrayRule {
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
                         });
-                        break;  // Only report first overwrite
+                        break; // Only report first overwrite
                     }
                 }
             }
@@ -695,24 +758,25 @@ impl OverscopedAllowRule {
 
     /// Check if this attribute path is a security-relevant lint
     fn is_security_relevant_lint(path: &str) -> bool {
-        matches!(path,
-            "warnings" |
-            "unsafe_code" |
-            "unused_must_use" |
-            "dead_code" |
-            "deprecated" |
-            "non_snake_case" |
-            "non_camel_case_types" |
-            "clippy::all" |
-            "clippy::pedantic" |
-            "clippy::restriction" |
-            "clippy::unwrap_used" |
-            "clippy::expect_used" |
-            "clippy::panic" |
-            "clippy::indexing_slicing" |
-            "clippy::mem_forget" |
-            "clippy::cast_ptr_alignment" |
-            "clippy::integer_arithmetic"
+        matches!(
+            path,
+            "warnings"
+                | "unsafe_code"
+                | "unused_must_use"
+                | "dead_code"
+                | "deprecated"
+                | "non_snake_case"
+                | "non_camel_case_types"
+                | "clippy::all"
+                | "clippy::pedantic"
+                | "clippy::restriction"
+                | "clippy::unwrap_used"
+                | "clippy::expect_used"
+                | "clippy::panic"
+                | "clippy::indexing_slicing"
+                | "clippy::mem_forget"
+                | "clippy::cast_ptr_alignment"
+                | "clippy::integer_arithmetic"
         )
     }
 }
@@ -722,7 +786,11 @@ impl Rule for OverscopedAllowRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         let crate_root = Path::new(&package.crate_root);
@@ -739,7 +807,7 @@ impl Rule for OverscopedAllowRule {
 
             for attr in &syntax_tree.attrs {
                 match attr.style {
-                    syn::AttrStyle::Inner(_) => {},
+                    syn::AttrStyle::Inner(_) => {}
                     syn::AttrStyle::Outer => continue,
                 }
 
@@ -749,7 +817,7 @@ impl Rule for OverscopedAllowRule {
 
                 if let syn::Meta::List(meta_list) = &attr.meta {
                     let nested = match meta_list.parse_args_with(
-                        syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated
+                        syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
                     ) {
                         Ok(n) => n,
                         Err(_) => continue,
@@ -757,13 +825,17 @@ impl Rule for OverscopedAllowRule {
 
                     for meta in nested {
                         if let syn::Meta::Path(path) = meta {
-                            let lint_name = path.segments.iter()
+                            let lint_name = path
+                                .segments
+                                .iter()
                                 .map(|s| s.ident.to_string())
                                 .collect::<Vec<_>>()
                                 .join("::");
 
                             if Self::is_security_relevant_lint(&lint_name) {
-                                let relative_path = source.path.strip_prefix(crate_root)
+                                let relative_path = source
+                                    .path
+                                    .strip_prefix(crate_root)
                                     .unwrap_or(&source.path)
                                     .display()
                                     .to_string();
@@ -825,25 +897,25 @@ impl CommentedOutCodeRule {
     /// Check if a comment line looks like commented-out code
     fn looks_like_commented_code(line: &str) -> bool {
         let trimmed = line.trim();
-        
+
         if !trimmed.starts_with("//") {
             return false;
         }
-        
+
         let content = trimmed.trim_start_matches('/').trim();
-        
+
         if content.is_empty() {
             return false;
         }
-        
+
         if trimmed.starts_with("///") || trimmed.starts_with("//!") {
             return false;
         }
-        
+
         let lowercase = content.to_lowercase();
-        if lowercase.starts_with("todo:") 
-            || lowercase.starts_with("fixme:") 
-            || lowercase.starts_with("note:") 
+        if lowercase.starts_with("todo:")
+            || lowercase.starts_with("fixme:")
+            || lowercase.starts_with("note:")
             || lowercase.starts_with("hack:")
             || lowercase.starts_with("xxx:")
             || lowercase.starts_with("see:")
@@ -854,41 +926,74 @@ impl CommentedOutCodeRule {
             || content.starts_with('=')
             || content.starts_with('|')
             || content.starts_with('-')
-            || content.chars().all(|c| c == '=' || c == '-' || c.is_whitespace()) {
+            || content
+                .chars()
+                .all(|c| c == '=' || c == '-' || c.is_whitespace())
+        {
             return false;
         }
-        
+
         let code_keywords = [
-            "pub fn", "fn ", "let ", "let mut", "struct ", "enum ", "impl ", 
-            "use ", "mod ", "trait ", "const ", "static ", "match ", "if ", 
-            "for ", "while ", "loop ", "return ", "self.", "println!", "format!",
-            "=> ", ".unwrap()", ".expect(", "Vec<", "HashMap<", "Option<", "Result<",
+            "pub fn",
+            "fn ",
+            "let ",
+            "let mut",
+            "struct ",
+            "enum ",
+            "impl ",
+            "use ",
+            "mod ",
+            "trait ",
+            "const ",
+            "static ",
+            "match ",
+            "if ",
+            "for ",
+            "while ",
+            "loop ",
+            "return ",
+            "self.",
+            "println!",
+            "format!",
+            "=> ",
+            ".unwrap()",
+            ".expect(",
+            "Vec<",
+            "HashMap<",
+            "Option<",
+            "Result<",
         ];
-        
+
         for keyword in &code_keywords {
             if content.contains(keyword) {
                 return true;
             }
         }
-        
+
         if content.contains(" = ") && !content.ends_with(':') {
-            if !lowercase.contains("means") && !lowercase.contains("where") 
-                && !lowercase.contains("when") && !lowercase.contains("if ") {
+            if !lowercase.contains("means")
+                && !lowercase.contains("where")
+                && !lowercase.contains("when")
+                && !lowercase.contains("if ")
+            {
                 return true;
             }
         }
-        
+
         let has_semicolon = content.ends_with(';');
         let has_braces = content.contains('{') || content.contains('}');
         let has_brackets = content.contains('[') || content.contains(']');
-        
+
         if has_semicolon || (has_braces && has_brackets) {
-            if !lowercase.starts_with("this ") && !lowercase.starts_with("the ") 
-                && !lowercase.starts_with("a ") && !lowercase.starts_with("an ") {
+            if !lowercase.starts_with("this ")
+                && !lowercase.starts_with("the ")
+                && !lowercase.starts_with("a ")
+                && !lowercase.starts_with("an ")
+            {
                 return true;
             }
         }
-        
+
         false
     }
 }
@@ -898,37 +1003,43 @@ impl Rule for CommentedOutCodeRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
-        
+
         let crate_root = Path::new(&package.crate_root);
         let sources = match SourceFile::collect_crate_sources(crate_root) {
             Ok(s) => s,
             Err(_) => return findings,
         };
-        
+
         for source in sources {
             let mut evidence = Vec::new();
             let mut consecutive_code_lines = 0;
             let mut first_code_line_num = 0;
-            
+
             for (line_num, line) in source.content.lines().enumerate() {
                 if Self::looks_like_commented_code(line) {
                     if consecutive_code_lines == 0 {
                         first_code_line_num = line_num + 1;
                     }
                     consecutive_code_lines += 1;
-                    
+
                     if evidence.len() < 3 {
                         evidence.push(format!("Line {}: {}", line_num + 1, line.trim()));
                     }
                 } else {
                     if consecutive_code_lines >= 2 {
-                        let relative_path = source.path.strip_prefix(crate_root)
+                        let relative_path = source
+                            .path
+                            .strip_prefix(crate_root)
                             .unwrap_or(&source.path)
                             .display()
                             .to_string();
-                        
+
                         findings.push(Finding {
                             rule_id: self.metadata.id.clone(),
                             rule_name: self.metadata.name.clone(),
@@ -945,19 +1056,21 @@ impl Rule for CommentedOutCodeRule {
                             span: None,
                     ..Default::default()
                         });
-                        
+
                         evidence.clear();
                     }
                     consecutive_code_lines = 0;
                 }
             }
-            
+
             if consecutive_code_lines >= 2 {
-                let relative_path = source.path.strip_prefix(crate_root)
+                let relative_path = source
+                    .path
+                    .strip_prefix(crate_root)
                     .unwrap_or(&source.path)
                     .display()
                     .to_string();
-                
+
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
@@ -976,7 +1089,7 @@ impl Rule for CommentedOutCodeRule {
                 });
             }
         }
-        
+
         findings
     }
 }
@@ -985,9 +1098,9 @@ impl Rule for CommentedOutCodeRule {
 // RUSTCOLA123: Unwrap/Expect in Hot Paths Rule
 // ============================================================================
 
+use crate::rules::utils::filter_entry;
 use std::ffi::OsStr;
 use walkdir::WalkDir;
-use crate::rules::utils::filter_entry;
 
 /// Detects panic-prone code in performance-critical paths.
 /// Panics in hot paths can cause cascading failures under load.
@@ -1005,7 +1118,8 @@ impl UnwrapInHotPathRule {
                 full_description: "Detects unwrap(), expect(), and indexing operations in \
                     performance-critical code paths like loops, iterators, async poll functions, \
                     and request handlers. Panics in these paths can cause cascading failures. \
-                    Use Result propagation, .get(), or pattern matching instead.".to_string(),
+                    Use Result propagation, .get(), or pattern matching instead."
+                    .to_string(),
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
@@ -1041,8 +1155,14 @@ impl UnwrapInHotPathRule {
     /// Panic-prone patterns
     fn panic_patterns() -> &'static [(&'static str, &'static str)] {
         &[
-            (".unwrap()", "Use ? operator, .unwrap_or(), .unwrap_or_else(), or pattern match"),
-            (".expect(", "Use ? operator, .unwrap_or(), .unwrap_or_else(), or pattern match"),
+            (
+                ".unwrap()",
+                "Use ? operator, .unwrap_or(), .unwrap_or_else(), or pattern match",
+            ),
+            (
+                ".expect(",
+                "Use ? operator, .unwrap_or(), .unwrap_or_else(), or pattern match",
+            ),
             ("[", "Use .get() for safe indexing"),
         ]
     }
@@ -1053,7 +1173,11 @@ impl Rule for UnwrapInHotPathRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -1135,7 +1259,11 @@ impl Rule for UnwrapInHotPathRule {
                             // Filter out false positives
                             // Skip comments
                             if let Some(comment_pos) = trimmed.find("//") {
-                                if trimmed.find(pattern).map(|p| p > comment_pos).unwrap_or(false) {
+                                if trimmed
+                                    .find(pattern)
+                                    .map(|p| p > comment_pos)
+                                    .unwrap_or(false)
+                                {
                                     continue;
                                 }
                             }
@@ -1143,12 +1271,13 @@ impl Rule for UnwrapInHotPathRule {
                             // For indexing, be more specific
                             if *pattern == "[" {
                                 // Skip if it's a slice pattern, array type, or already uses .get()
-                                if trimmed.contains(".get(") ||
-                                   trimmed.contains("[..]") ||
-                                   trimmed.contains(": [") ||
-                                   trimmed.contains("-> [") ||
-                                   trimmed.contains("Vec<") ||
-                                   !trimmed.contains("]") {
+                                if trimmed.contains(".get(")
+                                    || trimmed.contains("[..]")
+                                    || trimmed.contains(": [")
+                                    || trimmed.contains("-> [")
+                                    || trimmed.contains("Vec<")
+                                    || !trimmed.contains("]")
+                                {
                                     continue;
                                 }
                             }
@@ -1160,13 +1289,15 @@ impl Rule for UnwrapInHotPathRule {
                                 severity: self.metadata.default_severity,
                                 message: format!(
                                     "Panic-prone code '{}' in hot path ({}). {}",
-                                    pattern.trim_end_matches('('), hot_path_type, advice
+                                    pattern.trim_end_matches('('),
+                                    hot_path_type,
+                                    advice
                                 ),
                                 function: location,
                                 function_signature: String::new(),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
-                    ..Default::default()
+                                ..Default::default()
                             });
                             break; // One finding per line
                         }

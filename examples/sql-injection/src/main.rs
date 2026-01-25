@@ -50,7 +50,7 @@ pub fn bad_stdin_query() -> io::Result<String> {
     let mut search_term = String::new();
     stdin.lock().read_line(&mut search_term)?;
     let search_term = search_term.trim();
-    
+
     // Vulnerable: stdin input in LIKE clause
     let query = format!("SELECT * FROM products WHERE name LIKE '%{}%'", search_term);
     Ok(query)

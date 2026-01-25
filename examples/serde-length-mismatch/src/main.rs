@@ -1,9 +1,12 @@
 //! Test cases for RUSTCOLA081: Serde serialize_* length mismatch
-//! 
+//!
 //! This rule detects when the length argument to serialize_struct/serialize_tuple/etc
 //! doesn't match the actual number of serialize_field/serialize_element calls.
 
-use serde::ser::{Serialize, Serializer, SerializeStruct, SerializeTuple, SerializeSeq, SerializeMap, SerializeTupleStruct};
+use serde::ser::{
+    Serialize, SerializeMap, SerializeSeq, SerializeStruct, SerializeTuple, SerializeTupleStruct,
+    Serializer,
+};
 use serde::Serialize as DeriveSerialize;
 
 // ============================================================================
@@ -279,14 +282,14 @@ impl Serialize for SingleField {
 
 fn main() {
     println!("Serde length mismatch test cases");
-    
+
     // Test some serializations
     let correct = CorrectFields {
         name: "Alice".to_string(),
         age: 30,
     };
     println!("Correct: {}", serde_json::to_string(&correct).unwrap());
-    
+
     // These would produce incorrect output due to length mismatches
     let too_few = TooFewFields {
         name: "Bob".to_string(),

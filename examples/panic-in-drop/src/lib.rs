@@ -45,8 +45,7 @@ pub struct BadExpectDrop {
 impl Drop for BadExpectDrop {
     fn drop(&mut self) {
         // NOSEC - expect() can panic
-        let _result = std::fs::remove_file("temp.txt")
-            .expect("Failed to remove temp file"); // NOSEC
+        let _result = std::fs::remove_file("temp.txt").expect("Failed to remove temp file"); // NOSEC
     }
 }
 
@@ -174,4 +173,3 @@ mod tests {
         // Drops here and panics
     }
 }
-

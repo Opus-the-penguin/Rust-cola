@@ -1,5 +1,5 @@
 // Test suite for RUSTCOLA066: Modulo bias on random outputs
-// 
+//
 // Modulo bias occurs when using % n on random values because it creates
 // non-uniform distributions. For example, rand() % 3 with a RNG producing
 // 0-255 will favor 0 and 1 over 2 (256 % 3 = 1).

@@ -15,7 +15,7 @@ use tokio::sync::mpsc;
 async fn bad_read_line_in_select(stream: TcpStream, mut rx: mpsc::Receiver<()>) {
     let reader = BufReader::new(stream);
     let mut lines = reader.lines();
-    
+
     loop {
         tokio::select! {
             // This is NOT cancellation-safe! If a partial line was read
@@ -38,10 +38,10 @@ async fn bad_read_line_in_select(stream: TcpStream, mut rx: mpsc::Receiver<()>) 
 /// PROBLEMATIC: read_exact in select! - partial reads are lost
 async fn bad_read_exact_in_select(stream: TcpStream, mut rx: mpsc::Receiver<()>) {
     use tokio::io::AsyncReadExt;
-    
+
     let mut stream = stream;
     let mut buffer = [0u8; 1024];
-    
+
     loop {
         tokio::select! {
             // PROBLEMATIC: read_exact( is not cancellation safe
@@ -62,12 +62,9 @@ async fn bad_read_exact_in_select(stream: TcpStream, mut rx: mpsc::Receiver<()>)
 }
 
 /// PROBLEMATIC: recv_many in select! - some messages may be lost
-async fn bad_recv_many_in_select(
-    mut rx1: mpsc::Receiver<String>,
-    mut rx2: mpsc::Receiver<()>,
-) {
+async fn bad_recv_many_in_select(mut rx1: mpsc::Receiver<String>, mut rx2: mpsc::Receiver<()>) {
     let mut buffer = Vec::with_capacity(10);
-    
+
     loop {
         tokio::select! {
             // PROBLEMATIC: recv_many( is not cancellation safe
@@ -89,10 +86,10 @@ async fn bad_recv_many_in_select(
 /// PROBLEMATIC: read_to_end in select!
 async fn bad_read_to_end_in_select(stream: TcpStream, mut rx: mpsc::Receiver<()>) {
     use tokio::io::AsyncReadExt;
-    
+
     let mut stream = stream;
     let mut buffer = Vec::new();
-    
+
     tokio::select! {
         // PROBLEMATIC: read_to_end( is not cancellation safe
         result = stream.read_to_end(&mut buffer) => {
@@ -114,7 +111,7 @@ async fn bad_copy_in_select(
     mut rx: mpsc::Receiver<()>,
 ) {
     use tokio::io::copy;
-    
+
     tokio::select! {
         // PROBLEMATIC: copy( is not cancellation safe
         result = copy(&mut reader, &mut writer) => {
@@ -134,10 +131,7 @@ async fn bad_copy_in_select(
 // ============================================================================
 
 /// SAFE: Using recv() instead of recv_many() - recv() is cancellation safe
-async fn safe_recv_in_select(
-    mut rx1: mpsc::Receiver<String>,
-    mut rx2: mpsc::Receiver<()>,
-) {
+async fn safe_recv_in_select(mut rx1: mpsc::Receiver<String>, mut rx2: mpsc::Receiver<()>) {
     loop {
         tokio::select! {
             // recv() is cancellation-safe - it doesn't start until polled
@@ -159,12 +153,12 @@ async fn safe_recv_in_select(
 async fn safe_read_line_pattern(stream: TcpStream, mut rx: mpsc::Receiver<()>) {
     let reader = BufReader::new(stream);
     let mut lines = reader.lines();
-    
+
     loop {
         // Pin the future outside of select so we can resume it
         let next_line = lines.next_line();
         tokio::pin!(next_line);
-    
+
         tokio::select! {
             // The future is owned and pinned - we can restart if needed
             line = &mut next_line => {
@@ -192,11 +186,11 @@ async fn safe_read_line_pattern(stream: TcpStream, mut rx: mpsc::Receiver<()>) {
 async fn safe_biased_select(stream: TcpStream, mut rx: mpsc::Receiver<()>) {
     let reader = BufReader::new(stream);
     let mut lines = reader.lines();
-    
+
     loop {
         tokio::select! {
             biased;
-            
+
             // By using biased, we ensure the line read completes first
             // if both are ready, reducing (but not eliminating) data loss
             line = lines.next_line() => {

@@ -1,8 +1,8 @@
 // Test suite for RUSTCOLA064: Pointer arithmetic on zero-sized types
-// 
+//
 // Zero-sized types (ZST) have size_of::<T>() == 0
 // Pointer arithmetic on ZSTs causes undefined behavior because:
-// - offset() assumes stride of size_of::<T>()  
+// - offset() assumes stride of size_of::<T>()
 // - For ZSTs, this means all offsets point to the same address
 // - This violates pointer aliasing rules and provenance
 //

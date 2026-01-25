@@ -10,8 +10,11 @@
 //! - TLS verification disabled
 //! - Content-Length based allocations
 
-use crate::{Exploitability, Confidence, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use crate::detect_content_length_allocations;
+use crate::{
+    Confidence, Exploitability, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin,
+    Severity,
+};
 use std::collections::HashSet;
 
 // ============================================================================
@@ -47,7 +50,11 @@ impl Rule for NonHttpsUrlRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -56,11 +63,13 @@ impl Rule for NonHttpsUrlRule {
         let patterns = ["\"http://", "http://"];
 
         for function in &package.functions {
-            let evidence: Vec<String> = function.body.iter()
+            let evidence: Vec<String> = function
+                .body
+                .iter()
                 .filter(|line| patterns.iter().any(|p| line.contains(p)))
                 .map(|line| line.trim().to_string())
                 .collect();
-            
+
             if evidence.is_empty() {
                 continue;
             }
@@ -74,10 +83,10 @@ impl Rule for NonHttpsUrlRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
+                confidence: Confidence::Medium,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
+                code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
             });
@@ -92,7 +101,8 @@ impl Rule for NonHttpsUrlRule {
 // ============================================================================
 
 const DANGER_ACCEPT_INVALID_CERTS_SYMBOL: &str = concat!("danger", "_accept", "_invalid", "_certs");
-const DANGER_ACCEPT_INVALID_HOSTNAMES_SYMBOL: &str = concat!("danger", "_accept", "_invalid", "_hostnames");
+const DANGER_ACCEPT_INVALID_HOSTNAMES_SYMBOL: &str =
+    concat!("danger", "_accept", "_invalid", "_hostnames");
 
 fn line_disables_tls_verification(line: &str) -> bool {
     let trimmed = line.trim();
@@ -162,7 +172,11 @@ impl Rule for DangerAcceptInvalidCertRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -198,10 +212,10 @@ impl Rule for DangerAcceptInvalidCertRule {
                 function_signature: function.signature.clone(),
                 evidence: lines,
                 span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
+                confidence: Confidence::Medium,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
+                code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
             });
@@ -223,13 +237,13 @@ struct OpensslVerifyNoneInvocation {
 fn detect_openssl_verify_none(function: &MirFunction) -> Vec<OpensslVerifyNoneInvocation> {
     let mut invocations = Vec::new();
     let mut processed_indices = std::collections::HashSet::new();
-    
+
     for (i, line) in function.body.iter().enumerate() {
         if processed_indices.contains(&i) {
             continue;
         }
         let lower = line.to_lowercase();
-        
+
         // Check for set_verify with NONE or empty() directly in the call
         if lower.contains("set_verify") && (lower.contains("none") || lower.contains("empty()")) {
             let mut supporting = Vec::new();
@@ -246,7 +260,7 @@ fn detect_openssl_verify_none(function: &MirFunction) -> Vec<OpensslVerifyNoneIn
             });
             continue;
         }
-        
+
         // Check for SslVerifyMode::empty() that's used in a later set_verify call
         if lower.contains("sslverifymode::empty()") || lower.contains("sslverifymode::none") {
             // Look for a subsequent set_verify call that might use this
@@ -264,7 +278,7 @@ fn detect_openssl_verify_none(function: &MirFunction) -> Vec<OpensslVerifyNoneIn
             }
         }
     }
-    
+
     invocations
 }
 
@@ -297,7 +311,11 @@ impl Rule for OpensslVerifyNoneRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         // Skip analyzer's own crate to avoid self-referential warnings
         if package.crate_name == "mir-extractor" {
             return Vec::new();
@@ -335,8 +353,8 @@ impl Rule for OpensslVerifyNoneRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -378,34 +396,43 @@ impl Rule for CookieSecureAttributeRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
             // Look for cookie-related patterns
-            let cookie_lines: Vec<&String> = function.body.iter()
+            let cookie_lines: Vec<&String> = function
+                .body
+                .iter()
                 .filter(|line| {
                     let lower = line.to_lowercase();
                     lower.contains("cookie") && lower.contains("new")
                 })
                 .collect();
-            
+
             if cookie_lines.is_empty() {
                 continue;
             }
-            
+
             // Check if secure is set anywhere in the function
             let has_secure = function.body.iter().any(|line| {
                 let lower = line.to_lowercase();
                 lower.contains("secure(true)") || lower.contains("set_secure")
             });
-            
+
             if !has_secure {
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
                     severity: self.metadata.default_severity,
-                    message: format!("Cookie created without Secure attribute in `{}`", function.name),
+                    message: format!(
+                        "Cookie created without Secure attribute in `{}`",
+                        function.name
+                    ),
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence: cookie_lines.iter().map(|s| s.trim().to_string()).collect(),
@@ -414,8 +441,8 @@ impl Rule for CookieSecureAttributeRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -457,20 +484,28 @@ impl Rule for CorsWildcardRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
-            let evidence: Vec<String> = function.body.iter()
+            let evidence: Vec<String> = function
+                .body
+                .iter()
                 .filter(|line| {
                     let lower = line.to_lowercase();
                     // Look for CORS with wildcard patterns
-                    (lower.contains("cors") || lower.contains("access-control-allow-origin")) &&
-                    (lower.contains("\"*\"") || lower.contains("any()") || lower.contains("permissive()"))
+                    (lower.contains("cors") || lower.contains("access-control-allow-origin"))
+                        && (lower.contains("\"*\"")
+                            || lower.contains("any()")
+                            || lower.contains("permissive()"))
                 })
                 .map(|s| s.trim().to_string())
                 .collect();
-            
+
             if !evidence.is_empty() {
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
@@ -485,8 +520,8 @@ impl Rule for CorsWildcardRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -511,7 +546,8 @@ impl ConnectionStringPasswordRule {
                 id: "RUSTCOLA060".to_string(),
                 name: "connection-string-password".to_string(),
                 short_description: "Password in connection string".to_string(),
-                full_description: "Detects hardcoded passwords in database connection strings.".to_string(),
+                full_description: "Detects hardcoded passwords in database connection strings."
+                    .to_string(),
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
@@ -528,28 +564,40 @@ impl Rule for ConnectionStringPasswordRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
-            let evidence: Vec<String> = function.body.iter()
+            let evidence: Vec<String> = function
+                .body
+                .iter()
                 .filter(|line| {
                     let lower = line.to_lowercase();
                     // Connection string patterns with embedded passwords
-                    (lower.contains("password=") || lower.contains("pwd=")) &&
-                    (lower.contains("postgres") || lower.contains("mysql") || 
-                     lower.contains("mongodb") || lower.contains("redis") ||
-                     lower.contains("connection") || lower.contains("database"))
+                    (lower.contains("password=") || lower.contains("pwd="))
+                        && (lower.contains("postgres")
+                            || lower.contains("mysql")
+                            || lower.contains("mongodb")
+                            || lower.contains("redis")
+                            || lower.contains("connection")
+                            || lower.contains("database"))
                 })
                 .map(|s| s.trim().to_string())
                 .collect();
-            
+
             if !evidence.is_empty() {
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
                     severity: self.metadata.default_severity,
-                    message: format!("Hardcoded password in connection string in `{}`", function.name),
+                    message: format!(
+                        "Hardcoded password in connection string in `{}`",
+                        function.name
+                    ),
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence,
@@ -558,8 +606,8 @@ impl Rule for ConnectionStringPasswordRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -601,37 +649,48 @@ impl Rule for PasswordFieldMaskingRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
             // Look for Debug/Display implementations with password fields
-            let is_debug_impl = function.name.contains("fmt") && 
-                (function.signature.contains("Debug") || function.signature.contains("Display"));
-            
+            let is_debug_impl = function.name.contains("fmt")
+                && (function.signature.contains("Debug") || function.signature.contains("Display"));
+
             if !is_debug_impl {
                 continue;
             }
-            
+
             let has_password_field = function.body.iter().any(|line| {
                 let lower = line.to_lowercase();
                 lower.contains("password") || lower.contains("secret") || lower.contains("token")
             });
-            
+
             if has_password_field {
-                let evidence: Vec<String> = function.body.iter()
+                let evidence: Vec<String> = function
+                    .body
+                    .iter()
                     .filter(|line| {
                         let lower = line.to_lowercase();
-                        lower.contains("password") || lower.contains("secret") || lower.contains("token")
+                        lower.contains("password")
+                            || lower.contains("secret")
+                            || lower.contains("token")
                     })
                     .map(|s| s.trim().to_string())
                     .collect();
-                    
+
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
                     severity: self.metadata.default_severity,
-                    message: format!("Password field exposed in Debug/Display in `{}`", function.name),
+                    message: format!(
+                        "Password field exposed in Debug/Display in `{}`",
+                        function.name
+                    ),
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence,
@@ -640,8 +699,8 @@ impl Rule for PasswordFieldMaskingRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -666,7 +725,9 @@ impl CleartextLoggingRule {
                 id: "RUSTCOLA075".to_string(),
                 name: "cleartext-logging".to_string(),
                 short_description: "Sensitive data in logs".to_string(),
-                full_description: "Detects logging of sensitive data (passwords, tokens, keys) without masking.".to_string(),
+                full_description:
+                    "Detects logging of sensitive data (passwords, tokens, keys) without masking."
+                        .to_string(),
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
@@ -683,23 +744,33 @@ impl Rule for CleartextLoggingRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
-            let evidence: Vec<String> = function.body.iter()
+            let evidence: Vec<String> = function
+                .body
+                .iter()
                 .filter(|line| {
                     let lower = line.to_lowercase();
                     // Log macros with sensitive data
-                    let has_log = lower.contains("log::") || lower.contains("tracing::") ||
-                                  lower.contains("println!") || lower.contains("eprintln!");
-                    let has_sensitive = lower.contains("password") || lower.contains("secret") ||
-                                       lower.contains("token") || lower.contains("api_key");
+                    let has_log = lower.contains("log::")
+                        || lower.contains("tracing::")
+                        || lower.contains("println!")
+                        || lower.contains("eprintln!");
+                    let has_sensitive = lower.contains("password")
+                        || lower.contains("secret")
+                        || lower.contains("token")
+                        || lower.contains("api_key");
                     has_log && has_sensitive
                 })
                 .map(|s| s.trim().to_string())
                 .collect();
-            
+
             if !evidence.is_empty() {
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
@@ -714,8 +785,8 @@ impl Rule for CleartextLoggingRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -770,14 +841,19 @@ impl Rule for TlsVerificationDisabledRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
             // Skip test functions (common to disable TLS verification in tests)
-            if function.signature.contains("#[test]") || 
-               function.name.contains("test") ||
-               function.signature.contains("#[cfg(test)]") {
+            if function.signature.contains("#[test]")
+                || function.name.contains("test")
+                || function.signature.contains("#[cfg(test)]")
+            {
                 continue;
             }
 
@@ -788,8 +864,11 @@ impl Rule for TlsVerificationDisabledRule {
 
                 // --- native-tls patterns ---
                 // Pattern: TlsConnectorBuilder::danger_accept_invalid_certs(_, const true)
-                if trimmed.contains("danger_accept_invalid_certs") && trimmed.contains("const true") {
-                    let library = if trimmed.contains("native_tls") || trimmed.contains("TlsConnectorBuilder") {
+                if trimmed.contains("danger_accept_invalid_certs") && trimmed.contains("const true")
+                {
+                    let library = if trimmed.contains("native_tls")
+                        || trimmed.contains("TlsConnectorBuilder")
+                    {
                         "native-tls"
                     } else if trimmed.contains("reqwest") || trimmed.contains("ClientBuilder") {
                         "reqwest"
@@ -797,14 +876,21 @@ impl Rule for TlsVerificationDisabledRule {
                         "TLS library"
                     };
                     found_dangers.push((
-                        format!("{}: danger_accept_invalid_certs(true) disables certificate validation", library),
+                        format!(
+                            "{}: danger_accept_invalid_certs(true) disables certificate validation",
+                            library
+                        ),
                         trimmed.to_string(),
                     ));
                 }
 
                 // Pattern: TlsConnectorBuilder::danger_accept_invalid_hostnames(_, const true)
-                if trimmed.contains("danger_accept_invalid_hostnames") && trimmed.contains("const true") {
-                    let library = if trimmed.contains("native_tls") || trimmed.contains("TlsConnectorBuilder") {
+                if trimmed.contains("danger_accept_invalid_hostnames")
+                    && trimmed.contains("const true")
+                {
+                    let library = if trimmed.contains("native_tls")
+                        || trimmed.contains("TlsConnectorBuilder")
+                    {
                         "native-tls"
                     } else if trimmed.contains("reqwest") || trimmed.contains("ClientBuilder") {
                         "reqwest"
@@ -819,8 +905,11 @@ impl Rule for TlsVerificationDisabledRule {
 
                 // --- rustls patterns ---
                 // Pattern: ConfigBuilder::dangerous() - entering dangerous mode
-                if (trimmed.contains(">::dangerous(") || trimmed.contains("::dangerous(move")) &&
-                   (trimmed.contains("rustls") || trimmed.contains("ConfigBuilder") || trimmed.contains("WantsVerifier")) {
+                if (trimmed.contains(">::dangerous(") || trimmed.contains("::dangerous(move"))
+                    && (trimmed.contains("rustls")
+                        || trimmed.contains("ConfigBuilder")
+                        || trimmed.contains("WantsVerifier"))
+                {
                     found_dangers.push((
                         "rustls: .dangerous() enables unsafe TLS configuration".to_string(),
                         trimmed.to_string(),
@@ -828,7 +917,9 @@ impl Rule for TlsVerificationDisabledRule {
                 }
 
                 // Pattern: DangerousClientConfigBuilder::with_custom_certificate_verifier
-                if trimmed.contains("DangerousClientConfigBuilder") && trimmed.contains("with_custom_certificate_verifier") {
+                if trimmed.contains("DangerousClientConfigBuilder")
+                    && trimmed.contains("with_custom_certificate_verifier")
+                {
                     found_dangers.push((
                         "rustls: custom certificate verifier may bypass validation".to_string(),
                         trimmed.to_string(),
@@ -845,8 +936,9 @@ impl Rule for TlsVerificationDisabledRule {
 
                 // --- openssl patterns (if using openssl crate) ---
                 // Pattern: set_verify(SslVerifyMode::NONE) or SSL_VERIFY_NONE
-                if (trimmed.contains("set_verify") && trimmed.contains("NONE")) ||
-                   trimmed.contains("SSL_VERIFY_NONE") {
+                if (trimmed.contains("set_verify") && trimmed.contains("NONE"))
+                    || trimmed.contains("SSL_VERIFY_NONE")
+                {
                     found_dangers.push((
                         "OpenSSL: SSL_VERIFY_NONE disables certificate verification".to_string(),
                         trimmed.to_string(),
@@ -855,10 +947,13 @@ impl Rule for TlsVerificationDisabledRule {
 
                 // --- Generic danger patterns ---
                 // Pattern: "danger" in function name being called with true
-                if trimmed.contains("danger") && trimmed.contains("const true") && 
-                   !found_dangers.iter().any(|(_, e)| e == trimmed) {
+                if trimmed.contains("danger")
+                    && trimmed.contains("const true")
+                    && !found_dangers.iter().any(|(_, e)| e == trimmed)
+                {
                     found_dangers.push((
-                        "TLS danger method called with true - verification may be disabled".to_string(),
+                        "TLS danger method called with true - verification may be disabled"
+                            .to_string(),
                         trimmed.to_string(),
                     ));
                 }
@@ -883,8 +978,8 @@ impl Rule for TlsVerificationDisabledRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -915,7 +1010,8 @@ impl AwsS3UnscopedAccessRule {
                     delete_object, get_object, etc.) where bucket names, keys, or prefixes \
                     come from untrusted sources (environment variables, CLI arguments) without \
                     validation. Attackers can exploit this to access, modify, or delete arbitrary \
-                    S3 objects. Use allowlists, starts_with validation, or path sanitization.".to_string(),
+                    S3 objects. Use allowlists, starts_with validation, or path sanitization."
+                    .to_string(),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
@@ -931,28 +1027,31 @@ impl AwsS3UnscopedAccessRule {
         // Look for validation patterns before the S3 call
         for i in 0..s3_call_idx {
             let trimmed = lines[i].trim();
-            
+
             // Allowlist check: contains() call typically used for allowlist validation
             if trimmed.contains("::contains(") && !trimmed.contains("str>::contains") {
                 return true;
             }
-            
+
             // starts_with validation for prefix scoping
             if trimmed.contains("starts_with") && !trimmed.contains("trim_start") {
                 return true;
             }
-            
+
             // Path traversal sanitization: replace("..", "")
             if trimmed.contains("replace") && trimmed.contains("\"..\"") {
                 return true;
             }
-            
+
             // Explicit assertion/panic for invalid input
-            if (trimmed.contains("assert!") || trimmed.contains("panic!")) && 
-               (trimmed.contains("bucket") || trimmed.contains("key") || trimmed.contains("prefix")) {
+            if (trimmed.contains("assert!") || trimmed.contains("panic!"))
+                && (trimmed.contains("bucket")
+                    || trimmed.contains("key")
+                    || trimmed.contains("prefix"))
+            {
                 return true;
             }
-            
+
             // filter() for character sanitization
             if trimmed.contains("filter::<") && trimmed.contains("Chars") {
                 return true;
@@ -964,11 +1063,11 @@ impl AwsS3UnscopedAccessRule {
     /// Get the S3 operation severity based on the method
     fn get_operation_severity(&self, method: &str) -> Severity {
         if method.contains("delete") || method.contains("Delete") {
-            Severity::High  // Deletion is most dangerous (using High since no Critical)
+            Severity::High // Deletion is most dangerous (using High since no Critical)
         } else if method.contains("put") || method.contains("Put") || method.contains("copy") {
-            Severity::High  // Write operations
+            Severity::High // Write operations
         } else {
-            Severity::Medium  // Read operations (list, get, head)
+            Severity::Medium // Read operations (list, get, head)
         }
     }
 }
@@ -978,36 +1077,48 @@ impl Rule for AwsS3UnscopedAccessRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
             // Skip test functions
-            if function.name.contains("test") || function.name.starts_with("test_") ||
-               function.signature.contains("#[test]") || function.signature.contains("#[cfg(test)]") {
+            if function.name.contains("test")
+                || function.name.starts_with("test_")
+                || function.signature.contains("#[test]")
+                || function.signature.contains("#[cfg(test)]")
+            {
                 continue;
             }
 
             let lines: Vec<&str> = function.body.iter().map(|s| s.as_str()).collect();
-            
+
             // Track untrusted variable sources
             let mut untrusted_vars: HashSet<String> = HashSet::new();
-            
+
             // First pass: identify untrusted sources (env::var, args)
             for (_idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 // Detect env::var Result variable declarations
                 // Pattern: let mut _4: std::result::Result<std::string::String, std::env::VarError>;
                 if trimmed.contains("Result<") && trimmed.contains("VarError") {
                     if let Some(colon_pos) = trimmed.find(':') {
-                        let var_part = trimmed[..colon_pos].trim().trim_start_matches("let").trim().trim_start_matches("mut").trim();
+                        let var_part = trimmed[..colon_pos]
+                            .trim()
+                            .trim_start_matches("let")
+                            .trim()
+                            .trim_start_matches("mut")
+                            .trim();
                         if var_part.starts_with('_') {
                             untrusted_vars.insert(var_part.to_string());
                         }
                     }
                 }
-                
+
                 // env::var call (older pattern)
                 if trimmed.contains("var::<") && trimmed.contains("const \"") {
                     // Extract the target variable: _X = var::<&str>(...)
@@ -1018,7 +1129,7 @@ impl Rule for AwsS3UnscopedAccessRule {
                         }
                     }
                 }
-                
+
                 // env::args() collection
                 if trimmed.contains("env::args") || trimmed.contains("Args") {
                     if let Some(eq_pos) = trimmed.find(" = ") {
@@ -1028,12 +1139,16 @@ impl Rule for AwsS3UnscopedAccessRule {
                         }
                     }
                 }
-                
+
                 // Propagate taint through Result::unwrap with VarError
                 // Pattern: (((*_21) as variant#3).0: std::string::String) = Result::<std::string::String, VarError>::unwrap(move _4)
-                if trimmed.contains("VarError>::unwrap") || 
-                   (trimmed.contains("unwrap") && trimmed.contains("move _") && 
-                    untrusted_vars.iter().any(|v| trimmed.contains(&format!("move {}", v)))) {
+                if trimmed.contains("VarError>::unwrap")
+                    || (trimmed.contains("unwrap")
+                        && trimmed.contains("move _")
+                        && untrusted_vars
+                            .iter()
+                            .any(|v| trimmed.contains(&format!("move {}", v))))
+                {
                     // Extract the destination variable
                     if let Some(eq_pos) = trimmed.find(" = ") {
                         let dest_part = trimmed[..eq_pos].trim();
@@ -1048,22 +1163,23 @@ impl Rule for AwsS3UnscopedAccessRule {
                         }
                     }
                 }
-                
+
                 // Propagate taint through unwrap
                 if trimmed.contains("unwrap::<") && trimmed.contains("Result<std::string::String") {
                     if let Some(eq_pos) = trimmed.find(" = ") {
                         let var_part = trimmed[..eq_pos].trim();
                         // Check if source is tainted
                         for tainted in untrusted_vars.clone() {
-                            if trimmed.contains(&format!("move {}", tainted)) || 
-                               trimmed.contains(&format!("copy {}", tainted)) {
+                            if trimmed.contains(&format!("move {}", tainted))
+                                || trimmed.contains(&format!("copy {}", tainted))
+                            {
                                 untrusted_vars.insert(var_part.to_string());
                                 break;
                             }
                         }
                     }
                 }
-                
+
                 // Propagate through index operations (args[1])
                 if trimmed.contains("Index>::index") || trimmed.contains("[") {
                     if let Some(eq_pos) = trimmed.find(" = ") {
@@ -1076,25 +1192,29 @@ impl Rule for AwsS3UnscopedAccessRule {
                         }
                     }
                 }
-                
+
                 // Propagate through simple assignments and copies
                 if trimmed.contains(" = copy ") || trimmed.contains(" = move ") {
                     if let Some(eq_pos) = trimmed.find(" = ") {
                         let var_part = trimmed[..eq_pos].trim();
                         for tainted in untrusted_vars.clone() {
-                            if trimmed.contains(&format!("copy {}", tainted)) || 
-                               trimmed.contains(&format!("move {}", tainted)) ||
-                               trimmed.contains(&format!("&{}", tainted)) {
+                            if trimmed.contains(&format!("copy {}", tainted))
+                                || trimmed.contains(&format!("move {}", tainted))
+                                || trimmed.contains(&format!("&{}", tainted))
+                            {
                                 untrusted_vars.insert(var_part.to_string());
                                 break;
                             }
                         }
                     }
                 }
-                
+
                 // Propagate through reference operations to async state fields
                 // Pattern: _10 = &(((*_22) as variant#3).0: std::string::String);
-                if trimmed.contains(" = &") && trimmed.contains("variant#") && trimmed.contains(".0:") {
+                if trimmed.contains(" = &")
+                    && trimmed.contains("variant#")
+                    && trimmed.contains(".0:")
+                {
                     if let Some(eq_pos) = trimmed.find(" = ") {
                         let var_part = trimmed[..eq_pos].trim();
                         // Check if this references a tainted async state field
@@ -1108,7 +1228,7 @@ impl Rule for AwsS3UnscopedAccessRule {
                         }
                     }
                 }
-                
+
                 // Propagate through format! and string operations
                 if trimmed.contains("format_argument") || trimmed.contains("Arguments::") {
                     if let Some(eq_pos) = trimmed.find(" = ") {
@@ -1122,7 +1242,7 @@ impl Rule for AwsS3UnscopedAccessRule {
                     }
                 }
             }
-            
+
             // Second pass: find S3 operations with untrusted parameters
             let s3_methods = [
                 "ListObjectsV2FluentBuilder::bucket",
@@ -1138,51 +1258,65 @@ impl Rule for AwsS3UnscopedAccessRule {
                 "CopyObjectFluentBuilder::bucket",
                 "CopyObjectFluentBuilder::key",
             ];
-            
+
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 for method in &s3_methods {
                     if trimmed.contains(method) {
                         // Skip if using const (hardcoded value - safe)
-                        if trimmed.contains("const \"") || 
-                           trimmed.contains("const safe_") ||
-                           trimmed.contains("::ALLOWED_") {
+                        if trimmed.contains("const \"")
+                            || trimmed.contains("const safe_")
+                            || trimmed.contains("::ALLOWED_")
+                        {
                             continue;
                         }
-                        
+
                         // Check if any untrusted variable flows to this call
                         let mut tainted_param = None;
                         for tainted in &untrusted_vars {
-                            if trimmed.contains(&format!("move {}", tainted)) ||
-                               trimmed.contains(&format!("copy {}", tainted)) ||
-                               trimmed.contains(&format!("&{}", tainted)) {
+                            if trimmed.contains(&format!("move {}", tainted))
+                                || trimmed.contains(&format!("copy {}", tainted))
+                                || trimmed.contains(&format!("&{}", tainted))
+                            {
                                 tainted_param = Some(tainted.clone());
                                 break;
                             }
                         }
-                        
+
                         if let Some(_param) = tainted_param {
                             // Check if there's validation before this call
                             if self.has_validation(&lines, idx) {
                                 continue; // Validation found, skip
                             }
-                            
+
                             // Determine operation type and severity
-                            let op_type = if method.contains("bucket") { "bucket" } 
-                                         else if method.contains("prefix") { "prefix" }
-                                         else { "key" };
-                            
+                            let op_type = if method.contains("bucket") {
+                                "bucket"
+                            } else if method.contains("prefix") {
+                                "prefix"
+                            } else {
+                                "key"
+                            };
+
                             let severity = self.get_operation_severity(method);
-                            
-                            let operation = if method.contains("List") { "list_objects" }
-                                           else if method.contains("Put") { "put_object" }
-                                           else if method.contains("Delete") { "delete_object" }
-                                           else if method.contains("Get") { "get_object" }
-                                           else if method.contains("Head") { "head_object" }
-                                           else if method.contains("Copy") { "copy_object" }
-                                           else { "S3 operation" };
-                            
+
+                            let operation = if method.contains("List") {
+                                "list_objects"
+                            } else if method.contains("Put") {
+                                "put_object"
+                            } else if method.contains("Delete") {
+                                "delete_object"
+                            } else if method.contains("Get") {
+                                "get_object"
+                            } else if method.contains("Head") {
+                                "head_object"
+                            } else if method.contains("Copy") {
+                                "copy_object"
+                            } else {
+                                "S3 operation"
+                            };
+
                             findings.push(Finding {
                                 rule_id: self.metadata.id.clone(),
                                 rule_name: self.metadata.name.clone(),
@@ -1204,7 +1338,7 @@ impl Rule for AwsS3UnscopedAccessRule {
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
                             });
-                            
+
                             break; // Only report once per S3 call
                         }
                     }
@@ -1249,7 +1383,11 @@ impl Rule for ContentLengthAllocationRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -1281,8 +1419,8 @@ impl Rule for ContentLengthAllocationRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }

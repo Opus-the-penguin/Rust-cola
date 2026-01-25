@@ -95,9 +95,13 @@ mod tests {
     fn test_futures_compile() {
         // Just verify the types are correct
         let _bad1 = BadUnwrapFuture { value: Some(42) };
-        let _bad2 = BadExpectFuture { data: Ok("test".to_string()) };
+        let _bad2 = BadExpectFuture {
+            data: Ok("test".to_string()),
+        };
         let _bad3 = BadPanicFuture { ready: true };
         let _good1 = GoodMatchFuture { value: Some(42) };
-        let _good2 = GoodErrorPropagationFuture { data: Ok("test".to_string()) };
+        let _good2 = GoodErrorPropagationFuture {
+            data: Ok("test".to_string()),
+        };
     }
 }

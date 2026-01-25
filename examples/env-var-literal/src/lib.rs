@@ -110,42 +110,42 @@ mod tests {
     #[test]
     fn demonstrate_const_benefits() {
         // Benefits of using constants:
-        
+
         // 1. Compile-time checking - typos caught immediately
         // const HOME_DIR: &str = "HOMR"; // Oops, typo!
         // But the constant NAME tells us it should be "HOME"
-        
+
         // 2. Single source of truth
         // Change the value once, affects all uses
-        
+
         // 3. Documentation
         // Constants make it clear what env vars the code depends on
-        
+
         // 4. Easier to audit
         // grep for "const.*&str" shows all env vars used
-        
+
         // 5. IDE support
         // Auto-completion, find usages, rename refactoring all work better
-        
+
         assert!(true); // Placeholder
     }
 
     #[test]
     fn demonstrate_literal_problems() {
         // Problems with string literals:
-        
+
         // 1. Typos only caught at runtime
         let _ = std::env::var("HOMR"); // Typo! But compiles fine
-        
+
         // 2. Multiple occurrences to maintain
         // If "DATABASE_URL" changes, need to find/replace all
-        
+
         // 3. Hard to audit dependencies
         // Literals scattered throughout code
-        
+
         // 4. No type safety
         // Easy to mix up similar var names
-        
+
         assert!(true); // Placeholder
     }
 }

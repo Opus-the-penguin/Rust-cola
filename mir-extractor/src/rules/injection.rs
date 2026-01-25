@@ -15,9 +15,9 @@ use std::collections::{HashMap, HashSet};
 
 use crate::dataflow::taint::TaintAnalysis;
 use crate::rules::utils::{command_rule_should_skip, INPUT_SOURCE_PATTERNS, LOG_SINK_PATTERNS};
-use crate::{Exploitability, 
-    detect_command_invocations, extract_span_from_mir_line, Confidence, Finding, MirPackage, Rule,
-    RuleMetadata, RuleOrigin, Severity,
+use crate::{
+    detect_command_invocations, extract_span_from_mir_line, Confidence, Exploitability, Finding,
+    MirPackage, Rule, RuleMetadata, RuleOrigin, Severity,
 };
 
 // ============================================================================
@@ -52,7 +52,11 @@ impl Rule for UntrustedEnvInputRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let taint_analysis = TaintAnalysis::new();
         let mut findings = Vec::new();
 
@@ -64,12 +68,8 @@ impl Rule for UntrustedEnvInputRule {
                     let sink_span = extract_span_from_mir_line(&flow.sink.sink_line);
                     let span = sink_span.or(function.span.clone());
 
-                    let finding = flow.to_finding(
-                        &self.metadata,
-                        &function.name,
-                        &function.signature,
-                        span,
-                    );
+                    let finding =
+                        flow.to_finding(&self.metadata, &function.name, &function.signature, span);
                     findings.push(finding);
                 }
             }
@@ -111,7 +111,11 @@ impl Rule for CommandInjectionRiskRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -164,8 +168,8 @@ impl Rule for CommandInjectionRiskRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -215,11 +219,7 @@ impl CommandArgConcatenationRule {
     }
 
     fn command_construction_patterns() -> &'static [&'static str] {
-        &[
-            "Command::new(",
-            "Command::arg(",
-            "Command::args(",
-        ]
+        &["Command::new(", "Command::arg(", "Command::args("]
     }
 }
 
@@ -228,7 +228,11 @@ impl Rule for CommandArgConcatenationRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -336,57 +340,60 @@ impl LogInjectionRule {
     /// Sanitizer patterns that remove/escape newlines
     fn newline_sanitizer_patterns() -> &'static [&'static str] {
         &[
-            "::replace",      // .replace() - MIR format: str::replace::<...>
-            "::trim(",        // .trim() removes trailing newlines
-            "::trim_end(",      
+            "::replace", // .replace() - MIR format: str::replace::<...>
+            "::trim(",   // .trim() removes trailing newlines
+            "::trim_end(",
             "::trim_matches(",
-            "escape_",        // escape_default, escape_debug
-            "::lines(",       // .lines() splits on newlines
-            "::split(",       // .split('\n')
-            "::parse::<",     // .parse::<T>() converts to different type (no newlines)
+            "escape_",    // escape_default, escape_debug
+            "::lines(",   // .lines() splits on newlines
+            "::split(",   // .split('\n')
+            "::parse::<", // .parse::<T>() converts to different type (no newlines)
         ]
     }
 
     /// Track untrusted input variables
     fn track_untrusted_vars(body: &[String]) -> HashSet<String> {
         let mut untrusted_vars = HashSet::new();
-        
+
         for line in body {
             let trimmed = line.trim();
-            
+
             // Check if this line contains an input source
             let is_source = INPUT_SOURCE_PATTERNS.iter().any(|p| trimmed.contains(p));
-            
+
             if is_source {
                 // Extract target variable
                 if let Some(eq_pos) = trimmed.find(" = ") {
                     let target = trimmed[..eq_pos].trim();
-                    if let Some(var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                    if let Some(var) = target
+                        .split(|c: char| !c.is_alphanumeric() && c != '_')
                         .find(|s| s.starts_with('_'))
                     {
                         untrusted_vars.insert(var.to_string());
                     }
                 }
             }
-            
+
             // Propagate through assignments (but check for sanitizers)
             if trimmed.contains(" = ") && !is_source {
                 if let Some(eq_pos) = trimmed.find(" = ") {
                     let target = trimmed[..eq_pos].trim();
                     let source = trimmed[eq_pos + 3..].trim();
-                    
+
                     // Check if source uses an untrusted var (with word boundaries)
-                    let uses_untrusted = untrusted_vars.iter().any(|v| Self::contains_var(source, v));
-                    
+                    let uses_untrusted =
+                        untrusted_vars.iter().any(|v| Self::contains_var(source, v));
+
                     if uses_untrusted {
                         // Check if there's a sanitizer on this line
                         let has_sanitizer = Self::newline_sanitizer_patterns()
                             .iter()
                             .any(|p| source.contains(p));
-                        
+
                         if !has_sanitizer {
                             // Propagate taint
-                            if let Some(target_var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                            if let Some(target_var) = target
+                                .split(|c: char| !c.is_alphanumeric() && c != '_')
                                 .find(|s| s.starts_with('_'))
                             {
                                 untrusted_vars.insert(target_var.to_string());
@@ -396,7 +403,7 @@ impl LogInjectionRule {
                 }
             }
         }
-        
+
         untrusted_vars
     }
 
@@ -418,13 +425,13 @@ impl LogInjectionRule {
     /// Find log sinks using untrusted variables
     fn find_log_injections(body: &[String], untrusted_vars: &HashSet<String>) -> Vec<String> {
         let mut evidence = Vec::new();
-        
+
         for line in body {
             let trimmed = line.trim();
-            
+
             // Check if this is a log sink
             let is_log_sink = LOG_SINK_PATTERNS.iter().any(|p| trimmed.contains(p));
-            
+
             if is_log_sink {
                 // Check if any untrusted variable is used (with proper word boundaries)
                 for var in untrusted_vars {
@@ -435,44 +442,45 @@ impl LogInjectionRule {
                 }
             }
         }
-        
+
         evidence
     }
 
     /// Find helper functions that log their parameters
     fn find_logging_helpers(package: &MirPackage) -> HashSet<String> {
         let mut helpers = HashSet::new();
-        
+
         for function in &package.functions {
             // Skip closures
             if function.name.contains("{closure") {
                 continue;
             }
-            
+
             // Check if function has a parameter (look for "debug X => _1")
             let has_param = function.body.iter().any(|line| {
                 let trimmed = line.trim();
                 trimmed.starts_with("debug ") && trimmed.contains(" => _1")
             });
-            
+
             if !has_param {
                 continue;
             }
-            
+
             // Check if the parameter flows to a log sink
             let mut param_vars: HashSet<String> = HashSet::new();
             param_vars.insert("_1".to_string());
-            
+
             // Propagate through simple assignments
             for line in &function.body {
                 let trimmed = line.trim();
                 if let Some(eq_pos) = trimmed.find(" = ") {
                     let target = trimmed[..eq_pos].trim();
                     let source = trimmed[eq_pos + 3..].trim();
-                    
+
                     let uses_param = param_vars.iter().any(|v| Self::contains_var(source, v));
                     if uses_param {
-                        if let Some(target_var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                        if let Some(target_var) = target
+                            .split(|c: char| !c.is_alphanumeric() && c != '_')
                             .find(|s| s.starts_with('_'))
                         {
                             param_vars.insert(target_var.to_string());
@@ -480,7 +488,7 @@ impl LogInjectionRule {
                     }
                 }
             }
-            
+
             // Check if any param-derived var reaches a log sink
             for line in &function.body {
                 let trimmed = line.trim();
@@ -495,7 +503,7 @@ impl LogInjectionRule {
                 }
             }
         }
-        
+
         helpers
     }
 
@@ -506,10 +514,10 @@ impl LogInjectionRule {
         logging_helpers: &HashSet<String>,
     ) -> Vec<String> {
         let mut evidence = Vec::new();
-        
+
         for line in body {
             let trimmed = line.trim();
-            
+
             // Check if this is a call to a logging helper
             for helper in logging_helpers {
                 let helper_name = helper.split("::").last().unwrap_or(helper);
@@ -523,7 +531,7 @@ impl LogInjectionRule {
                 }
             }
         }
-        
+
         evidence
     }
 }
@@ -533,9 +541,13 @@ impl Rule for LogInjectionRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
-        
+
         let logging_helpers = Self::find_logging_helpers(package);
 
         for function in &package.functions {
@@ -544,19 +556,16 @@ impl Rule for LogInjectionRule {
             }
 
             let untrusted_vars = Self::track_untrusted_vars(&function.body);
-            
+
             if untrusted_vars.is_empty() {
                 continue;
             }
 
             let mut injections = Self::find_log_injections(&function.body, &untrusted_vars);
-            let helper_injections = Self::find_helper_log_injections(
-                &function.body,
-                &untrusted_vars,
-                &logging_helpers,
-            );
+            let helper_injections =
+                Self::find_helper_log_injections(&function.body, &untrusted_vars, &logging_helpers);
             injections.extend(helper_injections);
-            
+
             if !injections.is_empty() {
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
@@ -575,8 +584,8 @@ impl Rule for LogInjectionRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -626,10 +635,10 @@ impl RegexInjectionRule {
     /// Sanitizer patterns that validate or escape regex input
     fn sanitizer_patterns() -> &'static [&'static str] {
         &[
-            "escape(",        // regex::escape()
-            "is_match(",      // Pre-validated pattern
-            "validate",       // Custom validation
-            "sanitize",       
+            "escape(",   // regex::escape()
+            "is_match(", // Pre-validated pattern
+            "validate",  // Custom validation
+            "sanitize",
             "whitelist",
             "allowlist",
             "allowed_pattern",
@@ -640,13 +649,13 @@ impl RegexInjectionRule {
     /// Regex sink patterns where injection can occur
     fn regex_sink_patterns() -> &'static [&'static str] {
         &[
-            "Regex::new",            // Matches both Regex::new( and Regex::new::<
-            "RegexBuilder::new",     // Matches regex::RegexBuilder::new
-            "RegexSet::new",         // Matches regex::RegexSet::new::<...>
+            "Regex::new",        // Matches both Regex::new( and Regex::new::<
+            "RegexBuilder::new", // Matches regex::RegexBuilder::new
+            "RegexSet::new",     // Matches regex::RegexSet::new::<...>
             "regex!(",
             "Regex::from_str",
             "RegexBuilder::from_str",
-            "RegexBuilder::build",   // The final build call
+            "RegexBuilder::build", // The final build call
         ]
     }
 
@@ -654,17 +663,18 @@ impl RegexInjectionRule {
     fn has_validation_guard(body: &[String], untrusted_vars: &HashSet<String>) -> bool {
         let validation_funcs = ["validate", "sanitize", "is_valid", "check_pattern"];
         let mut validation_result_var: Option<String> = None;
-        
+
         for line in body {
             let trimmed = line.trim();
-            
+
             for validator in &validation_funcs {
                 if trimmed.to_lowercase().contains(validator) {
                     for var in untrusted_vars {
                         if Self::contains_var(trimmed, var) {
                             if let Some(eq_pos) = trimmed.find(" = ") {
                                 let lhs = trimmed[..eq_pos].trim();
-                                if let Some(result_var) = lhs.split(|c: char| !c.is_alphanumeric() && c != '_')
+                                if let Some(result_var) = lhs
+                                    .split(|c: char| !c.is_alphanumeric() && c != '_')
                                     .find(|s| s.starts_with('_'))
                                 {
                                     validation_result_var = Some(result_var.to_string());
@@ -674,14 +684,14 @@ impl RegexInjectionRule {
                     }
                 }
             }
-            
+
             if let Some(ref result_var) = validation_result_var {
                 if trimmed.contains("switchInt") && Self::contains_var(trimmed, result_var) {
                     return true;
                 }
             }
         }
-        
+
         false
     }
 
@@ -703,7 +713,7 @@ impl RegexInjectionRule {
         let mut untrusted_vars = HashSet::new();
         let source_patterns = Self::input_source_patterns();
         let sanitizer_patterns = Self::sanitizer_patterns();
-        
+
         let mut ref_aliases: HashMap<String, String> = HashMap::new();
         for line in body {
             let trimmed = line.trim();
@@ -711,11 +721,13 @@ impl RegexInjectionRule {
                 let lhs = trimmed[..eq_pos].trim();
                 let rhs = &trimmed[eq_pos + 3..].trim();
                 let rhs_clean = rhs.trim_start_matches("mut ");
-                
-                if let Some(lhs_var) = lhs.split(|c: char| !c.is_alphanumeric() && c != '_')
+
+                if let Some(lhs_var) = lhs
+                    .split(|c: char| !c.is_alphanumeric() && c != '_')
                     .find(|s| s.starts_with('_'))
                 {
-                    if let Some(rhs_var) = rhs_clean.split(|c: char| !c.is_alphanumeric() && c != '_')
+                    if let Some(rhs_var) = rhs_clean
+                        .split(|c: char| !c.is_alphanumeric() && c != '_')
                         .find(|s| s.starts_with('_'))
                     {
                         ref_aliases.insert(lhs_var.to_string(), rhs_var.to_string());
@@ -723,27 +735,30 @@ impl RegexInjectionRule {
                 }
             }
         }
-        
+
         for line in body {
             let trimmed = line.trim();
             let is_source = source_patterns.iter().any(|p| trimmed.contains(p));
-            
+
             if is_source {
                 if let Some(eq_pos) = trimmed.find(" = ") {
                     let target = trimmed[..eq_pos].trim();
-                    if let Some(var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                    if let Some(var) = target
+                        .split(|c: char| !c.is_alphanumeric() && c != '_')
                         .find(|s| s.starts_with('_'))
                     {
                         untrusted_vars.insert(var.to_string());
                     }
                 }
-                
+
                 if trimmed.contains("read_line(") {
                     if let Some(start) = trimmed.find("read_line(") {
                         let after = &trimmed[start..];
                         if let Some(copy_pos) = after.rfind("copy _") {
                             let var_start = &after[copy_pos + 5..];
-                            if let Some(end) = var_start.find(|c: char| !c.is_alphanumeric() && c != '_') {
+                            if let Some(end) =
+                                var_start.find(|c: char| !c.is_alphanumeric() && c != '_')
+                            {
                                 let var = &var_start[..end];
                                 if var.starts_with('_') {
                                     untrusted_vars.insert(var.to_string());
@@ -757,29 +772,29 @@ impl RegexInjectionRule {
                 }
             }
         }
-        
+
         let mut changed = true;
         while changed {
             changed = false;
             for line in body {
                 let trimmed = line.trim();
-                
+
                 if trimmed.contains(" = ") {
                     if let Some(eq_pos) = trimmed.find(" = ") {
                         let target = trimmed[..eq_pos].trim();
                         let source = trimmed[eq_pos + 3..].trim();
-                        
-                        let uses_untrusted = untrusted_vars.iter().any(|v| {
-                            Self::contains_var(source, v)
-                        });
-                        
+
+                        let uses_untrusted =
+                            untrusted_vars.iter().any(|v| Self::contains_var(source, v));
+
                         if uses_untrusted {
                             let has_sanitizer = sanitizer_patterns
                                 .iter()
                                 .any(|p| source.to_lowercase().contains(&p.to_lowercase()));
-                            
+
                             if !has_sanitizer {
-                                if let Some(target_var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                                if let Some(target_var) = target
+                                    .split(|c: char| !c.is_alphanumeric() && c != '_')
                                     .find(|s| s.starts_with('_'))
                                 {
                                     if !untrusted_vars.contains(target_var) {
@@ -793,35 +808,35 @@ impl RegexInjectionRule {
                 }
             }
         }
-        
+
         untrusted_vars
     }
 
     fn propagate_taint_in_body(body: &[String], untrusted_vars: &mut HashSet<String>) {
         let sanitizer_patterns = Self::sanitizer_patterns();
-        
+
         let mut changed = true;
         while changed {
             changed = false;
             for line in body {
                 let trimmed = line.trim();
-                
+
                 if trimmed.contains(" = ") {
                     if let Some(eq_pos) = trimmed.find(" = ") {
                         let target = trimmed[..eq_pos].trim();
                         let source = trimmed[eq_pos + 3..].trim();
-                        
-                        let uses_untrusted = untrusted_vars.iter().any(|v| {
-                            Self::contains_var(source, v)
-                        });
-                        
+
+                        let uses_untrusted =
+                            untrusted_vars.iter().any(|v| Self::contains_var(source, v));
+
                         if uses_untrusted {
                             let has_sanitizer = sanitizer_patterns
                                 .iter()
                                 .any(|p| source.to_lowercase().contains(&p.to_lowercase()));
-                            
+
                             if !has_sanitizer {
-                                if let Some(target_var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                                if let Some(target_var) = target
+                                    .split(|c: char| !c.is_alphanumeric() && c != '_')
                                     .find(|s| s.starts_with('_'))
                                 {
                                     if !untrusted_vars.contains(target_var) {
@@ -840,11 +855,11 @@ impl RegexInjectionRule {
     fn find_regex_injections(body: &[String], untrusted_vars: &HashSet<String>) -> Vec<String> {
         let mut evidence = Vec::new();
         let regex_sinks = Self::regex_sink_patterns();
-        
+
         for line in body {
             let trimmed = line.trim();
             let is_regex_sink = regex_sinks.iter().any(|p| trimmed.contains(p));
-            
+
             if is_regex_sink {
                 for var in untrusted_vars {
                     if Self::contains_var(trimmed, var) {
@@ -854,7 +869,7 @@ impl RegexInjectionRule {
                 }
             }
         }
-        
+
         evidence
     }
 }
@@ -864,22 +879,32 @@ impl Rule for RegexInjectionRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
-        
+
         let mut tainted_closures: HashSet<String> = HashSet::new();
-        
+
         for function in &package.functions {
             if function.name.contains("{closure") {
                 continue;
             }
-            
+
             let untrusted_vars = Self::track_untrusted_vars(&function.body);
             if untrusted_vars.is_empty() {
                 continue;
             }
-            
-            let combinator_patterns = ["and_then", "map(", "filter(", "filter_map(", "unwrap_or_else("];
+
+            let combinator_patterns = [
+                "and_then",
+                "map(",
+                "filter(",
+                "filter_map(",
+                "unwrap_or_else(",
+            ];
             for line in &function.body {
                 let trimmed = line.trim();
                 for pattern in &combinator_patterns {
@@ -924,11 +949,11 @@ impl Rule for RegexInjectionRule {
             } else {
                 Self::track_untrusted_vars(&function.body)
             };
-            
+
             if is_closure && !untrusted_vars.is_empty() {
                 Self::propagate_taint_in_body(&function.body, &mut untrusted_vars);
             }
-            
+
             if untrusted_vars.is_empty() {
                 continue;
             }
@@ -938,14 +963,19 @@ impl Rule for RegexInjectionRule {
             }
 
             let injections = Self::find_regex_injections(&function.body, &untrusted_vars);
-            
+
             if !injections.is_empty() {
                 let report_name = if is_closure {
-                    function.name.split("::{closure").next().unwrap_or(&function.name).to_string()
+                    function
+                        .name
+                        .split("::{closure")
+                        .next()
+                        .unwrap_or(&function.name)
+                        .to_string()
                 } else {
                     function.name.clone()
                 };
-                
+
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
@@ -965,8 +995,8 @@ impl Rule for RegexInjectionRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -989,7 +1019,8 @@ impl UncheckedIndexRule {
             metadata: RuleMetadata {
                 id: "RUSTCOLA080".to_string(),
                 name: "unchecked-indexing".to_string(),
-                short_description: "Untrusted input used as array index without bounds check".to_string(),
+                short_description: "Untrusted input used as array index without bounds check"
+                    .to_string(),
                 full_description: "Detects array or slice indexing operations where the index \
                     originates from untrusted sources (environment variables, command-line \
                     arguments, file contents, network input) without bounds validation. Direct \
@@ -1025,10 +1056,13 @@ impl UncheckedIndexRule {
         false
     }
 
-    fn track_untrusted_indices(body: &[String], tainted_return_funcs: &HashSet<String>) -> HashSet<String> {
+    fn track_untrusted_indices(
+        body: &[String],
+        tainted_return_funcs: &HashSet<String>,
+    ) -> HashSet<String> {
         let mut untrusted_vars = HashSet::new();
         let source_patterns = Self::input_source_patterns();
-        
+
         let mut mut_refs: HashMap<String, String> = HashMap::new();
         for line in body {
             let trimmed = line.trim();
@@ -1036,11 +1070,13 @@ impl UncheckedIndexRule {
                 if let Some(eq_pos) = trimmed.find(" = ") {
                     let target = trimmed[..eq_pos].trim();
                     let source = trimmed[eq_pos + 3..].trim();
-                    if let Some(target_var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                    if let Some(target_var) = target
+                        .split(|c: char| !c.is_alphanumeric() && c != '_')
                         .find(|s| s.starts_with('_'))
                     {
                         if let Some(src_start) = source.find('_') {
-                            let src_var: String = source[src_start..].chars()
+                            let src_var: String = source[src_start..]
+                                .chars()
                                 .take_while(|c| c.is_alphanumeric() || *c == '_')
                                 .collect();
                             if !src_var.is_empty() {
@@ -1051,21 +1087,22 @@ impl UncheckedIndexRule {
                 }
             }
         }
-        
+
         for line in body {
             let trimmed = line.trim();
             let is_source = source_patterns.iter().any(|p| trimmed.contains(p));
-            
+
             if is_source {
                 if let Some(eq_pos) = trimmed.find(" = ") {
                     let target = trimmed[..eq_pos].trim();
-                    if let Some(var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                    if let Some(var) = target
+                        .split(|c: char| !c.is_alphanumeric() && c != '_')
                         .find(|s| s.starts_with('_'))
                     {
                         untrusted_vars.insert(var.to_string());
                     }
                 }
-                
+
                 if trimmed.contains("read_line") {
                     for (ref_var, target_var) in &mut_refs {
                         if trimmed.contains(ref_var) {
@@ -1074,16 +1111,18 @@ impl UncheckedIndexRule {
                     }
                 }
             }
-            
+
             if !tainted_return_funcs.is_empty() {
                 if let Some(eq_pos) = trimmed.find(" = ") {
                     let source = trimmed[eq_pos + 3..].trim();
                     for func_name in tainted_return_funcs {
                         let short_name = func_name.split("::").last().unwrap_or(func_name);
-                        if source.contains(&format!("{}(", short_name)) || 
-                           source.contains(&format!("{}::", short_name)) {
+                        if source.contains(&format!("{}(", short_name))
+                            || source.contains(&format!("{}::", short_name))
+                        {
                             let target = trimmed[..eq_pos].trim();
-                            if let Some(var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                            if let Some(var) = target
+                                .split(|c: char| !c.is_alphanumeric() && c != '_')
                                 .find(|s| s.starts_with('_'))
                             {
                                 untrusted_vars.insert(var.to_string());
@@ -1093,35 +1132,37 @@ impl UncheckedIndexRule {
                 }
             }
         }
-        
+
         let mut changed = true;
         while changed {
             changed = false;
             for line in body {
                 let trimmed = line.trim();
-                let uses_untrusted = untrusted_vars.iter().any(|v| Self::contains_var(trimmed, v));
-                
+                let uses_untrusted = untrusted_vars
+                    .iter()
+                    .any(|v| Self::contains_var(trimmed, v));
+
                 if !uses_untrusted {
                     continue;
                 }
-                
+
                 if let Some(eq_pos) = trimmed.find(" = ") {
                     let target = trimmed[..eq_pos].trim();
-                    if let Some(target_var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                    if let Some(target_var) = target
+                        .split(|c: char| !c.is_alphanumeric() && c != '_')
                         .find(|s| s.starts_with('_'))
                     {
                         if !untrusted_vars.contains(target_var) {
-                            let dominated_by_untrusted = 
-                                trimmed.contains("::parse") || 
-                                trimmed.contains("parse::") ||
-                                trimmed.contains("from_str") ||
-                                trimmed.contains("::unwrap(") || 
-                                trimmed.contains("::expect(") ||
-                                {
+                            let dominated_by_untrusted = trimmed.contains("::parse")
+                                || trimmed.contains("parse::")
+                                || trimmed.contains("from_str")
+                                || trimmed.contains("::unwrap(")
+                                || trimmed.contains("::expect(")
+                                || {
                                     let source = trimmed[eq_pos + 3..].trim();
                                     untrusted_vars.iter().any(|v| Self::contains_var(source, v))
                                 };
-                            
+
                             if dominated_by_untrusted {
                                 untrusted_vars.insert(target_var.to_string());
                                 changed = true;
@@ -1131,20 +1172,23 @@ impl UncheckedIndexRule {
                 }
             }
         }
-        
+
         untrusted_vars
     }
 
     fn has_bounds_validation(body: &[String], untrusted_vars: &HashSet<String>) -> bool {
         let mut comparison_vars: HashSet<String> = HashSet::new();
-        
+
         for line in body {
             let trimmed = line.trim();
-            
-            if trimmed.contains("::get(") || trimmed.contains("::get_mut(") || trimmed.contains("::get::<") {
+
+            if trimmed.contains("::get(")
+                || trimmed.contains("::get_mut(")
+                || trimmed.contains("::get::<")
+            {
                 continue;
             }
-            
+
             if trimmed.contains(".len()") || trimmed.contains("::len(") {
                 for var in untrusted_vars {
                     if Self::contains_var(trimmed, var) {
@@ -1152,24 +1196,28 @@ impl UncheckedIndexRule {
                     }
                 }
             }
-            
-            if (trimmed.contains("::min(") || trimmed.contains("::max(")) && 
-               (trimmed.contains("len") || trimmed.contains("_")) {
+
+            if (trimmed.contains("::min(") || trimmed.contains("::max("))
+                && (trimmed.contains("len") || trimmed.contains("_"))
+            {
                 for var in untrusted_vars {
                     if Self::contains_var(trimmed, var) {
                         return true;
                     }
                 }
             }
-            
-            let has_comparison = trimmed.contains("Lt(") || trimmed.contains("Le(") || 
-                                  trimmed.contains("Gt(") || trimmed.contains("Ge(");
+
+            let has_comparison = trimmed.contains("Lt(")
+                || trimmed.contains("Le(")
+                || trimmed.contains("Gt(")
+                || trimmed.contains("Ge(");
             if has_comparison {
                 for var in untrusted_vars {
                     if Self::contains_var(trimmed, var) {
                         if let Some(eq_pos) = trimmed.find(" = ") {
                             let target = trimmed[..eq_pos].trim();
-                            if let Some(target_var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                            if let Some(target_var) = target
+                                .split(|c: char| !c.is_alphanumeric() && c != '_')
                                 .find(|s| s.starts_with('_'))
                             {
                                 comparison_vars.insert(target_var.to_string());
@@ -1178,7 +1226,7 @@ impl UncheckedIndexRule {
                     }
                 }
             }
-            
+
             if trimmed.contains("switchInt(") {
                 for comp_var in &comparison_vars {
                     if Self::contains_var(trimmed, comp_var) {
@@ -1187,21 +1235,21 @@ impl UncheckedIndexRule {
                 }
             }
         }
-        
+
         false
     }
 
     fn find_unsafe_indexing(body: &[String], untrusted_vars: &HashSet<String>) -> Vec<String> {
         let mut evidence = Vec::new();
-        
+
         for line in body {
             let trimmed = line.trim();
-            
+
             if trimmed.contains("::index(") || trimmed.contains("::index_mut(") {
                 if trimmed.contains("::get(") || trimmed.contains("::get_mut(") {
                     continue;
                 }
-                
+
                 if let Some(idx_start) = trimmed.find("::index") {
                     let after_index = &trimmed[idx_start..];
                     if let Some(comma_pos) = after_index.find(", ") {
@@ -1215,20 +1263,21 @@ impl UncheckedIndexRule {
                     }
                 }
             }
-            
+
             if trimmed.contains('[') && trimmed.contains(']') {
                 if trimmed.contains("= [") {
                     continue;
                 }
-                
+
                 if trimmed.contains("let ") || trimmed.contains("::get") {
                     continue;
                 }
-                
+
                 if let Some(bracket_start) = trimmed.find('[') {
                     if let Some(bracket_end) = trimmed[bracket_start..].find(']') {
-                        let index_content = &trimmed[bracket_start + 1..bracket_start + bracket_end];
-                        
+                        let index_content =
+                            &trimmed[bracket_start + 1..bracket_start + bracket_end];
+
                         for var in untrusted_vars {
                             if Self::contains_var(index_content, var) {
                                 evidence.push(trimmed.to_string());
@@ -1239,32 +1288,34 @@ impl UncheckedIndexRule {
                 }
             }
         }
-        
+
         evidence
     }
-    
+
     fn find_tainted_return_functions(package: &MirPackage) -> HashSet<String> {
         let mut tainted_funcs = HashSet::new();
         let source_patterns = Self::input_source_patterns();
-        
+
         for function in &package.functions {
-            if function.name.contains("mir_extractor") || 
-               function.name.contains("mir-extractor") ||
-               function.name.contains("__") {
+            if function.name.contains("mir_extractor")
+                || function.name.contains("mir-extractor")
+                || function.name.contains("__")
+            {
                 continue;
             }
-            
-            let has_source = function.body.iter().any(|line| {
-                source_patterns.iter().any(|p| line.contains(p))
-            });
-            
+
+            let has_source = function
+                .body
+                .iter()
+                .any(|line| source_patterns.iter().any(|p| line.contains(p)));
+
             if !has_source {
                 continue;
             }
-            
+
             let empty_set = HashSet::new();
             let tainted = Self::track_untrusted_indices(&function.body, &empty_set);
-            
+
             let returns_tainted = function.body.iter().any(|line| {
                 let trimmed = line.trim();
                 if trimmed.starts_with("_0 = ") || trimmed.starts_with("_0 =") {
@@ -1273,12 +1324,12 @@ impl UncheckedIndexRule {
                     false
                 }
             });
-            
+
             if returns_tainted {
                 tainted_funcs.insert(function.name.clone());
             }
         }
-        
+
         tainted_funcs
     }
 }
@@ -1288,20 +1339,26 @@ impl Rule for UncheckedIndexRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
-        
+
         let tainted_return_funcs = Self::find_tainted_return_functions(package);
 
         for function in &package.functions {
-            if function.name.contains("mir_extractor") || 
-               function.name.contains("mir-extractor") ||
-               function.name.contains("__") {
+            if function.name.contains("mir_extractor")
+                || function.name.contains("mir-extractor")
+                || function.name.contains("__")
+            {
                 continue;
             }
 
-            let untrusted_vars = Self::track_untrusted_indices(&function.body, &tainted_return_funcs);
-            
+            let untrusted_vars =
+                Self::track_untrusted_indices(&function.body, &tainted_return_funcs);
+
             if untrusted_vars.is_empty() {
                 continue;
             }
@@ -1311,7 +1368,7 @@ impl Rule for UncheckedIndexRule {
             }
 
             let unsafe_indexing = Self::find_unsafe_indexing(&function.body, &untrusted_vars);
-            
+
             if !unsafe_indexing.is_empty() {
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
@@ -1331,8 +1388,8 @@ impl Rule for UncheckedIndexRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -1374,8 +1431,11 @@ impl PathTraversalRule {
                     operations without proper validation. Attackers can use path traversal \
                     sequences like '../' or absolute paths to access files outside intended \
                     directories. Use canonicalize() + starts_with() validation, or strip \
-                    dangerous path components before use.".to_string(),
-                help_uri: Some("https://owasp.org/www-community/attacks/Path_Traversal".to_string()),
+                    dangerous path components before use."
+                    .to_string(),
+                help_uri: Some(
+                    "https://owasp.org/www-community/attacks/Path_Traversal".to_string(),
+                ),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
@@ -1384,38 +1444,89 @@ impl PathTraversalRule {
             },
         }
     }
-    
+
     const FS_SINKS: &'static [&'static str] = &[
-        "fs::read_to_string", "fs::read", "File::open", "std::fs::read_to_string",
-        "std::fs::read", "std::fs::File::open", "OpenOptions::open",
-        "read_to_string(", "read_to_string::<", "fs::write", "fs::create_dir",
-        "fs::create_dir_all", "std::fs::write", "std::fs::create_dir",
-        "std::fs::create_dir_all", "File::create", "std::fs::File::create",
-        "create_dir_all::<", "create_dir::<", "fs::remove_file", "fs::remove_dir",
-        "fs::remove_dir_all", "std::fs::remove_file", "std::fs::remove_dir",
-        "std::fs::remove_dir_all", "remove_file::<", "remove_dir::<",
-        "remove_dir_all::<", "fs::copy", "fs::rename", "std::fs::copy",
-        "std::fs::rename", "copy::<", "rename::<", "Path::join",
-        "PathBuf::push", "PathBuf::join",
+        "fs::read_to_string",
+        "fs::read",
+        "File::open",
+        "std::fs::read_to_string",
+        "std::fs::read",
+        "std::fs::File::open",
+        "OpenOptions::open",
+        "read_to_string(",
+        "read_to_string::<",
+        "fs::write",
+        "fs::create_dir",
+        "fs::create_dir_all",
+        "std::fs::write",
+        "std::fs::create_dir",
+        "std::fs::create_dir_all",
+        "File::create",
+        "std::fs::File::create",
+        "create_dir_all::<",
+        "create_dir::<",
+        "fs::remove_file",
+        "fs::remove_dir",
+        "fs::remove_dir_all",
+        "std::fs::remove_file",
+        "std::fs::remove_dir",
+        "std::fs::remove_dir_all",
+        "remove_file::<",
+        "remove_dir::<",
+        "remove_dir_all::<",
+        "fs::copy",
+        "fs::rename",
+        "std::fs::copy",
+        "std::fs::rename",
+        "copy::<",
+        "rename::<",
+        "Path::join",
+        "PathBuf::push",
+        "PathBuf::join",
     ];
-    
+
     const UNTRUSTED_SOURCES: &'static [&'static str] = &[
-        "env::var(", "env::var_os(", "std::env::var(", "std::env::var_os(",
-        " = var(", " = var::", "env::args()", "std::env::args()", " = args(",
-        "Args>::next(", " = stdin()", "Stdin::lock(", "BufRead>::read_line(",
-        "read_line(move", "io::stdin()",
+        "env::var(",
+        "env::var_os(",
+        "std::env::var(",
+        "std::env::var_os(",
+        " = var(",
+        " = var::",
+        "env::args()",
+        "std::env::args()",
+        " = args(",
+        "Args>::next(",
+        " = stdin()",
+        "Stdin::lock(",
+        "BufRead>::read_line(",
+        "read_line(move",
+        "io::stdin()",
     ];
-    
+
     const SANITIZERS: &'static [&'static str] = &[
-        "canonicalize(", "starts_with(", "strip_prefix(", "is_relative(",
-        "is_absolute(", "::contains(move", "::contains(copy", "slice::<impl",
-        "String::replace", "str::replace", ".filter(", "chars().all(",
-        "is_alphanumeric", "validate", "sanitize", "check_path", "is_safe", "safe_join",
+        "canonicalize(",
+        "starts_with(",
+        "strip_prefix(",
+        "is_relative(",
+        "is_absolute(",
+        "::contains(move",
+        "::contains(copy",
+        "slice::<impl",
+        "String::replace",
+        "str::replace",
+        ".filter(",
+        "chars().all(",
+        "is_alphanumeric",
+        "validate",
+        "sanitize",
+        "check_path",
+        "is_safe",
+        "safe_join",
     ];
 
     fn track_untrusted_paths(&self, body: &[String]) -> HashSet<String> {
         let mut untrusted_vars = HashSet::new();
-        
+
         for line in body {
             let trimmed = line.trim();
             for source in Self::UNTRUSTED_SOURCES {
@@ -1426,20 +1537,20 @@ impl PathTraversalRule {
                 }
             }
         }
-        
+
         let mut changed = true;
         let mut iterations = 0;
-        
+
         while changed && iterations < 20 {
             changed = false;
             iterations += 1;
-            
+
             for line in body {
                 let trimmed = line.trim();
                 if !trimmed.contains(" = ") {
                     continue;
                 }
-                
+
                 if let Some(target) = self.extract_assignment_target(trimmed) {
                     for untrusted in untrusted_vars.clone() {
                         if self.contains_var(trimmed, &untrusted) {
@@ -1452,7 +1563,7 @@ impl PathTraversalRule {
                 }
             }
         }
-        
+
         // Handle read_line buffer tainting
         for line in body {
             if line.contains("read_line(") {
@@ -1465,10 +1576,10 @@ impl PathTraversalRule {
                 }
             }
         }
-        
+
         untrusted_vars
     }
-    
+
     fn resolve_reference(body: &[String], ref_var: &str) -> Option<String> {
         for line in body {
             let trimmed = line.trim();
@@ -1489,7 +1600,7 @@ impl PathTraversalRule {
         }
         None
     }
-    
+
     fn extract_read_line_buffer(line: &str) -> Option<String> {
         if let Some(idx) = line.find("read_line(") {
             let after = &line[idx..];
@@ -1505,48 +1616,55 @@ impl PathTraversalRule {
         }
         None
     }
-    
+
     fn has_path_sanitization(&self, body: &[String], _untrusted_vars: &HashSet<String>) -> bool {
         let body_str = body.join("\n");
-        
+
         for sanitizer in Self::SANITIZERS {
             if body_str.contains(sanitizer) {
                 return true;
             }
         }
-        
+
         if body_str.contains("switchInt(") {
-            if body_str.contains("contains(") || 
-               body_str.contains("starts_with(") ||
-               body_str.contains("is_relative()") ||
-               body_str.contains("strip_prefix(") {
+            if body_str.contains("contains(")
+                || body_str.contains("starts_with(")
+                || body_str.contains("is_relative()")
+                || body_str.contains("strip_prefix(")
+            {
                 return true;
             }
         }
-        
-        if body_str.contains("Err(") && 
-           (body_str.contains("Permission") || 
-            body_str.contains("Invalid") ||
-            body_str.contains("traversal") ||
-            body_str.contains("not in allow")) {
+
+        if body_str.contains("Err(")
+            && (body_str.contains("Permission")
+                || body_str.contains("Invalid")
+                || body_str.contains("traversal")
+                || body_str.contains("not in allow"))
+        {
             return true;
         }
-        
+
         false
     }
-    
-    fn find_unsafe_fs_operations(&self, body: &[String], untrusted_vars: &HashSet<String>) -> Vec<String> {
+
+    fn find_unsafe_fs_operations(
+        &self,
+        body: &[String],
+        untrusted_vars: &HashSet<String>,
+    ) -> Vec<String> {
         let mut evidence = Vec::new();
-        
+
         for line in body {
             let trimmed = line.trim();
             for sink in Self::FS_SINKS {
                 if trimmed.contains(sink) {
                     for var in untrusted_vars {
-                        if trimmed.contains(&format!("move {}", var)) ||
-                           trimmed.contains(&format!("copy {}", var)) ||
-                           trimmed.contains(&format!("&{}", var)) ||
-                           trimmed.contains(&format!("({}", var)) {
+                        if trimmed.contains(&format!("move {}", var))
+                            || trimmed.contains(&format!("copy {}", var))
+                            || trimmed.contains(&format!("&{}", var))
+                            || trimmed.contains(&format!("({}", var))
+                        {
                             evidence.push(trimmed.to_string());
                             break;
                         }
@@ -1554,10 +1672,10 @@ impl PathTraversalRule {
                 }
             }
         }
-        
+
         evidence
     }
-    
+
     fn extract_assignment_target(&self, line: &str) -> Option<String> {
         let parts: Vec<&str> = line.split('=').collect();
         if parts.len() >= 2 {
@@ -1574,15 +1692,15 @@ impl PathTraversalRule {
         }
         None
     }
-    
+
     fn contains_var(&self, line: &str, var: &str) -> bool {
-        line.contains(&format!("move {}", var)) ||
-        line.contains(&format!("copy {}", var)) ||
-        line.contains(&format!("&{}", var)) ||
-        line.contains(&format!("({})", var)) ||
-        line.contains(&format!("{},", var)) ||
-        line.contains(&format!(" {} ", var)) ||
-        line.contains(&format!("[{}]", var))
+        line.contains(&format!("move {}", var))
+            || line.contains(&format!("copy {}", var))
+            || line.contains(&format!("&{}", var))
+            || line.contains(&format!("({})", var))
+            || line.contains(&format!("{},", var))
+            || line.contains(&format!(" {} ", var))
+            || line.contains(&format!("[{}]", var))
     }
 }
 
@@ -1591,23 +1709,28 @@ impl Rule for PathTraversalRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
-            if function.name.contains("mir_extractor") || 
-               function.name.contains("mir-extractor") ||
-               function.name.contains("__") ||
-               function.name.contains("test_") ||
-               function.name.contains("detect_rustup") ||
-               function.name.contains("find_rust_toolchain") ||
-               function.name.contains("detect_toolchain") ||
-               function.name.contains("find_cargo_cola_workspace") {
+            if function.name.contains("mir_extractor")
+                || function.name.contains("mir-extractor")
+                || function.name.contains("__")
+                || function.name.contains("test_")
+                || function.name.contains("detect_rustup")
+                || function.name.contains("find_rust_toolchain")
+                || function.name.contains("detect_toolchain")
+                || function.name.contains("find_cargo_cola_workspace")
+            {
                 continue;
             }
 
             let untrusted_vars = self.track_untrusted_paths(&function.body);
-            
+
             if untrusted_vars.is_empty() {
                 continue;
             }
@@ -1617,16 +1740,19 @@ impl Rule for PathTraversalRule {
             }
 
             let unsafe_ops = self.find_unsafe_fs_operations(&function.body, &untrusted_vars);
-            
+
             if !unsafe_ops.is_empty() {
-                let severity = if unsafe_ops.iter().any(|op| 
-                    op.contains("remove") || op.contains("write") || 
-                    op.contains("create") || op.contains("rename")) {
+                let severity = if unsafe_ops.iter().any(|op| {
+                    op.contains("remove")
+                        || op.contains("write")
+                        || op.contains("create")
+                        || op.contains("rename")
+                }) {
                     Severity::High
                 } else {
                     Severity::Medium
                 };
-                
+
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
@@ -1647,8 +1773,8 @@ impl Rule for PathTraversalRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -1656,17 +1782,15 @@ impl Rule for PathTraversalRule {
         // Inter-procedural analysis (use shared analysis if available)
         if let Some(analysis) = inter_analysis {
             let flows = analysis.detect_inter_procedural_flows(package);
-            
-            let mut reported_functions: HashSet<String> = findings
-                .iter()
-                .map(|f| f.function.clone())
-                .collect();
-            
+
+            let mut reported_functions: HashSet<String> =
+                findings.iter().map(|f| f.function.clone()).collect();
+
             for flow in flows {
                 if flow.sink_type != "filesystem" {
                     continue;
                 }
-                
+
                 let is_internal = flow.sink_function.contains("mir_extractor")
                     || flow.sink_function.contains("mir-extractor")
                     || flow.sink_function.contains("cache_envelope")
@@ -1681,21 +1805,23 @@ impl Rule for PathTraversalRule {
                 if is_internal {
                     continue;
                 }
-                
+
                 if reported_functions.contains(&flow.sink_function) {
                     continue;
                 }
-                
+
                 if flow.sanitized {
                     continue;
                 }
-                
-                let sink_func = package.functions.iter()
+
+                let sink_func = package
+                    .functions
+                    .iter()
                     .find(|f| f.name == flow.sink_function);
-                
+
                 let span = sink_func.map(|f| f.span.clone()).unwrap_or_default();
                 let signature = sink_func.map(|f| f.signature.clone()).unwrap_or_default();
-                
+
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
@@ -1719,7 +1845,7 @@ impl Rule for PathTraversalRule {
                     span,
                     ..Default::default()
                 });
-                
+
                 reported_functions.insert(flow.sink_function.clone());
             }
         }
@@ -1748,8 +1874,12 @@ impl SsrfRule {
                     the server send requests to arbitrary destinations, potentially accessing \
                     internal services (localhost, cloud metadata at 169.254.169.254), scanning \
                     internal networks, or exfiltrating data. Validate URLs against an allowlist \
-                    of permitted hosts and schemes before making requests.".to_string(),
-                help_uri: Some("https://owasp.org/www-community/attacks/Server_Side_Request_Forgery".to_string()),
+                    of permitted hosts and schemes before making requests."
+                    .to_string(),
+                help_uri: Some(
+                    "https://owasp.org/www-community/attacks/Server_Side_Request_Forgery"
+                        .to_string(),
+                ),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
@@ -1758,55 +1888,118 @@ impl SsrfRule {
             },
         }
     }
-    
+
     // Sinks: Outbound HTTP request methods that actually make network calls
     // NOTE: http::Request and hyper::Request are types for INCOMING requests,
     // not outbound calls - reading Request::uri() is just parsing, not SSRF
     const HTTP_SINKS: &'static [&'static str] = &[
         // reqwest - the most common HTTP client
-        "reqwest::blocking::get", "reqwest::get", "blocking::get",
-        "Client>::get", "Client>::post", "Client>::put", "Client>::delete",
-        "Client>::patch", "Client>::head", "RequestBuilder>::send",
+        "reqwest::blocking::get",
+        "reqwest::get",
+        "blocking::get",
+        "Client>::get",
+        "Client>::post",
+        "Client>::put",
+        "Client>::delete",
+        "Client>::patch",
+        "Client>::head",
+        "RequestBuilder>::send",
         // ureq - lightweight HTTP client
-        "ureq::get", "ureq::post", "ureq::put", "ureq::delete", "ureq::request",
-        "Agent>::get", "Agent>::post", "Request>::call",
+        "ureq::get",
+        "ureq::post",
+        "ureq::put",
+        "ureq::delete",
+        "ureq::request",
+        "Agent>::get",
+        "Agent>::post",
+        "Request>::call",
         // hyper client (outbound)
         "hyper::Client",
         // Generic patterns for constructing outbound requests
-        "get::<&String>", "get::<&str>", "post::<&String>", "post::<&str>",
+        "get::<&String>",
+        "get::<&str>",
+        "post::<&String>",
+        "post::<&str>",
     ];
-    
+
     // Sources: User-controlled input that could contain malicious URLs
     // NOTE: Removed generic "Request" to avoid flagging every HTTP handler
     const UNTRUSTED_SOURCES: &'static [&'static str] = &[
-        "env::var(", "env::var_os(", "std::env::var(", "std::env::var_os(",
-        " = var(", " = var::", "var::<&str>", "var_os::<", "env::args()",
-        "std::env::args()", " = args()", "Args>::next(", "args().collect",
-        " = stdin()", "Stdin::lock(", "Stdin>::lock", "BufRead>::read_line(",
-        "read_line(move", "io::stdin()", "Lines>::next(", "fs::read_to_string(",
-        "read_to_string(move", "read_to_string::", "BufReader>::read",
+        "env::var(",
+        "env::var_os(",
+        "std::env::var(",
+        "std::env::var_os(",
+        " = var(",
+        " = var::",
+        "var::<&str>",
+        "var_os::<",
+        "env::args()",
+        "std::env::args()",
+        " = args()",
+        "Args>::next(",
+        "args().collect",
+        " = stdin()",
+        "Stdin::lock(",
+        "Stdin>::lock",
+        "BufRead>::read_line(",
+        "read_line(move",
+        "io::stdin()",
+        "Lines>::next(",
+        "fs::read_to_string(",
+        "read_to_string(move",
+        "read_to_string::",
+        "BufReader>::read",
         "Read>::read",
         // Web framework extractors that contain user input
-        "axum::extract::Query", "axum::extract::Path", "axum::extract::Form",
-        "axum::Json", "actix_web::web::Query", "actix_web::web::Path",
-        "actix_web::web::Form", "actix_web::web::Json",
+        "axum::extract::Query",
+        "axum::extract::Path",
+        "axum::extract::Form",
+        "axum::Json",
+        "actix_web::web::Query",
+        "actix_web::web::Path",
+        "actix_web::web::Form",
+        "actix_web::web::Json",
         // Request body parsing (user data)
-        "body::to_bytes", "hyper::body::to_bytes", "BodyExt>::collect",
+        "body::to_bytes",
+        "hyper::body::to_bytes",
+        "BodyExt>::collect",
     ];
-    
+
     const SANITIZERS: &'static [&'static str] = &[
-        "Url::parse(", "url::Url::parse(", "Uri::from_str(", "host_str(",
-        "scheme(", "starts_with(", "ends_with(", "contains(", "allowed",
-        "whitelist", "allowlist", "trusted", "permitted", "localhost",
-        "127.0.0.1", "169.254.169.254", "192.168.", "10.", "172.", ".internal",
-        "== \"https\"", "== \"http\"", "is_alphanumeric", "chars().all(",
-        " as Iterator>::all::<", "Eq>::eq::<", "PartialEq>::eq::<",
-        "match ", "Some(\"",
+        "Url::parse(",
+        "url::Url::parse(",
+        "Uri::from_str(",
+        "host_str(",
+        "scheme(",
+        "starts_with(",
+        "ends_with(",
+        "contains(",
+        "allowed",
+        "whitelist",
+        "allowlist",
+        "trusted",
+        "permitted",
+        "localhost",
+        "127.0.0.1",
+        "169.254.169.254",
+        "192.168.",
+        "10.",
+        "172.",
+        ".internal",
+        "== \"https\"",
+        "== \"http\"",
+        "is_alphanumeric",
+        "chars().all(",
+        " as Iterator>::all::<",
+        "Eq>::eq::<",
+        "PartialEq>::eq::<",
+        "match ",
+        "Some(\"",
     ];
 
     fn track_untrusted_vars(&self, body: &[String]) -> HashSet<String> {
         let mut untrusted_vars = HashSet::new();
-        
+
         for line in body {
             let trimmed = line.trim();
             for source in Self::UNTRUSTED_SOURCES {
@@ -1817,20 +2010,20 @@ impl SsrfRule {
                 }
             }
         }
-        
+
         let mut changed = true;
         let mut iterations = 0;
-        
+
         while changed && iterations < 20 {
             changed = false;
             iterations += 1;
-            
+
             for line in body {
                 let trimmed = line.trim();
                 if !trimmed.contains(" = ") {
                     continue;
                 }
-                
+
                 if let Some(target) = self.extract_assignment_target(trimmed) {
                     for untrusted in untrusted_vars.clone() {
                         if self.contains_var(trimmed, &untrusted) {
@@ -1843,10 +2036,10 @@ impl SsrfRule {
                 }
             }
         }
-        
+
         untrusted_vars
     }
-    
+
     fn has_ssrf_sanitization(&self, body: &[String]) -> bool {
         let body_str = body.join("\n");
         for sanitizer in Self::SANITIZERS {
@@ -1856,10 +2049,14 @@ impl SsrfRule {
         }
         false
     }
-    
-    fn find_unsafe_http_operations(&self, body: &[String], untrusted_vars: &HashSet<String>) -> Vec<String> {
+
+    fn find_unsafe_http_operations(
+        &self,
+        body: &[String],
+        untrusted_vars: &HashSet<String>,
+    ) -> Vec<String> {
         let mut evidence = Vec::new();
-        
+
         for line in body {
             let trimmed = line.trim();
             for sink in Self::HTTP_SINKS {
@@ -1873,10 +2070,10 @@ impl SsrfRule {
                 }
             }
         }
-        
+
         evidence
     }
-    
+
     fn extract_assignment_target(&self, line: &str) -> Option<String> {
         let parts: Vec<&str> = line.split('=').collect();
         if parts.len() >= 2 {
@@ -1893,16 +2090,16 @@ impl SsrfRule {
         }
         None
     }
-    
+
     fn contains_var(&self, line: &str, var: &str) -> bool {
-        line.contains(&format!("move {}", var)) ||
-        line.contains(&format!("copy {}", var)) ||
-        line.contains(&format!("&{}", var)) ||
-        line.contains(&format!("({})", var)) ||
-        line.contains(&format!("{},", var)) ||
-        line.contains(&format!(" {} ", var)) ||
-        line.contains(&format!("[{}]", var)) ||
-        line.contains(&format!("(({} as", var))
+        line.contains(&format!("move {}", var))
+            || line.contains(&format!("copy {}", var))
+            || line.contains(&format!("&{}", var))
+            || line.contains(&format!("({})", var))
+            || line.contains(&format!("{},", var))
+            || line.contains(&format!(" {} ", var))
+            || line.contains(&format!("[{}]", var))
+            || line.contains(&format!("(({} as", var))
     }
 }
 
@@ -1911,30 +2108,35 @@ impl Rule for SsrfRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
-            if function.name.contains("mir_extractor") || 
-               function.name.contains("mir-extractor") ||
-               function.name.contains("__") ||
-               function.name.contains("test_") ||
-               function.name == "detect_toolchain" {
+            if function.name.contains("mir_extractor")
+                || function.name.contains("mir-extractor")
+                || function.name.contains("__")
+                || function.name.contains("test_")
+                || function.name == "detect_toolchain"
+            {
                 continue;
             }
 
             let body_str = function.body.join("\n");
-            let has_http_client = Self::HTTP_SINKS.iter().any(|s| body_str.contains(s)) ||
-                                  body_str.contains("reqwest") ||
-                                  body_str.contains("ureq") ||
-                                  body_str.contains("hyper");
-            
+            let has_http_client = Self::HTTP_SINKS.iter().any(|s| body_str.contains(s))
+                || body_str.contains("reqwest")
+                || body_str.contains("ureq")
+                || body_str.contains("hyper");
+
             if !has_http_client {
                 continue;
             }
 
             let untrusted_vars = self.track_untrusted_vars(&function.body);
-            
+
             if untrusted_vars.is_empty() {
                 continue;
             }
@@ -1944,7 +2146,7 @@ impl Rule for SsrfRule {
             }
 
             let unsafe_ops = self.find_unsafe_http_operations(&function.body, &untrusted_vars);
-            
+
             if !unsafe_ops.is_empty() {
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
@@ -1966,8 +2168,8 @@ impl Rule for SsrfRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -1975,38 +2177,38 @@ impl Rule for SsrfRule {
         // Inter-procedural analysis (use shared analysis if available)
         if let Some(analysis) = inter_analysis {
             let flows = analysis.detect_inter_procedural_flows(package);
-            
-            let mut reported_functions: HashSet<String> = findings
-                .iter()
-                .map(|f| f.function.clone())
-                .collect();
-            
+
+            let mut reported_functions: HashSet<String> =
+                findings.iter().map(|f| f.function.clone()).collect();
+
             for flow in flows {
                 if flow.sink_type != "http" {
                     continue;
                 }
-                
+
                 let is_internal = flow.sink_function.contains("mir_extractor")
                     || flow.sink_function.contains("__")
                     || flow.source_function.contains("mir_extractor");
                 if is_internal {
                     continue;
                 }
-                
+
                 if reported_functions.contains(&flow.sink_function) {
                     continue;
                 }
-                
+
                 if flow.sanitized {
                     continue;
                 }
-                
-                let sink_func = package.functions.iter()
+
+                let sink_func = package
+                    .functions
+                    .iter()
                     .find(|f| f.name == flow.sink_function);
-                
+
                 let span = sink_func.map(|f| f.span.clone()).unwrap_or_default();
                 let signature = sink_func.map(|f| f.signature.clone()).unwrap_or_default();
-                
+
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
@@ -2029,7 +2231,7 @@ impl Rule for SsrfRule {
                     span,
                     ..Default::default()
                 });
-                
+
                 reported_functions.insert(flow.sink_function.clone());
             }
         }
@@ -2057,7 +2259,8 @@ impl SqlInjectionRule {
                     formatted directly into SQL query strings instead of using parameterized \
                     queries. This allows attackers to modify query logic, bypass authentication, \
                     or extract/modify sensitive data. Use prepared statements with bind \
-                    parameters (?, $1, :name) instead of string interpolation.".to_string(),
+                    parameters (?, $1, :name) instead of string interpolation."
+                    .to_string(),
                 help_uri: Some("https://owasp.org/www-community/attacks/SQL_Injection".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
@@ -2067,48 +2270,147 @@ impl SqlInjectionRule {
             },
         }
     }
-    
+
     const SQL_STATEMENT_PATTERNS: &'static [&'static str] = &[
-        "SELECT ", "SELECT\t", "SELECT\n", " FROM ", "INSERT INTO", "INSERT  INTO",
-        "UPDATE ", "UPDATE\t", " SET ", "DELETE FROM", "DELETE  FROM",
-        "DROP TABLE", "DROP DATABASE", "DROP INDEX", "DROP VIEW",
-        "CREATE TABLE", "CREATE DATABASE", "CREATE INDEX", "CREATE VIEW",
-        "ALTER TABLE", "ALTER DATABASE", "TRUNCATE TABLE", " WHERE ",
-        " ORDER BY", " GROUP BY", " HAVING ", " JOIN ", " LEFT JOIN",
-        " RIGHT JOIN", " INNER JOIN", " OUTER JOIN", " UNION ", " UNION ALL",
-        " VALUES", " VALUES(", "?)", "?, ", " ? ", "$1", "$2", "$3",
+        "SELECT ",
+        "SELECT\t",
+        "SELECT\n",
+        " FROM ",
+        "INSERT INTO",
+        "INSERT  INTO",
+        "UPDATE ",
+        "UPDATE\t",
+        " SET ",
+        "DELETE FROM",
+        "DELETE  FROM",
+        "DROP TABLE",
+        "DROP DATABASE",
+        "DROP INDEX",
+        "DROP VIEW",
+        "CREATE TABLE",
+        "CREATE DATABASE",
+        "CREATE INDEX",
+        "CREATE VIEW",
+        "ALTER TABLE",
+        "ALTER DATABASE",
+        "TRUNCATE TABLE",
+        " WHERE ",
+        " ORDER BY",
+        " GROUP BY",
+        " HAVING ",
+        " JOIN ",
+        " LEFT JOIN",
+        " RIGHT JOIN",
+        " INNER JOIN",
+        " OUTER JOIN",
+        " UNION ",
+        " UNION ALL",
+        " VALUES",
+        " VALUES(",
+        "?)",
+        "?, ",
+        " ? ",
+        "$1",
+        "$2",
+        "$3",
     ];
-    
+
     const SQL_SINKS: &'static [&'static str] = &[
-        "format_args!", "format!", "String::push_str", "str::to_string", "+",
-        "execute(", "query(", "query_as(", "sql_query(", "prepare(",
-        "execute_batch(", "query_row(", "query_map(", "raw_query(", "raw_sql(",
-        "sqlx::query", "sqlx::query_as", "sqlx::query_scalar", "diesel::sql_query",
-        "diesel::delete", "diesel::insert_into", "diesel::update",
-        "rusqlite::execute", "Connection::execute", "Connection::query_row",
+        "format_args!",
+        "format!",
+        "String::push_str",
+        "str::to_string",
+        "+",
+        "execute(",
+        "query(",
+        "query_as(",
+        "sql_query(",
+        "prepare(",
+        "execute_batch(",
+        "query_row(",
+        "query_map(",
+        "raw_query(",
+        "raw_sql(",
+        "sqlx::query",
+        "sqlx::query_as",
+        "sqlx::query_scalar",
+        "diesel::sql_query",
+        "diesel::delete",
+        "diesel::insert_into",
+        "diesel::update",
+        "rusqlite::execute",
+        "Connection::execute",
+        "Connection::query_row",
         "Statement::execute",
     ];
-    
+
     const UNTRUSTED_SOURCES: &'static [&'static str] = &[
-        "env::var(", "env::var_os(", "std::env::var(", "std::env::var_os(",
-        " = var(", " = var::", "env::args()", "std::env::args()", " = args(",
-        "Args>::next(", " = stdin()", "Stdin::lock(", "BufRead>::read_line(",
-        "read_line(move", "io::stdin()", "Request", "Form", "Query", "Json", "Path",
+        "env::var(",
+        "env::var_os(",
+        "std::env::var(",
+        "std::env::var_os(",
+        " = var(",
+        " = var::",
+        "env::args()",
+        "std::env::args()",
+        " = args(",
+        "Args>::next(",
+        " = stdin()",
+        "Stdin::lock(",
+        "BufRead>::read_line(",
+        "read_line(move",
+        "io::stdin()",
+        "Request",
+        "Form",
+        "Query",
+        "Json",
+        "Path",
     ];
-    
+
     const SANITIZERS: &'static [&'static str] = &[
-        " ? ", "?)", "?, ", "$1", "$2", ":name", ":username", ":id",
-        ".bind(", "bind_value(", "bind::<", "QueryBuilder", "filter(",
-        ".eq(", ".ne(", ".gt(", ".lt(", "parse::<i", "parse::<u", "parse::<f",
-        "i32::from_str", "i64::from_str", "u32::from_str", "u64::from_str",
-        "::contains(move", "::contains(copy", "allowed_", "whitelist", "allowlist",
-        "escape(", "quote(", "sanitize", "replace(", "replace('", "::replace::",
-        "is_alphanumeric", "chars().all(", " as Iterator>::all::<",
+        " ? ",
+        "?)",
+        "?, ",
+        "$1",
+        "$2",
+        ":name",
+        ":username",
+        ":id",
+        ".bind(",
+        "bind_value(",
+        "bind::<",
+        "QueryBuilder",
+        "filter(",
+        ".eq(",
+        ".ne(",
+        ".gt(",
+        ".lt(",
+        "parse::<i",
+        "parse::<u",
+        "parse::<f",
+        "i32::from_str",
+        "i64::from_str",
+        "u32::from_str",
+        "u64::from_str",
+        "::contains(move",
+        "::contains(copy",
+        "allowed_",
+        "whitelist",
+        "allowlist",
+        "escape(",
+        "quote(",
+        "sanitize",
+        "replace(",
+        "replace('",
+        "::replace::",
+        "is_alphanumeric",
+        "chars().all(",
+        " as Iterator>::all::<",
     ];
 
     fn track_untrusted_vars(&self, body: &[String]) -> HashSet<String> {
         let mut untrusted_vars = HashSet::new();
-        
+
         for line in body {
             let trimmed = line.trim();
             for source in Self::UNTRUSTED_SOURCES {
@@ -2119,20 +2421,20 @@ impl SqlInjectionRule {
                 }
             }
         }
-        
+
         let mut changed = true;
         let mut iterations = 0;
-        
+
         while changed && iterations < 20 {
             changed = false;
             iterations += 1;
-            
+
             for line in body {
                 let trimmed = line.trim();
                 if !trimmed.contains(" = ") {
                     continue;
                 }
-                
+
                 if let Some(target) = self.extract_assignment_target(trimmed) {
                     for untrusted in untrusted_vars.clone() {
                         if self.contains_var(trimmed, &untrusted) {
@@ -2145,10 +2447,10 @@ impl SqlInjectionRule {
                 }
             }
         }
-        
+
         untrusted_vars
     }
-    
+
     fn has_sql_sanitization(&self, body: &[String]) -> bool {
         let body_str = body.join("\n");
         for sanitizer in Self::SANITIZERS {
@@ -2158,42 +2460,50 @@ impl SqlInjectionRule {
         }
         false
     }
-    
-    fn find_unsafe_sql_operations(&self, body: &[String], untrusted_vars: &HashSet<String>) -> Vec<String> {
+
+    fn find_unsafe_sql_operations(
+        &self,
+        body: &[String],
+        untrusted_vars: &HashSet<String>,
+    ) -> Vec<String> {
         let mut evidence = Vec::new();
-        
+
         let has_sql_const = body.iter().any(|line| {
             if !line.contains("const ") && !line.contains("[const ") {
                 return false;
             }
             let line_upper = line.to_uppercase();
-            Self::SQL_STATEMENT_PATTERNS.iter().any(|pattern| line_upper.contains(pattern))
+            Self::SQL_STATEMENT_PATTERNS
+                .iter()
+                .any(|pattern| line_upper.contains(pattern))
         });
-        
+
         let has_promoted_sql_ref = body.iter().any(|line| {
-            line.contains("::promoted[") && 
-            body.iter().any(|other| {
-                if !other.contains("[const ") && !other.contains(" = [const ") {
-                    return false;
-                }
-                let other_upper = other.to_uppercase();
-                Self::SQL_STATEMENT_PATTERNS.iter().any(|pattern| other_upper.contains(pattern))
-            })
+            line.contains("::promoted[")
+                && body.iter().any(|other| {
+                    if !other.contains("[const ") && !other.contains(" = [const ") {
+                        return false;
+                    }
+                    let other_upper = other.to_uppercase();
+                    Self::SQL_STATEMENT_PATTERNS
+                        .iter()
+                        .any(|pattern| other_upper.contains(pattern))
+                })
         });
-        
+
         if !has_sql_const && !has_promoted_sql_ref {
             return evidence;
         }
-        
+
         let has_tainted_format = body.iter().any(|line| {
             let trimmed = line.trim();
-            let is_format_related = trimmed.contains("fmt::Arguments") ||
-                                   trimmed.contains("fmt::rt::Argument") ||
-                                   trimmed.contains("Arguments::new") ||
-                                   trimmed.contains("Argument::new") ||
-                                   trimmed.contains("core::fmt::") ||
-                                   trimmed.contains("format_args");
-            
+            let is_format_related = trimmed.contains("fmt::Arguments")
+                || trimmed.contains("fmt::rt::Argument")
+                || trimmed.contains("Arguments::new")
+                || trimmed.contains("Argument::new")
+                || trimmed.contains("core::fmt::")
+                || trimmed.contains("format_args");
+
             if is_format_related {
                 for var in untrusted_vars {
                     if self.contains_var(trimmed, var) {
@@ -2203,22 +2513,25 @@ impl SqlInjectionRule {
             }
             false
         });
-        
+
         if has_tainted_format {
             for line in body {
                 if !line.contains("const ") && !line.contains("[const ") {
                     continue;
                 }
                 let line_upper = line.to_uppercase();
-                if Self::SQL_STATEMENT_PATTERNS.iter().any(|pattern| line_upper.contains(pattern)) {
+                if Self::SQL_STATEMENT_PATTERNS
+                    .iter()
+                    .any(|pattern| line_upper.contains(pattern))
+                {
                     evidence.push(line.trim().to_string());
                 }
             }
         }
-        
+
         evidence
     }
-    
+
     fn extract_assignment_target(&self, line: &str) -> Option<String> {
         let parts: Vec<&str> = line.split('=').collect();
         if parts.len() >= 2 {
@@ -2235,17 +2548,17 @@ impl SqlInjectionRule {
         }
         None
     }
-    
+
     fn contains_var(&self, line: &str, var: &str) -> bool {
-        line.contains(&format!("move {}", var)) ||
-        line.contains(&format!("copy {}", var)) ||
-        line.contains(&format!("&{}", var)) ||
-        line.contains(&format!("({})", var)) ||
-        line.contains(&format!("{},", var)) ||
-        line.contains(&format!(" {} ", var)) ||
-        line.contains(&format!("[{}]", var))
+        line.contains(&format!("move {}", var))
+            || line.contains(&format!("copy {}", var))
+            || line.contains(&format!("&{}", var))
+            || line.contains(&format!("({})", var))
+            || line.contains(&format!("{},", var))
+            || line.contains(&format!(" {} ", var))
+            || line.contains(&format!("[{}]", var))
     }
-    
+
     fn extract_function_params(&self, body: &[String]) -> HashSet<String> {
         let mut params = HashSet::new();
         for line in body {
@@ -2253,7 +2566,10 @@ impl SqlInjectionRule {
             if trimmed.starts_with("debug ") && trimmed.contains(" => _") {
                 if let Some(start) = trimmed.find(" => _") {
                     let after = &trimmed[start + 5..];
-                    let var: String = after.chars().take_while(|c| c.is_ascii_digit() || *c == '_').collect();
+                    let var: String = after
+                        .chars()
+                        .take_while(|c| c.is_ascii_digit() || *c == '_')
+                        .collect();
                     if !var.is_empty() && var != "0" {
                         params.insert(format!("_{}", var.trim_start_matches('_')));
                     }
@@ -2262,21 +2578,21 @@ impl SqlInjectionRule {
         }
         params
     }
-    
+
     fn propagate_taint(&self, body: &[String], untrusted_vars: &mut HashSet<String>) {
         let mut changed = true;
         let mut iterations = 0;
-        
+
         while changed && iterations < 20 {
             changed = false;
             iterations += 1;
-            
+
             for line in body {
                 let trimmed = line.trim();
                 if !trimmed.contains(" = ") {
                     continue;
                 }
-                
+
                 if let Some(target) = self.extract_assignment_target(trimmed) {
                     for untrusted in untrusted_vars.clone() {
                         if self.contains_var(trimmed, &untrusted) {
@@ -2297,26 +2613,33 @@ impl Rule for SqlInjectionRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         // Build tainted return functions map
         let mut tainted_return_functions: HashSet<String> = HashSet::new();
-        
+
         for function in &package.functions {
-            let has_source = function.body.iter().any(|line| {
-                Self::UNTRUSTED_SOURCES.iter().any(|src| line.contains(src))
-            });
-            
+            let has_source = function
+                .body
+                .iter()
+                .any(|line| Self::UNTRUSTED_SOURCES.iter().any(|src| line.contains(src)));
+
             if has_source {
                 let has_sql_const = function.body.iter().any(|line| {
                     if !line.contains("const ") && !line.contains("[const ") {
                         return false;
                     }
                     let upper = line.to_uppercase();
-                    Self::SQL_STATEMENT_PATTERNS.iter().any(|pattern| upper.contains(pattern))
+                    Self::SQL_STATEMENT_PATTERNS
+                        .iter()
+                        .any(|pattern| upper.contains(pattern))
                 });
-                
+
                 if !has_sql_const {
                     tainted_return_functions.insert(function.name.clone());
                 }
@@ -2324,15 +2647,16 @@ impl Rule for SqlInjectionRule {
         }
 
         for function in &package.functions {
-            if function.name.contains("mir_extractor") || 
-               function.name.contains("mir-extractor") ||
-               function.name.contains("__") ||
-               function.name.contains("test_") {
+            if function.name.contains("mir_extractor")
+                || function.name.contains("mir-extractor")
+                || function.name.contains("__")
+                || function.name.contains("test_")
+            {
                 continue;
             }
 
             let mut untrusted_vars = self.track_untrusted_vars(&function.body);
-            
+
             // Add taint from called functions
             for line in &function.body {
                 let trimmed = line.trim();
@@ -2347,43 +2671,45 @@ impl Rule for SqlInjectionRule {
                     }
                 }
             }
-            
+
             // Check function parameters if no other sources
             if untrusted_vars.is_empty() {
                 let params = self.extract_function_params(&function.body);
                 if !params.is_empty() {
                     let mut param_vars = params.clone();
                     self.propagate_taint(&function.body, &mut param_vars);
-                    
+
                     let has_sql_const = function.body.iter().any(|line| {
                         if !line.contains("const ") && !line.contains("[const ") {
                             return false;
                         }
                         let upper = line.to_uppercase();
-                        Self::SQL_STATEMENT_PATTERNS.iter().any(|pattern| upper.contains(pattern))
+                        Self::SQL_STATEMENT_PATTERNS
+                            .iter()
+                            .any(|pattern| upper.contains(pattern))
                     });
-                    
+
                     if has_sql_const {
                         let has_param_in_format = function.body.iter().any(|line| {
                             let trimmed = line.trim();
-                            let is_format_related = 
-                                trimmed.contains("fmt::Arguments") ||
-                                trimmed.contains("Argument::") ||
-                                trimmed.contains("format_args") ||
-                                trimmed.contains("core::fmt::") ||
-                                trimmed.contains("new_display") ||
-                                trimmed.contains("new_debug");
-                            
-                            is_format_related && param_vars.iter().any(|v| self.contains_var(trimmed, v))
+                            let is_format_related = trimmed.contains("fmt::Arguments")
+                                || trimmed.contains("Argument::")
+                                || trimmed.contains("format_args")
+                                || trimmed.contains("core::fmt::")
+                                || trimmed.contains("new_display")
+                                || trimmed.contains("new_debug");
+
+                            is_format_related
+                                && param_vars.iter().any(|v| self.contains_var(trimmed, v))
                         });
-                        
+
                         if has_param_in_format {
                             untrusted_vars = param_vars;
                         }
                     }
                 }
             }
-            
+
             if untrusted_vars.is_empty() {
                 continue;
             }
@@ -2393,7 +2719,7 @@ impl Rule for SqlInjectionRule {
             }
 
             let unsafe_ops = self.find_unsafe_sql_operations(&function.body, &untrusted_vars);
-            
+
             if !unsafe_ops.is_empty() {
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
@@ -2414,8 +2740,8 @@ impl Rule for SqlInjectionRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -2423,38 +2749,38 @@ impl Rule for SqlInjectionRule {
         // Inter-procedural analysis (use shared analysis if available)
         if let Some(analysis) = inter_analysis {
             let flows = analysis.detect_inter_procedural_flows(package);
-            
-            let mut reported_functions: HashSet<String> = findings
-                .iter()
-                .map(|f| f.function.clone())
-                .collect();
-            
+
+            let mut reported_functions: HashSet<String> =
+                findings.iter().map(|f| f.function.clone()).collect();
+
             for flow in flows {
                 if flow.sink_type != "sql" {
                     continue;
                 }
-                
+
                 let is_internal = flow.sink_function.contains("mir_extractor")
                     || flow.sink_function.contains("__")
                     || flow.source_function.contains("mir_extractor");
                 if is_internal {
                     continue;
                 }
-                
+
                 if reported_functions.contains(&flow.sink_function) {
                     continue;
                 }
-                
+
                 if flow.sanitized {
                     continue;
                 }
-                
-                let sink_func = package.functions.iter()
+
+                let sink_func = package
+                    .functions
+                    .iter()
                     .find(|f| f.name == flow.sink_function);
-                
+
                 let span = sink_func.map(|f| f.span.clone()).unwrap_or_default();
                 let signature = sink_func.map(|f| f.signature.clone()).unwrap_or_default();
-                
+
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
@@ -2477,7 +2803,7 @@ impl Rule for SqlInjectionRule {
                     span,
                     ..Default::default()
                 });
-                
+
                 reported_functions.insert(flow.sink_function.clone());
             }
         }
@@ -2504,8 +2830,11 @@ impl InterProceduralCommandInjectionRule {
                 full_description: "Untrusted input flows through helper functions to \
                     command execution without sanitization. Attackers can inject shell \
                     metacharacters to execute arbitrary commands. Validate input against \
-                    an allowlist or use APIs that don't invoke a shell.".to_string(),
-                help_uri: Some("https://owasp.org/www-community/attacks/Command_Injection".to_string()),
+                    an allowlist or use APIs that don't invoke a shell."
+                    .to_string(),
+                help_uri: Some(
+                    "https://owasp.org/www-community/attacks/Command_Injection".to_string(),
+                ),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
@@ -2521,20 +2850,24 @@ impl Rule for InterProceduralCommandInjectionRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         // Use shared interprocedural analysis if available
         if let Some(analysis) = inter_analysis {
             let flows = analysis.detect_inter_procedural_flows(package);
-            
+
             let mut reported_functions: HashSet<String> = HashSet::new();
-            
+
             for flow in flows {
                 if !flow.sink_type.contains("command") {
                     continue;
                 }
-                
+
                 let is_internal = flow.sink_function.contains("mir_extractor")
                     || flow.sink_function.contains("mir-extractor")
                     || flow.sink_function.contains("__")
@@ -2543,27 +2876,29 @@ impl Rule for InterProceduralCommandInjectionRule {
                 if is_internal {
                     continue;
                 }
-                
+
                 if flow.sink_function.contains("test") && flow.sink_function.contains("::") {
                     if !flow.sink_function.starts_with("test_") {
                         continue;
                     }
                 }
-                
+
                 if reported_functions.contains(&flow.sink_function) {
                     continue;
                 }
-                
+
                 if flow.sanitized {
                     continue;
                 }
-                
-                let sink_func = package.functions.iter()
+
+                let sink_func = package
+                    .functions
+                    .iter()
                     .find(|f| f.name == flow.sink_function);
-                
+
                 let span = sink_func.map(|f| f.span.clone()).unwrap_or_default();
                 let signature = sink_func.map(|f| f.signature.clone()).unwrap_or_default();
-                
+
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
@@ -2587,58 +2922,60 @@ impl Rule for InterProceduralCommandInjectionRule {
                     span,
                     ..Default::default()
                 });
-                
+
                 reported_functions.insert(flow.sink_function.clone());
             }
-            
+
             // Closure capture detection
             for closure in analysis.closure_registry.get_all_closures() {
                 if reported_functions.contains(&closure.name) {
                     continue;
                 }
-                
-                let parent_func = package.functions.iter()
+
+                let parent_func = package
+                    .functions
+                    .iter()
                     .find(|f| f.name == closure.parent_function);
-                
-                let closure_func = package.functions.iter()
-                    .find(|f| f.name == closure.name);
-                
+
+                let closure_func = package.functions.iter().find(|f| f.name == closure.name);
+
                 if let Some(closure_fn) = closure_func {
                     let parent_has_source = if let Some(parent) = parent_func {
                         parent.body.iter().any(|line| {
-                            line.contains("args()") || 
-                            line.contains("env::args") || 
-                            line.contains("env::var") ||
-                            line.contains("std::env::") ||
-                            line.contains("= args") ||
-                            line.contains("var(")
+                            line.contains("args()")
+                                || line.contains("env::args")
+                                || line.contains("env::var")
+                                || line.contains("std::env::")
+                                || line.contains("= args")
+                                || line.contains("var(")
                         })
                     } else {
                         closure_fn.body.iter().any(|line| {
                             let line_lower = line.to_lowercase();
-                            (line.contains("debug ") && line.contains("(*((*_1)")) &&
-                            (line_lower.contains("tainted") || 
-                             line_lower.contains("user") ||
-                             line_lower.contains("input") ||
-                             line_lower.contains("cmd") ||
-                             line_lower.contains("arg") ||
-                             line_lower.contains("command"))
+                            (line.contains("debug ") && line.contains("(*((*_1)"))
+                                && (line_lower.contains("tainted")
+                                    || line_lower.contains("user")
+                                    || line_lower.contains("input")
+                                    || line_lower.contains("cmd")
+                                    || line_lower.contains("arg")
+                                    || line_lower.contains("command"))
                         })
                     };
-                    
+
                     let closure_has_sink = closure_fn.body.iter().any(|line| {
-                        line.contains("Command::new") ||
-                        line.contains("Command::") ||
-                        line.contains("::spawn") ||
-                        line.contains("::output") ||
-                        line.contains("process::Command")
+                        line.contains("Command::new")
+                            || line.contains("Command::")
+                            || line.contains("::spawn")
+                            || line.contains("::output")
+                            || line.contains("process::Command")
                     });
-                    
-                    let has_captures = !closure.captured_vars.is_empty() ||
-                        closure_fn.body.iter().any(|line| {
-                            line.contains("debug ") && line.contains("(*((*_1)")
-                        });
-                    
+
+                    let has_captures = !closure.captured_vars.is_empty()
+                        || closure_fn
+                            .body
+                            .iter()
+                            .any(|line| line.contains("debug ") && line.contains("(*((*_1)"));
+
                     if parent_has_source && closure_has_sink && has_captures {
                         findings.push(Finding {
                             rule_id: self.metadata.id.clone(),
@@ -2649,65 +2986,67 @@ impl Rule for InterProceduralCommandInjectionRule {
                                 from parent function `{}` and passes it to command execution. \
                                 Attackers can inject shell metacharacters. \
                                 Validate input or avoid shell invocation.",
-                                closure.name,
-                                closure.parent_function
+                                closure.name, closure.parent_function
                             ),
                             function: closure.name.clone(),
                             function_signature: closure_fn.signature.clone(),
                             evidence: vec![
-                                format!("Parent function {} contains taint source", closure.parent_function),
+                                format!(
+                                    "Parent function {} contains taint source",
+                                    closure.parent_function
+                                ),
                                 format!("Closure captures variable(s) from parent"),
                                 "Closure body contains command execution".to_string(),
                             ],
                             span: closure_fn.span.clone(),
                             ..Default::default()
                         });
-                        
+
                         reported_functions.insert(closure.name.clone());
                     }
                 }
             }
-            
+
             // Direct closure scan fallback
             for function in &package.functions {
                 if !function.name.contains("::{closure#") {
                     continue;
                 }
-                
+
                 if reported_functions.contains(&function.name) {
                     continue;
                 }
-                
+
                 let body_str = function.body.join("\n");
-                
-                let has_command_sink = body_str.contains("Command::") ||
-                    body_str.contains("::spawn") ||
-                    body_str.contains("::output");
-                
+
+                let has_command_sink = body_str.contains("Command::")
+                    || body_str.contains("::spawn")
+                    || body_str.contains("::output");
+
                 if !has_command_sink {
                     continue;
                 }
-                
+
                 let has_tainted_capture = body_str.lines().any(|line| {
                     if !line.contains("debug ") || !line.contains("(*((*_1)") {
                         return false;
                     }
                     let line_lower = line.to_lowercase();
-                    line_lower.contains("tainted") ||
-                    line_lower.contains("user") ||
-                    line_lower.contains("input") ||
-                    line_lower.contains("cmd") ||
-                    line_lower.contains("arg") ||
-                    line_lower.contains("command")
+                    line_lower.contains("tainted")
+                        || line_lower.contains("user")
+                        || line_lower.contains("input")
+                        || line_lower.contains("cmd")
+                        || line_lower.contains("arg")
+                        || line_lower.contains("command")
                 });
-                
+
                 if has_tainted_capture {
                     let parent_name = if let Some(pos) = function.name.find("::{closure#") {
                         function.name[..pos].to_string()
                     } else {
                         "unknown_parent".to_string()
                     };
-                    
+
                     findings.push(Finding {
                         rule_id: self.metadata.id.clone(),
                         rule_name: self.metadata.name.clone(),
@@ -2717,8 +3056,7 @@ impl Rule for InterProceduralCommandInjectionRule {
                             from parent function `{}` and passes it to command execution. \
                             Attackers can inject shell metacharacters. \
                             Validate input or avoid shell invocation.",
-                            function.name,
-                            parent_name
+                            function.name, parent_name
                         ),
                         function: function.name.clone(),
                         function_signature: function.signature.clone(),
@@ -2731,10 +3069,10 @@ impl Rule for InterProceduralCommandInjectionRule {
                         cwe_ids: Vec::new(),
                         fix_suggestion: None,
                         code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                        exploitability: Exploitability::default(),
+                        exploitability_score: Exploitability::default().score(),
                     });
-                    
+
                     reported_functions.insert(function.name.clone());
                 }
             }

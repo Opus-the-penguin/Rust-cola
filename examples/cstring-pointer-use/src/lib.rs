@@ -7,7 +7,7 @@
 
 #![allow(dead_code)]
 
-use std::ffi::{CString, CStr};
+use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
 /// BAD: CString temporary with unwrap().as_ptr()
@@ -24,7 +24,9 @@ pub unsafe fn bad_cstring_temp_unwrap(name: &str) -> *const c_char {
 /// NOSEC: Intentional vulnerability for testing
 /// codeql[cpp/use-after-free]: Intentional test pattern
 pub unsafe fn bad_cstring_temp_expect(name: &str) -> *const c_char {
-    CString::new(name).expect("Failed to create CString").as_ptr() // UB: CString dropped
+    CString::new(name)
+        .expect("Failed to create CString")
+        .as_ptr() // UB: CString dropped
 }
 
 /// BAD: Direct chaining CString::new().as_ptr()

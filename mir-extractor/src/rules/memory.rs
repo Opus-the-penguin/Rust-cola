@@ -9,10 +9,13 @@
 //! - Null pointer transmutes
 //! - ZST pointer arithmetic
 
-use crate::{Exploitability, Confidence, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
-use crate::detect_truncating_len_casts;
 use super::collect_matches;
 use super::utils::filter_entry;
+use crate::detect_truncating_len_casts;
+use crate::{
+    Confidence, Exploitability, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin,
+    Severity,
+};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::fs;
@@ -159,77 +162,108 @@ pub(crate) fn strip_string_literals(
 
 pub(crate) fn looks_like_null_pointer_transmute(line: &str) -> bool {
     let lower = line.to_lowercase();
-    
+
     if !lower.contains("transmute") {
         return false;
     }
-    
+
     // Skip internal compiler transmute casts
     if lower.contains("(transmute)") {
         return false;
     }
-    
+
     if lower.contains("transmute(const 0") || lower.contains("transmute(0_") {
         return true;
     }
-    
-    if (lower.contains("std::ptr::null") || lower.contains("::ptr::null")) 
-        && lower.contains("transmute") {
+
+    if (lower.contains("std::ptr::null") || lower.contains("::ptr::null"))
+        && lower.contains("transmute")
+    {
         return true;
     }
-    
+
     if lower.contains("null") && lower.contains("transmute") {
         return true;
     }
-    
+
     false
 }
 
 pub(crate) fn looks_like_zst_pointer_arithmetic(line: &str) -> bool {
     let lower = line.to_lowercase();
-    
-    let arithmetic_methods = ["offset", "add", "sub", "wrapping_offset", "wrapping_add", "wrapping_sub", "offset_from"];
-    
-    let has_arithmetic = arithmetic_methods.iter().any(|method| lower.contains(method));
+
+    let arithmetic_methods = [
+        "offset",
+        "add",
+        "sub",
+        "wrapping_offset",
+        "wrapping_add",
+        "wrapping_sub",
+        "offset_from",
+    ];
+
+    let has_arithmetic = arithmetic_methods
+        .iter()
+        .any(|method| lower.contains(method));
     if !has_arithmetic {
         return false;
     }
-    
+
     // Unit type: *const () or *mut ()
     if (lower.contains("*const ()") || lower.contains("*mut ()")) && has_arithmetic {
         return true;
     }
-    
+
     // PhantomData
     if lower.contains("phantomdata") && has_arithmetic {
         return true;
     }
-    
+
     // PhantomPinned
     if lower.contains("phantompinned") && has_arithmetic {
         return true;
     }
-    
+
     // Empty tuple/array patterns
     if (lower.contains("*const [(); 0]") || lower.contains("*mut [(); 0]")) && has_arithmetic {
         return true;
     }
-    
+
     // ZST naming conventions
     if (lower.contains("_zst") || lower.contains("zst_")) && has_arithmetic {
         return true;
     }
-    
+
     let empty_type_patterns = [
-        "emptystruct", "emptyenum", "emptytype", "empty_struct", "empty_enum", "empty_type",
-        "unitstruct", "unitenum", "unittype", "unit_struct", "unit_enum", "unit_type",
-        "markerstruct", "markerenum", "markertype", "marker_struct", "marker_enum", "marker_type",
-        "zststruct", "zstenum", "zsttype", "zst_struct", "zst_enum", "zst_type",
+        "emptystruct",
+        "emptyenum",
+        "emptytype",
+        "empty_struct",
+        "empty_enum",
+        "empty_type",
+        "unitstruct",
+        "unitenum",
+        "unittype",
+        "unit_struct",
+        "unit_enum",
+        "unit_type",
+        "markerstruct",
+        "markerenum",
+        "markertype",
+        "marker_struct",
+        "marker_enum",
+        "marker_type",
+        "zststruct",
+        "zstenum",
+        "zsttype",
+        "zst_struct",
+        "zst_enum",
+        "zst_type",
     ];
     if empty_type_patterns.iter().any(|p| lower.contains(p)) && has_arithmetic {
         return true;
     }
-    
+
     false
 }
 
@@ -321,7 +355,11 @@ impl Rule for BoxIntoRawRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -346,10 +384,10 @@ impl Rule for BoxIntoRawRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
+                confidence: Confidence::Medium,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
+                code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
             });
@@ -438,7 +476,11 @@ impl Rule for TransmuteRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
         for function in &package.functions {
             let transmute_lines = Self::collect_transmute_lines(&function.body);
@@ -457,8 +499,8 @@ impl Rule for TransmuteRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -530,7 +572,11 @@ impl Rule for UnsafeUsageRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
         for function in &package.functions {
             // Skip self-analysis
@@ -552,10 +598,10 @@ impl Rule for UnsafeUsageRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
+                confidence: Confidence::Medium,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
+                code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
             });
@@ -597,7 +643,11 @@ impl Rule for NullPointerTransmuteRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -605,8 +655,9 @@ impl Rule for NullPointerTransmuteRule {
         let mut findings = Vec::new();
 
         for function in &package.functions {
-            if function.name.contains("NullPointerTransmuteRule") 
-                || function.name.contains("looks_like_null_pointer_transmute") {
+            if function.name.contains("NullPointerTransmuteRule")
+                || function.name.contains("looks_like_null_pointer_transmute")
+            {
                 continue;
             }
 
@@ -633,10 +684,10 @@ impl Rule for NullPointerTransmuteRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
+                confidence: Confidence::Medium,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
+                code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
             });
@@ -678,7 +729,11 @@ impl Rule for ZSTPointerArithmeticRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -687,7 +742,8 @@ impl Rule for ZSTPointerArithmeticRule {
 
         for function in &package.functions {
             if function.name.contains("ZSTPointerArithmeticRule")
-                || function.name.contains("looks_like_zst_pointer_arithmetic") {
+                || function.name.contains("looks_like_zst_pointer_arithmetic")
+            {
                 continue;
             }
 
@@ -714,10 +770,10 @@ impl Rule for ZSTPointerArithmeticRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
+                confidence: Confidence::Medium,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
+                code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
             });
@@ -793,7 +849,11 @@ impl Rule for VecSetLenRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         // Skip self-analysis
         if package.crate_name == "mir-extractor" {
             return Vec::new();
@@ -819,10 +879,10 @@ impl Rule for VecSetLenRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
+                confidence: Confidence::Medium,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
+                code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
             });
@@ -873,7 +933,11 @@ impl Rule for MaybeUninitAssumeInitRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         // Skip self-analysis
         if package.crate_name == "mir-extractor" {
             return Vec::new();
@@ -900,10 +964,10 @@ impl Rule for MaybeUninitAssumeInitRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
+                confidence: Confidence::Medium,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
+                code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
             });
@@ -961,7 +1025,11 @@ impl Rule for MemUninitZeroedRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         // Skip self-analysis
         if package.crate_name == "mir-extractor" {
             return Vec::new();
@@ -998,10 +1066,10 @@ impl Rule for MemUninitZeroedRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
+                confidence: Confidence::Medium,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
+                code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
             });
@@ -1043,7 +1111,11 @@ impl Rule for NonNullNewUncheckedRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         // Skip analyzer's own crate to avoid self-referential warnings
         if package.crate_name == "mir-extractor" {
             return Vec::new();
@@ -1073,8 +1145,8 @@ impl Rule for NonNullNewUncheckedRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -1115,29 +1187,47 @@ impl Rule for MemForgetGuardRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         // Skip analyzer's own crate to avoid self-referential warnings
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
 
         let mut findings = Vec::new();
-        let guard_types = ["MutexGuard", "RwLockReadGuard", "RwLockWriteGuard", "RefMut", "Ref"];
+        let guard_types = [
+            "MutexGuard",
+            "RwLockReadGuard",
+            "RwLockWriteGuard",
+            "RefMut",
+            "Ref",
+        ];
 
         for function in &package.functions {
             // Check if function has mem::forget with guard types
-            let has_forget = function.body.iter().any(|line| line.contains("mem::forget"));
+            let has_forget = function
+                .body
+                .iter()
+                .any(|line| line.contains("mem::forget"));
             if !has_forget {
                 continue;
             }
 
-            let has_guard = function.body.iter().any(|line| {
-                guard_types.iter().any(|g| line.contains(g))
-            });
+            let has_guard = function
+                .body
+                .iter()
+                .any(|line| guard_types.iter().any(|g| line.contains(g)));
 
             if has_guard {
-                let evidence: Vec<String> = function.body.iter()
-                    .filter(|line| line.contains("mem::forget") || guard_types.iter().any(|g| line.contains(g)))
+                let evidence: Vec<String> = function
+                    .body
+                    .iter()
+                    .filter(|line| {
+                        line.contains("mem::forget") || guard_types.iter().any(|g| line.contains(g))
+                    })
                     .map(|line| line.trim().to_string())
                     .collect();
 
@@ -1145,7 +1235,10 @@ impl Rule for MemForgetGuardRule {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
                     severity: self.metadata.default_severity,
-                    message: format!("mem::forget on guard type may cause deadlock in `{}`", function.name),
+                    message: format!(
+                        "mem::forget on guard type may cause deadlock in `{}`",
+                        function.name
+                    ),
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence,
@@ -1154,8 +1247,8 @@ impl Rule for MemForgetGuardRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -1196,7 +1289,11 @@ impl Rule for StaticMutGlobalRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -1294,9 +1391,7 @@ impl TransmuteLifetimeChangeRule {
                 }
                 false
             }
-            (Some(_), None) | (None, Some(_)) => {
-                from_type.contains('&') && to_type.contains('&')
-            }
+            (Some(_), None) | (None, Some(_)) => from_type.contains('&') && to_type.contains('&'),
             _ => false,
         }
     }
@@ -1307,7 +1402,11 @@ impl Rule for TransmuteLifetimeChangeRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -1363,7 +1462,10 @@ impl Rule for TransmuteLifetimeChangeRule {
                     }
                 }
 
-                if trimmed.starts_with("//") || trimmed.starts_with("*") || trimmed.starts_with("/*") {
+                if trimmed.starts_with("//")
+                    || trimmed.starts_with("*")
+                    || trimmed.starts_with("/*")
+                {
                     continue;
                 }
 
@@ -1377,7 +1479,7 @@ impl Rule for TransmuteLifetimeChangeRule {
                             if parts.len() == 2 {
                                 let from_type = parts[0].trim();
                                 let to_type = parts[1].trim();
-                                
+
                                 if Self::types_differ_in_lifetime(from_type, to_type) {
                                     let location = format!("{}:{}", rel_path, idx + 1);
                                     findings.push(Finding {
@@ -1398,7 +1500,7 @@ impl Rule for TransmuteLifetimeChangeRule {
                             }
                         }
                     }
-                    
+
                     // Pattern 2: Function signature shows lifetime extension
                     let mut fn_sig_line = String::new();
                     for back_idx in (0..=idx).rev() {
@@ -1413,19 +1515,19 @@ impl Rule for TransmuteLifetimeChangeRule {
                             }
                         }
                     }
-                    
-                    let sig_has_short_lifetime = fn_sig_line.contains("'a") || 
-                                                fn_sig_line.contains("'b");
-                    let sig_returns_static = fn_sig_line.contains("-> &'static") ||
-                                            fn_sig_line.contains("-> StaticData");
-                    
-                    let is_actual_transmute = trimmed.contains("transmute(") || 
-                                             trimmed.contains("transmute::<");
-                    
+
+                    let sig_has_short_lifetime =
+                        fn_sig_line.contains("'a") || fn_sig_line.contains("'b");
+                    let sig_returns_static = fn_sig_line.contains("-> &'static")
+                        || fn_sig_line.contains("-> StaticData");
+
+                    let is_actual_transmute =
+                        trimmed.contains("transmute(") || trimmed.contains("transmute::<");
+
                     if sig_has_short_lifetime && sig_returns_static && is_actual_transmute {
-                        let already_reported = findings.iter().any(|f| 
-                            f.function == format!("{}:{}", rel_path, idx + 1)
-                        );
+                        let already_reported = findings
+                            .iter()
+                            .any(|f| f.function == format!("{}:{}", rel_path, idx + 1));
                         if !already_reported {
                             let location = format!("{}:{}", rel_path, idx + 1);
                             findings.push(Finding {
@@ -1444,7 +1546,7 @@ impl Rule for TransmuteLifetimeChangeRule {
                             });
                         }
                     }
-                    
+
                     // Pattern 3: Struct with lifetime parameter transmuted to struct without
                     if let Some(turbofish_start) = trimmed.find("transmute::<") {
                         let after_turbofish = &trimmed[turbofish_start + 12..];
@@ -1464,21 +1566,21 @@ impl Rule for TransmuteLifetimeChangeRule {
                                         _ => {}
                                     }
                                 }
-                                
+
                                 if let Some(pos) = split_pos {
                                     let from_type = types_str[..pos].trim();
                                     let to_type = types_str[pos + 1..].trim();
-                                    
-                                    let from_has_lifetime = from_type.contains("'a") ||
-                                                           from_type.contains("'b") ||
-                                                           from_type.contains("'_");
-                                    let to_has_static = !to_type.contains('\'') ||
-                                                       to_type.contains("'static");
-                                    
+
+                                    let from_has_lifetime = from_type.contains("'a")
+                                        || from_type.contains("'b")
+                                        || from_type.contains("'_");
+                                    let to_has_static =
+                                        !to_type.contains('\'') || to_type.contains("'static");
+
                                     if from_has_lifetime && to_has_static {
-                                        let already_reported = findings.iter().any(|f| 
+                                        let already_reported = findings.iter().any(|f| {
                                             f.function == format!("{}:{}", rel_path, idx + 1)
-                                        );
+                                        });
                                         if !already_reported {
                                             let location = format!("{}:{}", rel_path, idx + 1);
                                             findings.push(Finding {
@@ -1536,38 +1638,39 @@ impl RawPointerEscapeRule {
     }
 
     fn is_ptr_cast(line: &str) -> bool {
-        line.contains("as *const") || 
-        line.contains("as *mut") ||
-        line.contains(".as_ptr()") ||
-        line.contains(".as_mut_ptr()")
+        line.contains("as *const")
+            || line.contains("as *mut")
+            || line.contains(".as_ptr()")
+            || line.contains(".as_mut_ptr()")
     }
 
     /// Check for unsafe dereference patterns that create references outliving pointee
     fn is_unsafe_deref_outlive(line: &str) -> bool {
         // Pattern: unsafe { &*ptr } or unsafe { &mut *ptr }
-        (line.contains("&*") || line.contains("&mut *")) && 
-        (line.contains("unsafe") || line.contains("ptr"))
+        (line.contains("&*") || line.contains("&mut *"))
+            && (line.contains("unsafe") || line.contains("ptr"))
     }
 
     /// Check for transmute patterns that extend lifetimes
     fn is_lifetime_transmute(line: &str) -> bool {
-        line.contains("transmute") && 
-        (line.contains("&'") || line.contains("'static") || line.contains("'a"))
+        line.contains("transmute")
+            && (line.contains("&'") || line.contains("'static") || line.contains("'a"))
     }
 
     fn is_return_context(lines: &[&str], idx: usize, ptr_var: &str) -> bool {
         let line = lines[idx].trim();
-        
+
         if line.starts_with("return ") && (line.contains("as *const") || line.contains("as *mut")) {
             return true;
         }
-        
-        if (line.contains("as *const") || line.contains("as *mut") || line.contains(".as_ptr()")) 
-           && !line.ends_with(';') 
-           && !line.contains("let ") {
+
+        if (line.contains("as *const") || line.contains("as *mut") || line.contains(".as_ptr()"))
+            && !line.ends_with(';')
+            && !line.contains("let ")
+        {
             return true;
         }
-        
+
         if !ptr_var.is_empty() {
             for check_line in lines.iter().skip(idx + 1).take(10) {
                 let trimmed = check_line.trim();
@@ -1582,66 +1685,67 @@ impl RawPointerEscapeRule {
                 }
             }
         }
-        
+
         false
     }
 
     fn is_escape_via_store(lines: &[&str], idx: usize) -> bool {
         let line = lines[idx].trim();
-        
+
         if line.contains("ptr:") && (line.contains("as *const") || line.contains("as *mut")) {
             return true;
         }
-        
-        if (line.starts_with("*") && line.contains(" = ")) && 
-           (line.contains("as *const") || line.contains("as *mut")) {
+
+        if (line.starts_with("*") && line.contains(" = "))
+            && (line.contains("as *const") || line.contains("as *mut"))
+        {
             if line.contains("&") {
                 return true;
             }
         }
-        
+
         if line.contains("GLOBAL") || line.contains("STATIC") {
             if line.contains("as *const") || line.contains("as *mut") {
                 return true;
             }
         }
-        
+
         false
     }
 
     fn is_safe_pattern(lines: &[&str], idx: usize, fn_context: &str) -> bool {
         let line = lines[idx].trim();
-        
+
         if fn_context.contains("fn ") && fn_context.contains("(&") {
             if !line.contains("let ") && (line.contains(" x ") || line.contains("(x)")) {
                 return true;
             }
         }
-        
+
         if line.contains("Box::leak") {
             return true;
         }
-        
+
         if fn_context.contains("&'static str") {
             return true;
         }
-        
+
         if line.contains("(ptr,") && (fn_context.contains("Box<") || fn_context.contains("boxed")) {
             return true;
         }
-        
+
         if fn_context.contains("ManuallyDrop") {
             return true;
         }
-        
+
         if fn_context.contains("Pin<") {
             return true;
         }
-        
+
         if line.contains("unsafe {") && line.contains("*ptr") && !line.contains("return") {
             return true;
         }
-        
+
         let next_lines: String = lines[idx..std::cmp::min(idx + 5, lines.len())]
             .iter()
             .map(|s| *s)
@@ -1650,7 +1754,7 @@ impl RawPointerEscapeRule {
         if next_lines.contains("unsafe { *ptr }") && !next_lines.contains("return ptr") {
             return true;
         }
-        
+
         false
     }
 }
@@ -1660,7 +1764,11 @@ impl Rule for RawPointerEscapeRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -1715,11 +1823,11 @@ impl Rule for RawPointerEscapeRule {
                         if let Some(paren_pos) = after_fn.find('(') {
                             current_fn_name = after_fn[..paren_pos].trim().to_string();
                             current_fn_start = idx;
-                            returns_ptr = trimmed.contains("-> *const") || 
-                                         trimmed.contains("-> *mut") ||
-                                         trimmed.contains("*const i32") ||
-                                         trimmed.contains("*const u8") ||
-                                         trimmed.contains("*const str");
+                            returns_ptr = trimmed.contains("-> *const")
+                                || trimmed.contains("-> *mut")
+                                || trimmed.contains("*const i32")
+                                || trimmed.contains("*const u8")
+                                || trimmed.contains("*const str");
                         }
                     }
                 }
@@ -1738,19 +1846,19 @@ impl Rule for RawPointerEscapeRule {
                         .map(|s| *s)
                         .collect::<Vec<&str>>()
                         .join("\n");
-                    
+
                     if Self::is_safe_pattern(&lines, idx, &fn_context) {
                         continue;
                     }
-                    
-                    let is_local_cast = trimmed.contains("&x ") || 
-                                       trimmed.contains("&local") ||
-                                       trimmed.contains("&temp") ||
-                                       trimmed.contains("&s ") ||
-                                       trimmed.contains("s.as_ptr()") ||
-                                       trimmed.contains("s.as_str()") ||
-                                       trimmed.contains("&v[");
-                    
+
+                    let is_local_cast = trimmed.contains("&x ")
+                        || trimmed.contains("&local")
+                        || trimmed.contains("&temp")
+                        || trimmed.contains("&s ")
+                        || trimmed.contains("s.as_ptr()")
+                        || trimmed.contains("s.as_str()")
+                        || trimmed.contains("&v[");
+
                     let mut ptr_var = String::new();
                     if trimmed.contains("let ") && trimmed.contains(" = ") {
                         if let Some(eq_pos) = trimmed.find(" = ") {
@@ -1760,20 +1868,21 @@ impl Rule for RawPointerEscapeRule {
                             }
                         }
                     }
-                    
+
                     let escapes_via_return = Self::is_return_context(&lines, idx, &ptr_var);
                     let escapes_via_store = Self::is_escape_via_store(&lines, idx);
-                    
+
                     let is_deref_assign = trimmed.starts_with("*") && trimmed.contains(" = &");
-                    
+
                     // Enhanced: Check for unsafe { &*ptr } outliving pointee
                     let is_unsafe_deref = Self::is_unsafe_deref_outlive(trimmed);
                     let is_transmute_lifetime = Self::is_lifetime_transmute(trimmed);
-                    
-                    if ((returns_ptr || escapes_via_return || escapes_via_store) && is_local_cast) || 
-                       (is_deref_assign && is_local_cast) ||
-                       (is_unsafe_deref && escapes_via_return) ||
-                       (is_transmute_lifetime && (returns_ptr || escapes_via_return)) {
+
+                    if ((returns_ptr || escapes_via_return || escapes_via_store) && is_local_cast)
+                        || (is_deref_assign && is_local_cast)
+                        || (is_unsafe_deref && escapes_via_return)
+                        || (is_transmute_lifetime && (returns_ptr || escapes_via_return))
+                    {
                         let location = format!("{}:{}", rel_path, idx + 1);
                         findings.push(Finding {
                             rule_id: self.metadata.id.clone(),
@@ -1844,7 +1953,11 @@ impl Rule for VecSetLenMisuseRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -1892,10 +2005,12 @@ impl Rule for VecSetLenMisuseRule {
 
                 if trimmed.contains(".set_len(") || trimmed.contains("::set_len(") {
                     let mut var_name = None;
-                    
+
                     if let Some(pos) = trimmed.find(".set_len(") {
                         let before_set_len = &trimmed[..pos];
-                        if let Some(last_word_start) = before_set_len.rfind(|c: char| c.is_whitespace() || c == '(' || c == '{' || c == ';') {
+                        if let Some(last_word_start) = before_set_len
+                            .rfind(|c: char| c.is_whitespace() || c == '(' || c == '{' || c == ';')
+                        {
                             var_name = Some(&before_set_len[last_word_start + 1..]);
                         } else {
                             var_name = Some(before_set_len);
@@ -1908,7 +2023,7 @@ impl Rule for VecSetLenMisuseRule {
 
                         for prev_idx in (lookback_limit..idx).rev() {
                             let prev_line = lines[prev_idx];
-                            
+
                             for init_method in Self::initialization_methods() {
                                 if prev_line.contains(var) && prev_line.contains(init_method) {
                                     found_initialization = true;
@@ -1916,10 +2031,11 @@ impl Rule for VecSetLenMisuseRule {
                                 }
                             }
 
-                            if prev_line.contains(var) && 
-                               (prev_line.contains("[") && prev_line.contains("]=") || 
-                                prev_line.contains("ptr::write") ||
-                                prev_line.contains(".as_mut_ptr()")) {
+                            if prev_line.contains(var)
+                                && (prev_line.contains("[") && prev_line.contains("]=")
+                                    || prev_line.contains("ptr::write")
+                                    || prev_line.contains(".as_mut_ptr()"))
+                            {
                                 found_initialization = true;
                                 break;
                             }
@@ -1929,9 +2045,10 @@ impl Rule for VecSetLenMisuseRule {
                                 break;
                             }
 
-                            if prev_line.trim().starts_with("fn ") || 
-                               prev_line.trim().starts_with("pub fn ") ||
-                               prev_line.trim().starts_with("async fn ") {
+                            if prev_line.trim().starts_with("fn ")
+                                || prev_line.trim().starts_with("pub fn ")
+                                || prev_line.trim().starts_with("async fn ")
+                            {
                                 break;
                             }
                         }
@@ -1951,7 +2068,7 @@ impl Rule for VecSetLenMisuseRule {
                                 function_signature: var.to_string(),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
-                    ..Default::default()
+                                ..Default::default()
                             });
                         }
                     }
@@ -1995,7 +2112,11 @@ impl Rule for LengthTruncationCastRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -2034,8 +2155,8 @@ impl Rule for LengthTruncationCastRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -2065,7 +2186,9 @@ impl MaybeUninitAssumeInitDataflowRule {
                     can lead to crashes, data corruption, or security vulnerabilities. Always \
                     initialize MaybeUninit values before assuming them initialized."
                     .to_string(),
-                help_uri: Some("https://doc.rust-lang.org/std/mem/union.MaybeUninit.html".to_string()),
+                help_uri: Some(
+                    "https://doc.rust-lang.org/std/mem/union.MaybeUninit.html".to_string(),
+                ),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
@@ -2113,29 +2236,30 @@ impl MaybeUninitAssumeInitDataflowRule {
         let mut uninitialized_vars: HashMap<String, String> = HashMap::new();
         let mut initialized_vars: HashSet<String> = HashSet::new();
         let mut unsafe_assumes: Vec<(String, String)> = Vec::new();
-        
+
         let creation_patterns = Self::uninit_creation_patterns();
         let init_patterns = Self::init_patterns();
         let assume_patterns = Self::assume_init_patterns();
-        
+
         for line in body {
             let trimmed = line.trim();
-            
+
             let is_creation = creation_patterns.iter().any(|p| trimmed.contains(p));
-            
+
             if is_creation && !trimmed.contains("zeroed") && !trimmed.contains("::new(") {
                 if let Some(eq_pos) = trimmed.find(" = ") {
                     let target = trimmed[..eq_pos].trim();
-                    if let Some(var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                    if let Some(var) = target
+                        .split(|c: char| !c.is_alphanumeric() && c != '_')
                         .find(|s| s.starts_with('_'))
                     {
                         uninitialized_vars.insert(var.to_string(), trimmed.to_string());
                     }
                 }
             }
-            
+
             let is_init = init_patterns.iter().any(|p| trimmed.contains(p));
-            
+
             if is_init {
                 for var in uninitialized_vars.keys() {
                     if trimmed.contains(var) {
@@ -2143,9 +2267,9 @@ impl MaybeUninitAssumeInitDataflowRule {
                     }
                 }
             }
-            
+
             let is_assume = assume_patterns.iter().any(|p| trimmed.contains(p));
-            
+
             if is_assume {
                 for (var, creation_line) in &uninitialized_vars {
                     if trimmed.contains(var) && !initialized_vars.contains(var) {
@@ -2154,7 +2278,7 @@ impl MaybeUninitAssumeInitDataflowRule {
                 }
             }
         }
-        
+
         unsafe_assumes
     }
 }
@@ -2164,18 +2288,23 @@ impl Rule for MaybeUninitAssumeInitDataflowRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
-            if function.name.contains("mir_extractor") || 
-               function.name.contains("mir-extractor") ||
-               function.name.contains("MaybeUninit") {
+            if function.name.contains("mir_extractor")
+                || function.name.contains("mir-extractor")
+                || function.name.contains("MaybeUninit")
+            {
                 continue;
             }
 
             let unsafe_assumes = Self::analyze_uninit_flow(&function.body);
-            
+
             for (creation_line, assume_line) in unsafe_assumes {
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
@@ -2260,32 +2389,35 @@ impl SliceElementSizeMismatchRule {
 
     fn extract_slice_element_type(type_str: &str) -> Option<String> {
         let trimmed = type_str.trim();
-        
+
         if !trimmed.contains('[') || !trimmed.contains(']') {
             return None;
         }
-        
+
         let start = trimmed.find('[')? + 1;
         let end = trimmed.rfind(']')?;
-        
+
         if start >= end {
             return None;
         }
-        
+
         Some(trimmed[start..end].trim().to_string())
     }
 
-    fn is_slice_size_mismatch(from_type: &str, to_type: &str) -> Option<(String, String, usize, usize)> {
+    fn is_slice_size_mismatch(
+        from_type: &str,
+        to_type: &str,
+    ) -> Option<(String, String, usize, usize)> {
         let from_elem = Self::extract_slice_element_type(from_type)?;
         let to_elem = Self::extract_slice_element_type(to_type)?;
-        
+
         if from_elem == to_elem {
             return None;
         }
-        
+
         let from_size = Self::get_primitive_size(&from_elem);
         let to_size = Self::get_primitive_size(&to_elem);
-        
+
         match (from_size, to_size) {
             (Some(fs), Some(ts)) => {
                 if fs == ts {
@@ -2294,16 +2426,20 @@ impl SliceElementSizeMismatchRule {
                     Some((from_elem, to_elem, fs, ts))
                 }
             }
-            (None, None) => {
-                Some((from_elem, to_elem, 0, 0))
-            }
-            _ => {
-                Some((from_elem, to_elem, from_size.unwrap_or(0), to_size.unwrap_or(0)))
-            }
+            (None, None) => Some((from_elem, to_elem, 0, 0)),
+            _ => Some((
+                from_elem,
+                to_elem,
+                from_size.unwrap_or(0),
+                to_size.unwrap_or(0),
+            )),
         }
     }
 
-    fn is_vec_size_mismatch(from_type: &str, to_type: &str) -> Option<(String, String, usize, usize)> {
+    fn is_vec_size_mismatch(
+        from_type: &str,
+        to_type: &str,
+    ) -> Option<(String, String, usize, usize)> {
         let extract_vec_elem = |t: &str| -> Option<String> {
             if !t.contains("Vec<") {
                 return None;
@@ -2315,36 +2451,36 @@ impl SliceElementSizeMismatchRule {
             }
             Some(t[start..end].trim().to_string())
         };
-        
+
         let from_elem = extract_vec_elem(from_type)?;
         let to_elem = extract_vec_elem(to_type)?;
-        
+
         if from_elem == to_elem {
             return None;
         }
-        
+
         let from_size = Self::get_primitive_size(&from_elem)?;
         let to_size = Self::get_primitive_size(&to_elem)?;
-        
+
         if from_size == to_size {
             return None;
         }
-        
+
         Some((from_elem, to_elem, from_size, to_size))
     }
 
     fn parse_transmute_copy_line(line: &str) -> Option<(String, String)> {
         let trimmed = line.trim();
-        
+
         if !trimmed.contains("transmute_copy::<") {
             return None;
         }
-        
+
         let start = trimmed.find("transmute_copy::<")? + 17;
         let end = trimmed[start..].find(">")? + start;
-        
+
         let type_params = &trimmed[start..end];
-        
+
         let mut depth = 0;
         let mut split_pos = None;
         for (i, c) in type_params.char_indices() {
@@ -2358,11 +2494,11 @@ impl SliceElementSizeMismatchRule {
                 _ => {}
             }
         }
-        
+
         let split = split_pos?;
         let from_type = type_params[..split].trim().to_string();
         let to_type = type_params[split + 1..].trim().to_string();
-        
+
         Some((from_type, to_type))
     }
 }
@@ -2372,7 +2508,11 @@ impl Rule for SliceElementSizeMismatchRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -2381,7 +2521,7 @@ impl Rule for SliceElementSizeMismatchRule {
             }
 
             let mut var_types: HashMap<String, String> = HashMap::new();
-            
+
             if let Some(params_start) = function.signature.find('(') {
                 if let Some(params_end) = function.signature.find(')') {
                     let params = &function.signature[params_start + 1..params_end];
@@ -2398,9 +2538,11 @@ impl Rule for SliceElementSizeMismatchRule {
 
             for line in &function.body {
                 let trimmed = line.trim();
-                
+
                 if trimmed.starts_with("let ") {
-                    let rest = trimmed.trim_start_matches("let ").trim_start_matches("mut ");
+                    let rest = trimmed
+                        .trim_start_matches("let ")
+                        .trim_start_matches("mut ");
                     if let Some(colon_pos) = rest.find(':') {
                         let var_name = rest[..colon_pos].trim();
                         let type_end = rest.find(';').unwrap_or(rest.len());
@@ -2414,8 +2556,8 @@ impl Rule for SliceElementSizeMismatchRule {
                 let trimmed = line.trim();
 
                 if let Some((from_type, to_type)) = Self::parse_transmute_copy_line(trimmed) {
-                    if let Some((from_elem, to_elem, from_size, to_size)) = 
-                        Self::is_slice_size_mismatch(&from_type, &to_type) 
+                    if let Some((from_elem, to_elem, from_size, to_size)) =
+                        Self::is_slice_size_mismatch(&from_type, &to_type)
                     {
                         findings.push(Finding {
                             rule_id: self.metadata.id.clone(),
@@ -2432,18 +2574,18 @@ impl Rule for SliceElementSizeMismatchRule {
                             function_signature: function.signature.clone(),
                             evidence: vec![trimmed.to_string()],
                             span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                            confidence: Confidence::Medium,
+                            cwe_ids: Vec::new(),
+                            fix_suggestion: None,
+                            code_snippet: None,
+                            exploitability: Exploitability::default(),
+                            exploitability_score: Exploitability::default().score(),
                         });
                         continue;
                     }
-                    
-                    if let Some((from_elem, to_elem, from_size, to_size)) = 
-                        Self::is_vec_size_mismatch(&from_type, &to_type) 
+
+                    if let Some((from_elem, to_elem, from_size, to_size)) =
+                        Self::is_vec_size_mismatch(&from_type, &to_type)
                     {
                         findings.push(Finding {
                             rule_id: self.metadata.id.clone(),
@@ -2459,12 +2601,12 @@ impl Rule for SliceElementSizeMismatchRule {
                             function_signature: function.signature.clone(),
                             evidence: vec![trimmed.to_string()],
                             span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                            confidence: Confidence::Medium,
+                            cwe_ids: Vec::new(),
+                            fix_suggestion: None,
+                            code_snippet: None,
+                            exploitability: Exploitability::default(),
+                            exploitability_score: Exploitability::default().score(),
                         });
                         continue;
                     }
@@ -2478,35 +2620,35 @@ impl Rule for SliceElementSizeMismatchRule {
                     } else {
                         continue;
                     };
-                    
+
                     let as_pos = match trimmed.find(" as ") {
                         Some(p) => p,
                         None => continue,
                     };
-                    
+
                     let transmute_pos = match trimmed.find("(Transmute)") {
                         Some(p) => p,
                         None => continue,
                     };
-                    
+
                     let to_type = trimmed[as_pos + 4..transmute_pos].trim();
-                    
+
                     let copy_pos = match trimmed.find(copy_move_pattern) {
                         Some(p) => p,
                         None => continue,
                     };
-                    
+
                     let src_start = copy_pos + copy_move_pattern.len();
                     let src_end = as_pos;
                     let src_var = trimmed[src_start..src_end].trim();
-                    
+
                     let from_type = match var_types.get(src_var) {
                         Some(t) => t.as_str(),
                         None => continue,
                     };
 
-                    if let Some((from_elem, to_elem, from_size, to_size)) = 
-                        Self::is_slice_size_mismatch(from_type, to_type) 
+                    if let Some((from_elem, to_elem, from_size, to_size)) =
+                        Self::is_slice_size_mismatch(from_type, to_type)
                     {
                         let size_info = if from_size == 0 && to_size == 0 {
                             format!(
@@ -2529,7 +2671,7 @@ impl Rule for SliceElementSizeMismatchRule {
                                 from_elem, from_size, to_elem, to_size
                             )
                         };
-                        
+
                         findings.push(Finding {
                             rule_id: self.metadata.id.clone(),
                             rule_name: self.metadata.name.clone(),
@@ -2550,9 +2692,9 @@ impl Rule for SliceElementSizeMismatchRule {
                 exploitability_score: Exploitability::default().score(),
                         });
                     }
-                    
-                    if let Some((from_elem, to_elem, from_size, to_size)) = 
-                        Self::is_vec_size_mismatch(from_type, to_type) 
+
+                    if let Some((from_elem, to_elem, from_size, to_size)) =
+                        Self::is_vec_size_mismatch(from_type, to_type)
                     {
                         findings.push(Finding {
                             rule_id: self.metadata.id.clone(),
@@ -2569,12 +2711,12 @@ impl Rule for SliceElementSizeMismatchRule {
                             function_signature: function.signature.clone(),
                             evidence: vec![trimmed.to_string()],
                             span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                            confidence: Confidence::Medium,
+                            cwe_ids: Vec::new(),
+                            fix_suggestion: None,
+                            code_snippet: None,
+                            exploitability: Exploitability::default(),
+                            exploitability_score: Exploitability::default().score(),
                         });
                     }
                 }
@@ -2599,7 +2741,8 @@ impl SliceFromRawPartsRule {
             metadata: RuleMetadata {
                 id: "RUSTCOLA083".to_string(),
                 name: "slice-from-raw-parts-length".to_string(),
-                short_description: "slice::from_raw_parts with potentially invalid length".to_string(),
+                short_description: "slice::from_raw_parts with potentially invalid length"
+                    .to_string(),
                 full_description: "Detects calls to slice::from_raw_parts or from_raw_parts_mut \
                     where the length argument may exceed the actual allocation, causing undefined \
                     behavior. Common issues include using untrusted input for length, forgetting \
@@ -2618,31 +2761,32 @@ impl SliceFromRawPartsRule {
 
     fn is_trusted_length_source(var_name: &str, body: &[String]) -> bool {
         let body_str = body.join("\n");
-        
+
         if body_str.contains(&format!("{} = ", var_name)) {
             for line in body {
                 if line.contains(&format!("{} = ", var_name)) {
-                    if line.contains("::len(") || 
-                       line.contains(">::len(") ||
-                       line.contains(".len()") {
+                    if line.contains("::len(")
+                        || line.contains(">::len(")
+                        || line.contains(".len()")
+                    {
                         return true;
                     }
                 }
             }
         }
-        
+
         if var_name.contains("count") {
             if body_str.contains("Layout::array") || body_str.contains("with_capacity") {
                 return true;
             }
         }
-        
+
         false
     }
 
     fn has_length_validation(len_var: &str, body: &[String]) -> bool {
         let body_str = body.join("\n");
-        
+
         let comparison_patterns = [
             format!("Gt(copy {}", len_var),
             format!("Lt(copy {}", len_var),
@@ -2653,16 +2797,17 @@ impl SliceFromRawPartsRule {
             format!("Le(move {}", len_var),
             format!("Ge(move {}", len_var),
         ];
-        
+
         for pattern in &comparison_patterns {
             if body_str.contains(pattern) {
                 return true;
             }
         }
-        
+
         if body_str.contains("::min(") {
-            if body_str.contains(&format!("copy {}", len_var)) || 
-               body_str.contains(&format!("move {}", len_var)) {
+            if body_str.contains(&format!("copy {}", len_var))
+                || body_str.contains(&format!("move {}", len_var))
+            {
                 for line in body {
                     if line.contains("::min(") && line.contains(len_var) {
                         return true;
@@ -2677,7 +2822,7 @@ impl SliceFromRawPartsRule {
                 }
             }
         }
-        
+
         if body_str.contains("checked_") && body_str.contains(len_var) {
             for line in body {
                 if line.contains("checked_") && line.contains(len_var) {
@@ -2685,18 +2830,19 @@ impl SliceFromRawPartsRule {
                 }
             }
         }
-        
+
         for line in body {
             if line.contains("assert") {
-                if line.contains(&format!("Le(copy {}", len_var)) ||
-                   line.contains(&format!("Lt(copy {}", len_var)) ||
-                   line.contains(&format!("Le(move {}", len_var)) ||
-                   line.contains(&format!("Lt(move {}", len_var)) {
+                if line.contains(&format!("Le(copy {}", len_var))
+                    || line.contains(&format!("Lt(copy {}", len_var))
+                    || line.contains(&format!("Le(move {}", len_var))
+                    || line.contains(&format!("Lt(move {}", len_var))
+                {
                     return true;
                 }
             }
         }
-        
+
         false
     }
 
@@ -2717,21 +2863,24 @@ impl SliceFromRawPartsRule {
 
     fn is_untrusted_length_source(_len_var: &str, body: &[String]) -> bool {
         let body_str = body.join("\n");
-        
+
         if body_str.contains("env::var") || body_str.contains("var::<") {
             if body_str.contains("parse") {
                 return true;
             }
         }
-        
-        if body_str.contains("env::args") || body_str.contains("Args") || body_str.contains("args::<") {
+
+        if body_str.contains("env::args")
+            || body_str.contains("Args")
+            || body_str.contains("args::<")
+        {
             return true;
         }
-        
+
         if body_str.contains("stdin") || body_str.contains("Stdin") {
             return true;
         }
-        
+
         false
     }
 
@@ -2748,44 +2897,64 @@ impl SliceFromRawPartsRule {
                 }
             }
         }
-        
+
         for line in body {
             let trimmed = line.trim();
-            
-            if trimmed.contains(&format!("{} = MulWithOverflow", len_var)) ||
-                trimmed.contains(&format!("{} = Mul(", len_var)) {
-                return Some("length computed from multiplication (may overflow or use wrong scale)".to_string());
+
+            if trimmed.contains(&format!("{} = MulWithOverflow", len_var))
+                || trimmed.contains(&format!("{} = Mul(", len_var))
+            {
+                return Some(
+                    "length computed from multiplication (may overflow or use wrong scale)"
+                        .to_string(),
+                );
             }
-            
+
             if trimmed.contains(&format!("{} =", len_var)) && trimmed.contains("offset_from") {
-                return Some("length derived from pointer difference (end pointer may be invalid)".to_string());
+                return Some(
+                    "length derived from pointer difference (end pointer may be invalid)"
+                        .to_string(),
+                );
             }
-            if source_var != len_var && trimmed.contains(&format!("{} =", source_var)) && trimmed.contains("offset_from") {
-                return Some("length derived from pointer difference (end pointer may be invalid)".to_string());
+            if source_var != len_var
+                && trimmed.contains(&format!("{} =", source_var))
+                && trimmed.contains("offset_from")
+            {
+                return Some(
+                    "length derived from pointer difference (end pointer may be invalid)"
+                        .to_string(),
+                );
             }
-            
-            if trimmed.contains(&format!("{} = move (", len_var)) && 
-               trimmed.contains(".0: usize)") {
+
+            if trimmed.contains(&format!("{} = move (", len_var)) && trimmed.contains(".0: usize)")
+            {
                 let body_str = body.join("\n");
                 if body_str.contains("MulWithOverflow") {
-                    return Some("length computed from multiplication (may overflow or use wrong scale)".to_string());
+                    return Some(
+                        "length computed from multiplication (may overflow or use wrong scale)"
+                            .to_string(),
+                    );
                 }
             }
-            
+
             if trimmed.contains(&format!("{} = Layout::size", len_var)) {
-                return Some("length from Layout::size() returns bytes, not element count".to_string());
+                return Some(
+                    "length from Layout::size() returns bytes, not element count".to_string(),
+                );
             }
             if trimmed.contains(&format!("{} =", len_var)) && trimmed.contains("Layout::size") {
-                return Some("length from Layout::size() returns bytes, not element count".to_string());
+                return Some(
+                    "length from Layout::size() returns bytes, not element count".to_string(),
+                );
             }
-            
+
             if trimmed.contains(&format!("{} = Div(", len_var)) {
                 if trimmed.contains("const 2_usize") {
                     return Some("length divided by 2 may not match element size".to_string());
                 }
             }
         }
-        
+
         None
     }
 
@@ -2793,45 +2962,47 @@ impl SliceFromRawPartsRule {
         if !line.contains("from_raw_parts") {
             return None;
         }
-        
+
         let call_start = if line.contains("from_raw_parts_mut") {
             line.find("from_raw_parts_mut")?
         } else {
             line.find("from_raw_parts")?
         };
-        
+
         let after_call = &line[call_start..];
-        
+
         let args_start = after_call.find('(')? + 1;
         let args_end = after_call.rfind(')')?;
-        
+
         if args_start >= args_end {
             return None;
         }
-        
+
         let args_str = &after_call[args_start..args_end];
-        
+
         let parts: Vec<&str> = args_str.split(',').collect();
         if parts.len() != 2 {
             return None;
         }
-        
-        let ptr_arg = parts[0].trim()
+
+        let ptr_arg = parts[0]
+            .trim()
             .trim_start_matches("copy ")
             .trim_start_matches("move ")
             .to_string();
-        let len_arg = parts[1].trim()
+        let len_arg = parts[1]
+            .trim()
             .trim_start_matches("copy ")
             .trim_start_matches("move ")
             .to_string();
-        
+
         Some((ptr_arg, len_arg))
     }
 
     fn is_function_parameter(len_var: &str, signature: &str) -> bool {
-        signature.contains(&format!("{}: usize", len_var)) ||
-        signature.contains(&format!("{}: u64", len_var)) ||
-        signature.contains(&format!("{}: u32", len_var))
+        signature.contains(&format!("{}: usize", len_var))
+            || signature.contains(&format!("{}: u64", len_var))
+            || signature.contains(&format!("{}: u32", len_var))
     }
 }
 
@@ -2840,7 +3011,11 @@ impl Rule for SliceFromRawPartsRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -2850,11 +3025,11 @@ impl Rule for SliceFromRawPartsRule {
 
             for line in &function.body {
                 let trimmed = line.trim();
-                
+
                 if !trimmed.contains("from_raw_parts") {
                     continue;
                 }
-                
+
                 if !trimmed.contains("->") || !trimmed.contains("(") {
                     continue;
                 }
@@ -2879,12 +3054,12 @@ impl Rule for SliceFromRawPartsRule {
                         function_signature: function.signature.clone(),
                         evidence: vec![trimmed.to_string()],
                         span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                        confidence: Confidence::Medium,
+                        cwe_ids: Vec::new(),
+                        fix_suggestion: None,
+                        code_snippet: None,
+                        exploitability: Exploitability::default(),
+                        exploitability_score: Exploitability::default().score(),
                     });
                     continue;
                 }
@@ -2912,17 +3087,19 @@ impl Rule for SliceFromRawPartsRule {
                         function_signature: function.signature.clone(),
                         evidence: vec![trimmed.to_string()],
                         span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                        confidence: Confidence::Medium,
+                        cwe_ids: Vec::new(),
+                        fix_suggestion: None,
+                        code_snippet: None,
+                        exploitability: Exploitability::default(),
+                        exploitability_score: Exploitability::default().score(),
                     });
                     continue;
                 }
-                
-                if let Some(reason) = Self::is_dangerous_length_computation(&len_var, &function.body) {
+
+                if let Some(reason) =
+                    Self::is_dangerous_length_computation(&len_var, &function.body)
+                {
                     findings.push(Finding {
                         rule_id: self.metadata.id.clone(),
                         rule_name: self.metadata.name.clone(),
@@ -2950,7 +3127,7 @@ impl Rule for SliceFromRawPartsRule {
                     if function.signature.contains("NonNull<") {
                         continue;
                     }
-                    
+
                     findings.push(Finding {
                         rule_id: self.metadata.id.clone(),
                         rule_name: self.metadata.name.clone(),
@@ -2965,12 +3142,12 @@ impl Rule for SliceFromRawPartsRule {
                         function_signature: function.signature.clone(),
                         evidence: vec![trimmed.to_string()],
                         span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                        confidence: Confidence::Medium,
+                        cwe_ids: Vec::new(),
+                        fix_suggestion: None,
+                        code_snippet: None,
+                        exploitability: Exploitability::default(),
+                        exploitability_score: Exploitability::default().score(),
                     });
                 }
             }
@@ -2984,7 +3161,7 @@ impl Rule for SliceFromRawPartsRule {
 // RUSTCOLA101: Variance Transmute Unsound Rule
 // ============================================================================
 
-/// Detects transmutes that violate Rust's variance rules, which can lead to 
+/// Detects transmutes that violate Rust's variance rules, which can lead to
 /// unsoundness. Common patterns include transmuting between &T and &mut T,
 /// or between covariant and invariant types.
 pub struct VarianceTransmuteUnsoundRule {
@@ -3015,7 +3192,7 @@ impl VarianceTransmuteUnsoundRule {
         if !line.contains("transmute") {
             return false;
         }
-        
+
         // Pattern: transmute::<&Foo, &mut Foo> or similar
         if let Some(transmute_start) = line.find("transmute") {
             let after_transmute = &line[transmute_start..];
@@ -3040,14 +3217,15 @@ impl VarianceTransmuteUnsoundRule {
         if !line.contains("transmute") {
             return false;
         }
-        
+
         if let Some(transmute_start) = line.find("transmute") {
             let after_transmute = &line[transmute_start..];
             // Pattern: transmute::<*const T, *mut T>
             if after_transmute.contains("*const") && after_transmute.contains("*mut") {
                 // Make sure *const comes before *mut in type params
-                if let (Some(const_pos), Some(mut_pos)) = 
-                    (after_transmute.find("*const"), after_transmute.find("*mut")) {
+                if let (Some(const_pos), Some(mut_pos)) =
+                    (after_transmute.find("*const"), after_transmute.find("*mut"))
+                {
                     return const_pos < mut_pos;
                 }
             }
@@ -3060,9 +3238,9 @@ impl VarianceTransmuteUnsoundRule {
         if !line.contains("transmute") {
             return false;
         }
-        
+
         let invariant_types = ["Cell<", "RefCell<", "UnsafeCell<", "Mutex<", "RwLock<"];
-        
+
         for inv_type in invariant_types.iter() {
             if line.contains(inv_type) {
                 return true;
@@ -3077,13 +3255,17 @@ impl Rule for VarianceTransmuteUnsoundRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
             for line in &function.body {
                 let trimmed = line.trim();
-                
+
                 // Skip comments
                 if trimmed.starts_with("//") {
                     continue;
@@ -3118,19 +3300,21 @@ impl Rule for VarianceTransmuteUnsoundRule {
                         rule_id: self.metadata.id.clone(),
                         rule_name: self.metadata.name.clone(),
                         severity: Severity::High,
-                        message: "Transmuting from *const T to *mut T can cause undefined behavior \
+                        message:
+                            "Transmuting from *const T to *mut T can cause undefined behavior \
                             if the original data was immutable. Use ptr.cast_mut() (Rust 1.65+) \
-                            or ensure the underlying data is actually mutable.".to_string(),
+                            or ensure the underlying data is actually mutable."
+                                .to_string(),
                         function: function.name.clone(),
                         function_signature: function.signature.clone(),
                         evidence: vec![trimmed.to_string()],
                         span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                        confidence: Confidence::Medium,
+                        cwe_ids: Vec::new(),
+                        fix_suggestion: None,
+                        code_snippet: None,
+                        exploitability: Exploitability::default(),
+                        exploitability_score: Exploitability::default().score(),
                     });
                     continue;
                 }
@@ -3169,7 +3353,7 @@ impl Rule for VarianceTransmuteUnsoundRule {
 
 /// Detects patterns where a function returns a reference to a local variable,
 /// which would be a use-after-free if the borrow checker didn't catch it.
-/// 
+///
 /// In safe Rust, the compiler prevents this. But in unsafe code or through
 /// certain patterns involving raw pointers, this can slip through.
 pub struct ReturnedRefToLocalRule {
@@ -3185,7 +3369,8 @@ impl ReturnedRefToLocalRule {
                 short_description: "Reference to local variable returned".to_string(),
                 full_description: "Detects patterns where a function may return a reference \
                     to a stack-allocated local variable. In unsafe code, this leads to \
-                    use-after-free when the stack frame is deallocated.".to_string(),
+                    use-after-free when the stack frame is deallocated."
+                    .to_string(),
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
@@ -3218,7 +3403,11 @@ impl Rule for ReturnedRefToLocalRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
         let crate_root = Path::new(&package.crate_root);
 
@@ -3269,18 +3458,21 @@ impl Rule for ReturnedRefToLocalRule {
 
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 // Skip comments
                 if trimmed.starts_with("//") {
                     continue;
                 }
 
                 // Track function signatures that return references
-                if trimmed.starts_with("fn ") || trimmed.starts_with("pub fn ") ||
-                   trimmed.starts_with("unsafe fn ") || trimmed.starts_with("pub unsafe fn ") {
-                    current_fn_returns_ref = trimmed.contains("-> &") || 
-                                            trimmed.contains("-> *const") ||
-                                            trimmed.contains("-> *mut");
+                if trimmed.starts_with("fn ")
+                    || trimmed.starts_with("pub fn ")
+                    || trimmed.starts_with("unsafe fn ")
+                    || trimmed.starts_with("pub unsafe fn ")
+                {
+                    current_fn_returns_ref = trimmed.contains("-> &")
+                        || trimmed.contains("-> *const")
+                        || trimmed.contains("-> *mut");
                     // Extract function name
                     if let Some(fn_start) = trimmed.find("fn ") {
                         let after_fn = &trimmed[fn_start + 3..];
@@ -3308,7 +3500,8 @@ impl Rule for ReturnedRefToLocalRule {
                     if let Some(eq_pos) = trimmed.find('=') {
                         let var_part = &trimmed[4..eq_pos];
                         // Handle patterns like "let mut x", "let x: Type"
-                        let var_name = var_part.trim()
+                        let var_name = var_part
+                            .trim()
                             .trim_start_matches("mut ")
                             .split(':')
                             .next()
@@ -3329,7 +3522,7 @@ impl Rule for ReturnedRefToLocalRule {
                             for var in &local_vars {
                                 if trimmed.contains(var.as_str()) {
                                     let location = format!("{}:{}", rel_path, idx + 1);
-                                    
+
                                     findings.push(Finding {
                                         rule_id: self.metadata.id.clone(),
                                         rule_name: self.metadata.name.clone(),
@@ -3361,12 +3554,13 @@ impl Rule for ReturnedRefToLocalRule {
                             severity: self.metadata.default_severity,
                             message: "Returning dereferenced raw pointer in unsafe block. \
                                 Ensure the pointer does not point to stack-allocated memory \
-                                that will be deallocated when the function returns.".to_string(),
+                                that will be deallocated when the function returns."
+                                .to_string(),
                             function: format!("{} ({})", current_fn_name, location),
                             function_signature: String::new(),
                             evidence: vec![trimmed.to_string()],
                             span: None,
-                    ..Default::default()
+                            ..Default::default()
                         });
                     }
                 }
@@ -3382,7 +3576,7 @@ impl Rule for ReturnedRefToLocalRule {
 // ============================================================================
 
 /// Detects patterns that create self-referential structs without proper Pin usage.
-/// 
+///
 /// Self-referential structs (where a field contains a pointer/reference to another
 /// field) are inherently dangerous because moving the struct invalidates the
 /// internal pointer.
@@ -3400,7 +3594,8 @@ impl SelfReferentialStructRule {
                 full_description: "Detects patterns that may create self-referential structs \
                     without proper Pin usage. When a struct contains a pointer to one of its \
                     own fields, moving the struct invalidates that pointer. Use Pin<Box<T>> \
-                    or crates like 'ouroboros' or 'self_cell' for safe self-references.".to_string(),
+                    or crates like 'ouroboros' or 'self_cell' for safe self-references."
+                    .to_string(),
                 help_uri: Some("https://doc.rust-lang.org/std/pin/index.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
@@ -3434,7 +3629,11 @@ impl Rule for SelfReferentialStructRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
         let crate_root = Path::new(&package.crate_root);
 
@@ -3472,8 +3671,10 @@ impl Rule for SelfReferentialStructRule {
             };
 
             // Quick check: file likely has self-referential patterns
-            if !content.contains("*const") && !content.contains("*mut") && 
-               !content.contains("addr_of") {
+            if !content.contains("*const")
+                && !content.contains("*mut")
+                && !content.contains("addr_of")
+            {
                 continue;
             }
 
@@ -3484,7 +3685,7 @@ impl Rule for SelfReferentialStructRule {
 
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 // Skip comments
                 if trimmed.starts_with("//") {
                     continue;
@@ -3496,13 +3697,15 @@ impl Rule for SelfReferentialStructRule {
                     // Extract type name
                     if let Some(for_pos) = trimmed.find(" for ") {
                         let after_for = &trimmed[for_pos + 5..];
-                        current_type = after_for.split(|c| c == '<' || c == ' ' || c == '{')
+                        current_type = after_for
+                            .split(|c| c == '<' || c == ' ' || c == '{')
                             .next()
                             .unwrap_or("")
                             .to_string();
                     } else if let Some(impl_pos) = trimmed.find("impl ") {
                         let after_impl = &trimmed[impl_pos + 5..];
-                        current_type = after_impl.split(|c| c == '<' || c == ' ' || c == '{')
+                        current_type = after_impl
+                            .split(|c| c == '<' || c == ' ' || c == '{')
                             .next()
                             .unwrap_or("")
                             .to_string();
@@ -3519,15 +3722,15 @@ impl Rule for SelfReferentialStructRule {
                     for pattern in Self::self_ref_patterns() {
                         if trimmed.contains(pattern) {
                             // Check if this is being stored in a field (assignment to self.field)
-                            let is_storing = trimmed.contains("self.") && 
-                                            (trimmed.contains(" = ") || trimmed.contains("="));
-                            
+                            let is_storing = trimmed.contains("self.")
+                                && (trimmed.contains(" = ") || trimmed.contains("="));
+
                             // Check if Pin is being used properly
                             let has_pin = content.contains("Pin<") || content.contains("pin!");
-                            
+
                             if is_storing || !has_pin {
                                 let location = format!("{}:{}", rel_path, idx + 1);
-                                
+
                                 findings.push(Finding {
                                     rule_id: self.metadata.id.clone(),
                                     rule_name: self.metadata.name.clone(),
@@ -3584,8 +3787,11 @@ impl UnsafeCellAliasingRule {
                     may be accessed through multiple mutable references simultaneously in unsafe \
                     code. This violates Rust's aliasing rules and causes undefined behavior. \
                     Ensure only one mutable reference exists at a time, or use proper interior \
-                    mutability patterns.".to_string(),
-                help_uri: Some("https://doc.rust-lang.org/std/cell/struct.UnsafeCell.html".to_string()),
+                    mutability patterns."
+                    .to_string(),
+                help_uri: Some(
+                    "https://doc.rust-lang.org/std/cell/struct.UnsafeCell.html".to_string(),
+                ),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
@@ -3597,23 +3803,32 @@ impl UnsafeCellAliasingRule {
 
     fn aliasing_patterns() -> Vec<(&'static str, &'static str)> {
         vec![
-            (".get()", "UnsafeCell::get() returns *mut T - ensure no aliasing"),
-            ("&mut *self.", "mutable dereference may alias with other refs"),
-            ("&mut *ptr", "raw pointer to mutable ref - check for aliases"),
-            ("as *mut", "casting to *mut - may create aliasing mutable refs"),
+            (
+                ".get()",
+                "UnsafeCell::get() returns *mut T - ensure no aliasing",
+            ),
+            (
+                "&mut *self.",
+                "mutable dereference may alias with other refs",
+            ),
+            (
+                "&mut *ptr",
+                "raw pointer to mutable ref - check for aliases",
+            ),
+            (
+                "as *mut",
+                "casting to *mut - may create aliasing mutable refs",
+            ),
             (".as_mut()", "as_mut() in unsafe may alias"),
-            ("get_unchecked_mut", "unchecked mutable access - verify no aliasing"),
+            (
+                "get_unchecked_mut",
+                "unchecked mutable access - verify no aliasing",
+            ),
         ]
     }
 
     fn aliasing_contexts() -> Vec<&'static str> {
-        vec![
-            "UnsafeCell",
-            "Cell<",
-            "RefCell<",
-            "*mut",
-            "*const",
-        ]
+        vec!["UnsafeCell", "Cell<", "RefCell<", "*mut", "*const"]
     }
 }
 
@@ -3622,7 +3837,11 @@ impl Rule for UnsafeCellAliasingRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         // Skip self-analysis
         if package.crate_name == "mir-extractor" {
             return Vec::new();
@@ -3672,7 +3891,7 @@ impl Rule for UnsafeCellAliasingRule {
 
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 // Skip comments
                 if trimmed.starts_with("//") {
                     continue;
@@ -3689,17 +3908,23 @@ impl Rule for UnsafeCellAliasingRule {
                     for (pattern, description) in Self::aliasing_patterns() {
                         if trimmed.contains(pattern) {
                             // Check if there are multiple access patterns in the same unsafe block
-                            let unsafe_block = &lines[unsafe_start..=(idx + 5).min(lines.len() - 1)];
-                            
-                            let mut_access_count = unsafe_block.iter()
-                                .filter(|l| l.contains("&mut") || l.contains("as *mut") || 
-                                           l.contains(".get()") || l.contains(".as_mut()"))
+                            let unsafe_block =
+                                &lines[unsafe_start..=(idx + 5).min(lines.len() - 1)];
+
+                            let mut_access_count = unsafe_block
+                                .iter()
+                                .filter(|l| {
+                                    l.contains("&mut")
+                                        || l.contains("as *mut")
+                                        || l.contains(".get()")
+                                        || l.contains(".as_mut()")
+                                })
                                 .count();
 
                             // Multiple mutable accesses in same block is suspicious
                             if mut_access_count >= 2 {
                                 let location = format!("{}:{}", rel_path, idx + 1);
-                                
+
                                 findings.push(Finding {
                                     rule_id: self.metadata.id.clone(),
                                     rule_name: self.metadata.name.clone(),
@@ -3798,7 +4023,11 @@ impl Rule for LazyInitPanicPoisonRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         // Skip self-analysis
         if package.crate_name == "mir-extractor" {
             return Vec::new();
@@ -3850,7 +4079,7 @@ impl Rule for LazyInitPanicPoisonRule {
 
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 // Skip comments
                 if trimmed.starts_with("//") {
                     continue;
@@ -3860,13 +4089,15 @@ impl Rule for LazyInitPanicPoisonRule {
                 for (pattern, desc) in Self::lazy_patterns() {
                     if trimmed.contains(pattern) {
                         // Check if this is a definition with an initializer
-                        if trimmed.contains("=") || trimmed.contains("get_or_init") || 
-                           trimmed.contains("call_once") {
+                        if trimmed.contains("=")
+                            || trimmed.contains("get_or_init")
+                            || trimmed.contains("call_once")
+                        {
                             in_lazy_init = true;
                             lazy_type = desc.to_string();
                             lazy_start = idx;
-                            brace_depth = trimmed.matches('{').count() as i32 
-                                        - trimmed.matches('}').count() as i32;
+                            brace_depth = trimmed.matches('{').count() as i32
+                                - trimmed.matches('}').count() as i32;
                         }
                     }
                 }
@@ -3880,7 +4111,7 @@ impl Rule for LazyInitPanicPoisonRule {
                     for panic_pat in Self::panic_patterns() {
                         if trimmed.contains(panic_pat) {
                             let location = format!("{}:{}", rel_path, idx + 1);
-                            
+
                             findings.push(Finding {
                                 rule_id: self.metadata.id.clone(),
                                 rule_name: self.metadata.name.clone(),
@@ -3890,13 +4121,14 @@ impl Rule for LazyInitPanicPoisonRule {
                                     the lazy value may be poisoned, causing all future accesses to \
                                     fail. Consider using fallible initialization (get_or_try_init) \
                                     or handling errors gracefully.",
-                                    panic_pat.trim_end_matches('('), lazy_type
+                                    panic_pat.trim_end_matches('('),
+                                    lazy_type
                                 ),
                                 function: location,
                                 function_signature: String::new(),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
-                    ..Default::default()
+                                ..Default::default()
                             });
                             break;
                         }

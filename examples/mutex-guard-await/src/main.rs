@@ -6,8 +6,8 @@
 //!
 //! Expected: 8 PROBLEMATIC patterns detected, 8 SAFE patterns not flagged
 
-use std::sync::{Mutex, RwLock};
 use std::sync::Arc;
+use std::sync::{Mutex, RwLock};
 
 // ============================================================================
 // PROBLEMATIC PATTERNS - MutexGuard held across .await
@@ -16,8 +16,8 @@ use std::sync::Arc;
 /// PROBLEMATIC: MutexGuard held across .await
 pub async fn bad_mutex_guard_held_across_await() {
     let mutex = Mutex::new(42);
-    let guard = mutex.lock().unwrap();  // Guard acquired here
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;  // Held across .await!
+    let guard = mutex.lock().unwrap(); // Guard acquired here
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await; // Held across .await!
     println!("Value: {}", *guard);
 }
 
@@ -26,7 +26,7 @@ pub async fn bad_mutex_guard_in_scope_across_await() {
     let mutex = Mutex::new(42);
     {
         let guard = mutex.lock().unwrap();
-        some_async_operation().await;  // Held across .await!
+        some_async_operation().await; // Held across .await!
         println!("Value: {}", *guard);
     }
 }
@@ -35,7 +35,7 @@ pub async fn bad_mutex_guard_in_scope_across_await() {
 pub async fn bad_rwlock_read_guard_across_await() {
     let rwlock = RwLock::new(42);
     let guard = rwlock.read().unwrap();
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;  // Held across .await!
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await; // Held across .await!
     println!("Value: {}", *guard);
 }
 
@@ -43,7 +43,7 @@ pub async fn bad_rwlock_read_guard_across_await() {
 pub async fn bad_rwlock_write_guard_across_await() {
     let rwlock = RwLock::new(42);
     let guard = rwlock.write().unwrap();
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;  // Held across .await!
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await; // Held across .await!
     println!("Value: {}", *guard);
 }
 
@@ -51,8 +51,8 @@ pub async fn bad_rwlock_write_guard_across_await() {
 pub async fn bad_guard_held_across_multiple_awaits() {
     let mutex = Mutex::new(42);
     let guard = mutex.lock().unwrap();
-    first_async_op().await;  // Held across .await!
-    second_async_op().await;  // Still held!
+    first_async_op().await; // Held across .await!
+    second_async_op().await; // Still held!
     println!("Value: {}", *guard);
 }
 
@@ -66,7 +66,7 @@ pub async fn bad_arc_mutex_guard_across_await(data: Arc<Mutex<i32>>) {
 /// PROBLEMATIC: Guard assigned to _ still creates a temporary
 pub async fn bad_underscore_guard_across_await() {
     let mutex = Mutex::new(42);
-    let _guard = mutex.lock().unwrap();  // _ prefix doesn't help!
+    let _guard = mutex.lock().unwrap(); // _ prefix doesn't help!
     some_async_operation().await;
 }
 
@@ -76,7 +76,7 @@ pub async fn bad_guard_in_match_across_await() {
     let guard = mutex.lock().unwrap();
     match &*guard {
         Some(v) => {
-            some_async_operation().await;  // Guard held in match arm!
+            some_async_operation().await; // Guard held in match arm!
             println!("Value: {}", v);
         }
         None => {}
@@ -92,8 +92,8 @@ pub async fn safe_guard_dropped_before_await() {
     let mutex = Mutex::new(42);
     let value = {
         let guard = mutex.lock().unwrap();
-        *guard  // Copy the value
-    };  // Guard dropped here
+        *guard // Copy the value
+    }; // Guard dropped here
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     println!("Value: {}", value);
 }
@@ -104,14 +104,14 @@ pub async fn safe_guard_scoped_before_await() {
     {
         let guard = mutex.lock().unwrap();
         println!("Value: {}", *guard);
-    }  // Guard dropped here
-    some_async_operation().await;  // No guard held
+    } // Guard dropped here
+    some_async_operation().await; // No guard held
 }
 
 /// SAFE: Using tokio::sync::Mutex (async-aware)
 pub async fn safe_tokio_mutex() {
     let mutex = tokio::sync::Mutex::new(42);
-    let guard = mutex.lock().await;  // This is the async version
+    let guard = mutex.lock().await; // This is the async version
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     println!("Value: {}", *guard);
 }
@@ -132,7 +132,7 @@ pub async fn safe_sync_only_usage() {
         *guard + 1
     };
     println!("Value: {}", value);
-    some_async_operation().await;  // No guard here
+    some_async_operation().await; // No guard here
 }
 
 /// SAFE: Using explicit drop()
@@ -140,7 +140,7 @@ pub async fn safe_explicit_drop() {
     let mutex = Mutex::new(42);
     let guard = mutex.lock().unwrap();
     let value = *guard;
-    drop(guard);  // Explicitly dropped
+    drop(guard); // Explicitly dropped
     some_async_operation().await;
     println!("Value: {}", value);
 }

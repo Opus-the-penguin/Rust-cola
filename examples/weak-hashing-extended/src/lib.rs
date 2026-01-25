@@ -8,7 +8,7 @@
 
 /// PROBLEMATIC: RIPEMD-160 is cryptographically weak
 pub fn ripemd160_hashing(data: &[u8]) -> Vec<u8> {
-    use ripemd::{Ripemd160, Digest};
+    use ripemd::{Digest, Ripemd160};
     let mut hasher = Ripemd160::new();
     hasher.update(data);
     hasher.finalize().to_vec()
@@ -16,7 +16,7 @@ pub fn ripemd160_hashing(data: &[u8]) -> Vec<u8> {
 
 /// PROBLEMATIC: RIPEMD-128 is even weaker
 pub fn ripemd128_usage(input: &str) {
-    use ripemd::{Ripemd128, Digest};
+    use ripemd::{Digest, Ripemd128};
     let mut hasher = Ripemd128::new();
     hasher.update(input.as_bytes());
     let _result = hasher.finalize();
@@ -24,7 +24,7 @@ pub fn ripemd128_usage(input: &str) {
 
 /// PROBLEMATIC: RIPEMD-256 also deprecated
 pub fn ripemd256_digest(data: &[u8]) {
-    use ripemd::{Ripemd256, Digest};
+    use ripemd::{Digest, Ripemd256};
     let digest = Ripemd256::digest(data);
     println!("Digest: {:x}", digest);
 }
@@ -57,7 +57,7 @@ pub fn password_with_crc(password: &str) -> u32 {
 
 /// PROBLEMATIC: RIPEMD in authentication token
 pub fn generate_auth_token(user_id: &str, secret: &str) -> String {
-    use ripemd::{Ripemd160, Digest};
+    use ripemd::{Digest, Ripemd160};
     let mut hasher = Ripemd160::new();
     hasher.update(user_id.as_bytes());
     hasher.update(secret.as_bytes());

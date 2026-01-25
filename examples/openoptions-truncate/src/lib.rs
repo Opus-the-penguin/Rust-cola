@@ -20,7 +20,7 @@ pub fn create_log_file_bad() -> std::io::Result<()> {
         .write(true)
         .create(true)
         .open("app.log")?;
-    
+
     file.write_all(b"New log entry\n")?;
     Ok(())
 }
@@ -32,7 +32,7 @@ pub fn create_log_file_with_truncate() -> std::io::Result<()> {
         .create(true)
         .truncate(true)
         .open("app.log")?;
-    
+
     file.write_all(b"New log entry\n")?;
     Ok(())
 }
@@ -44,7 +44,7 @@ pub fn append_log_file() -> std::io::Result<()> {
         .create(true)
         .append(true)
         .open("app.log")?;
-    
+
     file.write_all(b"New log entry\n")?;
     Ok(())
 }
@@ -58,7 +58,7 @@ pub fn create_config_file_bad() -> std::io::Result<()> {
         .write(true)
         .create(true)
         .open("/etc/myapp/config.txt")?;
-    
+
     file.write_all(b"admin_password=new_password\n")?;
     Ok(())
 }
@@ -66,10 +66,8 @@ pub fn create_config_file_bad() -> std::io::Result<()> {
 /// GOOD: Read-only access doesn't need truncate
 pub fn read_file() -> std::io::Result<Vec<u8>> {
     use std::io::Read;
-    let mut file = OpenOptions::new()
-        .read(true)
-        .open("data.bin")?;
-    
+    let mut file = OpenOptions::new().read(true).open("data.bin")?;
+
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer)?;
     Ok(buffer)
@@ -81,6 +79,6 @@ pub fn create_readonly() -> std::io::Result<()> {
         .create(true)
         .read(true)
         .open("readonly.txt")?;
-    
+
     Ok(())
 }

@@ -1,5 +1,5 @@
 //! SSRF (Server-Side Request Forgery) test cases for RUSTCOLA088
-//! 
+//!
 //! CWE-918: Server-Side Request Forgery
 //! SSRF vulnerabilities occur when an attacker can control the URL that a server-side
 //! application uses to make HTTP requests. This can lead to:
@@ -137,11 +137,11 @@ fn safe_constant_url() -> Result<String, Box<dyn std::error::Error>> {
 fn safe_allowlist_validation() -> Result<String, Box<dyn std::error::Error>> {
     let url = env::var("TARGET_URL")?;
     let allowed = ["https://api.trusted.com", "https://api.partner.com"];
-    
+
     if !allowed.iter().any(|a| url.starts_with(a)) {
         return Err("URL not in allowlist".into());
     }
-    
+
     let response = reqwest::blocking::get(&url)?;
     Ok(response.text()?)
 }
@@ -150,12 +150,12 @@ fn safe_allowlist_validation() -> Result<String, Box<dyn std::error::Error>> {
 fn safe_parsed_host_validation() -> Result<String, Box<dyn std::error::Error>> {
     let url_str = env::var("TARGET_URL")?;
     let parsed = url::Url::parse(&url_str)?;
-    
+
     match parsed.host_str() {
         Some("api.trusted.com") | Some("api.partner.com") => {}
         _ => return Err("Invalid host".into()),
     }
-    
+
     let response = reqwest::blocking::get(url_str)?;
     Ok(response.text()?)
 }
@@ -176,16 +176,16 @@ fn safe_fixed_host_user_path() -> Result<String, Box<dyn std::error::Error>> {
 fn safe_scheme_validation() -> Result<String, Box<dyn std::error::Error>> {
     let url_str = env::var("TARGET_URL")?;
     let parsed = url::Url::parse(&url_str)?;
-    
+
     if parsed.scheme() != "https" {
         return Err("Only HTTPS allowed".into());
     }
-    
+
     // Additional host validation
     if parsed.host_str() != Some("api.trusted.com") {
         return Err("Invalid host".into());
     }
-    
+
     let response = reqwest::blocking::get(url_str)?;
     Ok(response.text()?)
 }
@@ -201,7 +201,7 @@ fn safe_internal_only() -> Result<String, Box<dyn std::error::Error>> {
 fn safe_ssrf_protected_fetch() -> Result<String, Box<dyn std::error::Error>> {
     let url_str = env::var("TARGET_URL")?;
     let parsed = url::Url::parse(&url_str)?;
-    
+
     // Block internal/cloud metadata IPs
     let host = parsed.host_str().unwrap_or("");
     if host == "localhost" 
@@ -214,7 +214,7 @@ fn safe_ssrf_protected_fetch() -> Result<String, Box<dyn std::error::Error>> {
     {
         return Err("Internal URLs not allowed".into());
     }
-    
+
     let response = reqwest::blocking::get(url_str)?;
     Ok(response.text()?)
 }
@@ -222,15 +222,15 @@ fn safe_ssrf_protected_fetch() -> Result<String, Box<dyn std::error::Error>> {
 /// Safe: Using URL builder with validated components
 fn safe_url_builder() -> Result<String, Box<dyn std::error::Error>> {
     let resource = env::var("RESOURCE_NAME")?;
-    
+
     // Validate resource is safe
     if resource.contains('/') || resource.contains("..") {
         return Err("Invalid resource name".into());
     }
-    
+
     let mut url = url::Url::parse("https://api.trusted.com")?;
     url.set_path(&format!("/api/v1/{}", resource));
-    
+
     let response = reqwest::blocking::get(url)?;
     Ok(response.text()?)
 }
@@ -238,19 +238,19 @@ fn safe_url_builder() -> Result<String, Box<dyn std::error::Error>> {
 /// Safe: Regex validation of URL
 fn safe_regex_validated() -> Result<String, Box<dyn std::error::Error>> {
     let url = env::var("TARGET_URL")?;
-    
+
     // Only allow specific URL pattern
     if !url.starts_with("https://api.trusted.com/") {
         return Err("URL must match trusted pattern".into());
     }
-    
+
     let response = reqwest::blocking::get(&url)?;
     Ok(response.text()?)
 }
 
 fn main() {
     println!("SSRF test cases for RUSTCOLA088");
-    
+
     // List all test functions
     println!("\nProblematic patterns (should detect):");
     println!("  - bad_env_var_url");
@@ -265,7 +265,7 @@ fn main() {
     println!("  - bad_url_from_file");
     println!("  - bad_interprocedural");
     println!("  - bad_cloud_metadata_possible");
-    
+
     println!("\nSafe patterns (should NOT detect):");
     println!("  - safe_hardcoded_url");
     println!("  - safe_constant_url");

@@ -1,5 +1,5 @@
 //! Type Query Interface for Semantic Analysis
-//! 
+//!
 //! Provides high-level queries about types for security rule implementation.
 //! Backed by rustc's type system via TyCtxt and cached HIR information.
 
@@ -28,16 +28,16 @@ impl<'tcx> TypeAnalyzer<'tcx> {
     }
 
     /// Check if a type implements a specific trait
-    /// 
+    ///
     /// # Arguments
     /// * `ty_name` - Type name (e.g., "MyStruct", "std::sync::Arc<T>")
     /// * `trait_name` - Trait name (e.g., "Send", "std::marker::Sync")
-    /// 
+    ///
     /// # Returns
     /// * `Ok(true)` - Type definitely implements the trait
     /// * `Ok(false)` - Type definitely does NOT implement the trait
     /// * `Err(_)` - Unable to determine (e.g., generic parameters)
-    /// 
+    ///
     /// # Example
     /// ```ignore
     /// let analyzer = TypeAnalyzer::new(tcx);
@@ -53,9 +53,9 @@ impl<'tcx> TypeAnalyzer<'tcx> {
     }
 
     /// Check if a type is Send
-    /// 
+    ///
     /// Convenience method for checking Send trait implementation.
-    /// 
+    ///
     /// # Returns
     /// * `Ok(true)` - Type is Send
     /// * `Ok(false)` - Type is NOT Send
@@ -65,9 +65,9 @@ impl<'tcx> TypeAnalyzer<'tcx> {
     }
 
     /// Check if a type is Sync
-    /// 
+    ///
     /// Convenience method for checking Sync trait implementation.
-    /// 
+    ///
     /// # Returns
     /// * `Ok(true)` - Type is Sync
     /// * `Ok(false)` - Type is NOT Sync
@@ -77,18 +77,18 @@ impl<'tcx> TypeAnalyzer<'tcx> {
     }
 
     /// Get the size of a type in bytes
-    /// 
+    ///
     /// Returns the size of the type as it would be reported by std::mem::size_of.
     /// Zero-sized types return `Some(0)`.
-    /// 
+    ///
     /// # Arguments
     /// * `ty_name` - Type name (e.g., "MyStruct", "u32", "()")
-    /// 
+    ///
     /// # Returns
     /// * `Ok(Some(size))` - Type has a known size
     /// * `Ok(None)` - Type is unsized (e.g., `[T]`, `dyn Trait`)
     /// * `Err(_)` - Unable to determine size
-    /// 
+    ///
     /// # Example
     /// ```ignore
     /// match analyzer.size_of("MyStruct")? {
@@ -105,38 +105,38 @@ impl<'tcx> TypeAnalyzer<'tcx> {
 
         // Resolve type name to DefId
         let def_id = self.resolve_type(ty_name)?;
-        
+
         // Use the same logic as extract_type_size from hir.rs
         use rustc_middle::ty::layout::LayoutOf;
-        
+
         let ty = self.tcx.type_of(def_id).instantiate_identity();
         let typing_env = rustc_middle::ty::TypingEnv::non_body_analysis(self.tcx, def_id);
         let query_input = rustc_middle::ty::PseudoCanonicalInput {
             typing_env,
             value: ty,
         };
-        
+
         let result = match self.tcx.layout_of(query_input) {
             Ok(layout) => Some(layout.size.bytes() as usize),
             Err(_) => None,
         };
-        
+
         // Cache the result
         self.size_cache.insert(ty_name.to_string(), result);
-        
+
         Ok(result)
     }
 
     /// Check if a type is zero-sized (ZST)
-    /// 
+    ///
     /// Convenience method for detecting zero-sized types.
     /// Returns false for unsized types.
-    /// 
+    ///
     /// # Returns
     /// * `Ok(true)` - Type is zero-sized
     /// * `Ok(false)` - Type has non-zero size or is unsized
     /// * `Err(_)` - Unable to determine
-    /// 
+    ///
     /// # Example
     /// ```ignore
     /// if analyzer.is_zst("()")? {
@@ -151,7 +151,7 @@ impl<'tcx> TypeAnalyzer<'tcx> {
     }
 
     /// Resolve a type string to a DefId
-    /// 
+    ///
     /// Internal helper to convert type names to DefIds for rustc queries.
     fn resolve_type(&self, ty_name: &str) -> Result<DefId> {
         // Type name to DefId resolution requires symbol table integration.
@@ -160,7 +160,7 @@ impl<'tcx> TypeAnalyzer<'tcx> {
     }
 
     /// Clear all caches
-    /// 
+    ///
     /// Useful when analyzing a new crate or after significant changes.
     pub fn clear_cache(&mut self) {
         self.trait_cache.clear();

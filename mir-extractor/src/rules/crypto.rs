@@ -8,7 +8,9 @@
 //! - Timing attack vulnerabilities
 //! - TLS verification disabled
 
-use crate::{Exploitability, Confidence, Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
+use crate::{
+    Confidence, Exploitability, Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity,
+};
 use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
@@ -54,7 +56,7 @@ pub(crate) fn line_contains_sha1_usage(line: &str) -> bool {
 
 pub(crate) fn line_contains_weak_hash_extended(line: &str) -> bool {
     let lower = line.to_lowercase();
-    
+
     // Skip const string assignments and hex dumps entirely
     if lower.contains("= [const \"") || lower.contains("const \"") {
         return false;
@@ -62,38 +64,42 @@ pub(crate) fn line_contains_weak_hash_extended(line: &str) -> bool {
     if lower.starts_with("0x") || (lower.contains("0x") && lower.contains("│")) {
         return false;
     }
-    
+
     // RIPEMD family (all variants are deprecated)
     if lower.contains("ripemd") {
-        if lower.contains("ripemd::") 
-            || lower.contains("::ripemd") 
-            || lower.contains("ripemd128") 
+        if lower.contains("ripemd::")
+            || lower.contains("::ripemd")
+            || lower.contains("ripemd128")
             || lower.contains("ripemd160")
             || lower.contains("ripemd256")
-            || lower.contains("ripemd320") {
+            || lower.contains("ripemd320")
+        {
             return true;
         }
     }
-    
+
     // CRC family (non-cryptographic checksums)
     if lower.contains("crc") {
-        if lower.contains("crc::") 
-            || lower.contains("::crc") 
+        if lower.contains("crc::")
+            || lower.contains("::crc")
             || lower.contains("crc32")
             || lower.contains("crc_32")
             || lower.contains("crc16")
             || lower.contains("crc_16")
             || lower.contains("crc64")
-            || lower.contains("crc_64") {
+            || lower.contains("crc_64")
+        {
             return true;
         }
     }
-    
+
     // Adler32 (non-cryptographic checksum)
-    if lower.contains("adler") && (lower.contains("adler::") || lower.contains("::adler") || lower.contains("adler32")) {
+    if lower.contains("adler")
+        && (lower.contains("adler::") || lower.contains("::adler") || lower.contains("adler32"))
+    {
         return true;
     }
-    
+
     false
 }
 
@@ -134,7 +140,11 @@ impl Rule for InsecureMd5Rule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -157,10 +167,10 @@ impl Rule for InsecureMd5Rule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
+                confidence: Confidence::Medium,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
+                code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
             });
@@ -202,7 +212,11 @@ impl Rule for InsecureSha1Rule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -229,10 +243,10 @@ impl Rule for InsecureSha1Rule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
+                confidence: Confidence::Medium,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
+                code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
             });
@@ -274,7 +288,11 @@ impl Rule for WeakHashingExtendedRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -282,8 +300,9 @@ impl Rule for WeakHashingExtendedRule {
         let mut findings = Vec::new();
 
         for function in &package.functions {
-            if function.name.contains("WeakHashingExtendedRule") 
-                || function.name.contains("line_contains_weak_hash_extended") {
+            if function.name.contains("WeakHashingExtendedRule")
+                || function.name.contains("line_contains_weak_hash_extended")
+            {
                 continue;
             }
 
@@ -293,7 +312,7 @@ impl Rule for WeakHashingExtendedRule {
                 .filter(|line| line_contains_weak_hash_extended(line))
                 .map(|line| line.trim().to_string())
                 .collect();
-            
+
             if evidence.is_empty() {
                 continue;
             }
@@ -310,10 +329,10 @@ impl Rule for WeakHashingExtendedRule {
                 function_signature: function.signature.clone(),
                 evidence,
                 span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
+                confidence: Confidence::Medium,
+                cwe_ids: Vec::new(),
+                fix_suggestion: None,
+                code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
             });
@@ -364,15 +383,7 @@ impl HardcodedCryptoKeyRule {
     }
 
     fn suspicious_var_names() -> &'static [&'static str] {
-        &[
-            "key",
-            "secret",
-            "password",
-            "token",
-            "iv",
-            "nonce",
-            "salt",
-        ]
+        &["key", "secret", "password", "token", "iv", "nonce", "salt"]
     }
 
     fn is_suspicious_assignment(line: &str, pattern: &str) -> bool {
@@ -415,7 +426,9 @@ impl HardcodedCryptoKeyRule {
             }
             return true;
         }
-        if right_side.starts_with('"') && right_side.chars().filter(|c| c.is_ascii_hexdigit()).count() > 20 {
+        if right_side.starts_with('"')
+            && right_side.chars().filter(|c| c.is_ascii_hexdigit()).count() > 20
+        {
             return true;
         }
 
@@ -470,7 +483,11 @@ impl Rule for HardcodedCryptoKeyRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -522,7 +539,10 @@ impl Rule for HardcodedCryptoKeyRule {
 
                 for pattern in Self::crypto_key_patterns() {
                     if trimmed.contains(pattern) {
-                        if trimmed.contains("b\"") || trimmed.contains("&[") || trimmed.contains("[0x") {
+                        if trimmed.contains("b\"")
+                            || trimmed.contains("&[")
+                            || trimmed.contains("[0x")
+                        {
                             let location = format!("{}:{}", rel_path, idx + 1);
 
                             findings.push(Finding::new(
@@ -594,30 +614,41 @@ impl TimingAttackRule {
     fn looks_like_secret(var_name: &str) -> bool {
         let lowered = var_name.to_lowercase();
         let secret_markers = [
-            "password", "passwd", "pwd", "token", "secret", "key",
-            "hmac", "signature", "auth", "credential", "api_key", "apikey",
+            "password",
+            "passwd",
+            "pwd",
+            "token",
+            "secret",
+            "key",
+            "hmac",
+            "signature",
+            "auth",
+            "credential",
+            "api_key",
+            "apikey",
         ];
         secret_markers.iter().any(|marker| lowered.contains(marker))
     }
 
     fn is_non_constant_time_comparison(line: &str) -> bool {
         let lowered = line.to_lowercase();
-        
+
         if lowered.contains("constant_time_eq")
             || lowered.contains("constanttimeeq")
-            || lowered.contains("subtle::") 
+            || lowered.contains("subtle::")
         {
             return false;
         }
 
-        if lowered.contains(" == ") 
+        if lowered.contains(" == ")
             || lowered.contains(" != ")
             || lowered.contains(".eq(")
             || lowered.contains(".ne(")
             || lowered.contains(".starts_with(")
             || lowered.contains(".ends_with(")
         {
-            let words: Vec<&str> = line.split(&[' ', '(', ')', ',', ';', '=', '!'][..])
+            let words: Vec<&str> = line
+                .split(&[' ', '(', ')', ',', ';', '=', '!'][..])
                 .filter(|w| !w.is_empty())
                 .collect();
 
@@ -633,7 +664,11 @@ impl Rule for TimingAttackRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -728,29 +763,56 @@ impl WeakCipherRule {
 
     fn contains_weak_cipher(line: &str) -> bool {
         let lowered = line.to_lowercase();
-        
+
         if lowered.trim_start().starts_with("//") {
             return false;
         }
 
         let weak_patterns = [
-            "::des::", "::des<", " des::", "<des>", "cipher::des", "block_modes::des",
-            "des_ede3", "tripledes", "::tdes::", "::tdes<", "tdesede",
-            "::rc4::", "::rc4<", " rc4::", "<rc4>", "cipher::rc4", "stream_cipher::rc4",
-            "::rc2::", "::rc2<", " rc2::", "<rc2>", "cipher::rc2",
-            "::blowfish::", "::blowfish<", " blowfish::", "<blowfish>", "cipher::blowfish", "block_modes::blowfish",
-            "::arcfour::", " arcfour::", "::cast5::", " cast5::",
+            "::des::",
+            "::des<",
+            " des::",
+            "<des>",
+            "cipher::des",
+            "block_modes::des",
+            "des_ede3",
+            "tripledes",
+            "::tdes::",
+            "::tdes<",
+            "tdesede",
+            "::rc4::",
+            "::rc4<",
+            " rc4::",
+            "<rc4>",
+            "cipher::rc4",
+            "stream_cipher::rc4",
+            "::rc2::",
+            "::rc2<",
+            " rc2::",
+            "<rc2>",
+            "cipher::rc2",
+            "::blowfish::",
+            "::blowfish<",
+            " blowfish::",
+            "<blowfish>",
+            "cipher::blowfish",
+            "block_modes::blowfish",
+            "::arcfour::",
+            " arcfour::",
+            "::cast5::",
+            " cast5::",
         ];
 
         for pattern in weak_patterns {
             if lowered.contains(pattern) {
-                if lowered.contains("alloc") && (lowered.contains("0x") || lowered.contains("│")) {
+                if lowered.contains("alloc") && (lowered.contains("0x") || lowered.contains("│"))
+                {
                     continue;
                 }
                 return true;
             }
         }
-        
+
         false
     }
 }
@@ -760,12 +822,17 @@ impl Rule for WeakCipherRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
-            if function.name.contains("WeakCipherRule") 
-                || function.name.contains("contains_weak_cipher") {
+            if function.name.contains("WeakCipherRule")
+                || function.name.contains("contains_weak_cipher")
+            {
                 continue;
             }
 
@@ -783,12 +850,12 @@ impl Rule for WeakCipherRule {
                         function_signature: function.signature.clone(),
                         evidence: vec![line.trim().to_string()],
                         span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                        confidence: Confidence::Medium,
+                        cwe_ids: Vec::new(),
+                        fix_suggestion: None,
+                        code_snippet: None,
+                        exploitability: Exploitability::default(),
+                        exploitability_score: Exploitability::default().score(),
                     });
                 }
             }
@@ -826,7 +893,7 @@ impl PredictableRandomnessRule {
 
     fn is_predictable_seed(line: &str) -> bool {
         let lowered = line.to_lowercase();
-        
+
         if lowered.trim_start().starts_with("//") {
             return false;
         }
@@ -847,9 +914,14 @@ impl PredictableRandomnessRule {
         }
 
         let seedable_rngs = [
-            "stdrng::seed_from_u64", "chacharng::seed_from_u64", "chacha8rng::seed_from_u64",
-            "chacha12rng::seed_from_u64", "chacha20rng::seed_from_u64", "isaacrng::seed_from_u64",
-            "isaac64rng::seed_from_u64", "smallrng::seed_from_u64",
+            "stdrng::seed_from_u64",
+            "chacharng::seed_from_u64",
+            "chacha8rng::seed_from_u64",
+            "chacha12rng::seed_from_u64",
+            "chacha20rng::seed_from_u64",
+            "isaacrng::seed_from_u64",
+            "isaac64rng::seed_from_u64",
+            "smallrng::seed_from_u64",
         ];
 
         for rng in seedable_rngs {
@@ -857,7 +929,7 @@ impl PredictableRandomnessRule {
                 return true;
             }
         }
-        
+
         false
     }
 }
@@ -867,12 +939,17 @@ impl Rule for PredictableRandomnessRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
-            if function.name.contains("PredictableRandomnessRule") 
-                || function.name.contains("is_predictable_seed") {
+            if function.name.contains("PredictableRandomnessRule")
+                || function.name.contains("is_predictable_seed")
+            {
                 continue;
             }
 
@@ -882,20 +959,17 @@ impl Rule for PredictableRandomnessRule {
                         rule_id: self.metadata.id.clone(),
                         rule_name: self.metadata.name.clone(),
                         severity: self.metadata.default_severity,
-                        message: format!(
-                            "Predictable RNG seed detected in `{}`",
-                            function.name
-                        ),
+                        message: format!("Predictable RNG seed detected in `{}`", function.name),
                         function: function.name.clone(),
                         function_signature: function.signature.clone(),
                         evidence: vec![line.trim().to_string()],
                         span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                        confidence: Confidence::Medium,
+                        cwe_ids: Vec::new(),
+                        fix_suggestion: None,
+                        code_snippet: None,
+                        exploitability: Exploitability::default(),
+                        exploitability_score: Exploitability::default().score(),
                     });
                 }
             }
@@ -937,35 +1011,41 @@ impl Rule for ModuloBiasRandomRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
-        
+
         for function in &package.functions {
             // Skip self-references
             if function.name.contains("ModuloBiasRandomRule") {
                 continue;
             }
-            
+
             // Look for random generation followed by modulo
             let has_random = function.body.iter().any(|line| {
                 let lower = line.to_lowercase();
-                lower.contains("::random()") || 
-                lower.contains(".next_u32()") || 
-                lower.contains(".next_u64()") ||
-                lower.contains(".gen::<") ||
-                lower.contains("getrandom")
+                lower.contains("::random()")
+                    || lower.contains(".next_u32()")
+                    || lower.contains(".next_u64()")
+                    || lower.contains(".gen::<")
+                    || lower.contains("getrandom")
             });
-            
+
             if !has_random {
                 continue;
             }
-            
+
             // Look for modulo operation in MIR (Rem operator)
-            let modulo_evidence: Vec<String> = function.body.iter()
+            let modulo_evidence: Vec<String> = function
+                .body
+                .iter()
                 .filter(|line| line.contains("Rem(") || line.contains(" % "))
                 .map(|line| line.trim().to_string())
                 .collect();
-            
+
             if !modulo_evidence.is_empty() {
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
@@ -983,12 +1063,12 @@ impl Rule for ModuloBiasRandomRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
-        
+
         findings
     }
 }

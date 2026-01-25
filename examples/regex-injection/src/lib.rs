@@ -1,12 +1,12 @@
 //! Test cases for RUSTCOLA079: Regex Injection Detection
-//! 
+//!
 //! This module contains examples of vulnerable and safe regex pattern construction
 //! to test the regex injection detection rule.
 
 use regex::{Regex, RegexBuilder, RegexSet};
 use std::env;
-use std::io::{self, BufRead};
 use std::fs;
+use std::io::{self, BufRead};
 
 // ============================================================================
 // PROBLEMATIC: Should trigger RUSTCOLA079
@@ -133,7 +133,9 @@ pub fn regex_from_allowlist() -> Option<Regex> {
 /// SAFE: Validated pattern (hypothetical validation function)
 fn validate_pattern(p: &str) -> bool {
     // Simple validation: only allow alphanumeric and basic regex chars
-    p.chars().all(|c| c.is_alphanumeric() || ".-_^$[]".contains(c)) && p.len() < 50
+    p.chars()
+        .all(|c| c.is_alphanumeric() || ".-_^$[]".contains(c))
+        && p.len() < 50
 }
 
 pub fn regex_validated() -> Option<Regex> {
@@ -176,7 +178,5 @@ pub fn regex_partial_user_control() -> Option<Regex> {
 
 /// EDGE: Complex flow with Option handling
 pub fn regex_option_flow() -> Option<Regex> {
-    env::var("PATTERN")
-        .ok()
-        .and_then(|p| Regex::new(&p).ok())
+    env::var("PATTERN").ok().and_then(|p| Regex::new(&p).ok())
 }

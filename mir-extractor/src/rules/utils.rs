@@ -284,7 +284,10 @@ pub fn collect_sanitized_matches(lines: &[String], patterns: &[&str]) -> Vec<Str
 ///
 /// This excludes mir-extractor's own build infrastructure functions that
 /// legitimately spawn external processes (rustc, cargo, etc.).
-pub fn command_rule_should_skip(function: &crate::MirFunction, package: &crate::MirPackage) -> bool {
+pub fn command_rule_should_skip(
+    function: &crate::MirFunction,
+    package: &crate::MirPackage,
+) -> bool {
     if package.crate_name == "mir-extractor" {
         matches!(
             function.name.as_str(),
@@ -301,13 +304,13 @@ pub fn command_rule_should_skip(function: &crate::MirFunction, package: &crate::
 /// Log sink patterns in MIR (desugarings of print/log macros).
 /// Used by both CleartextLoggingRule and LogInjectionRule.
 pub const LOG_SINK_PATTERNS: &[&str] = &[
-    "_print(",           // println!, print! desugaring
-    "eprint",            // eprintln!, eprint!
-    "::fmt(",            // format! and Debug/Display impl calls
-    "Arguments::new",    // format_args! macro
-    "panic_fmt",         // panic! with formatting
-    "begin_panic",       // older panic desugaring
-    "::log(",            // log crate macros
+    "_print(",        // println!, print! desugaring
+    "eprint",         // eprintln!, eprint!
+    "::fmt(",         // format! and Debug/Display impl calls
+    "Arguments::new", // format_args! macro
+    "panic_fmt",      // panic! with formatting
+    "begin_panic",    // older panic desugaring
+    "::log(",         // log crate macros
     "::info(",
     "::warn(",
     "::error(",
@@ -318,13 +321,13 @@ pub const LOG_SINK_PATTERNS: &[&str] = &[
 /// Input source patterns for untrusted data origins.
 /// Used by multiple injection rules.
 pub const INPUT_SOURCE_PATTERNS: &[&str] = &[
-    "= var::<",       // env::var::<T> - generic call (MIR format)
-    "= var(",         // env::var - standard call
-    "var_os(",        // env::var_os
-    "::args(",        // env::args
-    "args_os(",       // env::args_os
-    "::nth(",         // iterator nth (often on args)
-    "read_line(",     // stdin
+    "= var::<",        // env::var::<T> - generic call (MIR format)
+    "= var(",          // env::var - standard call
+    "var_os(",         // env::var_os
+    "::args(",         // env::args
+    "args_os(",        // env::args_os
+    "::nth(",          // iterator nth (often on args)
+    "read_line(",      // stdin
     "read_to_string(", // file/stdin reads
 ];
 
@@ -334,7 +337,8 @@ mod tests {
 
     #[test]
     fn test_strip_string_literals_basic() {
-        let (sanitized, _) = strip_string_literals(StringLiteralState::default(), r#"let x = "hello";"#);
+        let (sanitized, _) =
+            strip_string_literals(StringLiteralState::default(), r#"let x = "hello";"#);
         assert!(sanitized.contains("let x ="));
         assert!(!sanitized.contains("hello"));
         assert!(sanitized.ends_with(";"));
@@ -350,7 +354,10 @@ mod tests {
 
     #[test]
     fn test_strip_string_literals_raw_string() {
-        let (sanitized, _) = strip_string_literals(StringLiteralState::default(), r##"let x = r#"raw string"#;"##);
+        let (sanitized, _) = strip_string_literals(
+            StringLiteralState::default(),
+            r##"let x = r#"raw string"#;"##,
+        );
         assert!(sanitized.contains("let x ="));
         assert!(!sanitized.contains("raw string"));
     }
@@ -359,7 +366,7 @@ mod tests {
     fn test_strip_string_literals_multiline_state() {
         let (_, state1) = strip_string_literals(StringLiteralState::default(), r#"let x = "start"#);
         assert!(state1.in_normal_string);
-        
+
         let (sanitized, state2) = strip_string_literals(state1, r#"end of string";"#);
         assert!(!state2.in_normal_string);
         assert!(!sanitized.contains("end of string"));
@@ -394,7 +401,7 @@ mod tests {
         let line1 = strip_comments("let x = /* start", &mut in_block);
         assert_eq!(line1, "let x = ");
         assert!(in_block);
-        
+
         let line2 = strip_comments("still in comment */ done;", &mut in_block);
         assert_eq!(line2, " done;");
         assert!(!in_block);

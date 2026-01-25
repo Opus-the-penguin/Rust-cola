@@ -59,10 +59,7 @@ impl<'a> HirQuery<'a> {
     /// # Returns
     /// Iterator over all ZST type metadata
     pub fn find_all_zsts(&self) -> impl Iterator<Item = &HirTypeMetadata> {
-        self.package
-            .type_metadata
-            .iter()
-            .filter(|meta| meta.is_zst)
+        self.package.type_metadata.iter().filter(|meta| meta.is_zst)
     }
 
     /// Find all types matching a predicate
@@ -114,9 +111,9 @@ impl<'a> HirQuery<'a> {
             "::marker::phantompinned",
         ];
 
-        zst_markers
-            .iter()
-            .any(|marker| lower.contains(marker) && (lower.contains("*const") || lower.contains("*mut")))
+        zst_markers.iter().any(|marker| {
+            lower.contains(marker) && (lower.contains("*const") || lower.contains("*mut"))
+        })
     }
 }
 
@@ -199,8 +196,12 @@ mod tests {
 
         let zsts: Vec<_> = query.find_all_zsts().collect();
         assert_eq!(zsts.len(), 2);
-        assert!(zsts.iter().any(|m| m.type_name == "test_crate::EmptyStruct"));
-        assert!(zsts.iter().any(|m| m.type_name == "test_crate::WithPhantom"));
+        assert!(zsts
+            .iter()
+            .any(|m| m.type_name == "test_crate::EmptyStruct"));
+        assert!(zsts
+            .iter()
+            .any(|m| m.type_name == "test_crate::WithPhantom"));
     }
 
     #[test]

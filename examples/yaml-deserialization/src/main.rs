@@ -1,5 +1,5 @@
 //! Test cases for RUSTCOLA089: Insecure YAML Deserialization
-//! 
+//!
 //! Detects untrusted input (env vars, CLI args, stdin, file contents) flowing to
 //! serde_yaml deserialization functions without validation. Attackers can craft
 //! malicious YAML to cause:
@@ -149,17 +149,17 @@ fn safe_const_yaml() -> Result<Config, serde_yaml::Error> {
 /// SAFE: Validated structure before use (schema validation)
 fn safe_validated_yaml() -> Result<Config, Box<dyn std::error::Error>> {
     let yaml_content = env::var("CONFIG_YAML")?;
-    
+
     // Validation: check for dangerous patterns
     if yaml_content.contains("<<:") || yaml_content.contains("&") || yaml_content.contains("*") {
         return Err("YAML anchors/aliases not allowed".into());
     }
-    
+
     // Size limit
     if yaml_content.len() > 10000 {
         return Err("YAML too large".into());
     }
-    
+
     let config: Config = serde_yaml::from_str(&yaml_content)?;
     Ok(config)
 }
@@ -174,13 +174,13 @@ fn safe_json_instead() -> Result<Config, Box<dyn std::error::Error>> {
 /// SAFE: Allowlist validation of input
 fn safe_allowlist_check() -> Result<Config, Box<dyn std::error::Error>> {
     let config_name = env::var("CONFIG_NAME")?;
-    
+
     // Only allow specific config names
     let allowed = ["production", "staging", "development"];
     if !allowed.contains(&config_name.as_str()) {
         return Err("Invalid config name".into());
     }
-    
+
     // Load from predefined path based on validated name
     let yaml_content = format!("name: {}\nvalue: 1", config_name);
     let config: Config = serde_yaml::from_str(&yaml_content)?;
@@ -214,13 +214,13 @@ fn safe_strict_schema() -> Result<StrictConfig, Box<dyn std::error::Error>> {
 /// SAFE: Depth-limited parsing (conceptual - would need custom deserializer)
 fn safe_depth_limited() -> Result<Config, Box<dyn std::error::Error>> {
     let yaml_content = env::var("CONFIG_YAML")?;
-    
+
     // Count nesting depth (simplified check)
     let depth = yaml_content.matches("  ").count();
     if depth > 10 {
         return Err("YAML nesting too deep".into());
     }
-    
+
     let config: Config = serde_yaml::from_str(&yaml_content)?;
     Ok(config)
 }
@@ -228,17 +228,20 @@ fn safe_depth_limited() -> Result<Config, Box<dyn std::error::Error>> {
 /// SAFE: Pre-process to remove dangerous constructs
 fn safe_sanitized_yaml() -> Result<Config, Box<dyn std::error::Error>> {
     let mut yaml_content = env::var("CONFIG_YAML")?;
-    
+
     // Remove anchor definitions and references
-    yaml_content = yaml_content.replace("&", "").replace("*", "").replace("<<:", "");
-    
+    yaml_content = yaml_content
+        .replace("&", "")
+        .replace("*", "")
+        .replace("<<:", "");
+
     let config: Config = serde_yaml::from_str(&yaml_content)?;
     Ok(config)
 }
 
 fn main() {
     println!("YAML Deserialization Security Test Cases");
-    
+
     // These would be called based on actual input in real scenarios
     match safe_hardcoded_yaml() {
         Ok(config) => println!("Hardcoded config: {:?}", config),
@@ -249,12 +252,12 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_safe_hardcoded() {
         assert!(safe_hardcoded_yaml().is_ok());
     }
-    
+
     #[test]
     fn test_safe_const() {
         assert!(safe_const_yaml().is_ok());

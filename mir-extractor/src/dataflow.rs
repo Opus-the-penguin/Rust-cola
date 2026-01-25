@@ -2,11 +2,11 @@ use std::collections::HashSet;
 
 use crate::MirFunction;
 
-pub mod taint;
 pub mod cfg;
-pub mod path_sensitive;
 pub mod closure;
 pub mod field;
+pub mod path_sensitive;
+pub mod taint;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TaintPropagation {

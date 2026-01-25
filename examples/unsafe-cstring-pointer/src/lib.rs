@@ -7,7 +7,7 @@
 
 #![allow(dead_code)]
 
-use std::ffi::{CString, CStr};
+use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
 /// BAD: CString temporary with as_ptr() creates dangling pointer

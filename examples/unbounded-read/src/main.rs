@@ -129,12 +129,12 @@ fn safe_tcp_with_take() -> io::Result<Vec<u8>> {
 fn safe_file_with_size_check() -> io::Result<Vec<u8>> {
     let file_path = env::var("INPUT_FILE").unwrap_or_default();
     let metadata = std::fs::metadata(&file_path)?;
-    
+
     const MAX_SIZE: u64 = 10 * 1024 * 1024; // 10MB
     if metadata.len() > MAX_SIZE {
         return Err(io::Error::new(io::ErrorKind::InvalidData, "File too large"));
     }
-    
+
     let mut file = File::open(&file_path)?;
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer)?;
@@ -148,7 +148,7 @@ fn safe_chunked_read() -> io::Result<Vec<u8>> {
     let mut buffer = Vec::new();
     let mut total = 0usize;
     const MAX_SIZE: usize = 1024 * 1024;
-    
+
     loop {
         let chunk = reader.fill_buf()?;
         if chunk.is_empty() {
@@ -216,7 +216,7 @@ fn safe_with_capacity_limit() -> io::Result<Vec<u8>> {
 
 fn main() {
     println!("Unbounded Read Detection Test Cases");
-    
+
     // Safe example
     match safe_hardcoded_file() {
         Ok(data) => println!("Read {} bytes from /etc/hosts", data.len()),
@@ -227,7 +227,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_safe_patterns_compile() {
         // Just verify safe patterns compile

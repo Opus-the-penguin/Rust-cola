@@ -17,7 +17,7 @@ pub fn read_file_from_stdin_untrimmed() -> io::Result<String> {
     let stdin = io::stdin();
     let mut filename = String::new();
     stdin.lock().read_line(&mut filename)?;
-    
+
     // filename still contains trailing newline!
     // If used in file operations, this creates wrong paths
     std::fs::read_to_string(&filename)
@@ -28,13 +28,13 @@ pub fn execute_command_untrimmed() -> io::Result<()> {
     let stdin = io::stdin();
     let mut command = String::new();
     stdin.lock().read_line(&mut command)?;
-    
+
     // command contains newline - can enable injection!
     Command::new("sh")
         .arg("-c")
-        .arg(&command)  // Dangerous: untrimmed input to shell
+        .arg(&command) // Dangerous: untrimmed input to shell
         .status()?;
-    
+
     Ok(())
 }
 
@@ -43,10 +43,8 @@ pub fn execute_command_untrimmed() -> io::Result<()> {
 /// Keeping for documentation that this is a common misconception.
 pub fn process_lines_auto_trimmed() -> io::Result<Vec<String>> {
     let stdin = io::stdin();
-    let lines: Vec<String> = stdin.lock()
-        .lines()
-        .collect::<io::Result<Vec<String>>>()?;
-    
+    let lines: Vec<String> = stdin.lock().lines().collect::<io::Result<Vec<String>>>()?;
+
     // Each line does NOT have trailing newlines - lines() strips them!
     // Still may have leading/trailing spaces though
     Ok(lines)
@@ -57,10 +55,10 @@ pub fn read_user_and_password_untrimmed() -> io::Result<(String, String)> {
     let stdin = io::stdin();
     let mut user = String::new();
     let mut password = String::new();
-    
+
     stdin.lock().read_line(&mut user)?;
     stdin.lock().read_line(&mut password)?;
-    
+
     // Both contain newlines - authentication will fail or be exploitable
     Ok((user, password))
 }
@@ -74,8 +72,8 @@ pub fn read_file_from_stdin_trimmed() -> io::Result<String> {
     let stdin = io::stdin();
     let mut filename = String::new();
     stdin.lock().read_line(&mut filename)?;
-    
-    let filename = filename.trim();  // Remove trailing newline
+
+    let filename = filename.trim(); // Remove trailing newline
     std::fs::read_to_string(filename)
 }
 
@@ -84,13 +82,10 @@ pub fn execute_command_trimmed() -> io::Result<()> {
     let stdin = io::stdin();
     let mut command = String::new();
     stdin.lock().read_line(&mut command)?;
-    
-    let command = command.trim();  // Safe
-    Command::new("sh")
-        .arg("-c")
-        .arg(command)
-        .status()?;
-    
+
+    let command = command.trim(); // Safe
+    Command::new("sh").arg("-c").arg(command).status()?;
+
     Ok(())
 }
 
@@ -98,13 +93,14 @@ pub fn execute_command_trimmed() -> io::Result<()> {
 /// Note: .lines() already strips newlines, this is for whitespace
 pub fn process_lines_trimmed() -> io::Result<Vec<String>> {
     let stdin = io::stdin();
-    let lines: Vec<String> = stdin.lock()
+    let lines: Vec<String> = stdin
+        .lock()
         .lines()
         .collect::<io::Result<Vec<_>>>()?
         .into_iter()
-        .map(|line| line.trim().to_string())  // Trim spaces (newlines already gone)
+        .map(|line| line.trim().to_string()) // Trim spaces (newlines already gone)
         .collect();
-    
+
     Ok(lines)
 }
 
@@ -113,10 +109,10 @@ pub fn read_user_and_password_trimmed() -> io::Result<(String, String)> {
     let stdin = io::stdin();
     let mut user = String::new();
     let mut password = String::new();
-    
+
     stdin.lock().read_line(&mut user)?;
     stdin.lock().read_line(&mut password)?;
-    
+
     // Trim both before use
     Ok((user.trim().to_string(), password.trim().to_string()))
 }

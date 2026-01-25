@@ -24,10 +24,7 @@ pub fn repeat_with_without_take() -> Vec<String> {
 
 // PROBLEMATIC: Complex chain but still infinite
 pub fn complex_infinite_chain() -> Vec<u32> {
-    iter::repeat(1)
-        .map(|x| x * 2)
-        .filter(|x| x > &0)
-        .collect() // Still infinite despite transformations
+    iter::repeat(1).map(|x| x * 2).filter(|x| x > &0).collect() // Still infinite despite transformations
 }
 
 // SAFE: repeat with take
@@ -83,8 +80,5 @@ pub fn repeat_with_any() -> bool {
 
 // EDGE CASE: Using position() which terminates
 pub fn cycle_with_position() -> Option<usize> {
-    vec![1, 2, 3]
-        .into_iter()
-        .cycle()
-        .position(|x| x == 2) // Terminates when found
+    vec![1, 2, 3].into_iter().cycle().position(|x| x == 2) // Terminates when found
 }

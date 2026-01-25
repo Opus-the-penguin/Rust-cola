@@ -8,14 +8,14 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    AttackComplexity, AttackVector, Confidence, Exploitability, Finding, MirPackage,
-    PrivilegesRequired, Rule, RuleMetadata, RuleOrigin, Severity, UserInteraction,
-    interprocedural::InterProceduralAnalysis,
+    interprocedural::InterProceduralAnalysis, AttackComplexity, AttackVector, Confidence,
+    Exploitability, Finding, MirPackage, PrivilegesRequired, Rule, RuleMetadata, RuleOrigin,
+    Severity, UserInteraction,
 };
 
 use super::advanced_utils::{
-    contains_var, detect_assignment, detect_drop_calls, detect_storage_dead_vars,
-    detect_var_alias, extract_call_args, TaintTracker,
+    contains_var, detect_assignment, detect_drop_calls, detect_storage_dead_vars, detect_var_alias,
+    extract_call_args, TaintTracker,
 };
 
 // ============================================================================
@@ -207,10 +207,11 @@ impl UnsafeSendAcrossAsyncBoundaryRule {
                 id: "RUSTCOLA206".to_string(),
                 name: "unsafe-send-across-async".to_string(),
                 short_description: "Detects non-Send types captured in spawned tasks".to_string(),
-                full_description: "Types like Rc<T> and RefCell<T> are not thread-safe (non-Send). \
+                full_description:
+                    "Types like Rc<T> and RefCell<T> are not thread-safe (non-Send). \
                     When captured by tokio::spawn or similar multi-threaded executors, they can \
                     cause undefined behavior if accessed from multiple threads."
-                    .to_string(),
+                        .to_string(),
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
@@ -302,7 +303,9 @@ impl Rule for UnsafeSendAcrossAsyncBoundaryRule {
                         roots.insert(dest.clone(), dest.clone());
                         safe_roots.insert(dest.clone());
                         unsafe_roots.remove(&dest);
-                    } else if let Some(source) = roots.keys().find(|v| contains_var(trimmed, v)).cloned() {
+                    } else if let Some(source) =
+                        roots.keys().find(|v| contains_var(trimmed, v)).cloned()
+                    {
                         if let Some(root) = roots.get(&source).cloned() {
                             roots.insert(dest, root);
                         }
@@ -312,7 +315,10 @@ impl Rule for UnsafeSendAcrossAsyncBoundaryRule {
                 // Check spawn calls
                 if let Some(spawn) = Self::SPAWN_PATTERNS.iter().find(|p| trimmed.contains(*p)) {
                     // Skip spawn_local
-                    if Self::SPAWN_LOCAL_PATTERNS.iter().any(|p| trimmed.contains(p)) {
+                    if Self::SPAWN_LOCAL_PATTERNS
+                        .iter()
+                        .any(|p| trimmed.contains(p))
+                    {
                         continue;
                     }
 
@@ -502,7 +508,10 @@ impl Rule for AwaitSpanGuardRule {
                 }
 
                 // Check for await with active guards
-                if trimmed.contains(".await") || trimmed.contains("Await") || trimmed.contains("await ") {
+                if trimmed.contains(".await")
+                    || trimmed.contains("Await")
+                    || trimmed.contains("await ")
+                {
                     for (root, state) in guard_states.iter() {
                         let key = format!("{}::{}", root, trimmed.trim());
                         if !reported.insert(key) {
@@ -516,8 +525,7 @@ impl Rule for AwaitSpanGuardRule {
                             confidence: Confidence::Medium,
                             message: format!(
                                 "Span guard `{}` held across await point\n  created: `{}`",
-                                root,
-                                state.origin
+                                root, state.origin
                             ),
                             function: func.name.clone(),
                             function_signature: func.signature.clone(),

@@ -27,7 +27,7 @@ mod capture {
     pub fn run() -> Result<()> {
         // Parse args first to check if we should passthrough
         let raw_args: Vec<String> = env::args().collect();
-        
+
         if raw_args.len() < 2 {
             return Err(anyhow!(
                 "hir-driver-wrapper requires the rustc path as the first argument"
@@ -38,7 +38,7 @@ mod capture {
         let mut args = Vec::with_capacity(raw_args.len() - 1);
         args.push("rustc".to_string());
         args.extend(raw_args.iter().skip(2).cloned());
-        
+
         // Check passthrough BEFORE reading env vars
         if should_passthrough(&args[1..]) {
             let status = Command::new(&rustc_path)
@@ -53,18 +53,18 @@ mod capture {
             }
             return Ok(());
         }
-        
+
         // Now read env vars (only needed for non-passthrough)
         let output_path = env::var("MIR_COLA_HIR_CAPTURE_OUT")
             .context("missing MIR_COLA_HIR_CAPTURE_OUT for HIR capture")?;
-        
+
         let output_path = PathBuf::from(output_path);
         if let Some(parent) = output_path.parent() {
             fs::create_dir_all(parent).ok();
         }
 
         let target_spec = target_spec_from_env()?;
-        
+
         let crate_root = capture_root_from_env()?;
 
         let mut callbacks = HirCaptureCallbacks {
@@ -96,13 +96,13 @@ mod capture {
     impl Callbacks for HirCaptureCallbacks {
         fn after_analysis<'tcx>(&mut self, _compiler: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
             let actual_crate_name = tcx.crate_name(LOCAL_CRATE).as_str().to_string();
-            
+
             if actual_crate_name != self.target_spec.crate_name {
                 return Compilation::Continue;
             }
 
             let package = collect_crate_snapshot(tcx, &self.target_spec, &self.crate_root);
-            
+
             if let Err(err) = write_package(&self.output, &package) {
                 eprintln!(
                     "hir-driver-wrapper: failed to persist HIR package to {}: {err:?}",

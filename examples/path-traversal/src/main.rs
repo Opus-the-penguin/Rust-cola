@@ -49,7 +49,7 @@ pub fn bad_stdin_to_write() -> io::Result<()> {
     let mut file_path = String::new();
     stdin.lock().read_line(&mut file_path)?;
     let file_path = file_path.trim();
-    
+
     fs::write(file_path, "malicious content")
 }
 
@@ -58,7 +58,7 @@ pub fn bad_stdin_to_write() -> io::Result<()> {
 pub fn bad_joined_path_to_remove() -> io::Result<()> {
     let base = PathBuf::from("/var/www/uploads");
     let user_filename = env::var("FILENAME").unwrap_or_default();
-    
+
     // Vulnerable: user can supply "../../etc/passwd" to escape base
     let full_path = base.join(&user_filename);
     fs::remove_file(full_path)
@@ -131,14 +131,17 @@ pub fn safe_hardcoded_path() -> io::Result<String> {
 pub fn safe_canonicalized_path() -> io::Result<String> {
     let base_dir = PathBuf::from("/var/www/uploads").canonicalize()?;
     let user_file = env::var("USER_FILE").unwrap_or_default();
-    
+
     let requested_path = base_dir.join(&user_file).canonicalize()?;
-    
+
     // Validate the canonicalized path is within allowed directory
     if !requested_path.starts_with(&base_dir) {
-        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "path traversal attempt"));
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "path traversal attempt",
+        ));
     }
-    
+
     fs::read_to_string(requested_path)
 }
 
@@ -156,7 +159,7 @@ fn sanitize_filename(input: &str) -> String {
 pub fn safe_sanitized_filename() -> io::Result<String> {
     let user_input = env::var("FILENAME").unwrap_or_default();
     let safe_name = sanitize_filename(&user_input);
-    
+
     let path = PathBuf::from("/var/uploads").join(safe_name);
     fs::read_to_string(path)
 }
@@ -165,11 +168,14 @@ pub fn safe_sanitized_filename() -> io::Result<String> {
 pub fn safe_allowlist_validation() -> io::Result<String> {
     let allowed_files = ["config.json", "settings.yaml", "data.csv"];
     let requested = env::var("FILE").unwrap_or_default();
-    
+
     if !allowed_files.contains(&requested.as_str()) {
-        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "file not in allowlist"));
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "file not in allowlist",
+        ));
     }
-    
+
     let path = PathBuf::from("/etc/app").join(&requested);
     fs::read_to_string(path)
 }
@@ -177,12 +183,15 @@ pub fn safe_allowlist_validation() -> io::Result<String> {
 /// SAFE: Check for path components
 pub fn safe_no_parent_traversal() -> io::Result<String> {
     let filename = env::var("FILENAME").unwrap_or_default();
-    
+
     // Reject if contains parent directory references
     if filename.contains("..") || filename.starts_with('/') || filename.contains("\\") {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid path characters"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid path characters",
+        ));
     }
-    
+
     let path = PathBuf::from("/data").join(&filename);
     fs::read_to_string(path)
 }
@@ -193,21 +202,27 @@ fn validate_and_get_path(user_input: &str) -> Option<PathBuf> {
     if user_input.contains("..") || user_input.starts_with('/') {
         return None;
     }
-    
+
     // Only allow alphanumeric and safe characters
-    if !user_input.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '-') {
+    if !user_input
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '.' || c == '-')
+    {
         return None;
     }
-    
+
     Some(PathBuf::from("/uploads").join(user_input))
 }
 
 pub fn safe_validated_helper() -> io::Result<String> {
     let filename = env::var("FILENAME").unwrap_or_default();
-    
+
     match validate_and_get_path(&filename) {
         Some(path) => fs::read_to_string(path),
-        None => Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid filename")),
+        None => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid filename",
+        )),
     }
 }
 
@@ -216,15 +231,18 @@ pub fn safe_strip_prefix_check() -> io::Result<String> {
     let base = PathBuf::from("/var/www/public");
     let user_path = env::var("PATH").unwrap_or_default();
     let full_path = base.join(&user_path);
-    
+
     // Ensure the resolved path is within base directory
     if let Ok(canonical) = full_path.canonicalize() {
         if canonical.strip_prefix(&base).is_ok() {
             return fs::read_to_string(canonical);
         }
     }
-    
-    Err(io::Error::new(io::ErrorKind::PermissionDenied, "path outside allowed directory"))
+
+    Err(io::Error::new(
+        io::ErrorKind::PermissionDenied,
+        "path outside allowed directory",
+    ))
 }
 
 /// SAFE: UUID-based filename with sanitized prefix selection
@@ -232,12 +250,15 @@ pub fn safe_uuid_with_validated_prefix() -> io::Result<()> {
     // Get prefix from env but validate it
     let prefix = env::var("PREFIX").unwrap_or_default();
     let allowed_prefixes = ["temp", "cache", "data"];
-    
+
     // Validate prefix is in allowlist
     if !allowed_prefixes.contains(&prefix.as_str()) {
-        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "invalid prefix"));
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "invalid prefix",
+        ));
     }
-    
+
     let uuid = "550e8400-e29b-41d4-a716-446655440000"; // Would be generated
     let path = format!("/tmp/{}/{}.dat", prefix, uuid);
     fs::write(&path, "data")

@@ -3,8 +3,8 @@
 //! This rule detects unsafe patterns that create self-referential structs
 //! without proper Pin usage, leading to UAF when the struct moves.
 
-use std::ptr::NonNull;
 use std::marker::PhantomPinned;
+use std::ptr::NonNull;
 
 // ============================================================================
 // BAD PATTERNS - Unsafe self-referential struct creation
@@ -13,7 +13,7 @@ use std::marker::PhantomPinned;
 /// BAD: Self-referential struct without Pin
 pub struct BadSelfRef {
     data: String,
-    ptr: *const String,  // Points to self.data - DANGEROUS
+    ptr: *const String, // Points to self.data - DANGEROUS
 }
 
 impl BadSelfRef {
@@ -24,13 +24,13 @@ impl BadSelfRef {
             ptr: std::ptr::null(),
         };
         // Point ptr to our own data field
-        s.ptr = &s.data;  // Self-reference created!
-        s  // If this moves, ptr becomes dangling
+        s.ptr = &s.data; // Self-reference created!
+        s // If this moves, ptr becomes dangling
     }
 
     /// BAD: Dereference potentially dangling pointer
     pub unsafe fn get_ref(&self) -> &String {
-        &*self.ptr  // UAF if struct was moved!
+        &*self.ptr // UAF if struct was moved!
     }
 }
 
@@ -46,7 +46,7 @@ impl BadNonNullSelfRef {
             value,
             self_ptr: None,
         };
-        s.self_ptr = NonNull::new(&mut s.value);  // Self-reference!
+        s.self_ptr = NonNull::new(&mut s.value); // Self-reference!
         s
     }
 }
@@ -55,7 +55,7 @@ impl BadNonNullSelfRef {
 pub struct BadNode {
     data: i32,
     next: *mut BadNode,
-    prev: *mut BadNode,  // Raw pointer - can dangle
+    prev: *mut BadNode, // Raw pointer - can dangle
 }
 
 impl BadNode {
@@ -74,13 +74,13 @@ impl BadNode {
 /// BAD: Generator-like struct storing reference to owned data  
 pub struct BadGenerator {
     buffer: Vec<u8>,
-    current: *const u8,  // Points into buffer
+    current: *const u8, // Points into buffer
 }
 
 impl BadGenerator {
     pub fn new() -> Self {
         let buffer = vec![1, 2, 3, 4, 5];
-        let current = buffer.as_ptr();  // Self-reference before struct exists!
+        let current = buffer.as_ptr(); // Self-reference before struct exists!
         Self { buffer, current }
     }
 }
@@ -99,7 +99,7 @@ pub struct BadCallback<'a> {
 pub struct GoodPinnedSelfRef {
     data: String,
     ptr: *const String,
-    _pin: PhantomPinned,  // Opt out of Unpin
+    _pin: PhantomPinned, // Opt out of Unpin
 }
 
 impl GoodPinnedSelfRef {
@@ -123,7 +123,7 @@ impl GoodPinnedSelfRef {
 /// GOOD: Use indices instead of pointers
 pub struct GoodIndexBased {
     items: Vec<String>,
-    current_index: usize,  // Index instead of pointer
+    current_index: usize, // Index instead of pointer
 }
 
 impl GoodIndexBased {
@@ -135,7 +135,7 @@ impl GoodIndexBased {
 /// GOOD: Use Rc/Arc for shared ownership
 pub struct GoodSharedOwnership {
     data: std::sync::Arc<String>,
-    reference: std::sync::Arc<String>,  // Same Arc, no self-ref
+    reference: std::sync::Arc<String>, // Same Arc, no self-ref
 }
 
 /// GOOD: ouroboros crate for safe self-ref (conceptual)
@@ -146,10 +146,10 @@ pub struct GoodSharedOwnership {
 
 fn main() {
     println!("RUSTCOLA120 test cases");
-    
+
     // Demonstrate the problem:
     let bad = BadSelfRef::new("hello".to_string());
     // If we move `bad`, the ptr becomes dangling!
-    let moved = bad;  // Move happens here
-    // unsafe { moved.get_ref() } // This would be UAF!
+    let moved = bad; // Move happens here
+                     // unsafe { moved.get_ref() } // This would be UAF!
 }

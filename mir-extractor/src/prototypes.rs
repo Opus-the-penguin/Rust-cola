@@ -29,7 +29,7 @@ impl Default for PrototypeOptions {
             unsync_markers: vec![
                 "::rc<".to_string(),
                 "::refcell<".to_string(),
-                "::<rc<".to_string(),  // Turbofish syntax in generics
+                "::<rc<".to_string(), // Turbofish syntax in generics
                 "::<refcell<".to_string(),
                 "std::rc::rc<".to_string(),
                 "alloc::rc::rc<".to_string(),
@@ -208,7 +208,7 @@ fn extract_capacity_variable(line: &str) -> Option<String> {
     let closing = remainder.find(')')?;
     let inside = &remainder[1..closing];
     let vars = extract_variables(inside);
-    
+
     // For Vec::reserve and Vec::reserve_exact, the capacity is the second argument
     // (first is self). For with_capacity, it's the first (and only) argument.
     if is_reserve_method {
@@ -286,9 +286,12 @@ fn is_guarded_capacity(
 fn has_comparison_guard(function: &MirFunction, var: &str) -> bool {
     for (i, line) in function.body.iter().enumerate() {
         // Look for comparison operations
-        if (line.contains("= Le(") || line.contains("= Lt(") || 
-            line.contains("= Ge(") || line.contains("= Gt(")) && 
-           line.contains(var) {
+        if (line.contains("= Le(")
+            || line.contains("= Lt(")
+            || line.contains("= Ge(")
+            || line.contains("= Gt("))
+            && line.contains(var)
+        {
             // Check if next line is a switchInt (conditional branch)
             if i + 1 < function.body.len() {
                 let next_line = &function.body[i + 1];
@@ -307,8 +310,11 @@ fn used_in_guard_check(function: &MirFunction, var: &str, options: &PrototypeOpt
     for (i, line) in function.body.iter().enumerate() {
         // Check if line contains guard function and our variable as argument
         let lowered = line.to_lowercase();
-        let has_guard = options.guard_markers.iter().any(|marker| lowered.contains(marker));
-        
+        let has_guard = options
+            .guard_markers
+            .iter()
+            .any(|marker| lowered.contains(marker));
+
         if has_guard && line.contains(var) {
             // Extract the result variable (target of assignment)
             if let Some(eq_pos) = line.find('=') {
@@ -316,7 +322,8 @@ fn used_in_guard_check(function: &MirFunction, var: &str, options: &PrototypeOpt
                     // Look ahead for discriminant check on result
                     for j in (i + 1)..function.body.len().min(i + 10) {
                         let future_line = &function.body[j];
-                        if future_line.contains("discriminant") && future_line.contains(result_var) {
+                        if future_line.contains("discriminant") && future_line.contains(result_var)
+                        {
                             return true;
                         }
                         // Also check for direct switchInt on the result

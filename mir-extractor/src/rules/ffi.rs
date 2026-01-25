@@ -7,9 +7,11 @@
 //! - FFI buffer leaks (RUSTCOLA016)
 //! - FFI pointer returns (RUSTCOLA073)
 
-use crate::{Exploitability, Confidence, Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use super::filter_entry;
-use super::utils::{StringLiteralState, strip_string_literals};
+use super::utils::{strip_string_literals, StringLiteralState};
+use crate::{
+    Confidence, Exploitability, Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity,
+};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::fs;
@@ -34,8 +36,12 @@ impl AllocatorMismatchFfiRule {
                 short_description: "Mixed allocator/deallocator usage".to_string(),
                 full_description: "Detects functions that mix Rust and foreign allocation APIs, \
                     such as freeing Box/CString allocations with libc::free or wrapping \
-                    libc::malloc pointers with Box::from_raw.".to_string(),
-                help_uri: Some("https://doc.rust-lang.org/std/boxed/struct.Box.html#method.from_raw".to_string()),
+                    libc::malloc pointers with Box::from_raw."
+                    .to_string(),
+                help_uri: Some(
+                    "https://doc.rust-lang.org/std/boxed/struct.Box.html#method.from_raw"
+                        .to_string(),
+                ),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
@@ -55,16 +61,20 @@ impl Rule for AllocatorMismatchFfiRule {
         format!("{}:v1", self.metadata.id)
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
             // Track Rust-allocated pointers (Box::into_raw, CString::into_raw)
             let mut rust_allocated_vars = Vec::new();
-            
+
             // Track C-allocated pointers (malloc, calloc, realloc)
             let mut c_allocated_vars = Vec::new();
-            
+
             // Track variable aliases (e.g., _4 = copy _2)
             let mut var_aliases: HashMap<String, String> = HashMap::new();
 
@@ -84,9 +94,9 @@ impl Rule for AllocatorMismatchFfiRule {
                         }
                     }
                 }
-                
+
                 // Detect Rust allocations: Box::into_raw, CString::into_raw
-                if (line.contains("Box::") && line.contains("::into_raw") 
+                if (line.contains("Box::") && line.contains("::into_raw")
                     || line.contains("CString::") && line.contains("::into_raw"))
                     && line.contains(" = ")
                 {
@@ -97,7 +107,9 @@ impl Rule for AllocatorMismatchFfiRule {
                 }
 
                 // Detect C allocations: malloc, calloc, realloc
-                if (line.contains("malloc(") || line.contains("calloc(") || line.contains("realloc("))
+                if (line.contains("malloc(")
+                    || line.contains("calloc(")
+                    || line.contains("realloc("))
                     && line.contains(" = ")
                 {
                     if let Some(var_name) = line.trim().split('=').next() {
@@ -110,14 +122,14 @@ impl Rule for AllocatorMismatchFfiRule {
                 if line.contains("free(") {
                     for (rust_var, alloc_idx, alloc_line) in &rust_allocated_vars {
                         let mut is_freed = line.contains(rust_var);
-                        
+
                         for (alias, original) in &var_aliases {
                             if original == rust_var && line.contains(alias) {
                                 is_freed = true;
                                 break;
                             }
                         }
-                        
+
                         if is_freed && idx > *alloc_idx && idx < alloc_idx + 50 {
                             findings.push(Finding {
                                 rule_id: self.metadata.id.clone(),
@@ -134,12 +146,12 @@ impl Rule for AllocatorMismatchFfiRule {
                                     format!("C deallocation: {}", line.trim()),
                                 ],
                                 span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                                confidence: Confidence::Medium,
+                                cwe_ids: Vec::new(),
+                                fix_suggestion: None,
+                                code_snippet: None,
+                                exploitability: Exploitability::default(),
+                                exploitability_score: Exploitability::default().score(),
                             });
                         }
                     }
@@ -149,14 +161,14 @@ impl Rule for AllocatorMismatchFfiRule {
                 if line.contains("Box::") && line.contains("::from_raw(") {
                     for (c_var, alloc_idx, alloc_line) in &c_allocated_vars {
                         let mut is_converted = line.contains(c_var);
-                        
+
                         for (alias, original) in &var_aliases {
                             if original == c_var && line.contains(alias) {
                                 is_converted = true;
                                 break;
                             }
                         }
-                        
+
                         if is_converted && idx > *alloc_idx && idx < alloc_idx + 50 {
                             findings.push(Finding {
                                 rule_id: self.metadata.id.clone(),
@@ -173,12 +185,12 @@ impl Rule for AllocatorMismatchFfiRule {
                                     format!("Rust deallocation: {}", line.trim()),
                                 ],
                                 span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                                confidence: Confidence::Medium,
+                                cwe_ids: Vec::new(),
+                                fix_suggestion: None,
+                                code_snippet: None,
+                                exploitability: Exploitability::default(),
+                                exploitability_score: Exploitability::default().score(),
                             });
                         }
                     }
@@ -188,14 +200,14 @@ impl Rule for AllocatorMismatchFfiRule {
                 if line.contains("CString::") && line.contains("::from_raw(") {
                     for (c_var, alloc_idx, alloc_line) in &c_allocated_vars {
                         let mut is_converted = line.contains(c_var);
-                        
+
                         for (alias, original) in &var_aliases {
                             if original == c_var && line.contains(alias) {
                                 is_converted = true;
                                 break;
                             }
                         }
-                        
+
                         if is_converted && idx > *alloc_idx && idx < alloc_idx + 50 {
                             findings.push(Finding {
                                 rule_id: self.metadata.id.clone(),
@@ -212,12 +224,12 @@ impl Rule for AllocatorMismatchFfiRule {
                                     format!("Rust deallocation: {}", line.trim()),
                                 ],
                                 span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                                confidence: Confidence::Medium,
+                                cwe_ids: Vec::new(),
+                                fix_suggestion: None,
+                                code_snippet: None,
+                                exploitability: Exploitability::default(),
+                                exploitability_score: Exploitability::default().score(),
                             });
                         }
                     }
@@ -271,12 +283,12 @@ impl UnsafeFfiPointerReturnRule {
             if return_type.starts_with("*const") || return_type.starts_with("*mut") {
                 let has_safety_doc = body.iter().any(|line| {
                     let lower = line.to_lowercase();
-                    lower.contains("safety:") || 
-                    lower.contains("# safety") ||
-                    lower.contains("invariant") ||
-                    lower.contains("ownership") ||
-                    lower.contains("caller must") ||
-                    lower.contains("must be freed")
+                    lower.contains("safety:")
+                        || lower.contains("# safety")
+                        || lower.contains("invariant")
+                        || lower.contains("ownership")
+                        || lower.contains("caller must")
+                        || lower.contains("must be freed")
                 });
 
                 if !has_safety_doc {
@@ -294,11 +306,17 @@ impl Rule for UnsafeFfiPointerReturnRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
-            if let Some(return_type) = Self::is_ffi_returning_pointer(&function.signature, &function.body) {
+            if let Some(return_type) =
+                Self::is_ffi_returning_pointer(&function.signature, &function.body)
+            {
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
@@ -330,7 +348,7 @@ impl Rule for UnsafeFfiPointerReturnRule {
 }
 
 // ============================================================================
-// RUSTCOLA035: Packed Field Reference Rule  
+// RUSTCOLA035: Packed Field Reference Rule
 // ============================================================================
 
 /// Detects taking references to fields of #[repr(packed)] structs (undefined behavior).
@@ -364,7 +382,11 @@ impl Rule for PackedFieldReferenceRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -403,21 +425,25 @@ impl Rule for PackedFieldReferenceRule {
             };
 
             let lines: Vec<&str> = content.lines().collect();
-            
+
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 if trimmed.starts_with("#[repr(packed") {
                     for j in (idx + 1).min(lines.len())..lines.len() {
                         let struct_line = lines[j].trim();
-                        if struct_line.starts_with("struct ") || struct_line.starts_with("pub struct ") {
+                        if struct_line.starts_with("struct ")
+                            || struct_line.starts_with("pub struct ")
+                        {
                             let after_struct = if struct_line.starts_with("pub struct ") {
                                 &struct_line[11..]
                             } else {
                                 &struct_line[7..]
                             };
-                            
-                            if let Some(name_end) = after_struct.find(|c: char| !c.is_alphanumeric() && c != '_') {
+
+                            if let Some(name_end) =
+                                after_struct.find(|c: char| !c.is_alphanumeric() && c != '_')
+                            {
                                 let struct_name = &after_struct[..name_end];
                                 packed_structs.insert(struct_name.to_string());
                             }
@@ -462,7 +488,7 @@ impl Rule for PackedFieldReferenceRule {
 
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 for struct_name in &packed_structs {
                     if (trimmed.contains(&format!("&{}", struct_name.to_lowercase()))
                         || trimmed.contains(&format!("&mut {}", struct_name.to_lowercase()))
@@ -472,7 +498,7 @@ impl Rule for PackedFieldReferenceRule {
                         && !trimmed.contains("ptr::addr_of")
                     {
                         let location = format!("{}:{}", rel_path, idx + 1);
-                        
+
                         findings.push(Finding {
                             rule_id: self.metadata.id.clone(),
                             rule_name: self.metadata.name.clone(),
@@ -485,7 +511,7 @@ impl Rule for PackedFieldReferenceRule {
                             function_signature: String::new(),
                             evidence: vec![trimmed.to_string()],
                             span: None,
-                    ..Default::default()
+                            ..Default::default()
                         });
                     }
                 }
@@ -532,8 +558,8 @@ impl UnsafeCStringPointerRule {
             return false;
         }
 
-        let has_intermediate_method = line.contains(".unwrap()") 
-            || line.contains(".expect(") 
+        let has_intermediate_method = line.contains(".unwrap()")
+            || line.contains(".expect(")
             || line.contains(".unwrap_or")
             || line.contains("?");
 
@@ -549,7 +575,11 @@ impl Rule for UnsafeCStringPointerRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -598,8 +628,16 @@ impl Rule for UnsafeCStringPointerRule {
                 if Self::is_cstring_temp_pattern(trimmed) {
                     let location = format!("{}:{}", rel_path, idx + 1);
 
-                    findings.push(Finding::new(self.metadata.id.clone(), self.metadata.name.clone(), self.metadata.default_severity, "CString temporary used with as_ptr() creates dangling pointer"
-                            .to_string(), location, String::new(), vec![trimmed.to_string()], None));
+                    findings.push(Finding::new(
+                        self.metadata.id.clone(),
+                        self.metadata.name.clone(),
+                        self.metadata.default_severity,
+                        "CString temporary used with as_ptr() creates dangling pointer".to_string(),
+                        location,
+                        String::new(),
+                        vec![trimmed.to_string()],
+                        None,
+                    ));
                 }
             }
         }
@@ -637,27 +675,28 @@ impl CtorDtorStdApiRule {
 
     fn looks_like_ctor_dtor_with_std_calls(&self, function: &crate::MirFunction) -> bool {
         let name = &function.name;
-        
+
         // Exclude the rule implementation itself
-        if name.contains("CtorDtorStdApiRule") || name.contains("looks_like_ctor_dtor_with_std_calls") {
+        if name.contains("CtorDtorStdApiRule")
+            || name.contains("looks_like_ctor_dtor_with_std_calls")
+        {
             return false;
         }
-        
+
         // Heuristic: Look for functions that start with ctor_ or dtor_
         // These are likely annotated with #[ctor] or #[dtor]
         // Note: This won't catch all cases (e.g., different naming), but is a reasonable heuristic
         let looks_like_ctor_dtor_name = name.starts_with("ctor_") || name.starts_with("dtor_");
-        
+
         if !looks_like_ctor_dtor_name {
             return false;
         }
 
         // Check for std:: API calls or common std patterns in the body or signature
         let has_std_refs = function.body.iter().any(|line| {
-            line.contains("std::") 
-                || line.contains("_print(") // println!/print! desugars to _print
+            line.contains("std::") || line.contains("_print(") // println!/print! desugars to _print
         }) || function.signature.contains("std::");
-        
+
         has_std_refs
     }
 }
@@ -667,7 +706,11 @@ impl Rule for CtorDtorStdApiRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -682,7 +725,7 @@ impl Rule for CtorDtorStdApiRule {
                         }
                     }
                 }
-                
+
                 if !evidence.is_empty() {
                     findings.push(Finding {
                         rule_id: self.metadata.id.clone(),
@@ -776,7 +819,11 @@ impl Rule for FfiBufferLeakRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
         let crate_root = Path::new(&package.crate_root);
 
@@ -986,7 +1033,7 @@ impl Rule for FfiBufferLeakRule {
                         function_signature: signature_line,
                         evidence,
                         span: None,
-                    ..Default::default()
+                        ..Default::default()
                     });
                 }
 
@@ -1006,7 +1053,7 @@ impl Rule for FfiBufferLeakRule {
 // ============================================================================
 
 /// Detects potential panics in extern "C" functions which cause undefined behavior.
-/// 
+///
 /// Unwinding across FFI boundaries (from Rust into C code) is undefined behavior.
 /// This rule detects panic-prone operations inside `extern "C"` functions.
 pub struct PanicInFfiBoundaryRule {
@@ -1023,8 +1070,11 @@ impl PanicInFfiBoundaryRule {
                 full_description: "Detects potential panics in extern \"C\" functions. Unwinding \
                     across FFI boundaries is undefined behavior in Rust. Operations like unwrap(), \
                     expect(), panic!(), assert!(), and indexing can all panic. Use catch_unwind \
-                    or return error codes instead.".to_string(),
-                help_uri: Some("https://doc.rust-lang.org/nomicon/ffi.html#ffi-and-panics".to_string()),
+                    or return error codes instead."
+                    .to_string(),
+                help_uri: Some(
+                    "https://doc.rust-lang.org/nomicon/ffi.html#ffi-and-panics".to_string(),
+                ),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
@@ -1057,7 +1107,11 @@ impl Rule for PanicInFfiBoundaryRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -1106,7 +1160,7 @@ impl Rule for PanicInFfiBoundaryRule {
 
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 // Skip comments
                 if trimmed.starts_with("//") {
                     continue;
@@ -1114,12 +1168,12 @@ impl Rule for PanicInFfiBoundaryRule {
 
                 // Detect extern "C" fn or #[no_mangle] pub extern "C" fn
                 if (trimmed.contains("extern \"C\"") || trimmed.contains("extern \"system\""))
-                    && trimmed.contains("fn ") 
+                    && trimmed.contains("fn ")
                 {
                     in_extern_c_fn = true;
                     extern_fn_start = idx;
                     brace_depth = 0;
-                    
+
                     // Extract function name
                     if let Some(fn_pos) = trimmed.find("fn ") {
                         let after_fn = &trimmed[fn_pos + 3..];
@@ -1140,8 +1194,9 @@ impl Rule for PanicInFfiBoundaryRule {
                         // Special handling for indexing - only flag if it looks like array access
                         if *pattern == "[" {
                             // Look for variable[index] pattern but not slice declarations
-                            if trimmed.contains('[') && trimmed.contains(']') 
-                                && !trimmed.contains("&[") 
+                            if trimmed.contains('[')
+                                && trimmed.contains(']')
+                                && !trimmed.contains("&[")
                                 && !trimmed.contains(": [")
                                 && !trimmed.contains("-> [")
                                 && !trimmed.starts_with("let ")
@@ -1149,10 +1204,11 @@ impl Rule for PanicInFfiBoundaryRule {
                                 && !trimmed.starts_with("static ")
                             {
                                 // Check if it's an actual indexing operation
-                                let has_index_op = trimmed.chars()
+                                let has_index_op = trimmed
+                                    .chars()
                                     .zip(trimmed.chars().skip(1))
                                     .any(|(a, b)| a.is_alphanumeric() && b == '[');
-                                
+
                                 if has_index_op {
                                     let location = format!("{}:{}", rel_path, idx + 1);
 
@@ -1169,7 +1225,7 @@ impl Rule for PanicInFfiBoundaryRule {
                                         function_signature: String::new(),
                                         evidence: vec![trimmed.to_string()],
                                         span: None,
-                    ..Default::default()
+                                        ..Default::default()
                                     });
                                 }
                             }
@@ -1190,7 +1246,7 @@ impl Rule for PanicInFfiBoundaryRule {
                                 function_signature: String::new(),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
-                    ..Default::default()
+                                ..Default::default()
                             });
                         }
                     }
@@ -1212,7 +1268,7 @@ impl Rule for PanicInFfiBoundaryRule {
 // ============================================================================
 
 /// Detects usage of embedded interpreters which create code injection attack surfaces.
-/// 
+///
 /// Embedded interpreters like PyO3, rlua, v8, deno_core can execute arbitrary code
 /// if not properly sandboxed. This rule flags their usage for security review.
 pub struct EmbeddedInterpreterUsageRule {
@@ -1225,11 +1281,13 @@ impl EmbeddedInterpreterUsageRule {
             metadata: RuleMetadata {
                 id: "RUSTCOLA107".to_string(),
                 name: "embedded-interpreter-usage".to_string(),
-                short_description: "Embedded interpreter creates code injection surface".to_string(),
+                short_description: "Embedded interpreter creates code injection surface"
+                    .to_string(),
                 full_description: "Detects usage of embedded interpreters like PyO3 (Python), \
                     rlua/mlua (Lua), rusty_v8/deno_core (JavaScript). These create potential \
                     code injection attack surfaces if user input reaches the interpreter. \
-                    Ensure proper sandboxing and input validation.".to_string(),
+                    Ensure proper sandboxing and input validation."
+                    .to_string(),
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
@@ -1245,7 +1303,11 @@ impl EmbeddedInterpreterUsageRule {
         &[
             ("pyo3", "Python::with_gil", "Python interpreter (PyO3)"),
             ("pyo3", "Python::acquire_gil", "Python interpreter (PyO3)"),
-            ("pyo3", "prepare_freethreaded_python", "Python interpreter (PyO3)"),
+            (
+                "pyo3",
+                "prepare_freethreaded_python",
+                "Python interpreter (PyO3)",
+            ),
             ("rlua", "Lua::new", "Lua interpreter (rlua)"),
             ("mlua", "Lua::new", "Lua interpreter (mlua)"),
             ("rusty_v8", "v8::Isolate", "V8 JavaScript engine"),
@@ -1253,7 +1315,11 @@ impl EmbeddedInterpreterUsageRule {
             ("rhai", "Engine::new", "Rhai scripting engine"),
             ("rquickjs", "Context::new", "QuickJS runtime"),
             ("wasmer", "Instance::new", "WebAssembly runtime (Wasmer)"),
-            ("wasmtime", "Instance::new", "WebAssembly runtime (Wasmtime)"),
+            (
+                "wasmtime",
+                "Instance::new",
+                "WebAssembly runtime (Wasmtime)",
+            ),
         ]
     }
 }
@@ -1263,7 +1329,11 @@ impl Rule for EmbeddedInterpreterUsageRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -1320,7 +1390,7 @@ impl Rule for EmbeddedInterpreterUsageRule {
 
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 // Skip comments
                 if trimmed.starts_with("//") {
                     continue;
@@ -1344,7 +1414,7 @@ impl Rule for EmbeddedInterpreterUsageRule {
                             function_signature: String::new(),
                             evidence: vec![trimmed.to_string()],
                             span: None,
-                    ..Default::default()
+                            ..Default::default()
                         });
                     }
                 }
@@ -1359,9 +1429,9 @@ impl Rule for EmbeddedInterpreterUsageRule {
 // RUSTCOLA103: WASM Linear Memory OOB Rule
 // ============================================================================
 
-/// Detects patterns in WASM-targeted code that may cause linear memory 
+/// Detects patterns in WASM-targeted code that may cause linear memory
 /// out-of-bounds access.
-/// 
+///
 /// In WebAssembly, memory is a contiguous linear array. Unchecked pointer
 /// arithmetic or slice creation from raw pointers can access arbitrary memory.
 pub struct WasmLinearMemoryOobRule {
@@ -1378,7 +1448,8 @@ impl WasmLinearMemoryOobRule {
                 full_description: "Detects patterns in WASM-targeted code that may allow \
                     out-of-bounds access to linear memory. In WASM, memory is a contiguous \
                     array and unchecked pointer operations can access arbitrary memory. \
-                    Use bounds checking or safe abstractions like wasm-bindgen.".to_string(),
+                    Use bounds checking or safe abstractions like wasm-bindgen."
+                    .to_string(),
                 help_uri: Some("https://webassembly.org/docs/security/".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
@@ -1393,10 +1464,22 @@ impl WasmLinearMemoryOobRule {
     fn wasm_memory_patterns() -> &'static [(&'static str, &'static str)] {
         &[
             // Raw pointer operations in WASM exports
-            ("slice::from_raw_parts", "Creating slice from raw pointer without bounds check"),
-            ("slice::from_raw_parts_mut", "Creating mutable slice from raw pointer without bounds check"),
-            ("std::ptr::read", "Reading from raw pointer without bounds check"),
-            ("std::ptr::write", "Writing to raw pointer without bounds check"),
+            (
+                "slice::from_raw_parts",
+                "Creating slice from raw pointer without bounds check",
+            ),
+            (
+                "slice::from_raw_parts_mut",
+                "Creating mutable slice from raw pointer without bounds check",
+            ),
+            (
+                "std::ptr::read",
+                "Reading from raw pointer without bounds check",
+            ),
+            (
+                "std::ptr::write",
+                "Writing to raw pointer without bounds check",
+            ),
             ("ptr::read", "Reading from raw pointer"),
             ("ptr::write", "Writing to raw pointer"),
             ("ptr::copy", "Copying via raw pointer"),
@@ -1424,7 +1507,11 @@ impl Rule for WasmLinearMemoryOobRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
         let crate_root = Path::new(&package.crate_root);
 
@@ -1462,11 +1549,11 @@ impl Rule for WasmLinearMemoryOobRule {
             };
 
             // Quick check: is this likely WASM code?
-            let is_wasm_target = content.contains("wasm_bindgen") || 
-                                 content.contains("wasm32") ||
-                                 content.contains("#[no_mangle]") ||
-                                 package.crate_name.contains("wasm");
-            
+            let is_wasm_target = content.contains("wasm_bindgen")
+                || content.contains("wasm32")
+                || content.contains("#[no_mangle]")
+                || package.crate_name.contains("wasm");
+
             if !is_wasm_target {
                 continue;
             }
@@ -1477,7 +1564,7 @@ impl Rule for WasmLinearMemoryOobRule {
 
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 // Skip comments
                 if trimmed.starts_with("//") {
                     continue;
@@ -1491,13 +1578,16 @@ impl Rule for WasmLinearMemoryOobRule {
                 }
 
                 // Extract function name if we're at a function definition
-                if in_wasm_export && (trimmed.starts_with("pub fn ") || 
-                                      trimmed.starts_with("pub unsafe fn ") ||
-                                      trimmed.starts_with("fn ") ||
-                                      trimmed.starts_with("unsafe fn ")) {
+                if in_wasm_export
+                    && (trimmed.starts_with("pub fn ")
+                        || trimmed.starts_with("pub unsafe fn ")
+                        || trimmed.starts_with("fn ")
+                        || trimmed.starts_with("unsafe fn "))
+                {
                     if let Some(fn_pos) = trimmed.find("fn ") {
                         let after_fn = &trimmed[fn_pos + 3..];
-                        export_fn_name = after_fn.split(|c| c == '(' || c == '<')
+                        export_fn_name = after_fn
+                            .split(|c| c == '(' || c == '<')
                             .next()
                             .unwrap_or("")
                             .trim()
@@ -1515,14 +1605,20 @@ impl Rule for WasmLinearMemoryOobRule {
                     for (pattern, description) in Self::wasm_memory_patterns() {
                         if trimmed.contains(pattern) {
                             // Check if there's bounds checking nearby
-                            let has_bounds_check = lines[idx.saturating_sub(3)..=(idx + 1).min(lines.len() - 1)]
+                            let has_bounds_check = lines
+                                [idx.saturating_sub(3)..=(idx + 1).min(lines.len() - 1)]
                                 .iter()
-                                .any(|l| l.contains("if ") && (l.contains(" < ") || l.contains(" <= ") || 
-                                     l.contains(".len()") || l.contains("bounds")));
+                                .any(|l| {
+                                    l.contains("if ")
+                                        && (l.contains(" < ")
+                                            || l.contains(" <= ")
+                                            || l.contains(".len()")
+                                            || l.contains("bounds"))
+                                });
 
                             if !has_bounds_check {
                                 let location = format!("{}:{}", rel_path, idx + 1);
-                                
+
                                 findings.push(Finding {
                                     rule_id: self.metadata.id.clone(),
                                     rule_name: self.metadata.name.clone(),
@@ -1613,14 +1709,19 @@ impl Rule for WasmHostFunctionTrustRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
         let crate_root = Path::new(&package.crate_root);
 
         // Skip if not WASM-related crate
-        if !package.crate_name.contains("wasm") && 
-           !package.crate_name.contains("plugin") &&
-           !package.crate_name.contains("runtime") {
+        if !package.crate_name.contains("wasm")
+            && !package.crate_name.contains("plugin")
+            && !package.crate_name.contains("runtime")
+        {
             // Still scan but don't require wasm in name
         }
 
@@ -1655,10 +1756,10 @@ impl Rule for WasmHostFunctionTrustRule {
             }
 
             let lines: Vec<&str> = content.lines().collect();
-            
+
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 // Skip comments
                 if trimmed.starts_with("//") || trimmed.starts_with("/*") {
                     continue;
@@ -1671,22 +1772,26 @@ impl Rule for WasmHostFunctionTrustRule {
                         let context_start = idx.saturating_sub(10);
                         let context_end = (idx + 5).min(lines.len());
                         let context = &lines[context_start..context_end];
-                        
+
                         let has_host_import = Self::host_import_patterns()
                             .iter()
                             .any(|(p, _)| context.iter().any(|l| l.contains(p)));
 
                         // Check if there's validation
                         let has_validation = context.iter().any(|l| {
-                            l.contains("if ") || l.contains("match ") || 
-                            l.contains("validate") || l.contains("check") ||
-                            l.contains(".is_ok()") || l.contains(".is_err()") ||
-                            l.contains("?.") || l.contains("try!")
+                            l.contains("if ")
+                                || l.contains("match ")
+                                || l.contains("validate")
+                                || l.contains("check")
+                                || l.contains(".is_ok()")
+                                || l.contains(".is_err()")
+                                || l.contains("?.")
+                                || l.contains("try!")
                         });
 
                         if has_host_import && !has_validation {
                             let location = format!("{}:{}", rel_path, idx + 1);
-                            
+
                             findings.push(Finding {
                                 rule_id: self.metadata.id.clone(),
                                 rule_name: self.metadata.name.clone(),
@@ -1730,10 +1835,12 @@ impl WasmCapabilityLeakRule {
                 id: "RUSTCOLA127".to_string(),
                 name: "wasm-capability-leak".to_string(),
                 short_description: "WASM component model capability leak".to_string(),
-                full_description: "Detects patterns where sensitive capabilities (filesystem access, \
+                full_description:
+                    "Detects patterns where sensitive capabilities (filesystem access, \
                     network sockets, environment variables) may leak to WebAssembly guest modules \
                     through component model exports or WASI permissions. Apply principle of least \
-                    privilege to guest capabilities.".to_string(),
+                    privilege to guest capabilities."
+                        .to_string(),
                 help_uri: Some("https://component-model.bytecodealliance.org/".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
@@ -1746,15 +1853,36 @@ impl WasmCapabilityLeakRule {
 
     fn capability_patterns() -> Vec<(&'static str, &'static str)> {
         vec![
-            ("WasiCtxBuilder::new().inherit_stdio()", "Inherits all stdio - may leak sensitive output"),
-            ("inherit_env()", "Inherits environment variables - may leak secrets"),
-            ("inherit_network()", "Inherits network access - may allow exfiltration"),
-            ("inherit_args()", "Inherits command line args - may leak secrets"),
-            ("preopened_dir", "Preopen directory access - verify scope is minimal"),
-            ("allow_ip_name_lookup", "Allows DNS lookups - potential for exfiltration"),
+            (
+                "WasiCtxBuilder::new().inherit_stdio()",
+                "Inherits all stdio - may leak sensitive output",
+            ),
+            (
+                "inherit_env()",
+                "Inherits environment variables - may leak secrets",
+            ),
+            (
+                "inherit_network()",
+                "Inherits network access - may allow exfiltration",
+            ),
+            (
+                "inherit_args()",
+                "Inherits command line args - may leak secrets",
+            ),
+            (
+                "preopened_dir",
+                "Preopen directory access - verify scope is minimal",
+            ),
+            (
+                "allow_ip_name_lookup",
+                "Allows DNS lookups - potential for exfiltration",
+            ),
             ("allow_udp", "Allows UDP sockets"),
             ("allow_tcp", "Allows TCP connections"),
-            (".ctx_builder().build()", "Check WasiCtx configuration for minimal privileges"),
+            (
+                ".ctx_builder().build()",
+                "Check WasiCtx configuration for minimal privileges",
+            ),
         ]
     }
 
@@ -1777,7 +1905,11 @@ impl Rule for WasmCapabilityLeakRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
         let crate_root = Path::new(&package.crate_root);
 
@@ -1803,20 +1935,20 @@ impl Rule for WasmCapabilityLeakRule {
             };
 
             // Check for WASM runtime usage
-            let is_wasm_host = content.contains("wasmtime") || 
-                               content.contains("wasmer") ||
-                               content.contains("WasiCtx") ||
-                               content.contains("wasi_common");
+            let is_wasm_host = content.contains("wasmtime")
+                || content.contains("wasmer")
+                || content.contains("WasiCtx")
+                || content.contains("wasi_common");
 
             if !is_wasm_host {
                 continue;
             }
 
             let lines: Vec<&str> = content.lines().collect();
-            
+
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 // Skip comments
                 if trimmed.starts_with("//") || trimmed.starts_with("/*") {
                     continue;
@@ -1826,7 +1958,7 @@ impl Rule for WasmCapabilityLeakRule {
                 for (pattern, description) in Self::capability_patterns() {
                     if trimmed.contains(pattern) {
                         let location = format!("{}:{}", rel_path, idx + 1);
-                        
+
                         findings.push(Finding {
                             rule_id: self.metadata.id.clone(),
                             rule_name: self.metadata.name.clone(),
@@ -1847,11 +1979,14 @@ impl Rule for WasmCapabilityLeakRule {
 
                 // Check for exports of sensitive APIs
                 for sensitive in Self::sensitive_exports() {
-                    if trimmed.contains(sensitive) && 
-                       (trimmed.contains("Linker::") || trimmed.contains("func_wrap") ||
-                        trimmed.contains("define(") || trimmed.contains("export(")) {
+                    if trimmed.contains(sensitive)
+                        && (trimmed.contains("Linker::")
+                            || trimmed.contains("func_wrap")
+                            || trimmed.contains("define(")
+                            || trimmed.contains("export("))
+                    {
                         let location = format!("{}:{}", rel_path, idx + 1);
-                        
+
                         findings.push(Finding {
                             rule_id: self.metadata.id.clone(),
                             rule_name: self.metadata.name.clone(),
@@ -1865,7 +2000,7 @@ impl Rule for WasmCapabilityLeakRule {
                             function_signature: String::new(),
                             evidence: vec![trimmed.to_string()],
                             span: None,
-                    ..Default::default()
+                            ..Default::default()
                         });
                     }
                 }

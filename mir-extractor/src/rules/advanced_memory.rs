@@ -16,9 +16,9 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 
 use crate::{
-    AttackComplexity, AttackVector, Confidence, Exploitability, Finding, MirFunction, MirPackage,
-    PrivilegesRequired, Rule, RuleMetadata, RuleOrigin, Severity, UserInteraction,
-    interprocedural::InterProceduralAnalysis,
+    interprocedural::InterProceduralAnalysis, AttackComplexity, AttackVector, Confidence,
+    Exploitability, Finding, MirFunction, MirPackage, PrivilegesRequired, Rule, RuleMetadata,
+    RuleOrigin, Severity, UserInteraction,
 };
 
 // ============================================================================
@@ -59,7 +59,11 @@ impl DanglingPointerUseAfterFreeRule {
                 help_uri: None,
                 default_severity: Severity::Critical,
                 origin: RuleOrigin::BuiltIn,
-                cwe_ids: vec!["CWE-416".to_string(), "CWE-476".to_string(), "CWE-825".to_string()], // Use After Free, NULL Pointer Deref, Expired Pointer Deref
+                cwe_ids: vec![
+                    "CWE-416".to_string(),
+                    "CWE-476".to_string(),
+                    "CWE-825".to_string(),
+                ], // Use After Free, NULL Pointer Deref, Expired Pointer Deref
                 fix_suggestion: Some(
                     "Ensure pointers are not used after their backing memory is freed. \
                     Consider using safe Rust abstractions like references with proper lifetimes, \
@@ -100,14 +104,18 @@ impl DanglingPointerUseAfterFreeRule {
         }
 
         // Check if body is dominated by tracing infrastructure
-        let tracing_lines = func.body.iter().filter(|line| {
-            line.contains("tracing::") ||
-            line.contains("observability_deps::tracing") ||
-            line.contains("__CALLSITE") ||
-            line.contains("tracing::Metadata") ||
-            line.contains("tracing::field::") ||
-            line.contains("LevelFilter")
-        }).count();
+        let tracing_lines = func
+            .body
+            .iter()
+            .filter(|line| {
+                line.contains("tracing::")
+                    || line.contains("observability_deps::tracing")
+                    || line.contains("__CALLSITE")
+                    || line.contains("tracing::Metadata")
+                    || line.contains("tracing::field::")
+                    || line.contains("LevelFilter")
+            })
+            .count();
 
         // If more than 30% of the function is tracing code, skip it (lowered from 50%)
         if func.body.len() > 3 && tracing_lines as f64 / func.body.len() as f64 > 0.3 {
@@ -681,10 +689,13 @@ impl PointerAnalyzer {
     }
 
     fn detect_alias_assignment(line: &str) -> Option<(String, String)> {
-        static RE_ALIAS_SIMPLE: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"^(_\d+)\s*=\s*(?:copy|move)\s+(_\d+)\s*;").expect("alias regex"));
-        static RE_ALIAS_INDEX: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"^(_\d+)\s*=.*::index\(\s*(?:move|copy)\s+(_\d+),").expect("index alias regex"));
+        static RE_ALIAS_SIMPLE: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r"^(_\d+)\s*=\s*(?:copy|move)\s+(_\d+)\s*;").expect("alias regex")
+        });
+        static RE_ALIAS_INDEX: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r"^(_\d+)\s*=.*::index\(\s*(?:move|copy)\s+(_\d+),")
+                .expect("index alias regex")
+        });
 
         if let Some(caps) = RE_ALIAS_SIMPLE.captures(line) {
             return Some((caps[1].to_string(), caps[2].to_string()));
@@ -698,8 +709,10 @@ impl PointerAnalyzer {
     }
 
     fn detect_null_pointer_assignment(line: &str) -> Option<String> {
-        static RE_NULL: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"^(_\d+)\s*=\s*null(?:_mut)?::<[^>]+>\(\)\s*->").expect("null pointer regex"));
+        static RE_NULL: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r"^(_\d+)\s*=\s*null(?:_mut)?::<[^>]+>\(\)\s*->")
+                .expect("null pointer regex")
+        });
 
         RE_NULL.captures(line).map(|caps| caps[1].to_string())
     }
@@ -741,16 +754,21 @@ impl PointerAnalyzer {
     }
 
     fn detect_pointer_creation(line: &str) -> Option<PointerCreationEvent<'_>> {
-        static RE_ADDR_OF: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"^(_\d+)\s*=\s*&raw\s+(?:const|mut)\s+\(\*([^\)]+)\);").expect("addr-of regex"));
+        static RE_ADDR_OF: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r"^(_\d+)\s*=\s*&raw\s+(?:const|mut)\s+\(\*([^\)]+)\);")
+                .expect("addr-of regex")
+        });
         static RE_REF: Lazy<Regex> =
             Lazy::new(|| Regex::new(r"^(_\d+)\s*=\s*&(?:mut\s+)?(_\d+)\s*;").expect("ref regex"));
-        static RE_INTO_RAW: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"^(_\d+)\s*=.*::into_raw\(\s*move\s+(_\d+)\s*\).*").expect("into_raw regex"));
-        static RE_BOX_LEAK: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"^(_\d+)\s*=.*Box::leak\(\s*move\s+(_\d+)\s*\).*").expect("box leak regex"));
-        static RE_AS_PTR: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"^(_\d+)\s*=\s*copy\s+(_\d+)\s+as\s+\*const").expect("as_ptr regex"));
+        static RE_INTO_RAW: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r"^(_\d+)\s*=.*::into_raw\(\s*move\s+(_\d+)\s*\).*").expect("into_raw regex")
+        });
+        static RE_BOX_LEAK: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r"^(_\d+)\s*=.*Box::leak\(\s*move\s+(_\d+)\s*\).*").expect("box leak regex")
+        });
+        static RE_AS_PTR: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r"^(_\d+)\s*=\s*copy\s+(_\d+)\s+as\s+\*const").expect("as_ptr regex")
+        });
 
         if let Some(caps) = RE_ADDR_OF.captures(line) {
             return Some(PointerCreationEvent::stack(
@@ -800,10 +818,13 @@ impl PointerAnalyzer {
             Lazy::new(|| Regex::new(r"drop\(\s*([^\)]+)\)").expect("drop regex"));
         static RE_STORAGE_DEAD: Lazy<Regex> =
             Lazy::new(|| Regex::new(r"StorageDead\(\s*([^\)]+)\)").expect("storage dead regex"));
-        static RE_DROP_IN_PLACE: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"drop_in_place::<[^>]+>\(\s*(?:move\s+)?([^\)]+)\)").expect("drop_in_place regex"));
-        static RE_DEALLOC: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"dealloc\(\s*(?:move\s+)?([^,\s\)]+)").expect("dealloc regex"));
+        static RE_DROP_IN_PLACE: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r"drop_in_place::<[^>]+>\(\s*(?:move\s+)?([^\)]+)\)")
+                .expect("drop_in_place regex")
+        });
+        static RE_DEALLOC: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r"dealloc\(\s*(?:move\s+)?([^,\s\)]+)").expect("dealloc regex")
+        });
         static RE_VEC_REALLOC: Lazy<Regex> = Lazy::new(|| {
             Regex::new(
                 r"Vec::<[^>]+>::(?:push|append|extend|insert|reserve|reserve_exact|resize|resize_with|shrink_to_fit|shrink_to|truncate|clear)\(\s*(?:move|copy)?\s*(_\d+)",
@@ -895,8 +916,9 @@ impl PointerAnalyzer {
     }
 
     fn detect_return_pointer(line: &str) -> Option<String> {
-        static RE_RETURN: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"^_0\s*=\s*(?:copy|move)\s+(_\d+)\s*;").expect("return regex"));
+        static RE_RETURN: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r"^_0\s*=\s*(?:copy|move)\s+(_\d+)\s*;").expect("return regex")
+        });
 
         RE_RETURN.captures(line).map(|caps| caps[1].to_string())
     }
@@ -1014,8 +1036,17 @@ mod tests {
 
     #[test]
     fn test_safe_trait_method_detection() {
-        assert!(is_safe_trait_method("MyType::eq", "fn eq(&self, other: &Self) -> bool"));
-        assert!(is_safe_trait_method("MyType::clone", "fn clone(&self) -> Self"));
-        assert!(!is_safe_trait_method("MyType::process", "fn process(&self)"));
+        assert!(is_safe_trait_method(
+            "MyType::eq",
+            "fn eq(&self, other: &Self) -> bool"
+        ));
+        assert!(is_safe_trait_method(
+            "MyType::clone",
+            "fn clone(&self) -> Self"
+        ));
+        assert!(!is_safe_trait_method(
+            "MyType::process",
+            "fn process(&self)"
+        ));
     }
 }

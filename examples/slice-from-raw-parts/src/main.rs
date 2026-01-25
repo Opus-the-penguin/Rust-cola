@@ -56,7 +56,7 @@ unsafe fn bad_large_constant(ptr: *const u8) -> &'static [u8] {
 /// BAD: Length divided incorrectly for type size
 unsafe fn bad_size_mismatch(bytes: *const u8, byte_len: usize) -> &'static [u32] {
     // Should divide by size_of::<u32>(), but using wrong divisor
-    let len = byte_len / 2;  // Wrong! Should be / 4
+    let len = byte_len / 2; // Wrong! Should be / 4
     slice::from_raw_parts(bytes as *const u32, len)
 }
 
@@ -95,7 +95,11 @@ unsafe fn safe_bounded_alloc() -> &'static [u32] {
 }
 
 /// SAFE: Length validated before use
-unsafe fn safe_validated_length(ptr: *const u8, len: usize, max_len: usize) -> Option<&'static [u8]> {
+unsafe fn safe_validated_length(
+    ptr: *const u8,
+    len: usize,
+    max_len: usize,
+) -> Option<&'static [u8]> {
     if len > max_len {
         return None;
     }

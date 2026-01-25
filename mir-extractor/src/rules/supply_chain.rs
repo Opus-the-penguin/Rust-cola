@@ -104,7 +104,11 @@ impl Rule for RustsecUnsoundDependencyRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
         let crate_root = Path::new(&package.crate_root);
         let lock_path = crate_root.join("Cargo.lock");
@@ -210,8 +214,13 @@ impl YankedCrateRule {
                 id: "RUSTCOLA019".to_string(),
                 name: "yanked-crate-version".to_string(),
                 short_description: "Dependency references a yanked crate version".to_string(),
-                full_description: "Highlights crates pinned to versions that have been yanked from crates.io.".to_string(),
-                help_uri: Some("https://doc.rust-lang.org/cargo/reference/publishing.html#removing-a-version".to_string()),
+                full_description:
+                    "Highlights crates pinned to versions that have been yanked from crates.io."
+                        .to_string(),
+                help_uri: Some(
+                    "https://doc.rust-lang.org/cargo/reference/publishing.html#removing-a-version"
+                        .to_string(),
+                ),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
@@ -242,7 +251,11 @@ impl Rule for YankedCrateRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
         let crate_root = Path::new(&package.crate_root);
         let lock_path = crate_root.join("Cargo.lock");
@@ -491,7 +504,10 @@ impl CargoAuditableMetadataRule {
                     let name = e.file_name().to_string_lossy();
                     // Only filter out specific directories that aren't CI-related
                     if e.file_type().is_dir() {
-                        return !matches!(name.as_ref(), "target" | ".git" | ".cola-cache" | "out" | "node_modules");
+                        return !matches!(
+                            name.as_ref(),
+                            "target" | ".git" | ".cola-cache" | "out" | "node_modules"
+                        );
                     }
                     true
                 })
@@ -544,7 +560,11 @@ impl Rule for CargoAuditableMetadataRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
         let crate_root = Path::new(&package.crate_root);
 
@@ -627,7 +647,7 @@ impl Rule for CargoAuditableMetadataRule {
 // ============================================================================
 
 /// Detects proc-macro crates with potential side effects (filesystem, network access).
-/// 
+///
 /// Proc-macros run at compile time with full system access. Malicious or compromised
 /// proc-macros can exfiltrate data, download payloads, or modify the build.
 pub struct ProcMacroSideEffectsRule {
@@ -644,8 +664,11 @@ impl ProcMacroSideEffectsRule {
                 full_description: "Detects proc-macro crates that use filesystem, network, or \
                     process APIs. Proc-macros execute at compile time with full system access, \
                     making them a supply chain attack vector. Patterns include: std::fs, \
-                    std::net, std::process::Command, reqwest, and similar.".to_string(),
-                help_uri: Some("https://doc.rust-lang.org/reference/procedural-macros.html".to_string()),
+                    std::net, std::process::Command, reqwest, and similar."
+                    .to_string(),
+                help_uri: Some(
+                    "https://doc.rust-lang.org/reference/procedural-macros.html".to_string(),
+                ),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
@@ -679,7 +702,11 @@ impl Rule for ProcMacroSideEffectsRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -703,9 +730,9 @@ impl Rule for ProcMacroSideEffectsRule {
         };
 
         // Only analyze proc-macro crates
-        let is_proc_macro = cargo_content.contains("proc-macro = true") 
+        let is_proc_macro = cargo_content.contains("proc-macro = true")
             || cargo_content.contains("proc_macro = true");
-        
+
         if !is_proc_macro {
             return findings;
         }
@@ -744,7 +771,7 @@ impl Rule for ProcMacroSideEffectsRule {
 
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 // Skip comments
                 if trimmed.starts_with("//") {
                     continue;
@@ -768,7 +795,7 @@ impl Rule for ProcMacroSideEffectsRule {
                             function_signature: String::new(),
                             evidence: vec![trimmed.to_string()],
                             span: None,
-                    ..Default::default()
+                            ..Default::default()
                         });
                     }
                 }

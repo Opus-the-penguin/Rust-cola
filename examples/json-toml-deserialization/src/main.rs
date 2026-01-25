@@ -171,7 +171,8 @@ fn safe_streaming_json() -> Result<Vec<Config>, Box<dyn std::error::Error>> {
     // Streaming deserializer allows processing item-by-item
     let stream = Deserializer::from_str(&json_str).into_iter::<Config>();
     let mut configs = Vec::new();
-    for item in stream.take(100) {  // Limit items
+    for item in stream.take(100) {
+        // Limit items
         configs.push(item?);
     }
     Ok(configs)
@@ -189,7 +190,7 @@ fn main() {
     let _ = bad_env_var_toml();
     let _ = bad_file_toml();
     let _ = bad_stdin_toml();
-    
+
     let _ = safe_hardcoded_json();
     let _ = safe_const_json();
     let _ = safe_hardcoded_toml();

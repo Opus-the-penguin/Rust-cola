@@ -18,7 +18,7 @@ pub fn assume_without_write() -> i32 {
 /// PROBLEMATIC: assume_init_read without write
 pub fn assume_init_read_without_write() -> u64 {
     let uninit: MaybeUninit<u64> = MaybeUninit::uninit();
-    // UB: Reading uninitialized memory  
+    // UB: Reading uninitialized memory
     unsafe { uninit.assume_init_read() }
 }
 
@@ -89,10 +89,7 @@ pub fn assume_after_write_slice() -> [u8; 4] {
     let mut uninit: MaybeUninit<[u8; 4]> = MaybeUninit::uninit();
     let data = [1u8, 2, 3, 4];
     unsafe {
-        let slice = std::slice::from_raw_parts_mut(
-            uninit.as_mut_ptr() as *mut u8,
-            4
-        );
+        let slice = std::slice::from_raw_parts_mut(uninit.as_mut_ptr() as *mut u8, 4);
         slice.copy_from_slice(&data);
         uninit.assume_init()
     }

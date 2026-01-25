@@ -6,8 +6,8 @@
 // - They prevent containerization and CI/CD from working
 // - They make code non-portable across systems
 
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
 
 // ==============================================================================
 // PROBLEMATIC CASES - Should trigger RUSTCOLA068
@@ -49,7 +49,7 @@ pub fn multiple_hardcoded_paths() -> Vec<&'static str> {
     vec![
         "/home/developer/projects",
         "/Users/admin/scripts",
-        "C:\\Users\\test\\temp"
+        "C:\\Users\\test\\temp",
     ]
 }
 
@@ -91,7 +91,7 @@ pub fn safe_system_paths() -> Vec<&'static str> {
         "/var/log/app.log",
         "/tmp/tempfile",
         "C:\\Windows\\System32\\drivers",
-        "/usr/local/bin/tool"
+        "/usr/local/bin/tool",
     ]
 }
 

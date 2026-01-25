@@ -1,13 +1,13 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use mir_extractor::{extract_with_cache, CacheConfig, RuleEngine};
 use std::path::PathBuf;
 use std::time::Duration;
 
 /// Representative crates for benchmarking
 const BENCHMARK_CRATES: &[(&str, &str)] = &[
-    ("simple", "../examples/simple"),           // Tiny (baseline)
+    ("simple", "../examples/simple"), // Tiny (baseline)
     ("hir-typeck-repro", "../examples/hir-typeck-repro"), // Small
-    // Add more crates here as needed
+                                      // Add more crates here as needed
 ];
 
 fn benchmark_mir_extraction(c: &mut Criterion) {
@@ -17,28 +17,23 @@ fn benchmark_mir_extraction(c: &mut Criterion) {
 
     for (name, path) in BENCHMARK_CRATES {
         let crate_path = PathBuf::from(path);
-        
-        group.bench_with_input(
-            BenchmarkId::new("extract", name),
-            &crate_path,
-            |b, path| {
-                b.iter(|| {
-                    let cache_config = CacheConfig {
-                        enabled: false,
-                        directory: PathBuf::from("target/bench-cache"),
-                        clear: true,
-                    };
-                    
-                    let (package, _status) = extract_with_cache(
-                        black_box(path),
-                        black_box(&cache_config),
-                    ).expect("MIR extraction failed");
-                    package
-                });
-            },
-        );
+
+        group.bench_with_input(BenchmarkId::new("extract", name), &crate_path, |b, path| {
+            b.iter(|| {
+                let cache_config = CacheConfig {
+                    enabled: false,
+                    directory: PathBuf::from("target/bench-cache"),
+                    clear: true,
+                };
+
+                let (package, _status) =
+                    extract_with_cache(black_box(path), black_box(&cache_config))
+                        .expect("MIR extraction failed");
+                package
+            });
+        });
     }
-    
+
     group.finish();
 }
 
@@ -49,14 +44,14 @@ fn benchmark_rule_analysis(c: &mut Criterion) {
 
     for (name, path) in BENCHMARK_CRATES {
         let crate_path = PathBuf::from(path);
-        
+
         // Pre-extract MIR for this benchmark
         let cache_config = CacheConfig {
             enabled: false,
             directory: PathBuf::from("target/bench-cache"),
             clear: true,
         };
-        
+
         let (package, _status) = match extract_with_cache(&crate_path, &cache_config) {
             Ok(result) => result,
             Err(e) => {
@@ -64,7 +59,7 @@ fn benchmark_rule_analysis(c: &mut Criterion) {
                 continue;
             }
         };
-        
+
         group.bench_with_input(
             BenchmarkId::new("analyze-all-rules", name),
             &package,
@@ -76,7 +71,7 @@ fn benchmark_rule_analysis(c: &mut Criterion) {
             },
         );
     }
-    
+
     group.finish();
 }
 
@@ -87,7 +82,7 @@ fn benchmark_end_to_end(c: &mut Criterion) {
 
     for (name, path) in BENCHMARK_CRATES {
         let crate_path = PathBuf::from(path);
-        
+
         group.bench_with_input(
             BenchmarkId::new("extract-and-analyze", name),
             &crate_path,
@@ -98,19 +93,18 @@ fn benchmark_end_to_end(c: &mut Criterion) {
                         directory: PathBuf::from("target/bench-cache"),
                         clear: true,
                     };
-                    
-                    let (package, _status) = extract_with_cache(
-                        black_box(path),
-                        black_box(&cache_config),
-                    ).expect("MIR extraction failed");
-                    
+
+                    let (package, _status) =
+                        extract_with_cache(black_box(path), black_box(&cache_config))
+                            .expect("MIR extraction failed");
+
                     let engine = RuleEngine::with_builtin_rules();
                     engine.run(black_box(&package))
                 });
             },
         );
     }
-    
+
     group.finish();
 }
 

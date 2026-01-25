@@ -18,18 +18,21 @@ use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
 
-use crate::{Exploitability, Confidence, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use super::utils::filter_entry;
+use crate::{
+    Confidence, Exploitability, Finding, MirFunction, MirPackage, Rule, RuleMetadata, RuleOrigin,
+    Severity,
+};
 
 // Shared input source patterns used by multiple rules
 const INPUT_SOURCE_PATTERNS: &[&str] = &[
-    "= var::<",       // env::var::<T> - generic call (MIR format)
-    "= var(",         // env::var - standard call
-    "var_os(",        // env::var_os
-    "::args(",        // env::args
-    "args_os(",       // env::args_os
-    "::nth(",         // iterator nth (often on args)
-    "read_line(",     // stdin
+    "= var::<",        // env::var::<T> - generic call (MIR format)
+    "= var(",          // env::var - standard call
+    "var_os(",         // env::var_os
+    "::args(",         // env::args
+    "args_os(",        // env::args_os
+    "::nth(",          // iterator nth (often on args)
+    "read_line(",      // stdin
     "read_to_string(", // file/stdin reads
 ];
 
@@ -54,7 +57,8 @@ impl CleartextEnvVarRule {
                     being stored in environment variables via std::env::set_var. Environment \
                     variables can be read by child processes, logged, and are often visible \
                     in /proc filesystem on Linux. Consider using dedicated secret management \
-                    solutions instead.".to_string(),
+                    solutions instead."
+                    .to_string(),
                 help_uri: Some("https://cwe.mitre.org/data/definitions/526.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
@@ -66,11 +70,20 @@ impl CleartextEnvVarRule {
     }
 
     const SENSITIVE_PATTERNS: &'static [&'static str] = &[
-        "password", "passwd", "pwd",
-        "secret", "token", "apikey", "api_key",
-        "auth", "credential", "cred",
-        "private_key", "privatekey",
-        "access_key", "secret_key",
+        "password",
+        "passwd",
+        "pwd",
+        "secret",
+        "token",
+        "apikey",
+        "api_key",
+        "auth",
+        "credential",
+        "cred",
+        "private_key",
+        "privatekey",
+        "access_key",
+        "secret_key",
     ];
 
     fn looks_like_sensitive_env_set(&self, function: &MirFunction) -> bool {
@@ -95,7 +108,11 @@ impl Rule for CleartextEnvVarRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -128,8 +145,8 @@ impl Rule for CleartextEnvVarRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -157,7 +174,8 @@ impl EnvVarLiteralRule {
                 full_description: "Detects string literals passed directly to std::env::var(). \
                     Hardcoded environment variable names can leak configuration expectations \
                     and make it harder to configure applications in different environments. \
-                    Consider using constants or configuration structs.".to_string(),
+                    Consider using constants or configuration structs."
+                    .to_string(),
                 help_uri: None,
                 default_severity: Severity::Low,
                 origin: RuleOrigin::BuiltIn,
@@ -170,7 +188,7 @@ impl EnvVarLiteralRule {
 
     fn has_env_var_literal(&self, function: &MirFunction) -> bool {
         let body_str = function.body.join("\n");
-        
+
         // Look for env::var with a const string argument
         // MIR shows: var::<&str>(const "VAR_NAME")
         body_str.contains("env::var") && body_str.contains("const \"")
@@ -182,7 +200,11 @@ impl Rule for EnvVarLiteralRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -214,8 +236,8 @@ impl Rule for EnvVarLiteralRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -288,7 +310,11 @@ impl Rule for InvisibleUnicodeRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -322,8 +348,8 @@ impl Rule for InvisibleUnicodeRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -351,7 +377,8 @@ impl UntrimmedStdinRule {
                 full_description: "Detects stdin().read_line() usage without subsequent \
                     trim() call. read_line() includes the trailing newline which can cause \
                     subtle bugs in file paths, passwords, or comparisons. Always call \
-                    .trim() or .trim_end() on stdin input.".to_string(),
+                    .trim() or .trim_end() on stdin input."
+                    .to_string(),
                 help_uri: None,
                 default_severity: Severity::Low,
                 origin: RuleOrigin::BuiltIn,
@@ -364,18 +391,18 @@ impl UntrimmedStdinRule {
 
     fn has_untrimmed_stdin(&self, function: &MirFunction) -> bool {
         let body_str = function.body.join("\n");
-        
+
         // Check for stdin read_line
         let has_read_line = body_str.contains("stdin")
             && (body_str.contains("read_line") || body_str.contains("BufRead"));
-        
+
         if !has_read_line {
             return false;
         }
-        
+
         // Check for trim calls
         let has_trim = body_str.contains("trim") || body_str.contains("trim_end");
-        
+
         !has_trim
     }
 }
@@ -385,7 +412,11 @@ impl Rule for UntrimmedStdinRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -415,8 +446,8 @@ impl Rule for UntrimmedStdinRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -444,7 +475,8 @@ impl InfiniteIteratorRule {
                 full_description: "Detects infinite iterators (std::iter::repeat, cycle, \
                     repeat_with) without termination methods (take, take_while, any, find, \
                     position, zip). Consuming an infinite iterator without bounds leads to \
-                    infinite loops or memory exhaustion.".to_string(),
+                    infinite loops or memory exhaustion."
+                    .to_string(),
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
@@ -457,19 +489,20 @@ impl InfiniteIteratorRule {
 
     fn looks_like_infinite_iterator(&self, function: &MirFunction) -> bool {
         let body_str = function.body.join("\n");
-        
+
         // Skip if function name contains "mir_extractor" or is infrastructure
         if function.name.contains("mir_extractor") || function.name.contains("mir-extractor") {
             return false;
         }
-        
+
         // Skip functions that are just defining string constants
-        if function.name.contains("::new") 
+        if function.name.contains("::new")
             || body_str.contains("const \"iter::repeat")
-            || body_str.contains("const \"std::iter::repeat") {
+            || body_str.contains("const \"std::iter::repeat")
+        {
             return false;
         }
-        
+
         // Check for infinite iterator constructors
         let has_repeat = body_str.contains("std::iter::repeat")
             || body_str.contains("core::iter::repeat")
@@ -479,27 +512,34 @@ impl InfiniteIteratorRule {
             || body_str.contains("core::iter::repeat_with")
             || body_str.contains("repeat_with::<")
             || body_str.contains("RepeatWith<");
-        
+
         if !has_repeat && !has_cycle && !has_repeat_with {
             return false;
         }
-        
+
         // Check if there are termination methods
         let has_take = body_str.contains("::take(") || body_str.contains(">::take::<");
-        let has_take_while = body_str.contains("::take_while") || body_str.contains(">::take_while::<");
+        let has_take_while =
+            body_str.contains("::take_while") || body_str.contains(">::take_while::<");
         let has_any = body_str.contains("::any(") || body_str.contains(">::any::<");
         let has_find = body_str.contains("::find(") || body_str.contains(">::find::<");
         let has_position = body_str.contains("::position") || body_str.contains(">::position::<");
         let has_zip = body_str.contains("::zip");
         let has_nth = body_str.contains("::nth(") || body_str.contains(">::nth::<");
-        
+
         // Check for early return (break in loop)
         let return_count = body_str.matches("return;").count();
         let has_early_return = return_count > 1;
-        
+
         // Flag if we have infinite iterator but no termination
-        !has_take && !has_take_while && !has_any && !has_find && !has_position 
-            && !has_zip && !has_nth && !has_early_return
+        !has_take
+            && !has_take_while
+            && !has_any
+            && !has_find
+            && !has_position
+            && !has_zip
+            && !has_nth
+            && !has_early_return
     }
 }
 
@@ -508,31 +548,37 @@ impl Rule for InfiniteIteratorRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
             if self.looks_like_infinite_iterator(function) {
                 let mut evidence = Vec::new();
                 for line in &function.body {
-                    if line.contains("std::iter::repeat") 
+                    if line.contains("std::iter::repeat")
                         || line.contains("core::iter::repeat")
                         || line.contains("::cycle")
-                        || line.contains("repeat_with") {
+                        || line.contains("repeat_with")
+                    {
                         evidence.push(line.trim().to_string());
                         if evidence.len() >= 3 {
                             break;
                         }
                     }
                 }
-                
+
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
                     severity: self.metadata.default_severity,
                     message: "Infinite iterator (repeat, cycle, or repeat_with) without \
                         termination method (take, take_while, any, find, position, zip). \
-                        This can cause unbounded loops leading to DoS.".to_string(),
+                        This can cause unbounded loops leading to DoS."
+                        .to_string(),
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
                     evidence,
@@ -565,7 +611,8 @@ impl DivisionByUntrustedRule {
                 full_description: "Division or modulo operations use untrusted input as \
                     the denominator without checking for zero. If the input is zero, this \
                     causes a panic (DoS). Use checked_div/checked_rem or validate the \
-                    denominator before the operation.".to_string(),
+                    denominator before the operation."
+                    .to_string(),
                 help_uri: Some("https://cwe.mitre.org/data/definitions/369.html".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
@@ -577,44 +624,52 @@ impl DivisionByUntrustedRule {
     }
 
     const DIVISION_PATTERNS: &'static [&'static str] = &[
-        "Div(", "Rem(",  // MIR binary ops
-        "div(", "rem(",  // Method calls
-        " / ", " % ",    // Source patterns
+        "Div(", "Rem(", // MIR binary ops
+        "div(", "rem(", // Method calls
+        " / ", " % ", // Source patterns
     ];
 
     const ZERO_CHECK_PATTERNS: &'static [&'static str] = &[
-        "checked_div", "checked_rem",
-        "saturating_div", "wrapping_div",
-        "!= 0", "!= 0_", "> 0", ">= 1",
-        "is_zero", "NonZero",
+        "checked_div",
+        "checked_rem",
+        "saturating_div",
+        "wrapping_div",
+        "!= 0",
+        "!= 0_",
+        "> 0",
+        ">= 1",
+        "is_zero",
+        "NonZero",
     ];
 
     /// Track untrusted numeric variables
     fn track_untrusted_numerics(body: &[String]) -> HashSet<String> {
         let mut untrusted_vars = HashSet::new();
-        
+
         for line in body {
             let trimmed = line.trim();
-            
+
             let is_source = INPUT_SOURCE_PATTERNS.iter().any(|p| trimmed.contains(p));
             if is_source {
                 if let Some(eq_pos) = trimmed.find(" = ") {
                     let target = trimmed[..eq_pos].trim();
-                    if let Some(var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                    if let Some(var) = target
+                        .split(|c: char| !c.is_alphanumeric() && c != '_')
                         .find(|s| s.starts_with('_'))
                     {
                         untrusted_vars.insert(var.to_string());
                     }
                 }
             }
-            
+
             // Track .parse() results from untrusted data
             if trimmed.contains("::parse::") {
                 let uses_untrusted = untrusted_vars.iter().any(|v| trimmed.contains(v));
                 if uses_untrusted {
                     if let Some(eq_pos) = trimmed.find(" = ") {
                         let target = trimmed[..eq_pos].trim();
-                        if let Some(var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                        if let Some(var) = target
+                            .split(|c: char| !c.is_alphanumeric() && c != '_')
                             .find(|s| s.starts_with('_'))
                         {
                             untrusted_vars.insert(var.to_string());
@@ -622,16 +677,17 @@ impl DivisionByUntrustedRule {
                     }
                 }
             }
-            
+
             // Propagate through assignments
             if trimmed.contains(" = ") && !is_source {
                 if let Some(eq_pos) = trimmed.find(" = ") {
                     let target = trimmed[..eq_pos].trim();
                     let source = trimmed[eq_pos + 3..].trim();
-                    
+
                     let uses_untrusted = untrusted_vars.iter().any(|v| source.contains(v));
                     if uses_untrusted {
-                        if let Some(target_var) = target.split(|c: char| !c.is_alphanumeric() && c != '_')
+                        if let Some(target_var) = target
+                            .split(|c: char| !c.is_alphanumeric() && c != '_')
                             .find(|s| s.starts_with('_'))
                         {
                             untrusted_vars.insert(target_var.to_string());
@@ -640,14 +696,16 @@ impl DivisionByUntrustedRule {
                 }
             }
         }
-        
+
         untrusted_vars
     }
 
     fn has_zero_validation(body: &[String], untrusted_vars: &HashSet<String>) -> bool {
         for line in body {
             let trimmed = line.trim();
-            let has_check = Self::ZERO_CHECK_PATTERNS.iter().any(|p| trimmed.contains(p));
+            let has_check = Self::ZERO_CHECK_PATTERNS
+                .iter()
+                .any(|p| trimmed.contains(p));
             if has_check {
                 for var in untrusted_vars {
                     if trimmed.contains(var) {
@@ -661,7 +719,7 @@ impl DivisionByUntrustedRule {
 
     fn find_unsafe_divisions(body: &[String], untrusted_vars: &HashSet<String>) -> Vec<String> {
         let mut evidence = Vec::new();
-        
+
         for line in body {
             let trimmed = line.trim();
             let is_division = Self::DIVISION_PATTERNS.iter().any(|p| trimmed.contains(p));
@@ -674,7 +732,7 @@ impl DivisionByUntrustedRule {
                 }
             }
         }
-        
+
         evidence
     }
 }
@@ -684,7 +742,11 @@ impl Rule for DivisionByUntrustedRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -720,8 +782,8 @@ impl Rule for DivisionByUntrustedRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -750,8 +812,11 @@ impl InsecureYamlDeserializationRule {
                     deserialization functions without validation. Attackers can craft \
                     malicious YAML using anchors/aliases for exponential expansion \
                     (billion laughs), deeply nested structures, or unexpected type \
-                    coercion to cause denial of service or unexpected behavior.".to_string(),
-                help_uri: Some("https://owasp.org/www-project-web-security-testing-guide/".to_string()),
+                    coercion to cause denial of service or unexpected behavior."
+                    .to_string(),
+                help_uri: Some(
+                    "https://owasp.org/www-project-web-security-testing-guide/".to_string(),
+                ),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
@@ -762,28 +827,49 @@ impl InsecureYamlDeserializationRule {
     }
 
     const YAML_SINKS: &'static [&'static str] = &[
-        "serde_yaml::from_str", "serde_yaml::from_slice", "serde_yaml::from_reader",
-        "serde_yaml::from_str::", "serde_yaml::from_slice::", "serde_yaml::from_reader::",
+        "serde_yaml::from_str",
+        "serde_yaml::from_slice",
+        "serde_yaml::from_reader",
+        "serde_yaml::from_str::",
+        "serde_yaml::from_slice::",
+        "serde_yaml::from_reader::",
     ];
 
     const UNTRUSTED_SOURCES: &'static [&'static str] = &[
-        "env::var", "env::var_os", "std::env::var", "var::<", "var_os::<",
-        "env::args", "std::env::args", "args::<", "= args()", "Args>",
-        "stdin", "Stdin",
-        "read_to_string", "read_to_end", "BufRead::read_line",
-        "TcpStream", "::connect(",
+        "env::var",
+        "env::var_os",
+        "std::env::var",
+        "var::<",
+        "var_os::<",
+        "env::args",
+        "std::env::args",
+        "args::<",
+        "= args()",
+        "Args>",
+        "stdin",
+        "Stdin",
+        "read_to_string",
+        "read_to_end",
+        "BufRead::read_line",
+        "TcpStream",
+        "::connect(",
     ];
 
     const SANITIZERS: &'static [&'static str] = &[
-        r#"contains("&")"#, r#"contains("*")"#,
-        ".len()", "len() >", "len() <",
-        "serde_json::from_str",  // JSON is safer alternative
-        "validate", "sanitize", "allowlist",
+        r#"contains("&")"#,
+        r#"contains("*")"#,
+        ".len()",
+        "len() >",
+        "len() <",
+        "serde_json::from_str", // JSON is safer alternative
+        "validate",
+        "sanitize",
+        "allowlist",
     ];
 
     fn track_untrusted_vars(&self, function: &MirFunction) -> HashSet<String> {
         let mut tainted: HashSet<String> = HashSet::new();
-        
+
         for line in &function.body {
             for source in Self::UNTRUSTED_SOURCES {
                 if line.contains(source) {
@@ -792,7 +878,7 @@ impl InsecureYamlDeserializationRule {
                     }
                 }
             }
-            
+
             // Taint propagation
             if line.contains(" = ") {
                 if let Some((dest, src_part)) = line.split_once(" = ") {
@@ -806,7 +892,7 @@ impl InsecureYamlDeserializationRule {
                 }
             }
         }
-        
+
         tainted
     }
 
@@ -837,18 +923,22 @@ impl InsecureYamlDeserializationRule {
             || text.contains(&format!("(*_{})", var_num))
     }
 
-    fn find_unsafe_yaml_operations(&self, function: &MirFunction, tainted: &HashSet<String>) -> Vec<String> {
+    fn find_unsafe_yaml_operations(
+        &self,
+        function: &MirFunction,
+        tainted: &HashSet<String>,
+    ) -> Vec<String> {
         let mut evidence = Vec::new();
-        
+
         // Check for sanitization
         for line in &function.body {
             for sanitizer in Self::SANITIZERS {
                 if line.contains(sanitizer) {
-                    return evidence;  // Has sanitization, no finding
+                    return evidence; // Has sanitization, no finding
                 }
             }
         }
-        
+
         // Look for YAML sinks with tainted arguments
         for line in &function.body {
             for sink in Self::YAML_SINKS {
@@ -862,7 +952,7 @@ impl InsecureYamlDeserializationRule {
                 }
             }
         }
-        
+
         evidence
     }
 }
@@ -872,19 +962,23 @@ impl Rule for InsecureYamlDeserializationRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
             if function.name.contains("test") {
                 continue;
             }
-            
+
             let tainted = self.track_untrusted_vars(function);
             if tainted.is_empty() {
                 continue;
             }
-            
+
             let unsafe_ops = self.find_unsafe_yaml_operations(function, &tainted);
             if !unsafe_ops.is_empty() {
                 findings.push(Finding {
@@ -905,8 +999,8 @@ impl Rule for InsecureYamlDeserializationRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -914,9 +1008,9 @@ impl Rule for InsecureYamlDeserializationRule {
         // Inter-procedural analysis (use shared analysis if available)
         if let Some(analysis) = inter_analysis {
             let flows = analysis.detect_inter_procedural_flows(package);
-            let mut reported_functions: HashSet<String> = findings
-                .iter().map(|f| f.function.clone()).collect();
-            
+            let mut reported_functions: HashSet<String> =
+                findings.iter().map(|f| f.function.clone()).collect();
+
             for flow in flows {
                 if flow.sink_type != "yaml" {
                     continue;
@@ -927,9 +1021,12 @@ impl Rule for InsecureYamlDeserializationRule {
                 if reported_functions.contains(&flow.sink_function) {
                     continue;
                 }
-                
-                let sink_func = package.functions.iter().find(|f| f.name == flow.sink_function);
-                
+
+                let sink_func = package
+                    .functions
+                    .iter()
+                    .find(|f| f.name == flow.sink_function);
+
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
@@ -972,7 +1069,8 @@ impl UnboundedReadRule {
                 full_description: "read_to_end() or read_to_string() is called on an \
                     untrusted source (network stream, stdin, user-controlled file) without \
                     size limits. Attackers can send arbitrarily large payloads to exhaust \
-                    server memory. Use .take(max_size) to limit bytes read.".to_string(),
+                    server memory. Use .take(max_size) to limit bytes read."
+                    .to_string(),
                 help_uri: Some("https://cwe.mitre.org/data/definitions/400.html".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
@@ -984,20 +1082,40 @@ impl UnboundedReadRule {
     }
 
     const UNTRUSTED_SOURCES: &'static [&'static str] = &[
-        "TcpStream::connect", "TcpListener::accept", "UnixStream::connect",
-        "::connect(", "::accept(", "<TcpStream", "<UnixStream",
-        "io::stdin", "stdin()", "Stdin",
-        "env::var", "env::args", "var::<", "args::<", "Args>",
+        "TcpStream::connect",
+        "TcpListener::accept",
+        "UnixStream::connect",
+        "::connect(",
+        "::accept(",
+        "<TcpStream",
+        "<UnixStream",
+        "io::stdin",
+        "stdin()",
+        "Stdin",
+        "env::var",
+        "env::args",
+        "var::<",
+        "args::<",
+        "Args>",
         "File::open",
     ];
 
     const UNBOUNDED_SINKS: &'static [&'static str] = &[
-        "read_to_end", "read_to_string",
-        "Read>::read_to_end", "Read>::read_to_string",
+        "read_to_end",
+        "read_to_string",
+        "Read>::read_to_end",
+        "Read>::read_to_string",
     ];
 
     const SAFE_PATTERNS: &'static [&'static str] = &[
-        ".take(", "take(", "metadata(", ".len()", "MAX_SIZE", "max_size", "limit", "chunk",
+        ".take(",
+        "take(",
+        "metadata(",
+        ".len()",
+        "MAX_SIZE",
+        "max_size",
+        "limit",
+        "chunk",
     ];
 
     fn has_untrusted_source(&self, function: &MirFunction) -> bool {
@@ -1040,7 +1158,11 @@ impl Rule for UnboundedReadRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -1053,16 +1175,17 @@ impl Rule for UnboundedReadRule {
             if self.has_safe_limit(function) {
                 continue;
             }
-            
+
             let unbounded_reads = self.find_unbounded_reads(function);
             if !unbounded_reads.is_empty() {
                 let body_str = function.body.join("\n");
-                let severity = if body_str.contains("TcpStream") || body_str.contains("UnixStream") {
+                let severity = if body_str.contains("TcpStream") || body_str.contains("UnixStream")
+                {
                     Severity::High
                 } else {
                     Severity::Medium
                 };
-                
+
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
@@ -1080,8 +1203,8 @@ impl Rule for UnboundedReadRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -1109,8 +1232,11 @@ impl InsecureJsonTomlDeserializationRule {
                 full_description: "User-controlled input is passed to serde_json or toml \
                     deserialization functions without validation. Attackers can craft \
                     deeply nested structures to cause stack overflow, or very large \
-                    payloads to cause memory exhaustion.".to_string(),
-                help_uri: Some("https://owasp.org/www-project-web-security-testing-guide/".to_string()),
+                    payloads to cause memory exhaustion."
+                    .to_string(),
+                help_uri: Some(
+                    "https://owasp.org/www-project-web-security-testing-guide/".to_string(),
+                ),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
@@ -1121,22 +1247,39 @@ impl InsecureJsonTomlDeserializationRule {
     }
 
     const SINKS: &'static [&'static str] = &[
-        "serde_json::from_str", "serde_json::from_slice", "serde_json::from_reader",
-        "serde_json::from_str::", "serde_json::from_slice::", "serde_json::from_reader::",
-        "toml::from_str", "toml::de::from_str",
+        "serde_json::from_str",
+        "serde_json::from_slice",
+        "serde_json::from_reader",
+        "serde_json::from_str::",
+        "serde_json::from_slice::",
+        "serde_json::from_reader::",
+        "toml::from_str",
+        "toml::de::from_str",
     ];
 
     const UNTRUSTED_SOURCES: &'static [&'static str] = &[
-        "env::var", "env::var_os", "std::env::var", "var::<", "var_os::<",
-        "env::args", "std::env::args", "args::<", "= args()", "Args>",
-        "stdin", "Stdin",
-        "read_to_string", "read_to_end", "File::open",
-        "TcpStream", "::connect(",
+        "env::var",
+        "env::var_os",
+        "std::env::var",
+        "var::<",
+        "var_os::<",
+        "env::args",
+        "std::env::args",
+        "args::<",
+        "= args()",
+        "Args>",
+        "stdin",
+        "Stdin",
+        "read_to_string",
+        "read_to_end",
+        "File::open",
+        "TcpStream",
+        "::connect(",
     ];
 
     fn track_untrusted_vars(&self, function: &MirFunction) -> HashSet<String> {
         let mut tainted: HashSet<String> = HashSet::new();
-        
+
         for line in &function.body {
             for source in Self::UNTRUSTED_SOURCES {
                 if line.contains(source) {
@@ -1145,7 +1288,7 @@ impl InsecureJsonTomlDeserializationRule {
                     }
                 }
             }
-            
+
             if line.contains(" = ") {
                 if let Some((dest, src_part)) = line.split_once(" = ") {
                     let dest_var = dest.trim().to_string();
@@ -1158,7 +1301,7 @@ impl InsecureJsonTomlDeserializationRule {
                 }
             }
         }
-        
+
         tainted
     }
 
@@ -1178,17 +1321,16 @@ impl InsecureJsonTomlDeserializationRule {
             return true;
         }
         let var_num = var.trim_start_matches('_');
-        text.contains(&format!("move _{}", var_num))
-            || text.contains(&format!("copy _{}", var_num))
+        text.contains(&format!("move _{}", var_num)) || text.contains(&format!("copy _{}", var_num))
     }
 
     fn has_size_limit_check(&self, function: &MirFunction, tainted: &HashSet<String>) -> bool {
         let mut len_result_vars: HashSet<String> = HashSet::new();
-        
+
         for line in &function.body {
             let is_string_len = (line.contains("String::len(") || line.contains("str::len("))
                 && !line.contains("Vec<");
-                
+
             if is_string_len {
                 for tvar in tainted {
                     if self.contains_var(line, tvar) {
@@ -1198,8 +1340,12 @@ impl InsecureJsonTomlDeserializationRule {
                     }
                 }
             }
-            
-            if line.contains("Gt(") || line.contains("Lt(") || line.contains("Ge(") || line.contains("Le(") {
+
+            if line.contains("Gt(")
+                || line.contains("Lt(")
+                || line.contains("Ge(")
+                || line.contains("Le(")
+            {
                 for len_var in &len_result_vars {
                     if self.contains_var(line, len_var) {
                         return true;
@@ -1207,29 +1353,33 @@ impl InsecureJsonTomlDeserializationRule {
                 }
             }
         }
-        
+
         false
     }
 
-    fn find_unsafe_operations(&self, function: &MirFunction, tainted: &HashSet<String>) -> Vec<String> {
+    fn find_unsafe_operations(
+        &self,
+        function: &MirFunction,
+        tainted: &HashSet<String>,
+    ) -> Vec<String> {
         let mut unsafe_ops = Vec::new();
-        
+
         if self.has_size_limit_check(function, tainted) {
             return unsafe_ops;
         }
-        
+
         for line in &function.body {
             let is_sink = Self::SINKS.iter().any(|sink| line.contains(sink));
             if !is_sink {
                 continue;
             }
-            
+
             let taint_flows = tainted.iter().any(|t| self.contains_var(line, t));
             if taint_flows {
                 unsafe_ops.push(line.trim().to_string());
             }
         }
-        
+
         unsafe_ops
     }
 }
@@ -1239,24 +1389,28 @@ impl Rule for InsecureJsonTomlDeserializationRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
             if function.name.contains("test") {
                 continue;
             }
-            
+
             let tainted = self.track_untrusted_vars(function);
             if tainted.is_empty() {
                 continue;
             }
-            
+
             let unsafe_ops = self.find_unsafe_operations(function, &tainted);
             if !unsafe_ops.is_empty() {
                 let is_toml = unsafe_ops.iter().any(|op| op.contains("toml::"));
                 let format_name = if is_toml { "TOML" } else { "JSON" };
-                
+
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
@@ -1275,8 +1429,8 @@ impl Rule for InsecureJsonTomlDeserializationRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -1320,8 +1474,9 @@ impl SerdeLengthMismatchRule {
 
     fn find_serializer_declarations(body: &[String]) -> Vec<(String, String, usize, String)> {
         let mut declarations = Vec::new();
-        
-        let mut var_values: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+
+        let mut var_values: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
         for line in body {
             let trimmed = line.trim();
             if trimmed.contains("Option::<usize>::Some(const ") {
@@ -1338,45 +1493,80 @@ impl SerdeLengthMismatchRule {
                 }
             }
         }
-        
+
         for line in body {
             let trimmed = line.trim();
-            
-            if trimmed.contains("serialize_struct(") && !trimmed.contains("serialize_struct_variant") {
+
+            if trimmed.contains("serialize_struct(")
+                && !trimmed.contains("serialize_struct_variant")
+            {
                 if let Some(decl) = Self::extract_struct_declaration(trimmed) {
                     declarations.push(("struct".to_string(), decl.0, decl.1, trimmed.to_string()));
                 }
             }
-            
-            if trimmed.contains("serialize_tuple(") && !trimmed.contains("serialize_tuple_struct") && !trimmed.contains("serialize_tuple_variant") {
+
+            if trimmed.contains("serialize_tuple(")
+                && !trimmed.contains("serialize_tuple_struct")
+                && !trimmed.contains("serialize_tuple_variant")
+            {
                 if let Some(len) = Self::extract_tuple_length(trimmed) {
-                    declarations.push(("tuple".to_string(), "".to_string(), len, trimmed.to_string()));
+                    declarations.push((
+                        "tuple".to_string(),
+                        "".to_string(),
+                        len,
+                        trimmed.to_string(),
+                    ));
                 }
             }
-            
+
             if trimmed.contains("serialize_tuple_struct(") {
                 if let Some(decl) = Self::extract_struct_declaration(trimmed) {
-                    declarations.push(("tuple_struct".to_string(), decl.0, decl.1, trimmed.to_string()));
+                    declarations.push((
+                        "tuple_struct".to_string(),
+                        decl.0,
+                        decl.1,
+                        trimmed.to_string(),
+                    ));
                 }
             }
-            
+
             if trimmed.contains("serialize_seq(") {
                 if let Some(len) = Self::extract_seq_length(trimmed) {
-                    declarations.push(("seq".to_string(), "".to_string(), len, trimmed.to_string()));
+                    declarations.push((
+                        "seq".to_string(),
+                        "".to_string(),
+                        len,
+                        trimmed.to_string(),
+                    ));
                 } else if let Some(len) = Self::extract_seq_length_from_var(trimmed, &var_values) {
-                    declarations.push(("seq".to_string(), "".to_string(), len, trimmed.to_string()));
+                    declarations.push((
+                        "seq".to_string(),
+                        "".to_string(),
+                        len,
+                        trimmed.to_string(),
+                    ));
                 }
             }
-            
+
             if trimmed.contains("serialize_map(") {
                 if let Some(len) = Self::extract_map_length(trimmed) {
-                    declarations.push(("map".to_string(), "".to_string(), len, trimmed.to_string()));
+                    declarations.push((
+                        "map".to_string(),
+                        "".to_string(),
+                        len,
+                        trimmed.to_string(),
+                    ));
                 } else if let Some(len) = Self::extract_map_length_from_var(trimmed, &var_values) {
-                    declarations.push(("map".to_string(), "".to_string(), len, trimmed.to_string()));
+                    declarations.push((
+                        "map".to_string(),
+                        "".to_string(),
+                        len,
+                        trimmed.to_string(),
+                    ));
                 }
             }
         }
-        
+
         declarations
     }
 
@@ -1384,7 +1574,7 @@ impl SerdeLengthMismatchRule {
         let name_start = line.find("const \"")? + 7;
         let name_end = line[name_start..].find("\"")? + name_start;
         let name = line[name_start..name_end].to_string();
-        
+
         let after_name = &line[name_end..];
         if let Some(const_pos) = after_name.find("const ") {
             let len_start = const_pos + 6;
@@ -1396,7 +1586,7 @@ impl SerdeLengthMismatchRule {
                 }
             }
         }
-        
+
         None
     }
 
@@ -1417,7 +1607,7 @@ impl SerdeLengthMismatchRule {
         if line.contains("Option::<usize>::None") || line.contains("None::<usize>") {
             return None;
         }
-        
+
         if let Some(const_pos) = line.rfind("const ") {
             let after_const = &line[const_pos + 6..];
             if let Some(usize_pos) = after_const.find("_usize") {
@@ -1427,7 +1617,7 @@ impl SerdeLengthMismatchRule {
                 }
             }
         }
-        
+
         None
     }
 
@@ -1435,11 +1625,16 @@ impl SerdeLengthMismatchRule {
         Self::extract_seq_length(line)
     }
 
-    fn extract_seq_length_from_var(line: &str, var_values: &std::collections::HashMap<String, usize>) -> Option<usize> {
+    fn extract_seq_length_from_var(
+        line: &str,
+        var_values: &std::collections::HashMap<String, usize>,
+    ) -> Option<usize> {
         if let Some(paren_start) = line.find("serialize_seq(") {
             let after = &line[paren_start..];
             for (var, val) in var_values {
-                if after.contains(&format!("move {}", var)) || after.contains(&format!(", {})", var)) {
+                if after.contains(&format!("move {}", var))
+                    || after.contains(&format!(", {})", var))
+                {
                     return Some(*val);
                 }
             }
@@ -1447,11 +1642,16 @@ impl SerdeLengthMismatchRule {
         None
     }
 
-    fn extract_map_length_from_var(line: &str, var_values: &std::collections::HashMap<String, usize>) -> Option<usize> {
+    fn extract_map_length_from_var(
+        line: &str,
+        var_values: &std::collections::HashMap<String, usize>,
+    ) -> Option<usize> {
         if let Some(paren_start) = line.find("serialize_map(") {
             let after = &line[paren_start..];
             for (var, val) in var_values {
-                if after.contains(&format!("move {}", var)) || after.contains(&format!(", {})", var)) {
+                if after.contains(&format!("move {}", var))
+                    || after.contains(&format!(", {})", var))
+                {
                     return Some(*val);
                 }
             }
@@ -1463,8 +1663,8 @@ impl SerdeLengthMismatchRule {
         body.iter()
             .filter(|line| {
                 let trimmed = line.trim();
-                trimmed.contains("SerializeStruct>::serialize_field") ||
-                trimmed.contains("SerializeStructVariant>::serialize_field")
+                trimmed.contains("SerializeStruct>::serialize_field")
+                    || trimmed.contains("SerializeStructVariant>::serialize_field")
             })
             .count()
     }
@@ -1473,8 +1673,8 @@ impl SerdeLengthMismatchRule {
         body.iter()
             .filter(|line| {
                 let trimmed = line.trim();
-                trimmed.contains("SerializeTuple>::serialize_element") ||
-                trimmed.contains("SerializeTupleStruct>::serialize_field")
+                trimmed.contains("SerializeTuple>::serialize_element")
+                    || trimmed.contains("SerializeTupleStruct>::serialize_field")
             })
             .count()
     }
@@ -1492,19 +1692,19 @@ impl SerdeLengthMismatchRule {
         body.iter()
             .filter(|line| {
                 let trimmed = line.trim();
-                trimmed.contains("SerializeMap>::serialize_entry") ||
-                trimmed.contains("SerializeMap>::serialize_key")
+                trimmed.contains("SerializeMap>::serialize_entry")
+                    || trimmed.contains("SerializeMap>::serialize_key")
             })
             .count()
     }
 
     fn has_loop_serialization(body: &[String]) -> bool {
         let body_str = body.join("\n");
-        
-        body_str.contains("switchInt") && 
-        (body_str.contains("IntoIterator") || 
-         body_str.contains("Iterator>::next") ||
-         body_str.contains("Range"))
+
+        body_str.contains("switchInt")
+            && (body_str.contains("IntoIterator")
+                || body_str.contains("Iterator>::next")
+                || body_str.contains("Range"))
     }
 }
 
@@ -1513,7 +1713,11 @@ impl Rule for SerdeLengthMismatchRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -1522,14 +1726,14 @@ impl Rule for SerdeLengthMismatchRule {
             }
 
             let declarations = Self::find_serializer_declarations(&function.body);
-            
+
             if declarations.is_empty() {
                 continue;
             }
 
             for (ser_type, name, declared_len, decl_line) in &declarations {
                 let has_loop = Self::has_loop_serialization(&function.body);
-                
+
                 let actual_count = match ser_type.as_str() {
                     "struct" => Self::count_serialize_fields(&function.body),
                     "tuple" | "tuple_struct" => Self::count_serialize_elements(&function.body),
@@ -1617,12 +1821,12 @@ impl Rule for SerdeLengthMismatchRule {
                         function_signature: function.signature.clone(),
                         evidence: vec![decl_line.clone()],
                         span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                        confidence: Confidence::Medium,
+                        cwe_ids: Vec::new(),
+                        fix_suggestion: None,
+                        code_snippet: None,
+                        exploitability: Exploitability::default(),
+                        exploitability_score: Exploitability::default().score(),
                     });
                 }
             }
@@ -1637,7 +1841,7 @@ impl Rule for SerdeLengthMismatchRule {
 // ============================================================================
 
 /// Detects unchecked multiplication when converting time units (seconds to nanos, etc.).
-/// 
+///
 /// Time unit conversions often involve multiplying by large constants (1_000_000_000 for
 /// seconds to nanoseconds). Without overflow checks, this can silently wrap around,
 /// causing incorrect timestamps.
@@ -1655,7 +1859,8 @@ impl UncheckedTimestampMultiplicationRule {
                 full_description: "Detects unchecked multiplication when converting time units. \
                     Conversions like seconds to nanoseconds (multiply by 1_000_000_000) can \
                     overflow for large values. Use checked_mul() or saturating_mul() to handle \
-                    overflow correctly. Pattern found in InfluxDB research.".to_string(),
+                    overflow correctly. Pattern found in InfluxDB research."
+                    .to_string(),
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
@@ -1687,7 +1892,11 @@ impl Rule for UncheckedTimestampMultiplicationRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -1732,15 +1941,18 @@ impl Rule for UncheckedTimestampMultiplicationRule {
 
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 // Skip comments
                 if trimmed.starts_with("//") {
                     continue;
                 }
 
                 // Skip if already using checked/saturating operations
-                if trimmed.contains("checked_mul") || trimmed.contains("saturating_mul")
-                    || trimmed.contains("overflowing_mul") || trimmed.contains("wrapping_mul") {
+                if trimmed.contains("checked_mul")
+                    || trimmed.contains("saturating_mul")
+                    || trimmed.contains("overflowing_mul")
+                    || trimmed.contains("wrapping_mul")
+                {
                     continue;
                 }
 
@@ -1759,12 +1971,15 @@ impl Rule for UncheckedTimestampMultiplicationRule {
                             || trimmed.contains("epoch");
 
                         // Also flag if function name suggests time handling
-                        let fn_context = lines[..idx].iter().rev().take(15)
-                            .any(|l| l.contains("fn ") && (
-                                l.contains("time") || l.contains("sec") || 
-                                l.contains("nano") || l.contains("duration") ||
-                                l.contains("timestamp") || l.contains("to_")
-                            ));
+                        let fn_context = lines[..idx].iter().rev().take(15).any(|l| {
+                            l.contains("fn ")
+                                && (l.contains("time")
+                                    || l.contains("sec")
+                                    || l.contains("nano")
+                                    || l.contains("duration")
+                                    || l.contains("timestamp")
+                                    || l.contains("to_"))
+                        });
 
                         if is_time_context || fn_context {
                             let location = format!("{}:{}", rel_path, idx + 1);
@@ -1783,7 +1998,7 @@ impl Rule for UncheckedTimestampMultiplicationRule {
                                 function_signature: String::new(),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
-                    ..Default::default()
+                                ..Default::default()
                             });
                         }
                     }

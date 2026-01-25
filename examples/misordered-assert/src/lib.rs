@@ -80,7 +80,7 @@ pub fn test_comparison_correct() {
 pub fn demonstrate_confusing_error() {
     // When this fails with misordered args:
     let actual_value = 10;
-    
+
     // Misordered version:
     // assert_eq!(5, actual_value);
     // Error: "assertion failed: `(left == right)`
@@ -88,7 +88,7 @@ pub fn demonstrate_confusing_error() {
     //        right: `10`"
     // This says "5 is on the left" but doesn't clearly show
     // which was expected vs actual!
-    
+
     // Correct version:
     assert_eq!(actual_value, 10);
     // Error would say: "assertion failed: `(left == right)`

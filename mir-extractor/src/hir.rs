@@ -441,12 +441,12 @@ pub fn capture_hir(crate_path: &Path) -> Result<HirPackage> {
     cmd.current_dir(&canonical);
     cmd.env_remove("RUSTC");
     cmd.env_remove("RUSTFLAGS");
-    
+
     // Use a dedicated target directory for HIR capture to avoid cache issues
     let hir_target_dir = env::temp_dir().join("rust-cola-hir-builds");
     fs::create_dir_all(&hir_target_dir).ok();
     cmd.env("CARGO_TARGET_DIR", &hir_target_dir);
-    
+
     cmd.arg("rustc");
 
     match &primary {
@@ -476,10 +476,11 @@ pub fn capture_hir(crate_path: &Path) -> Result<HirPackage> {
 
     cmd.arg("--");
     cmd.args(["--emit", "metadata"]);
-    
+
     // Add a unique metadata string to force cargo to treat each HIR capture as a fresh build
     // This prevents cargo from reusing cached builds with stale environment variables
-    let unique_metadata = format!("hir_capture_{}", 
+    let unique_metadata = format!(
+        "hir_capture_{}",
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -516,22 +517,12 @@ pub fn capture_hir(crate_path: &Path) -> Result<HirPackage> {
     let status_code = output.status.code();
 
     if is_rustc_ice(&stdout, &stderr) {
-        return Err(HirCaptureError::rustc_ice(
-            command_display,
-            status_code,
-            stdout,
-            stderr,
-        )
-        .into());
+        return Err(
+            HirCaptureError::rustc_ice(command_display, status_code, stdout, stderr).into(),
+        );
     }
 
-    Err(HirCaptureError::command_failed(
-        command_display,
-        status_code,
-        stdout,
-        stderr,
-    )
-    .into())
+    Err(HirCaptureError::command_failed(command_display, status_code, stdout, stderr).into())
 }
 
 fn describe_command(cmd: &Command) -> String {
@@ -753,21 +744,21 @@ pub fn collect_crate_snapshot<'tcx>(
     for local_def_id in hir_items.definitions() {
         let def_id: DefId = local_def_id.to_def_id();
         let def_kind = tcx.def_kind(def_id);
-        
+
         // Only collect metadata for types that can have instances
         if matches!(def_kind, DefKind::Struct | DefKind::Enum | DefKind::Union) {
             let def_path = tcx.def_path_str(def_id);
-            
+
             // Try to get type size
             let size_bytes = extract_type_size(tcx, def_id);
-            
+
             // Compute is_zst from size
             let is_zst = size_bytes == Some(0);
-            
+
             // Extract Send/Sync trait implementation status
             let is_send = extract_type_is_send(tcx, def_id);
             let is_sync = extract_type_is_sync(tcx, def_id);
-            
+
             type_metadata.push(HirTypeMetadata {
                 type_name: def_path,
                 size_bytes,
@@ -800,16 +791,16 @@ fn collect_attributes(tcx: TyCtxt<'_>, def_id: DefId) -> Vec<String> {
 fn extract_type_size<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> Option<usize> {
     // Get the type
     let ty = tcx.type_of(def_id).instantiate_identity();
-    
+
     // Create TypingEnv from def_id - the API takes a def_id, not a param_env
     let typing_env = rustc_middle::ty::TypingEnv::non_body_analysis(tcx, def_id);
-    
+
     // Create the query input
     let query_input = rustc_middle::ty::PseudoCanonicalInput {
         typing_env,
         value: ty,
     };
-    
+
     match tcx.layout_of(query_input) {
         Ok(layout) => Some(layout.size.bytes() as usize),
         Err(_) => None,
@@ -827,24 +818,24 @@ fn type_implements_trait<'tcx>(
     use rustc_infer::traits::{Obligation, ObligationCause};
     use rustc_middle::ty::{TypeVisitableExt, Upcast};
     use rustc_trait_selection::traits::query::evaluate_obligation::InferCtxtExt;
-    
+
     // Get the type
     let ty = tcx.type_of(def_id).instantiate_identity();
-    
+
     // Skip types with unsubstituted generics - we can't evaluate trait bounds for them
     if ty.has_param() {
         return None;
     }
-    
+
     // Create TypingEnv for non-body analysis
     let typing_env = ty::TypingEnv::non_body_analysis(tcx, def_id);
-    
+
     // Build inference context
     let (infcx, param_env) = tcx.infer_ctxt().build_with_typing_env(typing_env);
-    
+
     // Create the trait reference: ty: Trait
     let trait_ref = ty::TraitRef::new(tcx, trait_def_id, [ty]);
-    
+
     // Create the obligation
     let obligation = Obligation {
         cause: ObligationCause::dummy(),
@@ -852,7 +843,7 @@ fn type_implements_trait<'tcx>(
         recursion_depth: 0,
         predicate: trait_ref.upcast(tcx),
     };
-    
+
     // Evaluate the obligation
     // EvaluatedToOk or EvaluatedToOkModuloRegions means it definitely implements
     // EvaluatedToErr means it definitely does not implement
@@ -951,7 +942,8 @@ fn classify_crate_item<'tcx>(
     item: &'tcx hir::Item<'tcx>,
 ) -> HirItemKind {
     // Use opt_item_name because some items (like Use statements) don't have names
-    let name = tcx.opt_item_name(def_id)
+    let name = tcx
+        .opt_item_name(def_id)
         .map(|sym| sym.to_string())
         .unwrap_or_else(|| String::from(""));
     match &item.kind {
@@ -1011,7 +1003,8 @@ fn classify_crate_item<'tcx>(
 }
 
 fn classify_impl_item(tcx: TyCtxt<'_>, def_id: DefId, item: &hir::ImplItem<'_>) -> HirItemKind {
-    let name = tcx.opt_item_name(def_id)
+    let name = tcx
+        .opt_item_name(def_id)
         .map(|sym| sym.to_string())
         .unwrap_or_else(|| String::from(""));
     match item.kind {
@@ -1031,7 +1024,8 @@ fn classify_impl_item(tcx: TyCtxt<'_>, def_id: DefId, item: &hir::ImplItem<'_>) 
 }
 
 fn classify_trait_item(tcx: TyCtxt<'_>, def_id: DefId, item: &hir::TraitItem<'_>) -> HirItemKind {
-    let name = tcx.opt_item_name(def_id)
+    let name = tcx
+        .opt_item_name(def_id)
         .map(|sym| sym.to_string())
         .unwrap_or_else(|| String::from(""));
     match item.kind {
@@ -1053,7 +1047,8 @@ fn classify_foreign_item(
     def_id: DefId,
     item: &hir::ForeignItem<'_>,
 ) -> HirItemKind {
-    let name = tcx.opt_item_name(def_id)
+    let name = tcx
+        .opt_item_name(def_id)
         .map(|sym| sym.to_string())
         .unwrap_or_else(|| String::from(""));
     match item.kind {
@@ -1131,7 +1126,8 @@ fn trait_owner_info(tcx: TyCtxt<'_>, def_id: DefId, provided: bool) -> HirFuncti
     let trait_def_id = tcx
         .opt_parent(def_id)
         .expect("trait item without parent trait");
-    let trait_name = tcx.opt_item_name(trait_def_id)
+    let trait_name = tcx
+        .opt_item_name(trait_def_id)
         .map(|sym| sym.to_string())
         .unwrap_or_else(|| String::from(""));
     HirFunctionOwner::Trait {

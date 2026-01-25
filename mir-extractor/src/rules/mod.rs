@@ -17,92 +17,91 @@
 //! - `advanced_utils`: Shared utilities for advanced dataflow rules
 //! - `utils`: Shared utilities for rule implementations
 
-pub mod crypto;
-pub mod memory;
-pub mod injection;
-pub mod concurrency;
-pub mod ffi;
-pub mod input;
-pub mod resource;
-pub mod code_quality;
-pub mod web;
-pub mod supply_chain;
-pub mod advanced_memory;
-pub mod advanced_input;
 pub mod advanced_async;
+pub mod advanced_input;
+pub mod advanced_memory;
 pub mod advanced_utils;
+pub mod code_quality;
+pub mod concurrency;
+pub mod crypto;
+pub mod ffi;
+pub mod injection;
+pub mod input;
+pub mod memory;
+pub mod resource;
+pub mod supply_chain;
 pub mod utils;
+pub mod web;
 
 // Re-export registration functions
-pub use crypto::register_crypto_rules;
-pub use memory::register_memory_rules;
-pub use injection::register_injection_rules;
-pub use concurrency::register_concurrency_rules;
-pub use ffi::register_ffi_rules;
-pub use input::register_input_rules;
-pub use resource::register_resource_rules;
-pub use code_quality::register_code_quality_rules;
-pub use web::register_web_rules;
-pub use supply_chain::register_supply_chain_rules;
-pub use advanced_memory::register_advanced_memory_rules;
-pub use advanced_input::register_advanced_input_rules;
 pub use advanced_async::register_advanced_async_rules;
+pub use advanced_input::register_advanced_input_rules;
+pub use advanced_memory::register_advanced_memory_rules;
+pub use code_quality::register_code_quality_rules;
+pub use concurrency::register_concurrency_rules;
+pub use crypto::register_crypto_rules;
+pub use ffi::register_ffi_rules;
+pub use injection::register_injection_rules;
+pub use input::register_input_rules;
+pub use memory::register_memory_rules;
+pub use resource::register_resource_rules;
+pub use supply_chain::register_supply_chain_rules;
+pub use web::register_web_rules;
 
 // Re-export rule structs for direct access
-pub use crypto::{
-    InsecureMd5Rule, InsecureSha1Rule, WeakHashingExtendedRule, HardcodedCryptoKeyRule,
-    TimingAttackRule, WeakCipherRule, PredictableRandomnessRule, ModuloBiasRandomRule,
+pub use advanced_async::{
+    AwaitSpanGuardRule, TemplateInjectionRule, UnsafeSendAcrossAsyncBoundaryRule,
 };
-pub use memory::{
-    BoxIntoRawRule, TransmuteRule, UnsafeUsageRule, NullPointerTransmuteRule,
-    ZSTPointerArithmeticRule, VecSetLenRule, MaybeUninitAssumeInitRule, MemUninitZeroedRule,
-    NonNullNewUncheckedRule, MemForgetGuardRule, UnsafeCellAliasingRule, LazyInitPanicPoisonRule,
-};
-pub use concurrency::{
-    NonThreadSafeTestRule, BlockingSleepInAsyncRule, BlockingOpsInAsyncRule,
-    MutexGuardAcrossAwaitRule, UnderscoreLockGuardRule, BroadcastUnsyncPayloadRule,
-    PanicInDropRule, UnwrapInPollRule, UnsafeSendSyncBoundsRule,
-    AsyncDropCorrectnessRule, PanicInDropImplRule, SpawnedTaskPanicRule,
-};
-pub use injection::{
-    UntrustedEnvInputRule, CommandInjectionRiskRule, CommandArgConcatenationRule,
-    LogInjectionRule, RegexInjectionRule, UncheckedIndexRule, PathTraversalRule,
-    SsrfRule, SqlInjectionRule, InterProceduralCommandInjectionRule,
-};
-pub use ffi::{
-    AllocatorMismatchFfiRule, UnsafeFfiPointerReturnRule, PackedFieldReferenceRule,
-    UnsafeCStringPointerRule, FfiBufferLeakRule, WasmHostFunctionTrustRule, WasmCapabilityLeakRule,
-};
-pub use input::{
-    CleartextEnvVarRule, EnvVarLiteralRule, InvisibleUnicodeRule, UntrimmedStdinRule,
-    InfiniteIteratorRule, DivisionByUntrustedRule, InsecureYamlDeserializationRule,
-    UnboundedReadRule, InsecureJsonTomlDeserializationRule,
-};
-pub use resource::{
-    SpawnedChildNoWaitRule, PermissionsSetReadonlyFalseRule, WorldWritableModeRule,
-    OpenOptionsMissingTruncateRule, UnixPermissionsNotOctalRule, OpenOptionsInconsistentFlagsRule,
-    AbsolutePathInJoinRule,
-};
-pub use code_quality::{
-    CrateWideAllowRule, MisorderedAssertEqRule, TryIoResultRule, LocalRefCellRule,
-    UnnecessaryBorrowMutRule, DeadStoreArrayRule, OverscopedAllowRule, CommentedOutCodeRule,
-    UnwrapInHotPathRule,
-};
-pub use web::{
-    NonHttpsUrlRule, DangerAcceptInvalidCertRule, OpensslVerifyNoneRule,
-    CookieSecureAttributeRule, CorsWildcardRule, ConnectionStringPasswordRule,
-    PasswordFieldMaskingRule, CleartextLoggingRule,
-};
-pub use supply_chain::{
-    RustsecUnsoundDependencyRule, YankedCrateRule, CargoAuditableMetadataRule,
+pub use advanced_input::{
+    InsecureBinaryDeserializationRule, IntegerOverflowRule, RegexBacktrackingDosRule,
+    UncontrolledAllocationSizeRule,
 };
 pub use advanced_memory::DanglingPointerUseAfterFreeRule;
-pub use advanced_input::{
-    InsecureBinaryDeserializationRule, RegexBacktrackingDosRule,
-    UncontrolledAllocationSizeRule, IntegerOverflowRule,
+pub use code_quality::{
+    CommentedOutCodeRule, CrateWideAllowRule, DeadStoreArrayRule, LocalRefCellRule,
+    MisorderedAssertEqRule, OverscopedAllowRule, TryIoResultRule, UnnecessaryBorrowMutRule,
+    UnwrapInHotPathRule,
 };
-pub use advanced_async::{
-    TemplateInjectionRule, UnsafeSendAcrossAsyncBoundaryRule, AwaitSpanGuardRule,
+pub use concurrency::{
+    AsyncDropCorrectnessRule, BlockingOpsInAsyncRule, BlockingSleepInAsyncRule,
+    BroadcastUnsyncPayloadRule, MutexGuardAcrossAwaitRule, NonThreadSafeTestRule,
+    PanicInDropImplRule, PanicInDropRule, SpawnedTaskPanicRule, UnderscoreLockGuardRule,
+    UnsafeSendSyncBoundsRule, UnwrapInPollRule,
+};
+pub use crypto::{
+    HardcodedCryptoKeyRule, InsecureMd5Rule, InsecureSha1Rule, ModuloBiasRandomRule,
+    PredictableRandomnessRule, TimingAttackRule, WeakCipherRule, WeakHashingExtendedRule,
+};
+pub use ffi::{
+    AllocatorMismatchFfiRule, FfiBufferLeakRule, PackedFieldReferenceRule,
+    UnsafeCStringPointerRule, UnsafeFfiPointerReturnRule, WasmCapabilityLeakRule,
+    WasmHostFunctionTrustRule,
+};
+pub use injection::{
+    CommandArgConcatenationRule, CommandInjectionRiskRule, InterProceduralCommandInjectionRule,
+    LogInjectionRule, PathTraversalRule, RegexInjectionRule, SqlInjectionRule, SsrfRule,
+    UncheckedIndexRule, UntrustedEnvInputRule,
+};
+pub use input::{
+    CleartextEnvVarRule, DivisionByUntrustedRule, EnvVarLiteralRule, InfiniteIteratorRule,
+    InsecureJsonTomlDeserializationRule, InsecureYamlDeserializationRule, InvisibleUnicodeRule,
+    UnboundedReadRule, UntrimmedStdinRule,
+};
+pub use memory::{
+    BoxIntoRawRule, LazyInitPanicPoisonRule, MaybeUninitAssumeInitRule, MemForgetGuardRule,
+    MemUninitZeroedRule, NonNullNewUncheckedRule, NullPointerTransmuteRule, TransmuteRule,
+    UnsafeCellAliasingRule, UnsafeUsageRule, VecSetLenRule, ZSTPointerArithmeticRule,
+};
+pub use resource::{
+    AbsolutePathInJoinRule, OpenOptionsInconsistentFlagsRule, OpenOptionsMissingTruncateRule,
+    PermissionsSetReadonlyFalseRule, SpawnedChildNoWaitRule, UnixPermissionsNotOctalRule,
+    WorldWritableModeRule,
+};
+pub use supply_chain::{CargoAuditableMetadataRule, RustsecUnsoundDependencyRule, YankedCrateRule};
+pub use web::{
+    CleartextLoggingRule, ConnectionStringPasswordRule, CookieSecureAttributeRule,
+    CorsWildcardRule, DangerAcceptInvalidCertRule, NonHttpsUrlRule, OpensslVerifyNoneRule,
+    PasswordFieldMaskingRule,
 };
 
 use crate::{MirFunction, MirPackage};

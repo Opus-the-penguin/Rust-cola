@@ -14,7 +14,7 @@ use std::thread;
 pub fn bad_spawn_with_local_ref() {
     let data = vec![1, 2, 3];
     let data_ref = &data;
-    
+
     // This closure captures data_ref but thread requires 'static
     // Rust's borrow checker catches this, but unsafe code can bypass
     let _ = move || {
@@ -35,16 +35,16 @@ pub fn bad_transmute_closure_lifetime<'a>(data: &'a [u8]) -> Box<dyn Fn() -> usi
 pub fn bad_raw_pointer_closure_escape() {
     let local = String::from("hello");
     let ptr: *const String = &local;
-    
+
     // Closure captures raw pointer and might outlive local
     // Note: This is unsafe pattern - raw pointers aren't Send
     let closure: Box<dyn Fn() + 'static> = Box::new(move || {
-        unsafe { 
-            let s: &String = &*ptr;  // Explicit ref to avoid autoref lint
-            println!("{}", s.len()); 
+        unsafe {
+            let s: &String = &*ptr; // Explicit ref to avoid autoref lint
+            println!("{}", s.len());
         }
     });
-    
+
     // If this closure escapes (e.g., stored, spawned), UAF occurs
     drop(closure);
 }
@@ -58,13 +58,13 @@ struct CallbackHolder {
 pub fn bad_store_ref_capturing_closure() {
     let data = vec![1, 2, 3, 4];
     let data_ptr: *const Vec<i32> = &data;
-    
+
     let _holder = CallbackHolder {
         callback: Box::new(move || {
             // Uses raw pointer to bypass lifetime check
-            unsafe { 
-                let v: &Vec<i32> = &*data_ptr;  // Explicit ref
-                println!("{:?}", v); 
+            unsafe {
+                let v: &Vec<i32> = &*data_ptr; // Explicit ref
+                println!("{:?}", v);
             }
         }),
     };
@@ -85,7 +85,7 @@ pub fn bad_fnonce_transmute<'a>(s: &'a str) -> Box<dyn FnOnce() -> &'static str>
 pub fn good_clone_into_closure() {
     let data = vec![1, 2, 3];
     let data_clone = data.clone();
-    
+
     let _handle = thread::spawn(move || {
         println!("Data: {:?}", data_clone);
     });
@@ -94,10 +94,10 @@ pub fn good_clone_into_closure() {
 /// GOOD: Use Arc for shared ownership across threads
 pub fn good_arc_for_sharing() {
     use std::sync::Arc;
-    
+
     let data = Arc::new(vec![1, 2, 3]);
     let data_clone = Arc::clone(&data);
-    
+
     let _handle = thread::spawn(move || {
         println!("Data: {:?}", data_clone);
     });
@@ -106,7 +106,7 @@ pub fn good_arc_for_sharing() {
 /// GOOD: Scoped threads that don't require 'static
 pub fn good_scoped_threads() {
     let data = vec![1, 2, 3];
-    
+
     thread::scope(|s| {
         s.spawn(|| {
             println!("Data: {:?}", data);

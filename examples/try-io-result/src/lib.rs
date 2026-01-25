@@ -12,9 +12,9 @@ use std::path::Path;
 
 /// ❌ PROBLEMATIC: Using ? loses file path context when errors occur
 pub fn read_config_file(path: &Path) -> io::Result<String> {
-    let mut file = File::open(path)?;  // If this fails, we don't know which file!
+    let mut file = File::open(path)?; // If this fails, we don't know which file!
     let mut contents = String::new();
-    file.read_to_string(&mut contents)?;  // Which operation failed?
+    file.read_to_string(&mut contents)?; // Which operation failed?
     Ok(contents)
 }
 
@@ -47,11 +47,11 @@ pub fn process_directory(dir: &Path) -> io::Result<Vec<String>> {
 pub fn read_config_with_context(path: &Path) -> io::Result<String> {
     let mut file = File::open(path)
         .map_err(|e| io::Error::new(e.kind(), format!("Failed to open {:?}: {}", path, e)))?;
-    
+
     let mut contents = String::new();
     file.read_to_string(&mut contents)
         .map_err(|e| io::Error::new(e.kind(), format!("Failed to read {:?}: {}", path, e)))?;
-    
+
     Ok(contents)
 }
 
@@ -67,13 +67,14 @@ pub fn read_config_custom_error(path: &Path) -> Result<String, ConfigError> {
         path: path.display().to_string(),
         source: e,
     })?;
-    
+
     let mut contents = String::new();
-    file.read_to_string(&mut contents).map_err(|e| ConfigError::Io {
-        path: path.display().to_string(),
-        source: e,
-    })?;
-    
+    file.read_to_string(&mut contents)
+        .map_err(|e| ConfigError::Io {
+            path: path.display().to_string(),
+            source: e,
+        })?;
+
     Ok(contents)
 }
 

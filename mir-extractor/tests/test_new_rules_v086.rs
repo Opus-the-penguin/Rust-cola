@@ -4,7 +4,7 @@
 //! RUSTCOLA124: PanicInDropImplRule
 //! RUSTCOLA125: SpawnedTaskPanicRule
 
-use mir_extractor::rules::{concurrency, code_quality};
+use mir_extractor::rules::{code_quality, concurrency};
 use mir_extractor::Rule;
 
 // ============================================================================

@@ -122,7 +122,12 @@ pub fn good_normal_struct_reference(s: &NormalStruct) -> &u32 {
 
 /// GOOD: Using read_unaligned with raw pointer
 pub fn good_read_unaligned(data: &PackedData) -> u64 {
-    unsafe { (data as *const PackedData as *const u8).add(5).cast::<u64>().read_unaligned() }
+    unsafe {
+        (data as *const PackedData as *const u8)
+            .add(5)
+            .cast::<u64>()
+            .read_unaligned()
+    }
 }
 
 fn some_function(_: &u32) -> *const u32 {
@@ -136,7 +141,7 @@ mod tests {
     #[test]
     fn test_safe_access() {
         let mut data = PackedData { x: 1, y: 2, z: 3 };
-        
+
         // These should work safely
         assert_eq!(good_addr_of_packed_field(&data), 2);
         good_addr_of_mut_packed_field(&mut data);

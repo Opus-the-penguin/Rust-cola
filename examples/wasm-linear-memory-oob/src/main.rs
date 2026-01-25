@@ -94,9 +94,9 @@ const MAX_BUFFER_SIZE: usize = 4096;
 pub extern "C" fn good_bounded_access(ptr: *mut u8, len: usize) -> i32 {
     // Validate length before access
     if len > MAX_BUFFER_SIZE {
-        return -1;  // Error: length too large
+        return -1; // Error: length too large
     }
-    
+
     unsafe {
         let slice = std::slice::from_raw_parts_mut(ptr, len);
         for byte in slice.iter_mut() {
@@ -111,9 +111,9 @@ pub extern "C" fn good_bounded_access(ptr: *mut u8, len: usize) -> i32 {
 pub extern "C" fn good_checked_index(arr: *const i32, arr_len: usize, index: usize) -> i32 {
     // Bounds check before access
     if index >= arr_len {
-        return 0;  // Return default on OOB
+        return 0; // Return default on OOB
     }
-    
+
     unsafe { *arr.add(index) }
 }
 
@@ -130,11 +130,11 @@ pub extern "C" fn good_validated_copy(
     if copy_len > src_len || copy_len > dst_len {
         return -1;
     }
-    
+
     if src.is_null() || dst.is_null() {
         return -2;
     }
-    
+
     unsafe {
         std::ptr::copy_nonoverlapping(src, dst, copy_len);
     }
@@ -146,10 +146,8 @@ pub extern "C" fn good_validated_copy(
 pub extern "C" fn good_checked_offset(base: *const u8, base_len: usize, offset: usize) -> i32 {
     // Use checked arithmetic
     match offset.checked_add(1) {
-        Some(end) if end <= base_len => {
-            unsafe { *base.add(offset) as i32 }
-        }
-        _ => -1,  // Offset would overflow or exceed bounds
+        Some(end) if end <= base_len => unsafe { *base.add(offset) as i32 },
+        _ => -1, // Offset would overflow or exceed bounds
     }
 }
 

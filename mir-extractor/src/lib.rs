@@ -39,12 +39,12 @@ pub mod dataflow;
 mod hir;
 #[cfg(feature = "hir-driver")]
 mod hir_query;
+pub mod interprocedural;
+pub mod memory_profiler;
+mod prototypes;
+pub mod rules;
 #[cfg(feature = "hir-driver")]
 mod type_analyzer;
-mod prototypes;
-pub mod interprocedural;
-pub mod rules;
-pub mod memory_profiler;
 
 pub use dataflow::{Assignment, MirDataflow};
 #[cfg(feature = "hir-driver")]
@@ -54,14 +54,14 @@ pub use hir::{
 };
 #[cfg(feature = "hir-driver")]
 pub use hir_query::HirQuery;
-#[cfg(feature = "hir-driver")]
-pub use type_analyzer::{TypeAnalyzer, CacheStats};
 pub use prototypes::{
     detect_broadcast_unsync_payloads, detect_command_invocations,
     detect_content_length_allocations, detect_openssl_verify_none, detect_truncating_len_casts,
     detect_unbounded_allocations, BroadcastUnsyncUsage, CommandInvocation, ContentLengthAllocation,
     LengthTruncationCast, OpensslVerifyNoneInvocation,
 };
+#[cfg(feature = "hir-driver")]
+pub use type_analyzer::{CacheStats, TypeAnalyzer};
 
 #[cfg(feature = "hir-driver")]
 pub const HIR_CAPTURE_ICE_LOG_PREFIX: &str = "rust-cola: rustc ICE while capturing HIR";
@@ -89,17 +89,17 @@ impl Severity {
             Severity::Critical => "error",
         }
     }
-    
+
     /// Get a human-readable label with emoji
     pub fn label(&self) -> &'static str {
         match self {
             Severity::Low => "🟢 Low",
-            Severity::Medium => "🟡 Medium", 
+            Severity::Medium => "🟡 Medium",
             Severity::High => "🟠 High",
             Severity::Critical => "🔴 Critical",
         }
     }
-    
+
     /// Get CVSS score range for this severity
     pub fn cvss_range(&self) -> &'static str {
         match self {
@@ -168,7 +168,7 @@ impl AttackVector {
             AttackVector::Physical => 0.20,
         }
     }
-    
+
     pub fn label(&self) -> &'static str {
         match self {
             AttackVector::Network => "Network",
@@ -198,7 +198,7 @@ impl AttackComplexity {
             AttackComplexity::High => 0.44,
         }
     }
-    
+
     pub fn label(&self) -> &'static str {
         match self {
             AttackComplexity::Low => "Low",
@@ -229,7 +229,7 @@ impl PrivilegesRequired {
             PrivilegesRequired::High => 0.27,
         }
     }
-    
+
     pub fn label(&self) -> &'static str {
         match self {
             PrivilegesRequired::None => "None",
@@ -258,7 +258,7 @@ impl UserInteraction {
             UserInteraction::Required => 0.62,
         }
     }
-    
+
     pub fn label(&self) -> &'static str {
         match self {
             UserInteraction::None => "None",
@@ -291,7 +291,7 @@ impl Exploitability {
             user_interaction,
         }
     }
-    
+
     /// Network attack, low complexity, no auth, no user interaction (worst case)
     pub fn network_unauthenticated() -> Self {
         Self {
@@ -301,7 +301,7 @@ impl Exploitability {
             user_interaction: UserInteraction::None,
         }
     }
-    
+
     /// Local attack requiring some privileges
     pub fn local_privileged() -> Self {
         Self {
@@ -311,7 +311,7 @@ impl Exploitability {
             user_interaction: UserInteraction::None,
         }
     }
-    
+
     /// Compute exploitability sub-score (0.0 - 3.9)
     /// Based on CVSS v3.1 formula: 8.22 × AV × AC × PR × UI
     pub fn score(&self) -> f32 {
@@ -320,7 +320,7 @@ impl Exploitability {
             * self.privileges_required.score()
             * self.user_interaction.score()
     }
-    
+
     /// Get a human-readable summary
     pub fn summary(&self) -> String {
         format!(
@@ -455,31 +455,31 @@ impl Finding {
             exploitability_score,
         }
     }
-    
+
     /// Set confidence level
     pub fn with_confidence(mut self, confidence: Confidence) -> Self {
         self.confidence = confidence;
         self
     }
-    
+
     /// Set CWE identifiers
     pub fn with_cwe(mut self, cwe_ids: Vec<String>) -> Self {
         self.cwe_ids = cwe_ids;
         self
     }
-    
+
     /// Set fix suggestion
     pub fn with_fix(mut self, fix: impl Into<String>) -> Self {
         self.fix_suggestion = Some(fix.into());
         self
     }
-    
+
     /// Set code snippet
     pub fn with_snippet(mut self, snippet: impl Into<String>) -> Self {
         self.code_snippet = Some(snippet.into());
         self
     }
-    
+
     /// Set exploitability metrics and compute score
     pub fn with_exploitability(mut self, exploitability: Exploitability) -> Self {
         self.exploitability = exploitability;
@@ -563,21 +563,21 @@ impl SourceFile {
         let path = path.as_ref().to_path_buf();
         let content = fs::read_to_string(&path)
             .with_context(|| format!("Failed to read source file: {}", path.display()))?;
-        
+
         let syntax_tree = syn::parse_file(&content).ok();
-        
+
         Ok(Self {
             path,
             content,
             syntax_tree,
         })
     }
-    
+
     /// Get all source files in a crate recursively
     pub fn collect_crate_sources(crate_root: impl AsRef<Path>) -> Result<Vec<Self>> {
         let mut sources = Vec::new();
         let crate_root = crate_root.as_ref();
-        
+
         for entry in WalkDir::new(crate_root)
             .into_iter()
             .filter_entry(|e| {
@@ -597,7 +597,7 @@ impl SourceFile {
                 }
             }
         }
-        
+
         Ok(sources)
     }
 }
@@ -635,9 +635,9 @@ pub struct AnalysisResult {
 
 pub trait Rule: Send + Sync {
     fn metadata(&self) -> &RuleMetadata;
-    
+
     /// Evaluate this rule against a MIR package.
-    /// 
+    ///
     /// The optional `inter_analysis` parameter provides shared interprocedural
     /// analysis (call graph, function summaries) for rules that need cross-function
     /// taint tracking. Rules that don't need it should ignore the parameter.
@@ -777,7 +777,7 @@ fn line_contains_sha1_usage(line: &str) -> bool {
 
 fn line_contains_weak_hash_extended(line: &str) -> bool {
     let lower = line.to_lowercase();
-    
+
     // Skip const string assignments and hex dumps entirely
     // This catches MIR patterns like: _1 = [const "error message with adler32 or crc"]
     // These are often error messages or documentation, not actual weak hash usage
@@ -788,141 +788,180 @@ fn line_contains_weak_hash_extended(line: &str) -> bool {
     if lower.starts_with("0x") || (lower.contains("0x") && lower.contains("│")) {
         return false;
     }
-    
+
     // RIPEMD family (all variants are deprecated)
     if lower.contains("ripemd") {
-        if lower.contains("ripemd::") 
-            || lower.contains("::ripemd") 
-            || lower.contains("ripemd128") 
+        if lower.contains("ripemd::")
+            || lower.contains("::ripemd")
+            || lower.contains("ripemd128")
             || lower.contains("ripemd160")
             || lower.contains("ripemd256")
-            || lower.contains("ripemd320") {
+            || lower.contains("ripemd320")
+        {
             return true;
         }
     }
-    
+
     // CRC family (non-cryptographic checksums)
     if lower.contains("crc") {
         // Be specific to avoid false positives on words containing "crc"
-        if lower.contains("crc::") 
-            || lower.contains("::crc") 
+        if lower.contains("crc::")
+            || lower.contains("::crc")
             || lower.contains("crc32")
             || lower.contains("crc_32")
             || lower.contains("crc16")
             || lower.contains("crc_16")
             || lower.contains("crc64")
-            || lower.contains("crc_64") {
+            || lower.contains("crc_64")
+        {
             return true;
         }
     }
-    
+
     // Adler32 (non-cryptographic checksum)
-    if lower.contains("adler") && (lower.contains("adler::") || lower.contains("::adler") || lower.contains("adler32")) {
+    if lower.contains("adler")
+        && (lower.contains("adler::") || lower.contains("::adler") || lower.contains("adler32"))
+    {
         return true;
     }
-    
+
     false
 }
 
 fn looks_like_null_pointer_transmute(line: &str) -> bool {
     let lower = line.to_lowercase();
-    
+
     // Must contain transmute
     if !lower.contains("transmute") {
         return false;
     }
-    
+
     // Skip internal compiler transmute casts (shown as "(Transmute)")
     // These are type conversions like Unique<T> → NonNull<T>, not user-written transmute calls
     if lower.contains("(transmute)") {
         return false;
     }
-    
+
     // Pattern 1: transmute(0) or transmute(0usize) - transmuting zero
     if lower.contains("transmute(const 0") || lower.contains("transmute(0_") {
         return true;
     }
-    
+
     // Pattern 2: transmute(std::ptr::null()) or transmute(std::ptr::null_mut())
-    if (lower.contains("std::ptr::null") || lower.contains("::ptr::null")) 
-        && lower.contains("transmute") {
+    if (lower.contains("std::ptr::null") || lower.contains("::ptr::null"))
+        && lower.contains("transmute")
+    {
         return true;
     }
-    
+
     // Pattern 3: Look for transmute in context with "null" keyword
     if lower.contains("null") && lower.contains("transmute") {
         return true;
     }
-    
+
     false
 }
 
 fn looks_like_zst_pointer_arithmetic(line: &str) -> bool {
     let lower = line.to_lowercase();
-    
+
     // Pointer arithmetic methods to detect
-    let arithmetic_methods = ["offset", "add", "sub", "wrapping_offset", "wrapping_add", "wrapping_sub", "offset_from"];
-    
+    let arithmetic_methods = [
+        "offset",
+        "add",
+        "sub",
+        "wrapping_offset",
+        "wrapping_add",
+        "wrapping_sub",
+        "offset_from",
+    ];
+
     // Must have pointer arithmetic
-    let has_arithmetic = arithmetic_methods.iter().any(|method| lower.contains(method));
+    let has_arithmetic = arithmetic_methods
+        .iter()
+        .any(|method| lower.contains(method));
     if !has_arithmetic {
         return false;
     }
-    
+
     // Enhanced zero-sized type detection
-    
+
     // 1. Unit type: *const () or *mut ()
     if (lower.contains("*const ()") || lower.contains("*mut ()")) && has_arithmetic {
         return true;
     }
-    
+
     // 2. PhantomData (common marker types)
     if lower.contains("phantomdata") && has_arithmetic {
         return true;
     }
-    
+
     // 3. PhantomPinned (another std marker type)
     if lower.contains("phantompinned") && has_arithmetic {
         return true;
     }
-    
+
     // 4. Full paths to marker types
-    if (lower.contains("std::marker::phantomdata") 
+    if (lower.contains("std::marker::phantomdata")
         || lower.contains("::marker::phantomdata")
-        || lower.contains("core::marker::phantomdata")) && has_arithmetic {
+        || lower.contains("core::marker::phantomdata"))
+        && has_arithmetic
+    {
         return true;
     }
-    
+
     if (lower.contains("std::marker::phantompinned")
-        || lower.contains("::marker::phantompinned") 
-        || lower.contains("core::marker::phantompinned")) && has_arithmetic {
+        || lower.contains("::marker::phantompinned")
+        || lower.contains("core::marker::phantompinned"))
+        && has_arithmetic
+    {
         return true;
     }
-    
+
     // 5. Empty tuple/array patterns
     if (lower.contains("*const [(); 0]") || lower.contains("*mut [(); 0]")) && has_arithmetic {
         return true;
     }
-    
+
     // 6. Check for explicit size annotations in comments or variable names
     // Sometimes ZST status is indicated in naming: ptr_zst, zst_ptr, etc.
     if (lower.contains("_zst") || lower.contains("zst_")) && has_arithmetic {
         return true;
     }
-    
+
     // 7. Heuristic: Detect custom empty types by naming convention
     // Types with names like "EmptyStruct", "EmptyEnum", "UnitType", etc.
     // These are commonly user-defined ZSTs
     let empty_type_patterns = [
-        "emptystruct", "emptyenum", "emptytype", "empty_struct", "empty_enum", "empty_type",
-        "unitstruct", "unitenum", "unittype", "unit_struct", "unit_enum", "unit_type",
-        "markerstruct", "markerenum", "markertype", "marker_struct", "marker_enum", "marker_type",
-        "zststruct", "zstenum", "zsttype", "zst_struct", "zst_enum", "zst_type",
+        "emptystruct",
+        "emptyenum",
+        "emptytype",
+        "empty_struct",
+        "empty_enum",
+        "empty_type",
+        "unitstruct",
+        "unitenum",
+        "unittype",
+        "unit_struct",
+        "unit_enum",
+        "unit_type",
+        "markerstruct",
+        "markerenum",
+        "markertype",
+        "marker_struct",
+        "marker_enum",
+        "marker_type",
+        "zststruct",
+        "zstenum",
+        "zsttype",
+        "zst_struct",
+        "zst_enum",
+        "zst_type",
     ];
     if empty_type_patterns.iter().any(|p| lower.contains(p)) && has_arithmetic {
         return true;
     }
-    
+
     // 8. Detect pointer types in impl blocks: <impl *const SomeType>::add(...)
     // Extract the type from the pattern and check if it looks like a ZST
     // Pattern: const_ptr::<impl *const TypeName>::method or const_ptr::<impl *mut TypeName>::method
@@ -931,8 +970,11 @@ fn looks_like_zst_pointer_arithmetic(line: &str) -> bool {
         if let Some(impl_end) = lower[type_start..].find('>') {
             let type_name = &lower[type_start..type_start + impl_end];
             // Check if the extracted type name matches any ZST naming patterns
-            if type_name.contains("empty") || type_name.contains("unit") || 
-               type_name.contains("marker") || type_name.contains("zst") {
+            if type_name.contains("empty")
+                || type_name.contains("unit")
+                || type_name.contains("marker")
+                || type_name.contains("zst")
+            {
                 return true;
             }
         }
@@ -941,35 +983,38 @@ fn looks_like_zst_pointer_arithmetic(line: &str) -> bool {
         let type_start = impl_start + "<impl *mut ".len();
         if let Some(impl_end) = lower[type_start..].find('>') {
             let type_name = &lower[type_start..type_start + impl_end];
-            if type_name.contains("empty") || type_name.contains("unit") || 
-               type_name.contains("marker") || type_name.contains("zst") {
+            if type_name.contains("empty")
+                || type_name.contains("unit")
+                || type_name.contains("marker")
+                || type_name.contains("zst")
+            {
                 return true;
             }
         }
     }
-    
+
     false
 }
 
 #[allow(dead_code)]
 fn looks_like_cleartext_env_var(line: &str) -> bool {
     let lower = line.to_lowercase();
-    
+
     // Must contain set_var function call (various forms in MIR)
     if !lower.contains("set_var") {
         return false;
     }
-    
+
     // Must look like an environment variable setting
     // In MIR this appears as: std::env::set_var::<&str, &str>
     if !lower.contains("std::env") && !lower.contains("::env::") {
         return false;
     }
-    
+
     // Sensitive environment variable name patterns
     let sensitive_names = [
         "password",
-        "passwd", 
+        "passwd",
         "pwd",
         "secret",
         "token",
@@ -986,7 +1031,7 @@ fn looks_like_cleartext_env_var(line: &str) -> bool {
         "db_password",
         "database_password",
     ];
-    
+
     // Check if any sensitive name appears in the line or nearby const string
     sensitive_names.iter().any(|name| lower.contains(name))
 }
@@ -1053,7 +1098,7 @@ fn strip_comments(line: &str, in_block_comment: &mut bool) -> String {
 #[derive(Debug, Clone, Deserialize)]
 pub struct SuppressionRule {
     pub rule_id: String,
-    pub file: Option<String>, // Glob pattern
+    pub file: Option<String>,     // Glob pattern
     pub function: Option<String>, // Function name pattern
     pub reason: Option<String>,
 }
@@ -1066,8 +1111,8 @@ pub struct RuleEngine {
 
 impl RuleEngine {
     pub fn new() -> Self {
-        Self { 
-            rules: Vec::new(), 
+        Self {
+            rules: Vec::new(),
             suppressions: Vec::new(),
             ipa_config: interprocedural::IpaConfig::default(),
         }
@@ -1078,7 +1123,7 @@ impl RuleEngine {
         register_builtin_rules(&mut engine);
         engine
     }
-    
+
     /// Set the inter-procedural analysis configuration
     pub fn set_ipa_config(&mut self, config: interprocedural::IpaConfig) {
         self.ipa_config = config;
@@ -1099,14 +1144,14 @@ impl RuleEngine {
         // reducing memory usage significantly for large codebases.
         //
         // Memory usage is bounded by the limits in IpaConfig.
-        // 
+        //
         // For crates exceeding the threshold, IPA is skipped but intra-procedural
         // analysis still runs for all rules.
-        
+
         let inter_analysis = if package.functions.len() <= self.ipa_config.max_functions_for_ipa {
             memory_profiler::checkpoint("IPA: Starting analysis");
             let _scope = memory_profiler::MemoryScope::new("IPA analysis");
-            
+
             interprocedural::InterProceduralAnalysis::with_config(package, self.ipa_config.clone())
                 .and_then(|mut analysis| {
                     memory_profiler::checkpoint("IPA: Call graph built");
@@ -1126,34 +1171,40 @@ impl RuleEngine {
         };
 
         memory_profiler::checkpoint("Starting rule evaluation");
-        
+
         for (i, rule) in self.rules.iter().enumerate() {
             let metadata = rule.metadata().clone();
             let rule_id = metadata.id.clone();
             rules.push(metadata.clone());
-            
+
             // Profile EVERY rule to catch memory explosions
             if memory_profiler::is_enabled() {
                 memory_profiler::checkpoint_with_context(
                     "Rule BEFORE",
-                    &format!("{}/{} {}", i, self.rules.len(), rule_id)
+                    &format!("{}/{} {}", i, self.rules.len(), rule_id),
                 );
             }
-            
+
             let new_findings = rule.evaluate(package, inter_analysis.as_ref());
-            
+
             if memory_profiler::is_enabled() {
                 memory_profiler::checkpoint_with_context(
                     "Rule AFTER",
-                    &format!("{}/{} {} (+{} findings)", i, self.rules.len(), rule_id, new_findings.len())
+                    &format!(
+                        "{}/{} {} (+{} findings)",
+                        i,
+                        self.rules.len(),
+                        rule_id,
+                        new_findings.len()
+                    ),
                 );
             }
-            
+
             findings.extend(new_findings);
         }
 
         memory_profiler::checkpoint("RuleEngine::run complete");
-        
+
         AnalysisResult { findings, rules }
     }
 
@@ -1255,8 +1306,7 @@ const MAYBE_UNINIT_ASSUME_INIT_SYMBOL: &str = concat!("assume", "_init");
 const MEM_MODULE_SYMBOL: &str = concat!("mem");
 const MEM_UNINITIALIZED_SYMBOL: &str = concat!("uninitialized");
 const MEM_ZEROED_SYMBOL: &str = concat!("zeroed");
-const DANGER_ACCEPT_INVALID_CERTS_SYMBOL: &str =
-    concat!("danger", "_accept", "_invalid", "_certs");
+const DANGER_ACCEPT_INVALID_CERTS_SYMBOL: &str = concat!("danger", "_accept", "_invalid", "_certs");
 const DANGER_ACCEPT_INVALID_HOSTNAMES_SYMBOL: &str =
     concat!("danger", "_accept", "_invalid", "_hostnames");
 
@@ -1389,7 +1439,11 @@ impl Rule for DeclarativeRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
         for function in &package.functions {
             if !self.matches(function) {
@@ -1471,12 +1525,14 @@ impl Rule for WasmRulePlaceholder {
         &self.metadata
     }
 
-    fn evaluate(&self, _package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        _package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         Vec::new()
     }
 }
-
-
 
 // =============================================================================
 // RUSTCOLA084: TLS verification disabled in custom clients
@@ -1507,7 +1563,6 @@ fn register_builtin_rules(engine: &mut RuleEngine) {
     rules::register_advanced_input_rules(engine);
     rules::register_advanced_async_rules(engine);
 }
-
 
 #[derive(Clone, Debug)]
 pub struct CacheConfig {
@@ -2532,10 +2587,7 @@ fn log_hir_capture_error(crate_path: &Path, err: &anyhow::Error) {
                 );
                 let diagnostic = hir_err.primary_diagnostic();
                 if !diagnostic.is_empty() {
-                    eprintln!(
-                        "rust-cola: rustc ICE diagnostic: {}",
-                        diagnostic
-                    );
+                    eprintln!("rust-cola: rustc ICE diagnostic: {}", diagnostic);
                 }
                 emit_truncated_rustc_stderr(hir_err.stderr());
             }
@@ -2753,28 +2805,33 @@ fn artifact_uri_for(package: &MirPackage, function_name: &str) -> String {
 /// Extract a code snippet from a source file for SARIF output.
 /// Returns the lines from start_line to end_line (1-indexed, inclusive).
 /// Falls back to None if the file cannot be read.
-fn extract_snippet(crate_root: &Path, file_path: &str, start_line: u32, end_line: u32) -> Option<String> {
+fn extract_snippet(
+    crate_root: &Path,
+    file_path: &str,
+    start_line: u32,
+    end_line: u32,
+) -> Option<String> {
     // Resolve file path - may be relative to crate root or absolute
     let path = if Path::new(file_path).is_absolute() {
         PathBuf::from(file_path)
     } else {
         crate_root.join(file_path)
     };
-    
+
     let content = fs::read_to_string(&path).ok()?;
     let lines: Vec<&str> = content.lines().collect();
-    
+
     // Convert to 0-indexed
     let start = (start_line.saturating_sub(1)) as usize;
     let end = end_line as usize;
-    
+
     if start >= lines.len() {
         return None;
     }
-    
+
     let end = end.min(lines.len());
     let snippet_lines: Vec<&str> = lines[start..end].to_vec();
-    
+
     if snippet_lines.is_empty() {
         None
     } else {
@@ -2812,7 +2869,9 @@ pub fn sarif_report(package: &MirPackage, analysis: &AnalysisResult) -> serde_js
                 region.insert("endColumn".to_string(), json!(span.end_column));
 
                 // Extract code snippet for SARIF output
-                if let Some(snippet_text) = extract_snippet(crate_root, &span.file, span.start_line, span.end_line) {
+                if let Some(snippet_text) =
+                    extract_snippet(crate_root, &span.file, span.start_line, span.end_line)
+                {
                     region.insert("snippet".to_string(), json!({"text": snippet_text}));
                 }
 
@@ -2988,18 +3047,20 @@ pub fn extract_span_from_mir_line(line: &str) -> Option<SourceSpan> {
         if let Some(at_idx) = comment.find(" at ") {
             let location = comment[at_idx + 4..].trim();
             // location is like "src/lib.rs:4:15: 4:35"
-            
+
             // Parse backwards: end_column, end_line, start_column, start_line, file
             // Format: file:start_line:start_column: end_line:end_column
-            
+
             if let Some((rest, end_column_str)) = location.rsplit_once(':') {
                 if let Ok(end_column) = end_column_str.trim().parse::<u32>() {
                     if let Some((rest, end_line_str)) = rest.rsplit_once(':') {
                         if let Ok(end_line) = end_line_str.trim().parse::<u32>() {
                             if let Some((rest, start_column_str)) = rest.rsplit_once(':') {
                                 if let Ok(start_column) = start_column_str.trim().parse::<u32>() {
-                                    if let Some((file_path, start_line_str)) = rest.rsplit_once(':') {
-                                        if let Ok(start_line) = start_line_str.trim().parse::<u32>() {
+                                    if let Some((file_path, start_line_str)) = rest.rsplit_once(':')
+                                    {
+                                        if let Ok(start_line) = start_line_str.trim().parse::<u32>()
+                                        {
                                             return Some(SourceSpan {
                                                 file: file_path.trim().replace('\\', "/"),
                                                 start_line,
@@ -3107,15 +3168,15 @@ pub(crate) fn detect_crate_name(crate_path: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rules::{CommandInjectionRiskRule, UntrustedEnvInputRule};
     use crate::rules::memory::{
         BoxIntoRawRule, MemForgetGuardRule, NonNullNewUncheckedRule, StaticMutGlobalRule,
     };
     use crate::rules::resource::{
         HardcodedHomePathRule, PermissionsSetReadonlyFalseRule, WorldWritableModeRule,
     };
-    use crate::rules::utils::{StringLiteralState, strip_string_literals};
+    use crate::rules::utils::{strip_string_literals, StringLiteralState};
     use crate::rules::web::{NonHttpsUrlRule, OpensslVerifyNoneRule};
+    use crate::rules::{CommandInjectionRiskRule, UntrustedEnvInputRule};
     use std::io::Cursor;
     use std::path::Path;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -3414,12 +3475,12 @@ fn <impl at C:\\workspace\\demo\\src\\lib.rs:40:1: 40:32>::vec_set_len(_1: &mut 
     #[test]
     fn sarif_report_includes_code_snippet() {
         use std::io::Write;
-        
+
         // Create a temp directory with a source file
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         let src_dir = temp_dir.path().join("src");
         std::fs::create_dir_all(&src_dir).expect("create src dir");
-        
+
         let source_code = r#"fn main() {
     let password = "secret123";
     println!("{}", password);
@@ -3427,8 +3488,9 @@ fn <impl at C:\\workspace\\demo\\src\\lib.rs:40:1: 40:32>::vec_set_len(_1: &mut 
 "#;
         let lib_rs = src_dir.join("lib.rs");
         let mut file = std::fs::File::create(&lib_rs).expect("create lib.rs");
-        file.write_all(source_code.as_bytes()).expect("write source");
-        
+        file.write_all(source_code.as_bytes())
+            .expect("write source");
+
         let span = SourceSpan {
             file: "src/lib.rs".to_string(),
             start_line: 2,
@@ -4432,7 +4494,8 @@ rules:
                 // Complete taint flow: env::var (source) -> Command::arg (sink)
                 body: vec![
                     "_1 = std::env::var(move _2) -> [return: bb1, unwind: bb2];".to_string(),
-                    "_3 = Command::arg::<&str>(move _4, move _1) -> [return: bb3, unwind: bb4];".to_string(),
+                    "_3 = Command::arg::<&str>(move _4, move _1) -> [return: bb3, unwind: bb4];"
+                        .to_string(),
                 ],
                 span: None,
                 ..Default::default()
@@ -5700,10 +5763,7 @@ path = "src/lib.rs"
             .evidence
             .iter()
             .any(|line| line.contains("into_raw")));
-        assert!(finding
-            .evidence
-            .iter()
-            .any(|line| line.contains("free")));
+        assert!(finding.evidence.iter().any(|line| line.contains("free")));
 
         Ok(())
     }

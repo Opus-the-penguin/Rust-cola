@@ -12,35 +12,35 @@ use std::cell::RefCell;
 /// ❌ PROBLEMATIC: RefCell used for purely local counter
 pub fn count_with_refcell(items: &[i32]) -> i32 {
     let counter = RefCell::new(0);
-    
+
     for item in items {
         if *item > 0 {
             *counter.borrow_mut() += 1;
         }
     }
-    
+
     counter.into_inner()
 }
 
 /// ❌ PROBLEMATIC: RefCell for accumulation - a plain mut var is clearer
 pub fn accumulate_with_refcell(values: &[f64]) -> f64 {
     let sum = RefCell::new(0.0);
-    
+
     for &val in values {
         *sum.borrow_mut() += val;
     }
-    
+
     sum.into_inner()
 }
 
 /// ❌ PROBLEMATIC: RefCell in a closure, but no shared ownership
 pub fn process_with_local_refcell(data: &[String]) -> Vec<String> {
     let buffer = RefCell::new(Vec::new());
-    
+
     for item in data {
         buffer.borrow_mut().push(item.to_uppercase());
     }
-    
+
     buffer.into_inner()
 }
 
@@ -48,7 +48,7 @@ pub fn process_with_local_refcell(data: &[String]) -> Vec<String> {
 pub fn complex_local_refcell(numbers: &[i32]) -> (i32, i32) {
     let positive = RefCell::new(0);
     let negative = RefCell::new(0);
-    
+
     for &num in numbers {
         if num > 0 {
             *positive.borrow_mut() += num;
@@ -56,7 +56,7 @@ pub fn complex_local_refcell(numbers: &[i32]) -> (i32, i32) {
             *negative.borrow_mut() += num;
         }
     }
-    
+
     (positive.into_inner(), negative.into_inner())
 }
 
@@ -67,35 +67,35 @@ pub fn complex_local_refcell(numbers: &[i32]) -> (i32, i32) {
 /// ✅ BETTER: Plain mutable variable for local counter
 pub fn count_with_mut(items: &[i32]) -> i32 {
     let mut counter = 0;
-    
+
     for item in items {
         if *item > 0 {
             counter += 1;
         }
     }
-    
+
     counter
 }
 
 /// ✅ BETTER: Plain mut variable for accumulation
 pub fn accumulate_with_mut(values: &[f64]) -> f64 {
     let mut sum = 0.0;
-    
+
     for &val in values {
         sum += val;
     }
-    
+
     sum
 }
 
 /// ✅ BETTER: Regular mutable Vec
 pub fn process_with_mut(data: &[String]) -> Vec<String> {
     let mut buffer = Vec::new();
-    
+
     for item in data {
         buffer.push(item.to_uppercase());
     }
-    
+
     buffer
 }
 
@@ -116,15 +116,15 @@ impl SharedCounter {
             value: Rc::new(RefCell::new(0)),
         }
     }
-    
+
     pub fn increment(&self) {
         *self.value.borrow_mut() += 1;
     }
-    
+
     pub fn get(&self) -> i32 {
         *self.value.borrow()
     }
-    
+
     pub fn clone_counter(&self) -> Self {
         Self {
             value: Rc::clone(&self.value),
@@ -153,7 +153,7 @@ impl Cache for SimpleCache {
     // Need &self but must mutate - RefCell is appropriate here
     fn get(&self, key: &str) -> Option<String> {
         let mut data = self.data.borrow_mut();
-        
+
         if let Some(pos) = data.iter().position(|(k, _)| k == key) {
             Some(data[pos].1.clone())
         } else {

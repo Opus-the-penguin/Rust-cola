@@ -28,9 +28,9 @@ pub fn bad_extend_slice_lifetime<'a>(slice: &'a [u8]) -> &'static [u8] {
 }
 
 /// PROBLEMATIC: Transmute to shorten lifetime (still UB)
-pub fn bad_shorten_lifetime<'a, 'b>(s: &'static str) -> &'a str 
-where 
-    'b: 'a
+pub fn bad_shorten_lifetime<'a, 'b>(s: &'static str) -> &'a str
+where
+    'b: 'a,
 {
     // While this seems safer, it can still cause issues with lifetime inference
     unsafe { transmute::<&'static str, &'a str>(s) }

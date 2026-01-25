@@ -59,7 +59,8 @@ pub fn test_helper_sanitization() {
 
 fn validate_input(input: &str) -> String {
     // Sanitization: parse as integer, converting back to string
-    input.parse::<i32>()
+    input
+        .parse::<i32>()
         .ok()
         .map(|n| n.to_string())
         .unwrap_or_else(|| "0".to_string())
@@ -76,7 +77,7 @@ fn execute_validated_command(cmd: &str) {
 /// VULNERABLE: Only one path is sanitized
 pub fn test_partial_sanitization() {
     let input = std::env::args().nth(1).unwrap_or_default();
-    
+
     if input.contains("safe") {
         let safe = validate_input(&input);
         execute_command(&safe);
@@ -110,10 +111,9 @@ fn process_data(data: &str) {
 
 /// VULNERABLE: Taint passed by value
 pub fn test_pass_by_value() {
-    let tainted = String::from_utf8_lossy(
-        &std::fs::read("/tmp/user_input").unwrap_or_default()
-    ).to_string();
-    
+    let tainted =
+        String::from_utf8_lossy(&std::fs::read("/tmp/user_input").unwrap_or_default()).to_string();
+
     consume_and_execute(tainted);
 }
 
@@ -158,7 +158,7 @@ fn modify_data(data: &mut String) {
 pub fn test_multiple_sources() {
     let source1 = std::env::var("VAR1").unwrap_or_default();
     let source2 = std::env::args().nth(1).unwrap_or_default();
-    
+
     if source1.is_empty() {
         execute_command(&source2);
     } else {
@@ -188,10 +188,10 @@ fn get_safe_command() -> String {
 pub fn test_context_sensitive() {
     let tainted = std::env::args().nth(1).unwrap_or_default();
     let safe = "echo safe";
-    
+
     // First call: VULNERABLE
     process_and_execute(&tainted);
-    
+
     // Second call: SAFE
     process_and_execute(safe);
 }
@@ -207,7 +207,7 @@ fn process_and_execute(data: &str) {
 /// MIXED: One branch sanitized, one not
 pub fn test_branching_sanitization() {
     let input = std::env::args().nth(1).unwrap_or_default();
-    
+
     if input.starts_with("safe:") {
         let sanitized = sanitize_safe_prefix(&input);
         execute_command(&sanitized);
@@ -218,7 +218,8 @@ pub fn test_branching_sanitization() {
 }
 
 fn sanitize_safe_prefix(input: &str) -> String {
-    input.strip_prefix("safe:")
+    input
+        .strip_prefix("safe:")
         .unwrap_or("")
         .chars()
         .filter(|c| c.is_alphanumeric())
@@ -256,7 +257,7 @@ fn build_shell_command(formatted: &str) -> String {
 /// SAFE: chars().all() validation
 pub fn test_validation_check() {
     let input = std::env::args().nth(1).unwrap_or_default();
-    
+
     if is_safe_input(&input) {
         execute_command(&input);
     }
@@ -274,11 +275,11 @@ fn is_safe_input(input: &str) -> bool {
 #[allow(dead_code)]
 pub fn test_closure_capture() {
     let tainted = std::env::args().nth(1).unwrap_or_default();
-    
+
     let closure = || {
         let _ = Command::new("sh").arg("-c").arg(&tainted).spawn();
     };
-    
+
     closure();
 }
 
@@ -350,22 +351,22 @@ fn propagate_taint(dest: &mut String, src: &str) {
 /// Expected analysis results for each test case
 pub fn expected_results() -> Vec<(&'static str, bool)> {
     vec![
-        ("test_two_level_flow", true),           // VULNERABLE
-        ("test_three_level_flow", true),         // VULNERABLE
-        ("test_helper_sanitization", false),     // SAFE
-        ("test_partial_sanitization", true),     // VULNERABLE (one path)
-        ("test_return_propagation", true),       // VULNERABLE
-        ("test_pass_by_value", true),            // VULNERABLE
-        ("test_pass_by_reference", true),        // VULNERABLE
-        ("test_mutable_ref_flow", true),         // VULNERABLE
-        ("test_mutable_ref_propagation", true),  // VULNERABLE
-        ("test_multiple_sources", true),         // VULNERABLE
-        ("test_safe_constant", false),           // SAFE
-        ("test_context_sensitive", true),        // VULNERABLE (one context)
-        ("test_branching_sanitization", true),   // VULNERABLE (one branch)
-        ("test_helper_chain", true),             // VULNERABLE
-        ("test_validation_check", false),        // SAFE
-        // Closures, traits, async: Phase 3.5
+        ("test_two_level_flow", true),          // VULNERABLE
+        ("test_three_level_flow", true),        // VULNERABLE
+        ("test_helper_sanitization", false),    // SAFE
+        ("test_partial_sanitization", true),    // VULNERABLE (one path)
+        ("test_return_propagation", true),      // VULNERABLE
+        ("test_pass_by_value", true),           // VULNERABLE
+        ("test_pass_by_reference", true),       // VULNERABLE
+        ("test_mutable_ref_flow", true),        // VULNERABLE
+        ("test_mutable_ref_propagation", true), // VULNERABLE
+        ("test_multiple_sources", true),        // VULNERABLE
+        ("test_safe_constant", false),          // SAFE
+        ("test_context_sensitive", true),       // VULNERABLE (one context)
+        ("test_branching_sanitization", true),  // VULNERABLE (one branch)
+        ("test_helper_chain", true),            // VULNERABLE
+        ("test_validation_check", false),       // SAFE
+                                                // Closures, traits, async: Phase 3.5
     ]
 }
 
@@ -377,13 +378,13 @@ mod tests {
     fn test_expected_results_count() {
         let results = expected_results();
         assert_eq!(results.len(), 15); // 14 basic cases, 3 advanced for later
-        
+
         let vulnerable_count = results.iter().filter(|(_, vuln)| *vuln).count();
         let safe_count = results.iter().filter(|(_, vuln)| !*vuln).count();
-        
+
         println!("Expected vulnerable: {}", vulnerable_count);
         println!("Expected safe: {}", safe_count);
-        
+
         assert_eq!(vulnerable_count, 11);
         assert_eq!(safe_count, 4);
     }

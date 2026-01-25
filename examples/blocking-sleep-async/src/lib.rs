@@ -91,7 +91,7 @@ pub async fn good_spawn_blocking_conceptual() {
     // In real code: tokio::task::spawn_blocking(|| {
     //     std::thread::sleep(Duration::from_secs(1));
     // }).await;
-    
+
     // Conceptual version - just showing structure
     let _handle = spawn_blocking_task(|| {
         std::thread::sleep(Duration::from_secs(1)); // OK: in blocking task
@@ -107,7 +107,7 @@ pub async fn good_tokio_spawn_blocking() {
     })
     .await
     .unwrap();
-    
+
     println!("Result: {}", result);
 }
 

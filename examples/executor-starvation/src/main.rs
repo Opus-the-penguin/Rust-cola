@@ -61,7 +61,7 @@ pub async fn bad_while_cpu_loop() -> i32 {
 pub async fn bad_hash_computation(data: &[u8]) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::Hasher;
-    
+
     let mut hasher = DefaultHasher::new();
     // Process large data without yielding
     for chunk in data.chunks(1024) {
@@ -91,7 +91,10 @@ pub async fn bad_encode_data(data: &[u8]) -> Vec<u8> {
 }
 
 /// BAD: Matrix multiplication in async
-pub async fn bad_matrix_multiply(a: &[[f64; 100]; 100], b: &[[f64; 100]; 100]) -> [[f64; 100]; 100] {
+pub async fn bad_matrix_multiply(
+    a: &[[f64; 100]; 100],
+    b: &[[f64; 100]; 100],
+) -> [[f64; 100]; 100] {
     let mut result = [[0.0f64; 100]; 100];
     for i in 0..100 {
         for j in 0..100 {
@@ -115,7 +118,9 @@ pub async fn good_spawn_blocking(iterations: u64) -> u64 {
             sum = sum.wrapping_add(i * i);
         }
         sum
-    }).await.unwrap()
+    })
+    .await
+    .unwrap()
 }
 
 /// GOOD: Yielding periodically in long loops
@@ -124,7 +129,7 @@ pub async fn good_yield_periodically(iterations: u64) -> u64 {
     for i in 0..iterations {
         sum = sum.wrapping_add(i * i);
         if i % 10_000 == 0 {
-            tokio::task::yield_now().await;  // Let other tasks run
+            tokio::task::yield_now().await; // Let other tasks run
         }
     }
     sum
@@ -161,7 +166,9 @@ pub async fn good_rayon_parallel(data: Vec<i32>) -> i64 {
     tokio::task::spawn_blocking(move || {
         // In real code: data.par_iter().sum()
         data.iter().map(|&x| x as i64).sum()
-    }).await.unwrap()
+    })
+    .await
+    .unwrap()
 }
 
 #[tokio::main]

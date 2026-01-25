@@ -1,5 +1,5 @@
 //! Test cases for RUSTCOLA082: Raw pointer to slice of different element size
-//! 
+//!
 //! This rule detects unsafe transmutes between slice/pointer types where the
 //! element sizes differ, which can cause memory corruption or undefined behavior.
 
@@ -48,10 +48,15 @@ unsafe fn bad_ptr_cast_then_transmute(data: &[u8]) -> &[u32] {
 
 /// BAD: Transmute between slices of structs with different sizes
 #[repr(C)]
-struct Small { a: u8 }
+struct Small {
+    a: u8,
+}
 
 #[repr(C)]
-struct Large { a: u64, b: u64 }
+struct Large {
+    a: u64,
+    b: u64,
+}
 
 unsafe fn bad_struct_slice_transmute(data: &[Small]) -> &[Large] {
     mem::transmute(data)
@@ -85,7 +90,7 @@ unsafe fn safe_single_element_transmute(ptr: *const u8) -> *const u32 {
 /// SAFE: Proper slice conversion using slice::from_raw_parts
 unsafe fn safe_proper_conversion(data: &[u8]) -> &[u32] {
     let ptr = data.as_ptr() as *const u32;
-    let len = data.len() / 4;  // Properly adjust length
+    let len = data.len() / 4; // Properly adjust length
     std::slice::from_raw_parts(ptr, len)
 }
 
@@ -152,12 +157,12 @@ fn call_bad_generic() {
 
 fn main() {
     let data: &[u8] = &[1, 2, 3, 4, 5, 6, 7, 8];
-    
+
     unsafe {
         // These are all dangerous
         let _ = bad_u8_slice_to_u32_slice(data);
     }
-    
+
     // Safe alternative
     let (prefix, middle, suffix) = safe_align_to(data);
     println!("Aligned: {:?} {:?} {:?}", prefix, middle, suffix);

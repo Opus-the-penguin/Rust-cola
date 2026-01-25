@@ -158,9 +158,8 @@ pub fn pattern_is_high_risk(pattern: &str) -> bool {
         Regex::new(r"\((?:[^()]|\\.)*[+*](?:[^()]|\\.)*\)[+*{]").expect("nested quantifier regex")
     });
 
-    static RE_DOT_STAR_LOOP: Lazy<Regex> = Lazy::new(|| {
-        Regex::new(r"\(\?:?\.\*(?:[^()]|\\.)*\)[+*{]").expect("dot-star loop regex")
-    });
+    static RE_DOT_STAR_LOOP: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"\(\?:?\.\*(?:[^()]|\\.)*\)[+*{]").expect("dot-star loop regex"));
 
     let simplified = pattern.replace(' ', "");
     RE_NESTED_QUANTIFIERS.is_match(&simplified) || RE_DOT_STAR_LOOP.is_match(&simplified)

@@ -26,7 +26,7 @@ pub fn current_memory_mb() -> f64 {
     let mut sys = System::new();
     let pid = Pid::from(std::process::id() as usize);
     sys.refresh_process(pid);
-    
+
     if let Some(process) = sys.process(pid) {
         // process.memory() returns bytes
         let bytes = process.memory();
@@ -47,10 +47,10 @@ pub fn checkpoint(label: &str) {
     if !is_enabled() {
         return;
     }
-    
+
     let mb = current_memory_mb();
     let peak = update_peak(mb);
-    
+
     eprintln!("[MEMORY] {}: {:.1} MB (peak: {:.1} MB)", label, mb, peak);
 }
 
@@ -59,11 +59,14 @@ pub fn checkpoint_with_context(label: &str, context: &str) {
     if !is_enabled() {
         return;
     }
-    
+
     let mb = current_memory_mb();
     let peak = update_peak(mb);
-    
-    eprintln!("[MEMORY] {} [{}]: {:.1} MB (peak: {:.1} MB)", label, context, mb, peak);
+
+    eprintln!(
+        "[MEMORY] {} [{}]: {:.1} MB (peak: {:.1} MB)",
+        label, context, mb, peak
+    );
 }
 
 /// Track memory delta for a scope
@@ -79,7 +82,7 @@ impl MemoryScope {
         } else {
             0.0
         };
-        
+
         Self {
             label: label.to_string(),
             start_mb,
@@ -93,7 +96,10 @@ impl Drop for MemoryScope {
             let end_mb = current_memory_mb();
             let delta = end_mb - self.start_mb;
             let sign = if delta >= 0.0 { "+" } else { "" };
-            eprintln!("[MEMORY] {} completed: {:.1} MB ({}{:.1} MB)", self.label, end_mb, sign, delta);
+            eprintln!(
+                "[MEMORY] {} completed: {:.1} MB ({}{:.1} MB)",
+                self.label, end_mb, sign, delta
+            );
         }
     }
 }
@@ -103,10 +109,10 @@ pub fn final_report() {
     if !is_enabled() {
         return;
     }
-    
+
     let current = current_memory_mb();
     let peak = PEAK_MEMORY_MB.load(Ordering::SeqCst) as f64;
-    
+
     eprintln!("\n[MEMORY] === Final Report ===");
     eprintln!("[MEMORY] Current: {:.1} MB", current);
     eprintln!("[MEMORY] Peak:    {:.1} MB", peak);

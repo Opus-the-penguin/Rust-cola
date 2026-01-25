@@ -10,10 +10,12 @@
 //! - Panic in Drop (RUSTCOLA040)
 //! - Unwrap in Poll (RUSTCOLA041)
 
-use crate::detect_broadcast_unsync_payloads;
-use crate::{Exploitability, Confidence, Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity};
 use super::filter_entry;
-use super::utils::{StringLiteralState, strip_string_literals};
+use super::utils::{strip_string_literals, StringLiteralState};
+use crate::detect_broadcast_unsync_payloads;
+use crate::{
+    Confidence, Exploitability, Finding, MirPackage, Rule, RuleMetadata, RuleOrigin, Severity,
+};
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs;
@@ -71,14 +73,14 @@ impl NonThreadSafeTestRule {
 
     /// Check if function name indicates it's a test
     fn is_test_function(name: &str, signature: &str) -> bool {
-        let looks_like_test_name = name.contains("::test_") || 
-            name.starts_with("test_") ||
-            name.contains("::tests::") ||
-            name.ends_with("_test");
+        let looks_like_test_name = name.contains("::test_")
+            || name.starts_with("test_")
+            || name.contains("::tests::")
+            || name.ends_with("_test");
 
-        let no_params = signature.contains("fn()") || 
-            signature.contains("fn ()") ||
-            (signature.contains('(') && signature.contains("()"));
+        let no_params = signature.contains("fn()")
+            || signature.contains("fn ()")
+            || (signature.contains('(') && signature.contains("()"));
 
         looks_like_test_name && no_params
     }
@@ -109,11 +111,11 @@ impl NonThreadSafeTestRule {
     fn accesses_static_state(body: &[String]) -> bool {
         body.iter().any(|line| {
             let trimmed = line.trim();
-            trimmed.contains("static ") ||
-            trimmed.contains("lazy_static!") ||
-            trimmed.contains("thread_local!") ||
-            trimmed.contains("GLOBAL") ||
-            trimmed.contains("STATE")
+            trimmed.contains("static ")
+                || trimmed.contains("lazy_static!")
+                || trimmed.contains("thread_local!")
+                || trimmed.contains("GLOBAL")
+                || trimmed.contains("STATE")
         })
     }
 }
@@ -123,7 +125,11 @@ impl Rule for NonThreadSafeTestRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -132,7 +138,7 @@ impl Rule for NonThreadSafeTestRule {
             }
 
             let non_thread_safe_usage = Self::uses_non_thread_safe_types(&function.body);
-            
+
             if !non_thread_safe_usage.is_empty() {
                 let severity = if Self::accesses_static_state(&function.body) {
                     Severity::High
@@ -199,11 +205,7 @@ impl BlockingSleepInAsyncRule {
     }
 
     fn blocking_sleep_patterns() -> &'static [&'static str] {
-        &[
-            "std::thread::sleep",
-            "thread::sleep",
-            "::thread::sleep",
-        ]
+        &["std::thread::sleep", "thread::sleep", "::thread::sleep"]
     }
 }
 
@@ -212,7 +214,11 @@ impl Rule for BlockingSleepInAsyncRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -345,26 +351,106 @@ impl BlockingOpsInAsyncRule {
     fn blocking_patterns() -> Vec<(&'static str, &'static str, &'static str)> {
         vec![
             // Pattern, Category, Recommendation
-            (".lock().unwrap()", "sync_mutex", "Use tokio::sync::Mutex::lock().await instead"),
-            (".lock().expect(", "sync_mutex", "Use tokio::sync::Mutex::lock().await instead"),
-            ("mutex.lock()", "sync_mutex", "Use tokio::sync::Mutex::lock().await instead"),
-            ("fs::read_to_string(", "blocking_fs", "Use tokio::fs::read_to_string().await instead"),
-            ("fs::read(", "blocking_fs", "Use tokio::fs::read().await instead"),
-            ("fs::write(", "blocking_fs", "Use tokio::fs::write().await instead"),
-            ("fs::remove_file(", "blocking_fs", "Use tokio::fs::remove_file().await instead"),
-            ("fs::create_dir(", "blocking_fs", "Use tokio::fs::create_dir().await instead"),
-            ("fs::create_dir_all(", "blocking_fs", "Use tokio::fs::create_dir_all().await instead"),
-            ("fs::metadata(", "blocking_fs", "Use tokio::fs::metadata().await instead"),
-            ("fs::File::open(", "blocking_fs", "Use tokio::fs::File::open().await instead"),
-            ("fs::File::create(", "blocking_fs", "Use tokio::fs::File::create().await instead"),
-            ("File::open(", "blocking_fs", "Use tokio::fs::File::open().await instead"),
-            ("File::create(", "blocking_fs", "Use tokio::fs::File::create().await instead"),
-            ("TcpStream::connect(", "blocking_net", "Use tokio::net::TcpStream::connect().await instead"),
-            ("TcpListener::bind(", "blocking_net", "Use tokio::net::TcpListener::bind().await instead"),
-            ("UdpSocket::bind(", "blocking_net", "Use tokio::net::UdpSocket::bind().await instead"),
-            ("stdin().read_line(", "blocking_io", "Use tokio::io::stdin() with AsyncBufReadExt instead"),
-            ("stdin().read(", "blocking_io", "Use tokio::io::stdin() with AsyncReadExt instead"),
-            ("reqwest::blocking::", "blocking_http", "Use reqwest async API (reqwest::get, Client::new()) instead"),
+            (
+                ".lock().unwrap()",
+                "sync_mutex",
+                "Use tokio::sync::Mutex::lock().await instead",
+            ),
+            (
+                ".lock().expect(",
+                "sync_mutex",
+                "Use tokio::sync::Mutex::lock().await instead",
+            ),
+            (
+                "mutex.lock()",
+                "sync_mutex",
+                "Use tokio::sync::Mutex::lock().await instead",
+            ),
+            (
+                "fs::read_to_string(",
+                "blocking_fs",
+                "Use tokio::fs::read_to_string().await instead",
+            ),
+            (
+                "fs::read(",
+                "blocking_fs",
+                "Use tokio::fs::read().await instead",
+            ),
+            (
+                "fs::write(",
+                "blocking_fs",
+                "Use tokio::fs::write().await instead",
+            ),
+            (
+                "fs::remove_file(",
+                "blocking_fs",
+                "Use tokio::fs::remove_file().await instead",
+            ),
+            (
+                "fs::create_dir(",
+                "blocking_fs",
+                "Use tokio::fs::create_dir().await instead",
+            ),
+            (
+                "fs::create_dir_all(",
+                "blocking_fs",
+                "Use tokio::fs::create_dir_all().await instead",
+            ),
+            (
+                "fs::metadata(",
+                "blocking_fs",
+                "Use tokio::fs::metadata().await instead",
+            ),
+            (
+                "fs::File::open(",
+                "blocking_fs",
+                "Use tokio::fs::File::open().await instead",
+            ),
+            (
+                "fs::File::create(",
+                "blocking_fs",
+                "Use tokio::fs::File::create().await instead",
+            ),
+            (
+                "File::open(",
+                "blocking_fs",
+                "Use tokio::fs::File::open().await instead",
+            ),
+            (
+                "File::create(",
+                "blocking_fs",
+                "Use tokio::fs::File::create().await instead",
+            ),
+            (
+                "TcpStream::connect(",
+                "blocking_net",
+                "Use tokio::net::TcpStream::connect().await instead",
+            ),
+            (
+                "TcpListener::bind(",
+                "blocking_net",
+                "Use tokio::net::TcpListener::bind().await instead",
+            ),
+            (
+                "UdpSocket::bind(",
+                "blocking_net",
+                "Use tokio::net::UdpSocket::bind().await instead",
+            ),
+            (
+                "stdin().read_line(",
+                "blocking_io",
+                "Use tokio::io::stdin() with AsyncBufReadExt instead",
+            ),
+            (
+                "stdin().read(",
+                "blocking_io",
+                "Use tokio::io::stdin() with AsyncReadExt instead",
+            ),
+            (
+                "reqwest::blocking::",
+                "blocking_http",
+                "Use reqwest async API (reqwest::get, Client::new()) instead",
+            ),
         ]
     }
 
@@ -385,7 +471,11 @@ impl Rule for BlockingOpsInAsyncRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -480,7 +570,10 @@ impl Rule for BlockingOpsInAsyncRule {
                             if trimmed.contains(".await") || trimmed.contains("tokio::") {
                                 continue;
                             }
-                            if trimmed.starts_with("//") || trimmed.starts_with("*") || trimmed.starts_with("/*") {
+                            if trimmed.starts_with("//")
+                                || trimmed.starts_with("*")
+                                || trimmed.starts_with("/*")
+                            {
                                 continue;
                             }
 
@@ -489,7 +582,9 @@ impl Rule for BlockingOpsInAsyncRule {
                                 .copied()
                                 .collect::<Vec<&str>>()
                                 .join("\n");
-                            if fn_content.contains("tokio::sync::Mutex") && pattern.contains(".lock") {
+                            if fn_content.contains("tokio::sync::Mutex")
+                                && pattern.contains(".lock")
+                            {
                                 continue;
                             }
 
@@ -530,7 +625,7 @@ impl Rule for BlockingOpsInAsyncRule {
                                 function_signature: async_fn_name.clone(),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
-                    ..Default::default()
+                                ..Default::default()
                             });
                         }
                     }
@@ -605,7 +700,11 @@ impl Rule for MutexGuardAcrossAwaitRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -680,11 +779,15 @@ impl Rule for MutexGuardAcrossAwaitRule {
                             if trimmed.contains(".await") {
                                 continue;
                             }
-                            if trimmed.starts_with("//") || trimmed.starts_with("*") || trimmed.starts_with("/*") {
+                            if trimmed.starts_with("//")
+                                || trimmed.starts_with("*")
+                                || trimmed.starts_with("/*")
+                            {
                                 continue;
                             }
 
-                            let fn_content: String = lines[async_fn_start..=std::cmp::min(idx + 50, lines.len() - 1)]
+                            let fn_content: String = lines
+                                [async_fn_start..=std::cmp::min(idx + 50, lines.len() - 1)]
                                 .iter()
                                 .copied()
                                 .collect::<Vec<&str>>()
@@ -703,8 +806,10 @@ impl Rule for MutexGuardAcrossAwaitRule {
 
                             for (later_idx, later_line) in lines[idx..].iter().enumerate() {
                                 let later_trimmed = later_line.trim();
-                                inner_brace_depth += later_trimmed.chars().filter(|&c| c == '{').count() as i32;
-                                inner_brace_depth -= later_trimmed.chars().filter(|&c| c == '}').count() as i32;
+                                inner_brace_depth +=
+                                    later_trimmed.chars().filter(|&c| c == '{').count() as i32;
+                                inner_brace_depth -=
+                                    later_trimmed.chars().filter(|&c| c == '}').count() as i32;
 
                                 if later_trimmed.contains("drop(") {
                                     break;
@@ -804,7 +909,11 @@ impl Rule for UnderscoreLockGuardRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -816,7 +925,7 @@ impl Rule for UnderscoreLockGuardRule {
             // Variables with debug mappings are named bindings like "let guard = ..." or "let _guard = ..."
             // Variables WITHOUT debug mappings are wildcard patterns like "let _ = ..."
             let mut named_vars: HashSet<String> = HashSet::new();
-            
+
             for line in &function.body {
                 let trimmed = line.trim();
                 // Pattern: "debug VAR_NAME => _N;"
@@ -824,20 +933,25 @@ impl Rule for UnderscoreLockGuardRule {
                     // Extract the _N part (MIR variable)
                     if let Some(arrow_pos) = trimmed.find(" => ") {
                         let var_part = trimmed[arrow_pos + 4..].trim().trim_end_matches(';').trim();
-                        if var_part.starts_with('_') && var_part.chars().nth(1).map_or(false, |c| c.is_ascii_digit()) {
+                        if var_part.starts_with('_')
+                            && var_part
+                                .chars()
+                                .nth(1)
+                                .map_or(false, |c| c.is_ascii_digit())
+                        {
                             named_vars.insert(var_part.to_string());
                         }
                     }
                 }
             }
-            
+
             let body_lines: Vec<&str> = function.body.iter().map(|s| s.as_str()).collect();
-            
+
             // Step 2: Find lock acquisitions and trace to guard type
             // Track: lock_result -> guard_var (via unwrap/expect) -> drop
             for (i, line) in body_lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 // Check if the RHS contains a lock acquisition
                 let has_lock_call = Self::lock_method_patterns()
                     .iter()
@@ -846,27 +960,33 @@ impl Rule for UnderscoreLockGuardRule {
                 if !has_lock_call {
                     continue;
                 }
-                
+
                 // Parse the assignment: "_N = ..."
                 if !trimmed.contains(" = ") {
                     continue;
                 }
-                
-                let lock_result_var = trimmed.split(" = ").next()
-                    .map(|s| s.trim())
-                    .unwrap_or("");
-                
+
+                let lock_result_var = trimmed.split(" = ").next().map(|s| s.trim()).unwrap_or("");
+
                 // Skip if not a MIR variable (_N format)
-                if !lock_result_var.starts_with('_') || !lock_result_var.chars().nth(1).map_or(false, |c| c.is_ascii_digit()) {
+                if !lock_result_var.starts_with('_')
+                    || !lock_result_var
+                        .chars()
+                        .nth(1)
+                        .map_or(false, |c| c.is_ascii_digit())
+                {
                     continue;
                 }
-                
+
                 // Case 1: Direct drop of lock result (no unwrap)
                 // Pattern: _N = mutex.lock() then drop(_N)
                 let drop_pattern = format!("drop({})", lock_result_var);
-                let has_direct_drop = body_lines.iter().skip(i + 1).take(15)
+                let has_direct_drop = body_lines
+                    .iter()
+                    .skip(i + 1)
+                    .take(15)
                     .any(|future_line| future_line.trim().starts_with(&drop_pattern));
-                
+
                 if has_direct_drop && !named_vars.contains(lock_result_var) {
                     findings.push(Finding {
                         rule_id: self.metadata.id.clone(),
@@ -880,40 +1000,46 @@ impl Rule for UnderscoreLockGuardRule {
                         function_signature: function.signature.clone(),
                         evidence: vec![trimmed.to_string()],
                         span: function.span.clone(),
-                    confidence: Confidence::Medium,
-                    cwe_ids: Vec::new(),
-                    fix_suggestion: None,
-                    code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                        confidence: Confidence::Medium,
+                        cwe_ids: Vec::new(),
+                        fix_suggestion: None,
+                        code_snippet: None,
+                        exploitability: Exploitability::default(),
+                        exploitability_score: Exploitability::default().score(),
                     });
                     continue;
                 }
-                
+
                 // Case 2: Unwrap then drop
                 // Pattern: _N = mutex.lock() then _M = ...unwrap(move _N) then drop(_M)
                 let unwrap_source_pattern = format!("(move {})", lock_result_var);
                 for future_line in body_lines.iter().skip(i + 1).take(15) {
                     let future_trimmed = future_line.trim();
-                    
+
                     // Look for unwrap/expect of the lock result
-                    if (future_trimmed.contains("unwrap") || future_trimmed.contains("expect")) 
+                    if (future_trimmed.contains("unwrap") || future_trimmed.contains("expect"))
                         && future_trimmed.contains(&unwrap_source_pattern)
-                        && future_trimmed.contains(" = ") 
+                        && future_trimmed.contains(" = ")
                     {
-                        let guard_var = future_trimmed.split(" = ").next()
+                        let guard_var = future_trimmed
+                            .split(" = ")
+                            .next()
                             .map(|s| s.trim())
                             .unwrap_or("");
-                        
+
                         // Check if guard_var is unnamed and immediately dropped
-                        if guard_var.starts_with('_') 
-                            && guard_var.chars().nth(1).map_or(false, |c| c.is_ascii_digit())
-                            && !named_vars.contains(guard_var) 
+                        if guard_var.starts_with('_')
+                            && guard_var
+                                .chars()
+                                .nth(1)
+                                .map_or(false, |c| c.is_ascii_digit())
+                            && !named_vars.contains(guard_var)
                         {
                             let guard_drop_pattern = format!("drop({})", guard_var);
-                            let has_guard_drop = body_lines.iter()
+                            let has_guard_drop = body_lines
+                                .iter()
                                 .any(|line| line.trim().starts_with(&guard_drop_pattern));
-                            
+
                             if has_guard_drop {
                                 findings.push(Finding {
                                     rule_id: self.metadata.id.clone(),
@@ -979,7 +1105,11 @@ impl Rule for BroadcastUnsyncPayloadRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
         for function in &package.functions {
@@ -1002,8 +1132,8 @@ impl Rule for BroadcastUnsyncPayloadRule {
                     cwe_ids: Vec::new(),
                     fix_suggestion: None,
                     code_snippet: None,
-                exploitability: Exploitability::default(),
-                exploitability_score: Exploitability::default().score(),
+                    exploitability: Exploitability::default(),
+                    exploitability_score: Exploitability::default().score(),
                 });
             }
         }
@@ -1056,7 +1186,11 @@ impl Rule for PanicInDropRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -1117,7 +1251,9 @@ impl Rule for PanicInDropRule {
                     // Extract type name
                     if let Some(for_pos) = trimmed.find("for ") {
                         let after_for = &trimmed[for_pos + 4..];
-                        if let Some(space_pos) = after_for.find(|c: char| c.is_whitespace() || c == '{') {
+                        if let Some(space_pos) =
+                            after_for.find(|c: char| c.is_whitespace() || c == '{')
+                        {
                             drop_type_name = after_for[..space_pos].trim().to_string();
                         } else {
                             drop_type_name = after_for.trim().to_string();
@@ -1210,7 +1346,11 @@ impl Rule for UnwrapInPollRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -1265,14 +1405,20 @@ impl Rule for UnwrapInPollRule {
                 let trimmed = line.trim();
 
                 // Detect Future impl start
-                if !in_future_impl && trimmed.contains("impl") && trimmed.contains("Future") && trimmed.contains("for") {
+                if !in_future_impl
+                    && trimmed.contains("impl")
+                    && trimmed.contains("Future")
+                    && trimmed.contains("for")
+                {
                     in_future_impl = true;
                     impl_brace_depth = 0;
 
                     // Extract type name
                     if let Some(for_pos) = trimmed.find("for ") {
                         let after_for = &trimmed[for_pos + 4..];
-                        if let Some(space_pos) = after_for.find(|c: char| c.is_whitespace() || c == '{') {
+                        if let Some(space_pos) =
+                            after_for.find(|c: char| c.is_whitespace() || c == '{')
+                        {
                             future_type_name = after_for[..space_pos].trim().to_string();
                         } else {
                             future_type_name = after_for.trim().to_string();
@@ -1285,7 +1431,9 @@ impl Rule for UnwrapInPollRule {
                     impl_brace_depth -= trimmed.chars().filter(|&c| c == '}').count() as i32;
 
                     // Detect poll method start
-                    if !in_poll_method && (trimmed.contains("fn poll") || trimmed.contains("fn poll(")) {
+                    if !in_poll_method
+                        && (trimmed.contains("fn poll") || trimmed.contains("fn poll("))
+                    {
                         in_poll_method = true;
                         poll_start = idx;
                         brace_depth = 0;
@@ -1612,7 +1760,11 @@ impl Rule for UnsafeSendSyncBoundsRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
         let crate_root = Path::new(&package.crate_root);
 
@@ -1714,10 +1866,19 @@ impl Rule for UnsafeSendSyncBoundsRule {
 
                 if !Self::has_required_bounds(&block_text, trait_name) {
                     let location = format!("{}:{}", rel_path, idx + 1);
-                    findings.push(Finding::new(self.metadata.id.clone(), self.metadata.name.clone(), self.metadata.default_severity, format!("Unsafe impl of {trait_name} without generic bounds"), location, block_lines
+                    findings.push(Finding::new(
+                        self.metadata.id.clone(),
+                        self.metadata.name.clone(),
+                        self.metadata.default_severity,
+                        format!("Unsafe impl of {trait_name} without generic bounds"),
+                        location,
+                        block_lines
                             .first()
                             .cloned()
-                            .unwrap_or_else(|| trait_name.to_string()), block_lines.clone(), None));
+                            .unwrap_or_else(|| trait_name.to_string()),
+                        block_lines.clone(),
+                        None,
+                    ));
                 }
 
                 string_state = state_after_line;
@@ -1734,7 +1895,7 @@ impl Rule for UnsafeSendSyncBoundsRule {
 // ============================================================================
 
 /// Detects use of potentially non-cancellation-safe futures in select! macro.
-/// 
+///
 /// When using `select!`, if a branch is not chosen, its future is dropped.
 /// If that future has made partial progress (e.g., partially read from a channel),
 /// that progress is lost. This can lead to data loss or unexpected behavior.
@@ -1770,17 +1931,41 @@ impl NonCancellationSafeSelectRule {
     /// Patterns that are known to be non-cancellation-safe
     fn non_cancellation_safe_patterns() -> &'static [(&'static str, &'static str)] {
         &[
-            ("read_line(", "BufRead::read_line is not cancellation safe - partial reads are lost"),
-            ("read_until(", "BufRead::read_until is not cancellation safe - partial reads are lost"),
-            ("read_exact(", "read_exact is not cancellation safe - partial reads are lost"),
-            ("recv_many(", "recv_many is not cancellation safe - some messages may be lost"),
-            ("read_to_end(", "read_to_end is not cancellation safe - partial reads are lost"),
-            ("read_to_string(", "read_to_string is not cancellation safe - partial reads are lost"),
-            ("copy(", "io::copy is not cancellation safe - partial copy progress is lost"),
-            ("copy_buf(", "io::copy_buf is not cancellation safe - partial copy progress is lost"),
+            (
+                "read_line(",
+                "BufRead::read_line is not cancellation safe - partial reads are lost",
+            ),
+            (
+                "read_until(",
+                "BufRead::read_until is not cancellation safe - partial reads are lost",
+            ),
+            (
+                "read_exact(",
+                "read_exact is not cancellation safe - partial reads are lost",
+            ),
+            (
+                "recv_many(",
+                "recv_many is not cancellation safe - some messages may be lost",
+            ),
+            (
+                "read_to_end(",
+                "read_to_end is not cancellation safe - partial reads are lost",
+            ),
+            (
+                "read_to_string(",
+                "read_to_string is not cancellation safe - partial reads are lost",
+            ),
+            (
+                "copy(",
+                "io::copy is not cancellation safe - partial copy progress is lost",
+            ),
+            (
+                "copy_buf(",
+                "io::copy_buf is not cancellation safe - partial copy progress is lost",
+            ),
         ]
     }
-    
+
     /// Patterns that indicate we're in a select! context
     fn select_macro_patterns() -> &'static [&'static str] {
         &[
@@ -1797,7 +1982,11 @@ impl Rule for NonCancellationSafeSelectRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -1847,7 +2036,7 @@ impl Rule for NonCancellationSafeSelectRule {
 
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 // Skip comments
                 if trimmed.starts_with("//") {
                     continue;
@@ -1906,7 +2095,7 @@ impl Rule for NonCancellationSafeSelectRule {
 // ============================================================================
 
 /// Detects concurrent data structures that clone values without requiring Sync bound.
-/// 
+///
 /// This pattern was found in tokio broadcast channels (RUSTSEC-2025-0023) where
 /// cloning a value in a concurrent context without `Sync` bound can cause data races.
 /// When multiple threads clone the same inner value simultaneously without synchronization,
@@ -1943,7 +2132,11 @@ impl Rule for MissingSyncBoundOnCloneRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -1990,7 +2183,7 @@ impl Rule for MissingSyncBoundOnCloneRule {
             // and also use unsafe impl Sync or have channel-like names
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 // Skip comments
                 if trimmed.starts_with("//") {
                     continue;
@@ -1999,47 +2192,71 @@ impl Rule for MissingSyncBoundOnCloneRule {
                 // Pattern 1: unsafe impl Sync for types that clone without Sync bound
                 if trimmed.contains("unsafe impl") && trimmed.contains("Sync") {
                     // Check if this might be a channel or shared structure
-                    let is_channel_like = trimmed.contains("Sender") 
+                    let is_channel_like = trimmed.contains("Sender")
                         || trimmed.contains("Receiver")
                         || trimmed.contains("Channel")
                         || trimmed.contains("Broadcast")
                         || trimmed.contains("Queue")
                         || trimmed.contains("Buffer");
-                    
+
                     if is_channel_like {
                         // Look for Clone + Send without Sync in nearby context
                         let context_start = idx.saturating_sub(20);
                         let context_end = (idx + 20).min(lines.len());
-                        
-                        let has_clone_send = lines[context_start..context_end].iter()
+
+                        let has_clone_send = lines[context_start..context_end]
+                            .iter()
                             .any(|l| l.contains("Clone") && l.contains("Send"));
-                        let has_sync_bound = lines[context_start..context_end].iter()
+                        let has_sync_bound = lines[context_start..context_end]
+                            .iter()
                             .any(|l| l.contains(": Sync") || l.contains("+ Sync"));
-                        
+
                         if has_clone_send && !has_sync_bound {
                             let location = format!("{}:{}", rel_path, idx + 1);
 
-                            findings.push(Finding::new(self.metadata.id.clone(), self.metadata.name.clone(), self.metadata.default_severity, "unsafe impl Sync for channel-like type with Clone + Send \
+                            findings.push(Finding::new(
+                                self.metadata.id.clone(),
+                                self.metadata.name.clone(),
+                                self.metadata.default_severity,
+                                "unsafe impl Sync for channel-like type with Clone + Send \
                                     but no Sync bound. This may allow data races when cloning. \
-                                    Consider adding `T: Sync` bound.".to_string(), location, String::new(), vec![trimmed.to_string()], None));
+                                    Consider adding `T: Sync` bound."
+                                    .to_string(),
+                                location,
+                                String::new(),
+                                vec![trimmed.to_string()],
+                                None,
+                            ));
                         }
                     }
                 }
 
                 // Pattern 2: impl blocks with Clone + Send but not Sync for channel types
-                if trimmed.starts_with("impl") && trimmed.contains("Clone + Send") 
-                    && !trimmed.contains("Sync") {
-                    let is_channel_like = trimmed.contains("Sender") 
+                if trimmed.starts_with("impl")
+                    && trimmed.contains("Clone + Send")
+                    && !trimmed.contains("Sync")
+                {
+                    let is_channel_like = trimmed.contains("Sender")
                         || trimmed.contains("Receiver")
                         || trimmed.contains("Channel")
                         || trimmed.contains("Broadcast");
-                    
+
                     if is_channel_like {
                         let location = format!("{}:{}", rel_path, idx + 1);
 
-                        findings.push(Finding::new(self.metadata.id.clone(), self.metadata.name.clone(), self.metadata.default_severity, "Channel implementation with Clone + Send but missing Sync \
+                        findings.push(Finding::new(
+                            self.metadata.id.clone(),
+                            self.metadata.name.clone(),
+                            self.metadata.default_severity,
+                            "Channel implementation with Clone + Send but missing Sync \
                                 bound. Concurrent cloning may cause data races. \
-                                Consider `T: Clone + Send + Sync`.".to_string(), location, String::new(), vec![trimmed.to_string()], None));
+                                Consider `T: Clone + Send + Sync`."
+                                .to_string(),
+                            location,
+                            String::new(),
+                            vec![trimmed.to_string()],
+                            None,
+                        ));
                     }
                 }
             }
@@ -2054,7 +2271,7 @@ impl Rule for MissingSyncBoundOnCloneRule {
 // ============================================================================
 
 /// Detects potential Pin contract violations through unsplit/reconstruction patterns.
-/// 
+///
 /// Based on RUSTSEC-2023-0005 where ReadHalf::unsplit could violate Pin contract
 /// for !Unpin types. When split IO types are unsplit, pinned data may be moved
 /// incorrectly, leading to use-after-free.
@@ -2072,7 +2289,8 @@ impl PinContractViolationRule {
                 full_description: "Detects potential Pin contract violations through unsplit or \
                     reconstruction patterns. When split IO types are recombined using unsplit(), \
                     pinned data for !Unpin types may be moved incorrectly. Also detects unsafe \
-                    Pin::new_unchecked followed by potential moves. Based on RUSTSEC-2023-0005.".to_string(),
+                    Pin::new_unchecked followed by potential moves. Based on RUSTSEC-2023-0005."
+                    .to_string(),
                 help_uri: Some("https://rustsec.org/advisories/RUSTSEC-2023-0005.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
@@ -2089,7 +2307,11 @@ impl Rule for PinContractViolationRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -2134,7 +2356,7 @@ impl Rule for PinContractViolationRule {
 
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 // Skip comments
                 if trimmed.starts_with("//") {
                     continue;
@@ -2163,8 +2385,18 @@ impl Rule for PinContractViolationRule {
                 if trimmed.contains("Pin::new_unchecked") {
                     let location = format!("{}:{}", rel_path, idx + 1);
 
-                    findings.push(Finding::new(self.metadata.id.clone(), self.metadata.name.clone(), Severity::Medium, "Use of Pin::new_unchecked requires ensuring the pinned value \
-                            is never moved. Verify the value is not moved after pinning.".to_string(), location, String::new(), vec![trimmed.to_string()], None));
+                    findings.push(Finding::new(
+                        self.metadata.id.clone(),
+                        self.metadata.name.clone(),
+                        Severity::Medium,
+                        "Use of Pin::new_unchecked requires ensuring the pinned value \
+                            is never moved. Verify the value is not moved after pinning."
+                            .to_string(),
+                        location,
+                        String::new(),
+                        vec![trimmed.to_string()],
+                        None,
+                    ));
                 }
             }
         }
@@ -2178,7 +2410,7 @@ impl Rule for PinContractViolationRule {
 // ============================================================================
 
 /// Detects potential race conditions when using oneshot channels after close().
-/// 
+///
 /// Based on RUSTSEC-2021-0124 where concurrent close(), send(), and recv()
 /// operations on a oneshot channel could cause data races.
 pub struct OneshotRaceAfterCloseRule {
@@ -2191,11 +2423,14 @@ impl OneshotRaceAfterCloseRule {
             metadata: RuleMetadata {
                 id: "RUSTCOLA113".to_string(),
                 name: "oneshot-race-after-close".to_string(),
-                short_description: "Potential race condition with oneshot channel close()".to_string(),
-                full_description: "Detects patterns where oneshot::Receiver::close() may be called \
+                short_description: "Potential race condition with oneshot channel close()"
+                    .to_string(),
+                full_description:
+                    "Detects patterns where oneshot::Receiver::close() may be called \
                     concurrently with send() or recv()/await operations. This pattern can cause \
                     data races as the sender and receiver may concurrently access shared memory. \
-                    Based on RUSTSEC-2021-0124.".to_string(),
+                    Based on RUSTSEC-2021-0124."
+                        .to_string(),
                 help_uri: Some("https://rustsec.org/advisories/RUSTSEC-2021-0124.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
@@ -2212,7 +2447,11 @@ impl Rule for OneshotRaceAfterCloseRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -2264,7 +2503,7 @@ impl Rule for OneshotRaceAfterCloseRule {
 
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 // Skip comments
                 if trimmed.starts_with("//") {
                     continue;
@@ -2278,9 +2517,12 @@ impl Rule for OneshotRaceAfterCloseRule {
 
                 // If we've seen a close() and see send/recv in spawn context, flag it
                 if has_close_call {
-                    let in_spawn_context = lines[..idx].iter().rev().take(10)
+                    let in_spawn_context = lines[..idx]
+                        .iter()
+                        .rev()
+                        .take(10)
                         .any(|l| l.contains("spawn") || l.contains("thread::"));
-                    
+
                     if in_spawn_context {
                         if trimmed.contains(".send(") || trimmed.contains(".try_recv(") {
                             let location = format!("{}:{}", rel_path, idx + 1);
@@ -2316,7 +2558,7 @@ impl Rule for OneshotRaceAfterCloseRule {
 // ============================================================================
 
 /// Detects async-signal-unsafe operations inside signal handlers.
-/// 
+///
 /// Signal handlers have strict requirements about what operations are safe.
 /// Many common operations (heap allocation, I/O, locking) are NOT safe in
 /// signal handlers and can cause deadlocks or corruption.
@@ -2335,8 +2577,11 @@ impl AsyncSignalUnsafeInHandlerRule {
                     Signal handlers run asynchronously and interrupt normal execution, so only \
                     'async-signal-safe' functions may be called. Unsafe operations include: \
                     heap allocation (Box, Vec, String, format!), I/O (println!, eprintln!), \
-                    locking (Mutex, RwLock), and most standard library functions.".to_string(),
-                help_uri: Some("https://man7.org/linux/man-pages/man7/signal-safety.7.html".to_string()),
+                    locking (Mutex, RwLock), and most standard library functions."
+                    .to_string(),
+                help_uri: Some(
+                    "https://man7.org/linux/man-pages/man7/signal-safety.7.html".to_string(),
+                ),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
@@ -2375,7 +2620,11 @@ impl Rule for AsyncSignalUnsafeInHandlerRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -2417,9 +2666,13 @@ impl Rule for AsyncSignalUnsafeInHandlerRule {
             };
 
             // Check if file uses signal handling
-            if !content.contains("signal") && !content.contains("Signal") 
-                && !content.contains("ctrlc") && !content.contains("SIGINT")
-                && !content.contains("SIGTERM") && !content.contains("SIGHUP") {
+            if !content.contains("signal")
+                && !content.contains("Signal")
+                && !content.contains("ctrlc")
+                && !content.contains("SIGINT")
+                && !content.contains("SIGTERM")
+                && !content.contains("SIGHUP")
+            {
                 continue;
             }
 
@@ -2430,14 +2683,14 @@ impl Rule for AsyncSignalUnsafeInHandlerRule {
 
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 // Skip comments
                 if trimmed.starts_with("//") {
                     continue;
                 }
 
                 // Detect signal handler registration patterns
-                let is_handler_start = trimmed.contains("signal::") 
+                let is_handler_start = trimmed.contains("signal::")
                     || trimmed.contains("ctrlc::set_handler")
                     || trimmed.contains("set_handler")
                     || (trimmed.contains("signal") && trimmed.contains("move ||"))
@@ -2495,7 +2748,7 @@ impl Rule for AsyncSignalUnsafeInHandlerRule {
 // ============================================================================
 
 /// Detects potential TOCTOU (Time-of-check to time-of-use) races with OnceCell.
-/// 
+///
 /// Pattern: Checking OnceCell::get() then calling get_or_init() based on result
 /// creates a race window where another thread may initialize between check and use.
 pub struct OnceCellTocTouRule {
@@ -2512,8 +2765,11 @@ impl OnceCellTocTouRule {
                 full_description: "Detects patterns where OnceCell::get() is checked before \
                     calling get_or_init(). This creates a TOCTOU race: another thread may \
                     initialize the cell between the check and the use. Use get_or_init() \
-                    directly without pre-checking, or use get_or_try_init() for fallible init.".to_string(),
-                help_uri: Some("https://doc.rust-lang.org/std/cell/struct.OnceCell.html".to_string()),
+                    directly without pre-checking, or use get_or_try_init() for fallible init."
+                    .to_string(),
+                help_uri: Some(
+                    "https://doc.rust-lang.org/std/cell/struct.OnceCell.html".to_string(),
+                ),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
@@ -2526,7 +2782,10 @@ impl OnceCellTocTouRule {
     /// Patterns that indicate TOCTOU with OnceCell/OnceLock
     fn toctou_patterns() -> &'static [(&'static str, &'static str)] {
         &[
-            (".get().is_none()", "checking get().is_none() then initializing"),
+            (
+                ".get().is_none()",
+                "checking get().is_none() then initializing",
+            ),
             (".get().is_some()", "checking get().is_some() before using"),
             ("if let None = ", "pattern matching None before get_or_init"),
             ("if cell.get() == None", "comparing get() to None"),
@@ -2540,7 +2799,11 @@ impl Rule for OnceCellTocTouRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -2582,8 +2845,10 @@ impl Rule for OnceCellTocTouRule {
             };
 
             // Quick check: does file use OnceCell or OnceLock?
-            if !content.contains("OnceCell") && !content.contains("OnceLock") 
-                && !content.contains("once_cell") {
+            if !content.contains("OnceCell")
+                && !content.contains("OnceLock")
+                && !content.contains("once_cell")
+            {
                 continue;
             }
 
@@ -2591,7 +2856,7 @@ impl Rule for OnceCellTocTouRule {
 
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 // Skip comments
                 if trimmed.starts_with("//") {
                     continue;
@@ -2601,9 +2866,11 @@ impl Rule for OnceCellTocTouRule {
                 for (pattern, description) in Self::toctou_patterns() {
                     if trimmed.contains(pattern) {
                         // Look ahead for get_or_init within 5 lines
-                        let has_init_nearby = lines[idx..].iter().take(5)
+                        let has_init_nearby = lines[idx..]
+                            .iter()
+                            .take(5)
                             .any(|l| l.contains("get_or_init") || l.contains("set("));
-                        
+
                         if has_init_nearby {
                             let location = format!("{}:{}", rel_path, idx + 1);
 
@@ -2621,7 +2888,7 @@ impl Rule for OnceCellTocTouRule {
                                 function_signature: String::new(),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
-                    ..Default::default()
+                                ..Default::default()
                             });
                         }
                     }
@@ -2638,7 +2905,7 @@ impl Rule for OnceCellTocTouRule {
 // ============================================================================
 
 /// Detects panic-prone operations while holding a MutexGuard or RwLockGuard.
-/// 
+///
 /// Panicking while holding a lock poisons the mutex, making it permanently
 /// unusable for other threads. This can cause cascading failures.
 pub struct PanicWhileHoldingLockRule {
@@ -2655,8 +2922,11 @@ impl PanicWhileHoldingLockRule {
                 full_description: "Detects panic-prone operations (unwrap, expect, assert, \
                     indexing) while a MutexGuard or RwLockGuard is held. Panicking while \
                     holding a lock poisons the mutex, making it unusable for other threads \
-                    and causing cascading failures.".to_string(),
-                help_uri: Some("https://doc.rust-lang.org/std/sync/struct.Mutex.html#poisoning".to_string()),
+                    and causing cascading failures."
+                    .to_string(),
+                help_uri: Some(
+                    "https://doc.rust-lang.org/std/sync/struct.Mutex.html#poisoning".to_string(),
+                ),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
                 cwe_ids: Vec::new(),
@@ -2699,7 +2969,11 @@ impl Rule for PanicWhileHoldingLockRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -2753,7 +3027,7 @@ impl Rule for PanicWhileHoldingLockRule {
 
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 // Skip comments
                 if trimmed.starts_with("//") {
                     continue;
@@ -2814,7 +3088,7 @@ impl Rule for PanicWhileHoldingLockRule {
 // ============================================================================
 
 /// Detects closures that capture references and may escape their scope,
-/// particularly when passed to spawn/thread functions or stored in 
+/// particularly when passed to spawn/thread functions or stored in
 /// longer-lived contexts.
 pub struct ClosureEscapingRefsRule {
     metadata: RuleMetadata,
@@ -2829,7 +3103,8 @@ impl ClosureEscapingRefsRule {
                 short_description: "Closure may capture escaping references".to_string(),
                 full_description: "Detects closures passed to spawn/thread functions that \
                     capture local references. These closures outlive the captured references, \
-                    leading to use-after-free. Use move closures or Arc for shared ownership.".to_string(),
+                    leading to use-after-free. Use move closures or Arc for shared ownership."
+                    .to_string(),
                 help_uri: None,
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
@@ -2875,7 +3150,11 @@ impl Rule for ClosureEscapingRefsRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
         let crate_root = Path::new(&package.crate_root);
 
@@ -2924,7 +3203,7 @@ impl Rule for ClosureEscapingRefsRule {
 
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 // Skip comments
                 if trimmed.starts_with("//") {
                     continue;
@@ -2935,13 +3214,13 @@ impl Rule for ClosureEscapingRefsRule {
                     if trimmed.contains(spawn_fn) {
                         // Check if it's NOT a move closure (which would be safe)
                         let has_closure = trimmed.contains('|');
-                        let is_move_closure = trimmed.contains("move |") || 
-                                             trimmed.contains("move|");
-                        
+                        let is_move_closure =
+                            trimmed.contains("move |") || trimmed.contains("move|");
+
                         if has_closure && !is_move_closure {
                             // Non-move closure passed to spawn - potential issue
                             let location = format!("{}:{}", rel_path, idx + 1);
-                            
+
                             findings.push(Finding {
                                 rule_id: self.metadata.id.clone(),
                                 rule_name: self.metadata.name.clone(),
@@ -2957,7 +3236,7 @@ impl Rule for ClosureEscapingRefsRule {
                                 function_signature: String::new(),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
-                    ..Default::default()
+                                ..Default::default()
                             });
                         }
 
@@ -2967,7 +3246,7 @@ impl Rule for ClosureEscapingRefsRule {
                             for ref_pattern in Self::ref_capture_patterns() {
                                 if trimmed.contains(ref_pattern) {
                                     let location = format!("{}:{}", rel_path, idx + 1);
-                                    
+
                                     findings.push(Finding {
                                         rule_id: self.metadata.id.clone(),
                                         rule_name: self.metadata.name.clone(),
@@ -3002,7 +3281,7 @@ impl Rule for ClosureEscapingRefsRule {
 // ============================================================================
 
 /// Detects CPU-bound operations in async functions that may starve the executor.
-/// 
+///
 /// Long-running synchronous operations in async code block the executor thread,
 /// preventing other tasks from making progress. Use spawn_blocking or yield points.
 pub struct ExecutorStarvationRule {
@@ -3019,7 +3298,8 @@ impl ExecutorStarvationRule {
                 full_description: "Detects CPU-bound operations (tight loops, heavy computation) \
                     in async functions that may starve the executor. Long-running synchronous \
                     work blocks the executor thread. Use tokio::task::spawn_blocking or \
-                    add yield points with tokio::task::yield_now().".to_string(),
+                    add yield points with tokio::task::yield_now()."
+                    .to_string(),
                 help_uri: Some("https://tokio.rs/tokio/topics/bridging".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
@@ -3057,7 +3337,11 @@ impl Rule for ExecutorStarvationRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
         let crate_root = Path::new(&package.crate_root);
 
@@ -3107,20 +3391,22 @@ impl Rule for ExecutorStarvationRule {
 
             for (idx, line) in lines.iter().enumerate() {
                 let trimmed = line.trim();
-                
+
                 // Skip comments
                 if trimmed.starts_with("//") {
                     continue;
                 }
 
                 // Track async function entry
-                if (trimmed.contains("async fn ") || trimmed.contains("async move")) && !in_async_fn {
+                if (trimmed.contains("async fn ") || trimmed.contains("async move")) && !in_async_fn
+                {
                     in_async_fn = true;
                     async_start_depth = brace_depth;
                     // Extract function name
                     if let Some(fn_pos) = trimmed.find("fn ") {
                         let after_fn = &trimmed[fn_pos + 3..];
-                        async_fn_name = after_fn.split(|c| c == '(' || c == '<')
+                        async_fn_name = after_fn
+                            .split(|c| c == '(' || c == '<')
                             .next()
                             .unwrap_or("")
                             .trim()
@@ -3156,7 +3442,7 @@ impl Rule for ExecutorStarvationRule {
 
                             if !has_nearby_yield {
                                 let location = format!("{}:{}", rel_path, idx + 1);
-                                
+
                                 findings.push(Finding {
                                     rule_id: self.metadata.id.clone(),
                                     rule_name: self.metadata.name.clone(),
@@ -3205,7 +3491,8 @@ impl AsyncDropCorrectnessRule {
                 full_description: "Detects async resources (network connections, file handles, \
                     database connections) that may be dropped without explicit cleanup. In async \
                     code, Drop::drop() is synchronous and cannot await cleanup operations. Use \
-                    explicit .shutdown(), .close(), or .flush() before dropping async resources.".to_string(),
+                    explicit .shutdown(), .close(), or .flush() before dropping async resources."
+                    .to_string(),
                 help_uri: None,
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
@@ -3222,11 +3509,17 @@ impl AsyncDropCorrectnessRule {
             ("TcpStream", "Use .shutdown() before dropping"),
             ("TcpListener", "Use .shutdown() or explicit close"),
             ("UnixStream", "Use .shutdown() before dropping"),
-            ("File", "Use .flush().await and .sync_all().await before dropping"),
+            (
+                "File",
+                "Use .flush().await and .sync_all().await before dropping",
+            ),
             ("BufWriter", "Use .flush().await before dropping"),
             ("BufReader", "Ensure underlying reader is properly closed"),
             ("Pool", "Use .close().await for connection pools"),
-            ("Client", "Use .close() or explicit shutdown for HTTP clients"),
+            (
+                "Client",
+                "Use .close() or explicit shutdown for HTTP clients",
+            ),
             ("Connection", "Close database connections explicitly"),
             ("Sender", "Drop sender explicitly or use .closed().await"),
             ("WebSocket", "Use .close().await before dropping"),
@@ -3254,7 +3547,11 @@ impl Rule for AsyncDropCorrectnessRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -3313,7 +3610,8 @@ impl Rule for AsyncDropCorrectnessRule {
                     in_async_fn = true;
                     if let Some(fn_pos) = trimmed.find("fn ") {
                         let after_fn = &trimmed[fn_pos + 3..];
-                        async_fn_name = after_fn.split(|c| c == '(' || c == '<')
+                        async_fn_name = after_fn
+                            .split(|c| c == '(' || c == '<')
                             .next()
                             .unwrap_or("")
                             .trim()
@@ -3328,9 +3626,12 @@ impl Rule for AsyncDropCorrectnessRule {
 
                 // Check for async resource declarations
                 for (resource_type, advice) in Self::async_resource_types() {
-                    if trimmed.contains(resource_type) && 
-                       (trimmed.contains("let ") || trimmed.contains("mut ")) &&
-                       (trimmed.contains(".await") || trimmed.contains("::new") || trimmed.contains("::connect")) {
+                    if trimmed.contains(resource_type)
+                        && (trimmed.contains("let ") || trimmed.contains("mut "))
+                        && (trimmed.contains(".await")
+                            || trimmed.contains("::new")
+                            || trimmed.contains("::connect"))
+                    {
                         // Extract variable name
                         if let Some(let_pos) = trimmed.find("let ") {
                             let after_let = &trimmed[let_pos + 4..];
@@ -3387,7 +3688,7 @@ impl Rule for AsyncDropCorrectnessRule {
 }
 
 // ============================================================================
-// RUSTCOLA124: Panic in Drop Implementation Rule  
+// RUSTCOLA124: Panic in Drop Implementation Rule
 // ============================================================================
 
 /// Detects panic-prone code in Drop implementations.
@@ -3406,7 +3707,8 @@ impl PanicInDropImplRule {
                 full_description: "Detects panic-prone operations (unwrap, expect, panic!, \
                     assert!, indexing) in Drop implementations. If Drop panics during stack \
                     unwinding from another panic, the process will abort. Use Option::take(), \
-                    logging, or ignore errors in Drop.".to_string(),
+                    logging, or ignore errors in Drop."
+                    .to_string(),
                 help_uri: Some("https://doc.rust-lang.org/std/ops/trait.Drop.html".to_string()),
                 default_severity: Severity::High,
                 origin: RuleOrigin::BuiltIn,
@@ -3420,11 +3722,23 @@ impl PanicInDropImplRule {
     /// Panic-prone patterns to detect in Drop
     fn panic_patterns() -> &'static [(&'static str, &'static str)] {
         &[
-            (".unwrap()", "Use .ok(), .unwrap_or_default(), or log errors instead"),
-            (".expect(", "Use .ok(), .unwrap_or_default(), or log errors instead"),
-            ("panic!(", "Never panic in Drop - log error or silently ignore"),
+            (
+                ".unwrap()",
+                "Use .ok(), .unwrap_or_default(), or log errors instead",
+            ),
+            (
+                ".expect(",
+                "Use .ok(), .unwrap_or_default(), or log errors instead",
+            ),
+            (
+                "panic!(",
+                "Never panic in Drop - log error or silently ignore",
+            ),
             ("unreachable!(", "Replace with logging or silent handling"),
-            ("unimplemented!(", "Implement proper cleanup or silently skip"),
+            (
+                "unimplemented!(",
+                "Implement proper cleanup or silently skip",
+            ),
             ("todo!(", "Complete implementation before production use"),
             ("assert!(", "Use debug_assert! or remove assertion"),
             ("assert_eq!(", "Use debug_assert_eq! or remove assertion"),
@@ -3439,7 +3753,11 @@ impl Rule for PanicInDropImplRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -3527,18 +3845,23 @@ impl Rule for PanicInDropImplRule {
                             // Filter out false positives
                             // Skip if pattern is in a comment on same line
                             if let Some(comment_pos) = trimmed.find("//") {
-                                if trimmed.find(pattern).map(|p| p > comment_pos).unwrap_or(false) {
+                                if trimmed
+                                    .find(pattern)
+                                    .map(|p| p > comment_pos)
+                                    .unwrap_or(false)
+                                {
                                     continue;
                                 }
                             }
 
                             // For indexing, check it's actual array access not a range
                             if *pattern == "[" {
-                                if !trimmed.contains("][") && 
-                                   !trimmed.contains("[..]") &&
-                                   trimmed.contains("[") && 
-                                   trimmed.contains("]") &&
-                                   !trimmed.contains(".get(") {
+                                if !trimmed.contains("][")
+                                    && !trimmed.contains("[..]")
+                                    && trimmed.contains("[")
+                                    && trimmed.contains("]")
+                                    && !trimmed.contains(".get(")
+                                {
                                     // Likely array indexing
                                 } else {
                                     continue;
@@ -3558,7 +3881,7 @@ impl Rule for PanicInDropImplRule {
                                 function_signature: format!("Drop for {}", drop_type_name),
                                 evidence: vec![trimmed.to_string()],
                                 span: None,
-                    ..Default::default()
+                                ..Default::default()
                             });
                             break; // One finding per line
                         }
@@ -3591,7 +3914,8 @@ impl SpawnedTaskPanicRule {
                 full_description: "Detects spawned tasks (tokio::spawn, async_std::spawn, etc.) \
                     without panic handling. By default, panics in spawned tasks are silently \
                     swallowed when the JoinHandle is dropped. Use .await on JoinHandle, \
-                    catch_unwind, or panic hooks to detect task panics.".to_string(),
+                    catch_unwind, or panic hooks to detect task panics."
+                    .to_string(),
                 help_uri: Some("https://docs.rs/tokio/latest/tokio/task/fn.spawn.html".to_string()),
                 default_severity: Severity::Medium,
                 origin: RuleOrigin::BuiltIn,
@@ -3639,7 +3963,11 @@ impl Rule for SpawnedTaskPanicRule {
         &self.metadata
     }
 
-    fn evaluate(&self, package: &MirPackage, _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>) -> Vec<Finding> {
+    fn evaluate(
+        &self,
+        package: &MirPackage,
+        _inter_analysis: Option<&crate::interprocedural::InterProceduralAnalysis>,
+    ) -> Vec<Finding> {
         if package.crate_name == "mir-extractor" {
             return Vec::new();
         }
@@ -3702,16 +4030,16 @@ impl Rule for SpawnedTaskPanicRule {
                                 .map(|s| *s)
                                 .collect::<Vec<&str>>()
                                 .join("\n");
-                            
+
                             Self::panic_handling_patterns()
                                 .iter()
                                 .any(|pattern| context.contains(pattern))
                         };
 
                         // Also check if spawn is assigned to a variable (implies later handling)
-                        let is_assigned = trimmed.contains("let ") && 
-                                         trimmed.contains(" = ") &&
-                                         !trimmed.contains("let _ =");
+                        let is_assigned = trimmed.contains("let ")
+                            && trimmed.contains(" = ")
+                            && !trimmed.contains("let _ =");
 
                         if !has_panic_handling && !is_assigned {
                             let location = format!("{}:{}", rel_path, idx + 1);

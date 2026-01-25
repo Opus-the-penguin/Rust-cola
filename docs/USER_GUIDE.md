@@ -81,6 +81,12 @@ That's it. Results land in `out/cola/` (relative to your current directory).
 cargo-cola --crate-path ./my-crate --out-dir ./my-crate/out/cola
 ```
 
+**Inspect available rules:**
+```bash
+cargo-cola --rules
+```
+Prints the live rule inventory (including loaded rulepacks) so you know exactly what checks will run.
+
 ---
 
 ## Understanding Output

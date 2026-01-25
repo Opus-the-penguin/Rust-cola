@@ -14,7 +14,10 @@ pub fn text_input_for_password() {
 /// SHOULD BE FLAGGED: Echoing password value back to user
 pub fn password_value_exposed() {
     let password = "secret123";
-    let html = format!(r#"<input type="password" name="password" value="{}" />"#, password);
+    let html = format!(
+        r#"<input type="password" name="password" value="{}" />"#,
+        password
+    );
     println!("{}", html);
 }
 

@@ -25,7 +25,7 @@ pub fn log_api_key() {
 /// PROBLEMATIC: Logs secret token
 pub fn log_auth_token() {
     let token = env::var("AUTH_TOKEN").unwrap_or_default();
-    // Format string with secret - VULNERABLE  
+    // Format string with secret - VULNERABLE
     let msg = format!("Token value: {}", token);
     println!("{}", msg);
 }

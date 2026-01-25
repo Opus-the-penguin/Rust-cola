@@ -34,7 +34,7 @@ pub fn example_with_crate_wide_allow_commented() {
 // #![allow(clippy::all)]
 // This disables ALL clippy lints - including security-relevant ones like:
 // - clippy::suspicious_else_formatting
-// - clippy::suspicious_open_options  
+// - clippy::suspicious_open_options
 // - clippy::invalid_regex
 // - clippy::zombie_processes
 
@@ -71,7 +71,7 @@ fn with_justified_suppression() {
 #[cfg_attr(not(test), deprecated(note = "TODO: Refactor to use a config struct"))]
 fn needs_refactoring(
     _arg1: i32,
-    _arg2: i32, 
+    _arg2: i32,
     _arg3: i32,
     _arg4: i32,
     _arg5: i32,
@@ -111,29 +111,29 @@ mod tests {
         //   - Can't see the suppression when reading specific functions
         //   - Easy to forget it's there
         //   - Hides legitimate issues
-        
+
         // Item-level: #[allow(lint)]
         //   - Affects only that specific item
         //   - Visible when reading the code
         //   - Forced to justify each suppression
         //   - Narrowly scoped
-        
+
         assert!(true);
     }
-    
+
     #[test]
     fn demonstrate_security_impact() {
         // Example: #![allow(clippy::suspicious_else_formatting)]
         // could hide code like:
-        
+
         // if authenticated
         //     grant_access();
         // else
         // grant_access(); // BUG! Looks like it's in else, but isn't!
-        
+
         // The suspicious formatting would be flagged by clippy,
         // but a crate-wide allow would hide it
-        
+
         assert!(true);
     }
 }

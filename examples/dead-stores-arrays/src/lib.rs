@@ -7,7 +7,7 @@
 //! - Performance waste (unnecessary writes)
 //!
 //! Detection metrics: 71% recall (5/7 problematic patterns detected)
-//! - Detected: overwrite_without_read, stale_password_data, multiple_overwrites, 
+//! - Detected: overwrite_without_read, stale_password_data, multiple_overwrites,
 //!   conditional_overwrite, branch_dead_stores
 //! - Not detected (require more advanced analysis): write_never_read, loop_overwrite
 //!
@@ -50,7 +50,7 @@ pub fn stale_password_data() {
     password[3] = b's';
     // ... use password ...
     password[0] = 0; // Partial clear - other bytes are dead stores
-    // password[1..4] never cleared - dead stores that leak sensitive data
+                     // password[1..4] never cleared - dead stores that leak sensitive data
 }
 
 /// BAD: Multiple overwrites in sequence

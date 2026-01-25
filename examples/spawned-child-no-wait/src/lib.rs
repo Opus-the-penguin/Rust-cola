@@ -9,8 +9,8 @@
 // This is particularly problematic in long-running services that spawn
 // many child processes.
 
-use std::process::Command;
 use std::io;
+use std::process::Command;
 
 // ============================================================================
 // PROBLEMATIC: Child spawned but not waited on
@@ -52,7 +52,7 @@ pub fn conditional_spawn_no_wait(condition: bool) -> io::Result<()> {
 pub fn mixed_spawn_one_no_wait() -> io::Result<()> {
     let mut child1 = Command::new("ls").spawn()?;
     child1.wait()?; // This one is OK
-    
+
     Command::new("pwd").spawn()?; // This one creates zombie
     Ok(())
 }
@@ -110,7 +110,7 @@ pub fn spawn_store_wait_later() -> io::Result<()> {
         let child = Command::new("echo").arg(i.to_string()).spawn()?;
         children.push(child);
     }
-    
+
     for mut child in children {
         child.wait()?;
     }

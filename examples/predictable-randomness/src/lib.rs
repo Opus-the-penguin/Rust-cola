@@ -101,7 +101,7 @@ pub fn safe_use_thread_rng() {
 pub fn safe_seed_from_entropy() {
     use rand::rngs::OsRng;
     use rand::RngCore;
-    
+
     let seed = OsRng.next_u64();
     let mut rng = ChaCha20Rng::seed_from_u64(seed);
     let _random = rng.gen::<u64>();
@@ -167,30 +167,33 @@ pub fn edge_case_simulation() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn demonstrate_predictability() {
         // Two calls with the same seed produce identical sequences
         let mut rng1 = ChaCha20Rng::seed_from_u64(12345);
         let mut rng2 = ChaCha20Rng::seed_from_u64(12345);
-        
+
         // These will be EXACTLY the same!
         let value1 = rng1.gen::<u64>();
         let value2 = rng2.gen::<u64>();
-        
+
         assert_eq!(value1, value2, "Predictable! Same seed = same output");
     }
-    
+
     #[test]
     fn demonstrate_unpredictability() {
         // Using proper entropy sources gives different values
         let mut rng1 = ChaCha20Rng::from_entropy();
         let mut rng2 = ChaCha20Rng::from_entropy();
-        
+
         let value1 = rng1.gen::<u64>();
         let value2 = rng2.gen::<u64>();
-        
+
         // These will be different (with overwhelming probability)
-        assert_ne!(value1, value2, "Unpredictable! Different entropy = different output");
+        assert_ne!(
+            value1, value2,
+            "Unpredictable! Different entropy = different output"
+        );
     }
 }

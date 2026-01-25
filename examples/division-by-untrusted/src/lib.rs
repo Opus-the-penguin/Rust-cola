@@ -10,10 +10,7 @@ use std::env;
 
 /// PROBLEMATIC: Direct division by env var
 pub fn divide_by_env_var() {
-    let divisor: i32 = env::var("DIVISOR")
-        .unwrap_or_default()
-        .parse()
-        .unwrap_or(1);
+    let divisor: i32 = env::var("DIVISOR").unwrap_or_default().parse().unwrap_or(1);
     let total = 1000;
     // Attacker sets DIVISOR=0 → panic
     let result = total / divisor;
@@ -22,10 +19,7 @@ pub fn divide_by_env_var() {
 
 /// PROBLEMATIC: Modulo with env var
 pub fn modulo_by_env_var() {
-    let modulus: u32 = env::var("MODULUS")
-        .unwrap_or_default()
-        .parse()
-        .unwrap_or(1);
+    let modulus: u32 = env::var("MODULUS").unwrap_or_default().parse().unwrap_or(1);
     let value = 42u32;
     // MODULUS=0 → panic
     let remainder = value % modulus;
@@ -35,9 +29,7 @@ pub fn modulo_by_env_var() {
 /// PROBLEMATIC: CLI arg as denominator
 pub fn divide_by_cli_arg() {
     let args: Vec<String> = env::args().collect();
-    let divisor: f64 = args.get(1)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(1.0);
+    let divisor: f64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(1.0);
     // Float division by zero doesn't panic but gives inf/nan
     // Integer division would panic
     let result = 100.0 / divisor;
@@ -46,10 +38,7 @@ pub fn divide_by_cli_arg() {
 
 /// PROBLEMATIC: Division after arithmetic on untrusted value
 pub fn divide_after_arithmetic() {
-    let base: i32 = env::var("BASE")
-        .unwrap_or_default()
-        .parse()
-        .unwrap_or(0);
+    let base: i32 = env::var("BASE").unwrap_or_default().parse().unwrap_or(0);
     let divisor = base + 0; // Still zero if base is zero
     let result = 100 / divisor;
     println!("Result: {}", result);
@@ -57,10 +46,7 @@ pub fn divide_after_arithmetic() {
 
 /// PROBLEMATIC: Multiple divisions in loop
 pub fn divide_in_loop() {
-    let count: usize = env::var("COUNT")
-        .unwrap_or_default()
-        .parse()
-        .unwrap_or(1);
+    let count: usize = env::var("COUNT").unwrap_or_default().parse().unwrap_or(1);
     for i in 0..10 {
         // COUNT=0 panics
         let bucket = i % count;
@@ -81,10 +67,7 @@ pub fn divide_nested() {
 
 /// SAFE: Zero check before division
 pub fn divide_with_zero_check() {
-    let divisor: i32 = env::var("DIVISOR")
-        .unwrap_or_default()
-        .parse()
-        .unwrap_or(0);
+    let divisor: i32 = env::var("DIVISOR").unwrap_or_default().parse().unwrap_or(0);
     if divisor != 0 {
         let result = 100 / divisor;
         println!("Result: {}", result);
@@ -95,10 +78,7 @@ pub fn divide_with_zero_check() {
 
 /// SAFE: Using checked_div
 pub fn divide_checked() {
-    let divisor: i32 = env::var("DIVISOR")
-        .unwrap_or_default()
-        .parse()
-        .unwrap_or(0);
+    let divisor: i32 = env::var("DIVISOR").unwrap_or_default().parse().unwrap_or(0);
     match 100i32.checked_div(divisor) {
         Some(result) => println!("Result: {}", result),
         None => println!("Division failed"),
@@ -108,12 +88,9 @@ pub fn divide_checked() {
 /// SAFE: Using NonZero type
 pub fn divide_with_nonzero() {
     use std::num::NonZeroU32;
-    
-    let divisor_raw: u32 = env::var("DIVISOR")
-        .unwrap_or_default()
-        .parse()
-        .unwrap_or(0);
-    
+
+    let divisor_raw: u32 = env::var("DIVISOR").unwrap_or_default().parse().unwrap_or(0);
+
     if let Some(divisor) = NonZeroU32::new(divisor_raw) {
         let result = 100u32 / divisor.get();
         println!("Result: {}", result);
@@ -130,10 +107,7 @@ pub fn divide_by_constant() {
 
 /// SAFE: Division with > 0 check
 pub fn divide_with_positive_check() {
-    let divisor: i32 = env::var("DIVISOR")
-        .unwrap_or_default()
-        .parse()
-        .unwrap_or(0);
+    let divisor: i32 = env::var("DIVISOR").unwrap_or_default().parse().unwrap_or(0);
     if divisor > 0 {
         let result = 100 / divisor;
         println!("Result: {}", result);
@@ -142,10 +116,7 @@ pub fn divide_with_positive_check() {
 
 /// SAFE: Using saturating_div
 pub fn divide_saturating() {
-    let divisor: i32 = env::var("DIVISOR")
-        .unwrap_or_default()
-        .parse()
-        .unwrap_or(0);
+    let divisor: i32 = env::var("DIVISOR").unwrap_or_default().parse().unwrap_or(0);
     // Note: saturating_div still panics on zero, but checking for it
     if divisor != 0 {
         let result = 100i32.saturating_div(divisor);

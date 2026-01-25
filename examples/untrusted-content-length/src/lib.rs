@@ -1,5 +1,5 @@
 //! Demonstrates RUSTSEC-2025-0015: Content-Length DoS vulnerability
-//! 
+//!
 //! This example shows how trusting remote Content-Length headers for allocations
 //! can lead to denial-of-service attacks.
 
@@ -22,8 +22,11 @@ pub fn vulnerable_direct_allocation(response: &reqwest::blocking::Response) {
 /// VULNERABLE: Using header lookup with from_static
 pub fn vulnerable_header_lookup(response: &reqwest::blocking::Response) {
     use reqwest::header::HeaderName;
-    
-    if let Some(header_value) = response.headers().get(HeaderName::from_static("content-length")) {
+
+    if let Some(header_value) = response
+        .headers()
+        .get(HeaderName::from_static("content-length"))
+    {
         if let Ok(len_str) = header_value.to_str() {
             if let Ok(len) = len_str.parse::<usize>() {
                 // RUSTCOLA021 should flag this - tainted length from header lookup
@@ -37,7 +40,7 @@ pub fn vulnerable_header_lookup(response: &reqwest::blocking::Response) {
 /// VULNERABLE: Using CONTENT_LENGTH constant
 pub fn vulnerable_content_length_constant(response: &reqwest::blocking::Response) {
     use reqwest::header::CONTENT_LENGTH;
-    
+
     if let Some(header_value) = response.headers().get(CONTENT_LENGTH) {
         if let Ok(len_str) = header_value.to_str() {
             if let Ok(len) = len_str.parse::<usize>() {
@@ -82,7 +85,7 @@ pub fn vulnerable_reserve_exact(response: &reqwest::blocking::Response) {
 pub fn vulnerable_indirect_flow(response: &reqwest::blocking::Response) {
     if let Some(len) = response.content_length() {
         let capacity = len as usize; // Taint propagates through assignment
-        // RUSTCOLA021 should flag this - taint tracked through assignment
+                                     // RUSTCOLA021 should flag this - taint tracked through assignment
         let _buffer: Vec<u8> = Vec::with_capacity(capacity);
         // ... read response body ...
     }
@@ -95,7 +98,7 @@ pub fn vulnerable_indirect_flow(response: &reqwest::blocking::Response) {
 /// SAFE: Using min() to clamp allocation size
 pub fn safe_with_min_clamp(response: &reqwest::blocking::Response) {
     const MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024; // 10 MB limit
-    
+
     if let Some(len) = response.content_length() {
         // Safe: clamped with min()
         let capacity = (len as usize).min(MAX_BUFFER_SIZE);
@@ -108,7 +111,7 @@ pub fn safe_with_min_clamp(response: &reqwest::blocking::Response) {
 pub fn safe_with_clamp(response: &reqwest::blocking::Response) {
     const MIN_SIZE: usize = 1024;
     const MAX_SIZE: usize = 10 * 1024 * 1024;
-    
+
     if let Some(len) = response.content_length() {
         // Safe: clamped with explicit bounds
         let capacity = (len as usize).clamp(MIN_SIZE, MAX_SIZE);
@@ -120,7 +123,7 @@ pub fn safe_with_clamp(response: &reqwest::blocking::Response) {
 /// SAFE: Using assert! to validate before allocation
 pub fn safe_with_assert(response: &reqwest::blocking::Response) {
     const MAX_ALLOWED: usize = 50 * 1024 * 1024; // 50 MB
-    
+
     if let Some(len) = response.content_length() {
         let capacity = len as usize;
         // Safe: explicit validation with assert
@@ -133,7 +136,7 @@ pub fn safe_with_assert(response: &reqwest::blocking::Response) {
 /// SAFE: Using saturating_sub for bound calculation
 pub fn safe_with_saturating_sub(response: &reqwest::blocking::Response) {
     const MAX_SIZE: usize = 10 * 1024 * 1024;
-    
+
     if let Some(len) = response.content_length() {
         // Safe: saturating_sub ensures we don't exceed MAX_SIZE
         let capacity = MAX_SIZE.saturating_sub(0).min(len as usize);
@@ -145,7 +148,7 @@ pub fn safe_with_saturating_sub(response: &reqwest::blocking::Response) {
 /// SAFE: Using checked_sub for safe calculation
 pub fn safe_with_checked_operations(response: &reqwest::blocking::Response) {
     const MAX_SIZE: usize = 10 * 1024 * 1024;
-    
+
     if let Some(len) = response.content_length() {
         let len_usize = len as usize;
         // Safe: checked operation provides bound validation
@@ -182,7 +185,7 @@ pub fn edge_case_unrelated_calculation(response: &reqwest::blocking::Response) {
     // This should NOT trigger - size is not derived from Content-Length
     let size_from_config = 4096;
     let _buffer: Vec<u8> = Vec::with_capacity(size_from_config);
-    
+
     // We still check Content-Length but don't use it for allocation
     if let Some(_len) = response.content_length() {
         // ... just logging or validation ...

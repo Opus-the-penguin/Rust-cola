@@ -84,5 +84,7 @@ members = [
 exclude = [
     # ci-test-crate must be standalone for CI self-analysis to avoid analyzing entire workspace
     "ci-test-crate",
+    # locally cloned external crates that should not join this workspace
+    "tmp/*",
 ]
 resolver = "2"

@@ -107,10 +107,9 @@ mod tests {
         // These patterns are safe
         let key = good_generated_key();
         assert_eq!(key.len(), 32);
-        
+
         good_key_parameter(&[1, 2, 3, 4]);
-        
+
         // Env and file operations would require setup, skip in tests
     }
 }
-

@@ -29,7 +29,10 @@ fn stdlib_search_dir() -> Option<PathBuf> {
         return None;
     }
 
-    let sysroot = String::from_utf8(sysroot_output.stdout).ok()?.trim().to_string();
+    let sysroot = String::from_utf8(sysroot_output.stdout)
+        .ok()?
+        .trim()
+        .to_string();
     let target = env::var("TARGET").unwrap_or_default();
     let lib_path = PathBuf::from(sysroot)
         .join("lib")

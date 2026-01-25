@@ -16,7 +16,7 @@ use std::sync::Arc;
 /// BAD: native-tls with danger_accept_invalid_certs
 fn bad_native_tls_accept_invalid_certs() -> native_tls::TlsConnector {
     native_tls::TlsConnector::builder()
-        .danger_accept_invalid_certs(true)  // DANGEROUS!
+        .danger_accept_invalid_certs(true) // DANGEROUS!
         .build()
         .unwrap()
 }
@@ -24,7 +24,7 @@ fn bad_native_tls_accept_invalid_certs() -> native_tls::TlsConnector {
 /// BAD: native-tls with danger_accept_invalid_hostnames
 fn bad_native_tls_accept_invalid_hostnames() -> native_tls::TlsConnector {
     native_tls::TlsConnector::builder()
-        .danger_accept_invalid_hostnames(true)  // DANGEROUS!
+        .danger_accept_invalid_hostnames(true) // DANGEROUS!
         .build()
         .unwrap()
 }
@@ -96,7 +96,7 @@ mod dangerous_verifier {
 /// BAD: rustls config with dangerous verifier
 fn bad_rustls_dangerous_verifier() -> rustls::ClientConfig {
     rustls::ClientConfig::builder()
-        .dangerous()  // Entering dangerous mode!
+        .dangerous() // Entering dangerous mode!
         .with_custom_certificate_verifier(Arc::new(dangerous_verifier::NoVerifier))
         .with_no_client_auth()
 }
@@ -105,27 +105,26 @@ fn bad_rustls_dangerous_verifier() -> rustls::ClientConfig {
 
 /// BAD: reqwest with danger_accept_invalid_certs
 fn bad_reqwest_danger_certs() -> reqwest::ClientBuilder {
-    reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
+    reqwest::Client::builder().danger_accept_invalid_certs(true)
 }
 
 /// BAD: reqwest with danger_accept_invalid_hostnames  
 fn bad_reqwest_danger_hostnames() -> reqwest::ClientBuilder {
-    reqwest::Client::builder()
-        .danger_accept_invalid_hostnames(true)
+    reqwest::Client::builder().danger_accept_invalid_hostnames(true)
 }
 
 // --- hyper-tls patterns ---
 
 /// BAD: hyper-tls with native-tls connector that skips verification
-fn bad_hyper_tls_no_verify() -> hyper_tls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector> {
+fn bad_hyper_tls_no_verify(
+) -> hyper_tls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector> {
     let mut tls = native_tls::TlsConnector::builder();
     tls.danger_accept_invalid_certs(true);
     let tls = tls.build().unwrap();
-    
+
     let mut http = hyper_util::client::legacy::connect::HttpConnector::new();
     http.enforce_http(false);
-    
+
     hyper_tls::HttpsConnector::from((http, tls.into()))
 }
 
@@ -135,25 +134,22 @@ fn bad_hyper_tls_no_verify() -> hyper_tls::HttpsConnector<hyper_util::client::le
 
 /// SAFE: native-tls with default verification (certs validated)
 fn safe_native_tls_default() -> native_tls::TlsConnector {
-    native_tls::TlsConnector::builder()
-        .build()
-        .unwrap()
+    native_tls::TlsConnector::builder().build().unwrap()
 }
 
 /// SAFE: native-tls with explicit false (verification enabled)
 fn safe_native_tls_explicit_false() -> native_tls::TlsConnector {
     native_tls::TlsConnector::builder()
-        .danger_accept_invalid_certs(false)  // Explicitly enabled
+        .danger_accept_invalid_certs(false) // Explicitly enabled
         .build()
         .unwrap()
 }
 
 /// SAFE: rustls with proper certificate verification
 fn safe_rustls_with_roots() -> rustls::ClientConfig {
-    let root_store = rustls::RootCertStore::from_iter(
-        webpki_roots::TLS_SERVER_ROOTS.iter().cloned()
-    );
-    
+    let root_store =
+        rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+
     rustls::ClientConfig::builder()
         .with_root_certificates(root_store)
         .with_no_client_auth()
@@ -162,11 +158,12 @@ fn safe_rustls_with_roots() -> rustls::ClientConfig {
 /// SAFE: reqwest with default verification
 fn safe_reqwest_default() -> reqwest::ClientBuilder {
     reqwest::Client::builder()
-        // No danger methods called
+    // No danger methods called
 }
 
 /// SAFE: hyper-tls with proper verification
-fn safe_hyper_tls_default() -> hyper_tls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector> {
+fn safe_hyper_tls_default(
+) -> hyper_tls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector> {
     hyper_tls::HttpsConnector::new()
 }
 
@@ -177,7 +174,7 @@ fn safe_hyper_tls_default() -> hyper_tls::HttpsConnector<hyper_util::client::leg
 /// EDGE: Variable controlling danger flag (might be false)
 fn edge_conditional_danger(skip_verify: bool) -> native_tls::TlsConnector {
     native_tls::TlsConnector::builder()
-        .danger_accept_invalid_certs(skip_verify)  // Could be true or false
+        .danger_accept_invalid_certs(skip_verify) // Could be true or false
         .build()
         .unwrap()
 }
@@ -186,7 +183,7 @@ fn edge_conditional_danger(skip_verify: bool) -> native_tls::TlsConnector {
 #[cfg(test)]
 fn edge_test_only_danger() -> native_tls::TlsConnector {
     native_tls::TlsConnector::builder()
-        .danger_accept_invalid_certs(true)  // Test only
+        .danger_accept_invalid_certs(true) // Test only
         .build()
         .unwrap()
 }

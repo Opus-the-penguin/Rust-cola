@@ -157,6 +157,7 @@ See `examples/cargo-cola.yaml` for a complete example.
 | `--no-ast` | Suppress AST output |
 | `--sarif <PATH>` | Custom SARIF output path |
 | `--rulepack <PATH>` | Additional rules from YAML |
+| `--rules` | Print the currently loaded rule metadata (built-ins plus rulepacks) |
 
 ## Performance
 
@@ -247,7 +248,7 @@ Copilot runs the command, reads the generated prompt, and writes the final repor
 
 ### Acknowledgments
 
-This project would not exist without AI tools: Claude (Opus and Sonnet), ChatGPT, and GitHub Copilot. The human involved is a recovering C++ programmer with a systems engineering background. Enough to guide the architecture and intent, but not enough to build this alone.
+This project would not exist without AI tools: Claude (Opus and Sonnet), ChatGPT, and GitHub Copilot. The human involved is a rusty C++ programmer with a systems engineering background. Enough to guide the architecture and intent, but not enough to build this alone.
 
 There is much that can be iterated upon. I hope it is useful, or at least inspirational. Please [file issues](https://github.com/Opus-the-penguin/Rust-cola/issues).
 

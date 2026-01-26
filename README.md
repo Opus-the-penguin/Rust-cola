@@ -176,6 +176,7 @@ See `examples/cargo-cola.yaml` for a complete example.
 | `--llm-prompt <PATH>` | Path for LLM prompt file |
 | `--llm-endpoint <URL>` | LLM API endpoint |
 | `--llm-model <NAME>` | Model name (e.g., gpt-4, llama3) |
+| `--llm-temperature <FLOAT>` | Sampling temperature (default: `0.0`) |
 | `--exclude-tests <bool>` | Exclude test code (default: `true`) |
 | `--with-audit` | Run cargo-audit to check dependencies |
 | `--rulepack <PATH>` | Additional rules from YAML |

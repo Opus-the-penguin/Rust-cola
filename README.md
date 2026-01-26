@@ -43,6 +43,21 @@ Verify -> Guards -> Prune -> Exploit -> Impact -> Severity -> Fix
 
 It's not a complete product. It's functional as a rules engine that finds vulnerable patterns, but precision varies by rule. See the [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md) for how to improve individual rules.
 
+## Installation
+
+```bash
+rustup toolchain install nightly
+git clone https://github.com/Opus-the-penguin/Rust-cola.git
+cd Rust-cola
+cargo build --release
+```
+
+Binary: `target/release/cargo-cola`
+
+**Linux only:** Requires OpenSSL development libraries (`libssl-dev` on Debian/Ubuntu, `openssl-devel` on Fedora/RHEL). macOS and Windows use native TLS and need no extra dependencies.
+
+> **Note:** The `examples/` directory contains intentionally vulnerable code patterns for testing Rust-COLA's detection capabilities. These crates may have unmaintained or vulnerable dependencies by design and are not part of the distributed tool.
+
 ## Usage
 
 ### Recommended: LLM-assisted analysis
@@ -96,21 +111,6 @@ suppressions:
 ```bash
 cargo-cola --rulepack my-suppressions.yaml --crate-path .
 ```
-
-## Installation
-
-```bash
-rustup toolchain install nightly
-git clone https://github.com/Opus-the-penguin/Rust-cola.git
-cd Rust-cola
-cargo build --release
-```
-
-Binary: `target/release/cargo-cola`
-
-**Linux only:** Requires OpenSSL development libraries (`libssl-dev` on Debian/Ubuntu, `openssl-devel` on Fedora/RHEL). macOS and Windows use native TLS and need no extra dependencies.
-
-> **Note:** The `examples/` directory contains intentionally vulnerable code patterns for testing Rust-COLA's detection capabilities. These crates may have unmaintained or vulnerable dependencies by design and are not part of the distributed tool.
 
 ## Output Artifacts
 

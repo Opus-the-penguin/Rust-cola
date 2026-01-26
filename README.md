@@ -185,10 +185,6 @@ analysis:
 
 See `examples/cargo-cola.yaml` for a complete example.
 
-## Dependency Auditing
-
-Use `--with-audit` to integrate with [cargo-audit](https://rustsec.org/) and check dependencies for known CVEs.
-
 ## Etymology
 
 **cola** = **CO**de **L**exical **A**nalyzer. Also, cola removes rust.

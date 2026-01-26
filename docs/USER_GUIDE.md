@@ -28,25 +28,17 @@ flowchart LR
     Rules --> Raw[Raw Findings]
     Raw --> LLM[LLM Triage]
     LLM --> Report[Security Report]
-    
-    style Source fill:#e1f5fe
-    style Report fill:#c8e6c9
 ```
 
 The optional LLM triage step applies a structured analysis workflow:
 
 ```mermaid
-flowchart TB
-    subgraph LLM Triage
-        V[Step 0: Source Verification] --> G[Step 0.5: Guard Detection]
-        G --> P[Step 1: Aggressive Pruning]
-        P --> R[Step 2: Reachability Analysis]
-        R --> I[Step 3: Impact Classification]
-        I --> S[Step 4: Severity Rating]
-    end
-    
-    Raw[Raw Findings] --> V
-    S --> Report[Security Report]
+flowchart LR
+    V[Verify] --> G[Guards]
+    G --> P[Prune]
+    P --> R[Reachability]
+    R --> I[Impact]
+    I --> S[Severity]
 ```
 
 **Why MIR analysis matters:**

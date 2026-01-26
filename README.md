@@ -89,7 +89,29 @@ If an output file already exists, a timestamped version is created to avoid over
 | **Cryptography** | 8 | Weak hashes (MD5/SHA1), weak ciphers, hardcoded keys, timing attacks, PRNG bias |
 | **Supply Chain** | 4 | RUSTSEC advisories, yanked crates, auditable dependencies, proc-macro side effects |
 
-See the **[User Guide](docs/USER_GUIDE.md)** for theory of operation, LLM integration, CI/CD, configuration, and troubleshooting.
+### Detection Levels
+
+Rules use different analysis techniques with varying precision:
+
+| Level | Method | Precision | Example |
+|-------|--------|-----------|---------|
+| **Heuristic** | Pattern matching on MIR text | Good | `transmute`, `into_raw` |
+| **Structural** | MIR statement/terminator analysis | Better | Mutex guard across await |
+| **Dataflow** | Intra-function value tracking | High | Uninitialized memory use |
+| **Interprocedural** | Cross-function taint tracking | Highest | SQL injection chains |
+
+Current distribution:
+
+| Level | Rules | Percentage |
+|-------|-------|------------|
+| Heuristic | 63 | 50% |
+| Structural | 26 | 21% |
+| Dataflow | 32 | 25% |
+| Interprocedural | 5 | 4% |
+
+Most rules are heuristic—they find patterns but may produce false positives. The LLM-assisted workflow helps triage these.
+
+See the **[User Guide](docs/USER_GUIDE.md)** for theory of operation, LLM integration, configuration, and troubleshooting.
 
 See the [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md) for custom rules, YAML rulepacks, and suppression.
 
@@ -103,19 +125,7 @@ Rust-cola analyzes MIR (Mid-level IR) from the compiler. This requires the targe
 
 ## Interprocedural Analysis
 
-Five rules track data flow across function calls to detect injection vulnerabilities:
-
-| Rule | ID |
-|------|-----|
-| Path Traversal | RUSTCOLA086 |
-| SQL Injection | RUSTCOLA087 |
-| SSRF | RUSTCOLA088 |
-| YAML Injection | RUSTCOLA089 |
-| Command Injection | RUSTCOLA098 |
-
-### Depth Limits and Configuration
-
-To prevent memory exhaustion on large codebases, inter-procedural analysis has built-in limits. These can be configured via a YAML configuration file:
+Some rules (SQL injection, path traversal, SSRF, etc.) track data flow across function calls. This is memory-intensive on large codebases, so analysis has built-in limits configurable via YAML:
 
 ```bash
 cargo-cola --config cargo-cola.yaml --crate-path .
@@ -134,9 +144,9 @@ analysis:
 
 See `examples/cargo-cola.yaml` for a complete example.
 
-**Note:** These limits may cause missed findings in codebases with very deep call chains. For most real-world vulnerabilities, the defaults are sufficient.
-
 ## Options
+
+### Core
 
 | Flag | Description |
 |------|-------------|
@@ -144,23 +154,42 @@ See `examples/cargo-cola.yaml` for a complete example.
 | `--out-dir <PATH>` | Output directory (default: `out/cola`) |
 | `--config <PATH>` | Path to configuration file (YAML format) |
 | `--fail-on-findings <bool>` | Exit with code 1 when findings are produced (default: `true`) |
-| `--output-for-llm <PATH>` | Path for LLM prompt file (alias for `--llm-prompt`) |
+
+### Reports
+
+| Flag | Description |
+|------|-------------|
+| `--report <PATH>` | Generate standalone heuristic report |
+| `--no-report` | Suppress standalone report |
+| `--sarif <PATH>` | Custom SARIF output path |
+
+### LLM Integration
+
+| Flag | Description |
+|------|-------------|
 | `--llm-prompt <PATH>` | Path for LLM prompt file (default: `out/cola/llm-prompt.md`) |
 | `--no-llm-prompt` | Suppress LLM prompt generation |
 | `--llm-report <PATH>` | Generate report via LLM API |
 | `--llm-endpoint <URL>` | LLM API endpoint |
 | `--llm-model <NAME>` | Model name (e.g., gpt-4, llama3) |
-| `--llm-temperature <FLOAT>` | Sampling temperature for LLM responses (default: `0.0`, range: `0.0`–`1.0`). `0.0` is fully deterministic for reproducible reports; higher values increase creativity but reduce consistency |
-| `--report <PATH>` | Generate standalone heuristic report |
-| `--no-report` | Suppress standalone report |
+| `--llm-temperature <FLOAT>` | Sampling temperature (default: `0.0`) |
+
+### Filtering
+
+| Flag | Description |
+|------|-------------|
+| `--exclude-tests <bool>` | Exclude test code (default: `true`) |
+| `--exclude-examples <bool>` | Exclude example code (default: `true`) |
+| `--exclude-benches <bool>` | Exclude benchmark code (default: `true`) |
+
+### Additional
+
+| Flag | Description |
+|------|-------------|
 | `--with-audit` | Run cargo-audit to check dependencies |
 | `--no-ast` | Suppress AST output |
-| `--sarif <PATH>` | Custom SARIF output path |
-| `--exclude-tests <bool>` | Exclude test code from analysis (default: `true`) |
-| `--exclude-examples <bool>` | Exclude example code from analysis (default: `true`) |
-| `--exclude-benches <bool>` | Exclude benchmark code from analysis (default: `true`) |
 | `--rulepack <PATH>` | Additional rules from YAML |
-| `--rules` | Print the currently loaded rule metadata (built-ins plus rulepacks) |
+| `--rules` | Print loaded rule metadata |
 
 ## Performance
 
@@ -205,55 +234,21 @@ When `--with-audit` is enabled:
 
 Hence **Rust-cola**: the security analyzer that cleans Rust code of security vulnerabilities.
 
-## Why Rust-cola Was Created
+## Background
 
-Rust-cola is an experimental proof of concept. It explores three ideas:
+Rust-cola is an experimental proof of concept exploring three ideas:
 
 1. **Can LLMs help build security analyzers?** Rules and codebase were written with AI assistance.
 2. **Is MIR a better scan target than source code?** MIR is generated after macro expansion, type resolution, and borrow checking. Rust's safety guarantees become explicit, and therefore checkable.
-3. **Can LLMs improve precision by triaging findings?** A static rules engine is exhaustive: it finds every matching pattern in the code. That's useful for documentation, training, and trending. But not every pattern is exploitable. LLMs can assess context to help prioritize what actually needs fixing.
+3. **Can LLMs improve precision by triaging findings?** Static analysis is exhaustive but not every pattern is exploitable. LLMs can assess context to prioritize what actually needs fixing.
 
-It's not a complete product. It's functional as a rules engine that finds vulnerable patterns, but precision varies by rule.
-
-There are various depths to which vulnerability detection logic can be iterated upon to improve precision. One way to classify this is the following table from the [User Guide](docs/USER_GUIDE.md#detection-levels):
-
-| Level | Method | Precision | Example |
-|-------|--------|-----------|---------|
-| **Heuristic** | Pattern matching on MIR text | Good | `transmute`, `into_raw` |
-| **Structural** | MIR statement/terminator analysis | Better | Mutex guard across await |
-| **Dataflow** | Intra-function value tracking | High | Uninitialized memory use |
-| **Interprocedural** | Cross-function taint tracking | Highest | SQL injection chains |
-
-Current distribution of the 126 rules:
-
-| Level | Rules | Percentage |
-|-------|-------|------------|
-| Heuristic | 63 | 50% |
-| Structural | 26 | 21% |
-| Dataflow | 32 | 25% |
-| Interprocedural | 5 | 4% |
-
-Most rules are at the **Heuristic** level. They will find things, but many will be false positives because Rust-cola does not yet understand enough context. An LLM is employed with a context-enriched prompt to help with triage. It is not perfect, but it is useful.
-
-### Paths for Improvement
-
-**Enhancing rules:** Infrastructure exists for more sophisticated analysis (call graphs, taint propagation, dataflow frameworks) that heuristic rules could leverage. Moving a rule from heuristic to structural or dataflow would reduce false positives at the source. See the [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md) for details.
-
-**Enriching the LLM prompt:** The quality of the LLM report depends on the context provided. The prompt template (`llm-prompt.md`) can be customized to include domain-specific knowledge about your codebase: threat models, trusted boundaries, deployment context. The more context, the better the report.
-
-### How I Use It
-
-I use VS Code with GitHub Copilot. Instead of running `cargo-cola` manually and copy/pasting the generated prompt into a separate LLM chat, I ask Copilot Chat to run the scan and process the results in one go:
-
-> "Run cargo-cola on ./my-crate, output to ./my-crate/out/cola, then read the llm-prompt.md and generate the security report."
-
-Copilot runs the command, reads the generated prompt, and writes the final report. Since the project is open in VS Code, the LLM also has access to the source code for additional context. This eliminates the manual copy/paste workflow.
+It's not a complete product. It's functional as a rules engine that finds vulnerable patterns, but precision varies by rule. See the [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md) for how to improve individual rules.
 
 ### Acknowledgments
 
-This project would not exist without AI tools: Claude (Opus and Sonnet), ChatGPT, and GitHub Copilot. The human involved is a rusty C++ programmer with a systems engineering background. Enough to guide the architecture and intent, but not enough to build this alone.
+This project would not exist without AI tools: Claude, ChatGPT, and GitHub Copilot. The human involved is a rusty C++ programmer with a systems engineering background—enough to guide the architecture and intent, but not enough to build this alone.
 
-There is much that can be iterated upon. I hope it is useful, or at least inspirational. Please [file issues](https://github.com/Opus-the-penguin/Rust-cola/issues).
+Please [file issues](https://github.com/Opus-the-penguin/Rust-cola/issues) with feedback or suggestions.
 
 ## Documentation
 

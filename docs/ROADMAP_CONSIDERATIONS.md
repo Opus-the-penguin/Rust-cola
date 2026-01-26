@@ -1,126 +1,129 @@
 # Roadmap Considerations
 
-> **Working Document**: This captures enhancement ideas and future considerations for rust-cola development.
+> **Working Document**: Research directions and experimental ideas for rust-cola development.
 
-## Guard Detection Enhancements
+rust-cola is a **research tool** for exploring static analysis techniques on Rust's MIR representation. The focus is on advancing the state of taint tracking, dataflow analysis, and vulnerability detection in Rust codebases—not on production deployment or enterprise workflows.
 
-The taint tracker identifies data flow from sources to sinks but may miss validation/bounds checks along the path. This leads to false positives where bounded allocations or sanitized inputs are flagged.
+---
+
+## Guard Detection Research
+
+The taint tracker identifies data flow from sources to sinks but may miss validation/bounds checks along the path. This is a fundamental challenge in static analysis: distinguishing true vulnerabilities from guarded code paths.
 
 ### Current State (v1.0.1)
 
 - LLM prompt includes Step 0.5 with guard detection guidance
 - Rule-specific guard patterns provided per finding type
-- Per-finding hints tell the LLM what to search for
+- Per-finding hints assist human analysis
 
-### Future Infrastructure Options
+### Research Directions
 
-#### 1. RuleMetadata Enhancement
-Add a `guard_patterns: Vec<String>` field to `RuleMetadata` in `mir-extractor/src/lib.rs`:
+#### 1. Semantic Guard Pattern Recognition
+Explore detecting guard patterns semantically rather than syntactically:
+- Identify min/max/clamp calls and their effect on value ranges
+- Track "sanitized" state propagation through the taint lattice
+- Investigate abstract interpretation for bound inference
 
-```rust
-pub struct RuleMetadata {
-    // ... existing fields ...
-    /// Patterns that indicate this finding may be guarded/mitigated
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub guard_patterns: Vec<String>,
-}
-```
+#### 2. Constant Propagation for Allocation Bounds
+Research correlating `MAX_*`, `LIMIT_*` constants with allocation findings:
+- Determine when allocation sizes derive from bounded fields
+- Explore inter-procedural constant propagation through constructors
+- Study how schema constraints bound values at type boundaries
 
-This would let each rule define its own guard patterns in a structured way rather than hardcoding in the prompt generator.
+#### 3. Validation Function Discovery
+Investigate techniques for automatically identifying validation functions:
+- Entry-point guards that check invariants before processing
+- Constructor validation that establishes field constraints
+- Parse/deserialize guards that reject malformed input
 
-#### 2. Taint Tracker Guard Detection
-Modify the taint tracker in `mir-extractor/src/dataflow/taint.rs` to:
-- Detect common guard patterns during analysis (min/max/clamp calls)
-- Track "sanitized" state on tainted values
-- Reduce confidence or skip findings where guards are detected
-
-#### 3. Constant Discovery
-Scan the crate for `MAX_*`, `LIMIT_*`, `*_LIMIT` constants and correlate with allocation findings:
-- If an allocation size derives from a field bounded by a constant, mark as potentially guarded
-- Include constant values in finding evidence
-
-#### 4. Context Extraction Enhancement
-Extract more lines around findings (currently limited to 8 evidence lines):
-- Capture 20-50 lines of context
-- Search for guard patterns in extracted context
-- Pre-filter findings with detected guards
-
-#### 5. Inter-procedural Guard Detection
-Extend interprocedural analysis to track:
-- Validation functions that guard entry points
-- Schema/type constraints that bound values
-- Constructor validation that limits field values
+#### 4. Context Window Optimization
+Experiment with optimal context extraction for LLM analysis:
+- Trade-offs between context size and analysis accuracy
+- Pre-filtering findings with detected guards
+- Minimal context that preserves guard detection capability
 
 ---
 
-## Confidence Scoring Improvements
+## Confidence Calibration Research
 
 ### Current State
-- Binary confidence levels (High/Medium/Low)
-- Confidence set per-rule, not per-finding
+- Categorical confidence levels (High/Medium/Low)
+- Confidence assigned per-rule, not per-finding
 
-### Future Options
+### Research Questions
 
 #### 1. Evidence-Based Confidence
-Score confidence based on evidence quality:
-- Strong MIR evidence → High
-- Pattern match only → Medium
-- Heuristic detection → Low
+How should confidence correlate with evidence quality?
+- What MIR patterns predict true positives?
+- Can confidence be learned from labeled datasets?
+- How do pattern matches compare to dataflow evidence?
 
-#### 2. Reachability-Aware Confidence
-Incorporate reachability into confidence:
-- Proven entry-point → High
-- Internal only → Medium
-- Dead code path → Low
+#### 2. Reachability-Aware Scoring
+How does call-graph position affect vulnerability likelihood?
+- Public API entry points vs. internal-only paths
+- Library code vs. binary code considerations
+- Dead code detection and its impact on prioritization
 
 ---
 
-## Performance Optimizations
+## Analysis Technique Experiments
 
-### Current State
-- MIR caching with hash validation
-- Parallel rule evaluation
+### Current Capabilities
+- MIR-level taint tracking
+- Inter-procedural analysis (limited depth)
+- Pattern-based vulnerability detection
 
-### Future Options
+### Experimental Directions
 
 #### 1. Incremental Analysis
-Only re-analyze changed functions between runs.
+Explore incremental re-analysis for iterative research workflows:
+- Function-level change detection
+- Taint summary caching across runs
 
-#### 2. Rule Prioritization
-Run high-confidence rules first, skip low-confidence rules on clean codebases.
+#### 2. Hybrid Analysis
+Investigate combining static analysis with other techniques:
+- Fuzzing integration for reachability validation
+- Symbolic execution for path feasibility
+- LLM-assisted code understanding
 
----
-
-## Integration Enhancements
-
-### GitHub Actions
-- Native GitHub Actions output format
-- PR comment integration with finding diffs
-
-### IDE Integration
-- VS Code extension for inline finding display
-- Real-time analysis on file save
-
-### CI/CD
-- Baseline management for suppressing known issues
-- Finding trends over time
+#### 3. Cross-Crate Analysis
+Research challenges in analyzing crate dependencies:
+- Taint propagation across crate boundaries
+- Trait-based polymorphism handling
+- Generic instantiation enumeration
 
 ---
 
-## Rule Development
+## Rule Authoring Research
 
-### Custom Rule SDK
-- Simplified API for custom rule development
-- WASM rule hot-reloading in development
+### Pattern Language Design
+- What DSL abstractions simplify rule development?
+- Trade-offs between expressiveness and performance
+- Composable rule primitives
 
-### Rule Testing Framework
-- Positive/negative test case generation
-- Mutation testing for rule coverage
+### Empirical Rule Evaluation
+- Methodology for measuring precision/recall on labeled datasets
+- Mutation testing for assessing rule coverage
+- False positive/negative characterization
+
+---
+
+## Benchmarking & Evaluation
+
+### Dataset Curation
+- Collecting labeled vulnerability datasets for Rust
+- Synthetic vulnerable code generation
+- Real-world vulnerability case studies
+
+### Metrics
+- Precision/recall on curated benchmarks
+- Analysis time vs. codebase size scaling
+- Comparison with other Rust analysis tools
 
 ---
 
 ## Notes
 
-- Priority: Guard detection is highest priority as it directly impacts false positive rates
-- Timeline: Consider for v1.1 or v1.2 release
-- Dependencies: RuleMetadata changes require mir-extractor version bump
+- **Focus**: Guard detection is the primary research priority—directly impacts false positive rates
+- **Approach**: Experimental, iterative—not production-hardened
+- **Contributions**: Findings may inform future static analysis research for Rust

@@ -1,6 +1,6 @@
 [package]
 name = "cargo-cola"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 authors = ["The Rust-cola Contributors"]
 description = "Security static analyzer for Rust. Analyzes MIR to detect vulnerabilities."

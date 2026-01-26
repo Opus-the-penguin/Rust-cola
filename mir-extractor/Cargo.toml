@@ -1,6 +1,6 @@
 [package]
 name = "mir-extractor"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 authors = ["The Rust-cola Contributors"]
 description = "MIR extraction and security rule engine for Rust-cola"

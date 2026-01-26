@@ -4,6 +4,35 @@ Experimental security scanner for Rust. Works by compiling your code and analyzi
 
 rust-cola is a **research tool** for exploring static analysis techniques on Rust's MIR representation. The focus is on advancing the state of taint tracking, dataflow analysis, and vulnerability detection—not on production deployment or enterprise workflows.
 
+```mermaid
+flowchart LR
+    Source[Source Code] --> MIR[MIR Extraction]
+    MIR --> Rules[Rule Engine]
+    Rules --> Raw[Raw Findings]
+    Raw --> LLM[LLM Triage]
+    LLM --> Report[Security Report]
+```
+
+```
+Source Code -> MIR Extraction -> Rule Engine -> Raw Findings -> LLM Triage -> Security Report
+```
+
+The LLM triage step applies a structured analysis workflow:
+
+```mermaid
+flowchart LR
+    V[Verify] --> G[Guards]
+    G --> P[Prune]
+    P --> R[Exploit]
+    R --> I[Impact]
+    I --> S[Severity]
+    S --> F[Fix]
+```
+
+```
+Verify -> Guards -> Prune -> Exploit -> Impact -> Severity -> Fix
+```
+
 **Note:** The environment running cargo-cola must be able to compile the target code. This is required to extract MIR.
 
 Requires the nightly Rust toolchain.
@@ -51,7 +80,32 @@ Rust-cola works best with an LLM. The LLM helps filter false positives, rate sev
 cargo-cola --crate-path . --report out/cola/raw-report.md
 ```
 
-Generates a raw report with heuristic triage. Useful for CI integration or when LLM access is unavailable, but requires manual review of findings.
+Generates a raw report with heuristic triage. Useful when LLM access is unavailable, but requires manual review of findings.
+
+### Suppressing Findings
+
+Inline suppression:
+
+```rust
+// rust-cola:ignore RUSTCOLA001
+let raw = Box::into_raw(boxed);
+
+// rust-cola:ignore
+unsafe { do_something_scary(); }
+```
+
+Rulepack suppression (see [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md)):
+
+```yaml
+# my-suppressions.yaml
+suppressions:
+  - rule_id: RUSTCOLA042
+    reason: "Intentional for research"
+```
+
+```bash
+cargo-cola --rulepack my-suppressions.yaml --crate-path .
+```
 
 ## Installation
 
@@ -129,9 +183,7 @@ Current distribution:
 
 Most rules are heuristic—they find patterns but may produce false positives. The LLM-assisted workflow helps triage these.
 
-See the **[User Guide](docs/USER_GUIDE.md)** for theory of operation, LLM integration, configuration, and troubleshooting.
-
-See the [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md) for custom rules, YAML rulepacks, and suppression.
+See the [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md) for custom rules and YAML rulepacks.
 
 ## Why It Requires Compilation
 
@@ -251,13 +303,6 @@ When `--with-audit` is enabled:
 2. **The beverage:** Cola drinks (Coca-Cola, Pepsi, etc.) contain phosphoric acid, which chemically converts iron oxide (rust) into a water-soluble compound that's easy to scrub away. It's a classic life hack for cleaning rusty tools and bolts.
 
 Hence **Rust-cola**: the security analyzer that cleans Rust code of security vulnerabilities.
-
-## Documentation
-
-| Document | Description |
-|----------|-------------|
-| [User Guide](docs/USER_GUIDE.md) | Installation, usage, configuration, CI/CD integration |
-| [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md) | Creating custom rules, YAML rulepacks, suppression |
 
 ## License
 

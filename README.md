@@ -1,12 +1,8 @@
-# Rust-cola (Proof of Concept)
+# Rust-cola
 
-Experimental security scanner for Rust. Works by compiling your code and analyzing the compiler's intermediate representation (MIR), which can reveal issues that source-level tools might miss.
+Experimental security scanner for Rust that analyzes compiler MIR.
 
-rust-cola is a **research tool** for exploring static analysis techniques on Rust's MIR representation. The focus is on advancing the state of taint tracking, dataflow analysis, and vulnerability detection—not on production deployment or enterprise workflows.
-
-**Note:** The environment running cargo-cola must be able to compile the target code. This is required to extract MIR.
-
-Requires the nightly Rust toolchain.
+**Note:** Requires nightly Rust. Target code must compile to extract MIR.
 
 ## Background
 

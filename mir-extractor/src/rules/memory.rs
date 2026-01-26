@@ -390,6 +390,7 @@ impl Rule for BoxIntoRawRule {
                 code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+            ..Default::default()
             });
         }
 
@@ -501,6 +502,7 @@ impl Rule for TransmuteRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                ..Default::default()
                 });
             }
         }
@@ -604,6 +606,7 @@ impl Rule for UnsafeUsageRule {
                 code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+            ..Default::default()
             });
         }
 
@@ -690,6 +693,7 @@ impl Rule for NullPointerTransmuteRule {
                 code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+            ..Default::default()
             });
         }
 
@@ -776,6 +780,7 @@ impl Rule for ZSTPointerArithmeticRule {
                 code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+            ..Default::default()
             });
         }
 
@@ -885,6 +890,7 @@ impl Rule for VecSetLenRule {
                 code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+            ..Default::default()
             });
         }
 
@@ -970,6 +976,7 @@ impl Rule for MaybeUninitAssumeInitRule {
                 code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+            ..Default::default()
             });
         }
 
@@ -1072,6 +1079,7 @@ impl Rule for MemUninitZeroedRule {
                 code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+            ..Default::default()
             });
         }
 
@@ -1147,6 +1155,7 @@ impl Rule for NonNullNewUncheckedRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                ..Default::default()
                 });
             }
         }
@@ -1249,6 +1258,7 @@ impl Rule for MemForgetGuardRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                ..Default::default()
                 });
             }
         }
@@ -1330,6 +1340,7 @@ impl Rule for StaticMutGlobalRule {
                     code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+            ..Default::default()
             });
         }
 
@@ -2157,6 +2168,7 @@ impl Rule for LengthTruncationCastRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                ..Default::default()
                 });
             }
         }
@@ -2328,6 +2340,7 @@ impl Rule for MaybeUninitAssumeInitDataflowRule {
                     code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+                ..Default::default()
                 });
             }
         }
@@ -2580,6 +2593,7 @@ impl Rule for SliceElementSizeMismatchRule {
                             code_snippet: None,
                             exploitability: Exploitability::default(),
                             exploitability_score: Exploitability::default().score(),
+                        ..Default::default()
                         });
                         continue;
                     }
@@ -2607,6 +2621,7 @@ impl Rule for SliceElementSizeMismatchRule {
                             code_snippet: None,
                             exploitability: Exploitability::default(),
                             exploitability_score: Exploitability::default().score(),
+                        ..Default::default()
                         });
                         continue;
                     }
@@ -2690,6 +2705,7 @@ impl Rule for SliceElementSizeMismatchRule {
                     code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+                        ..Default::default()
                         });
                     }
 
@@ -2717,6 +2733,7 @@ impl Rule for SliceElementSizeMismatchRule {
                             code_snippet: None,
                             exploitability: Exploitability::default(),
                             exploitability_score: Exploitability::default().score(),
+                        ..Default::default()
                         });
                     }
                 }
@@ -3060,6 +3077,7 @@ impl Rule for SliceFromRawPartsRule {
                         code_snippet: None,
                         exploitability: Exploitability::default(),
                         exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                     });
                     continue;
                 }
@@ -3093,6 +3111,7 @@ impl Rule for SliceFromRawPartsRule {
                         code_snippet: None,
                         exploitability: Exploitability::default(),
                         exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                     });
                     continue;
                 }
@@ -3119,6 +3138,7 @@ impl Rule for SliceFromRawPartsRule {
                     code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                     });
                     continue;
                 }
@@ -3148,6 +3168,7 @@ impl Rule for SliceFromRawPartsRule {
                         code_snippet: None,
                         exploitability: Exploitability::default(),
                         exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                     });
                 }
             }
@@ -3290,6 +3311,7 @@ impl Rule for VarianceTransmuteUnsoundRule {
                     code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                     });
                     continue;
                 }
@@ -3315,6 +3337,7 @@ impl Rule for VarianceTransmuteUnsoundRule {
                         code_snippet: None,
                         exploitability: Exploitability::default(),
                         exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                     });
                     continue;
                 }
@@ -3338,6 +3361,7 @@ impl Rule for VarianceTransmuteUnsoundRule {
                     code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                     });
                 }
             }

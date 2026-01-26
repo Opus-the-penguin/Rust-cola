@@ -777,90 +777,70 @@ fn main() -> Result<()> {
             );
         }
 
-        // v1.0.1: Filter findings from test/example/bench code based on CLI flags
+        // v1.0.1: Annotate findings with CodeContext based on file path
+        // This preserves all findings in raw output while enabling filtering for reports
+        for finding in &mut analysis.findings {
+            let context = detect_code_context(finding);
+            finding.code_context = context;
+        }
+
+        // Generate raw SARIF with ALL findings (including test/example/bench) before filtering
+        // This preserves full audit trail with code_context annotations
+        let sarif = sarif_report(&package, &analysis);
+
+        // v1.0.1: Filter findings from test/example/bench code for actionable output
         let exclude_tests = args.exclude_tests.unwrap_or(true);
         let exclude_examples = args.exclude_examples.unwrap_or(true);
         let exclude_benches = args.exclude_benches.unwrap_or(true);
 
-        if exclude_tests || exclude_examples || exclude_benches {
-            let pre_exclude_count = analysis.findings.len();
-            analysis.findings.retain(|finding| {
-                // v1.0.1: Filter based on finding's file path from span
-                // The span contains the actual source file location
-                if let Some(span) = &finding.span {
-                    let file_path = &span.file;
-                    
-                    // Exclude test code: files in tests/, or paths containing /tests/
-                    // Also exclude #[cfg(test)] modules (indicated by test:: in path)
-                    if exclude_tests {
-                        if file_path.starts_with("tests/") 
-                            || file_path.contains("/tests/")
-                            || file_path.contains("/test_")
-                            || file_path.ends_with("_test.rs")
-                            || file_path.contains("::test::")
-                            || file_path.contains("/tests.rs") {
-                            return false;
-                        }
-                    }
-                    
-                    // Exclude example code: files in examples/
-                    if exclude_examples {
-                        if file_path.starts_with("examples/") 
-                            || file_path.contains("/examples/") {
-                            return false;
-                        }
-                    }
-                    
-                    // Exclude benchmark code: files in benches/
-                    if exclude_benches {
-                        if file_path.starts_with("benches/") 
-                            || file_path.contains("/benches/") {
-                            return false;
-                        }
-                    }
-                }
-                
-                // Also check the function field which sometimes contains file path info
-                let func_str = &finding.function;
-                if exclude_tests {
-                    if func_str.starts_with("tests/") 
-                        || func_str.contains("/tests/") {
-                        return false;
-                    }
-                }
-                if exclude_examples {
-                    if func_str.starts_with("examples/") 
-                        || func_str.contains("/examples/") {
-                        return false;
-                    }
-                }
-                if exclude_benches {
-                    if func_str.starts_with("benches/") 
-                        || func_str.contains("/benches/") {
-                        return false;
-                    }
-                }
-                
-                true
-            });
+        // Count findings by context before filtering
+        let mut context_counts = std::collections::HashMap::new();
+        for finding in &analysis.findings {
+            *context_counts.entry(finding.code_context).or_insert(0) += 1;
+        }
 
-            if analysis.findings.len() < pre_exclude_count {
-                println!(
-                    "  test/example/bench exclusion: filtered {} → {} findings",
-                    pre_exclude_count,
-                    analysis.findings.len()
-                );
+        let pre_exclude_count = analysis.findings.len();
+        if exclude_tests || exclude_examples || exclude_benches {
+            analysis.findings.retain(|finding| {
+                match finding.code_context {
+                    mir_extractor::CodeContext::Test => !exclude_tests,
+                    mir_extractor::CodeContext::Example => !exclude_examples,
+                    mir_extractor::CodeContext::Benchmark => !exclude_benches,
+                    _ => true,
+                }
+            });
+        }
+
+        // Print summary statistics by code context
+        if analysis.findings.len() < pre_exclude_count {
+            println!("  📊 Findings by context:");
+            if let Some(&count) = context_counts.get(&mir_extractor::CodeContext::Production) {
+                println!("     production: {} (shown)", count);
             }
+            if let Some(&count) = context_counts.get(&mir_extractor::CodeContext::Test) {
+                let status = if exclude_tests { "filtered" } else { "shown" };
+                println!("     test:       {} ({})", count, status);
+            }
+            if let Some(&count) = context_counts.get(&mir_extractor::CodeContext::Example) {
+                let status = if exclude_examples { "filtered" } else { "shown" };
+                println!("     example:    {} ({})", count, status);
+            }
+            if let Some(&count) = context_counts.get(&mir_extractor::CodeContext::Benchmark) {
+                let status = if exclude_benches { "filtered" } else { "shown" };
+                println!("     benchmark:  {} ({})", count, status);
+            }
+            println!(
+                "  💡 Use --exclude-tests=false to include test code in reports"
+            );
         }
 
         println!(
-            "crate {}: processed {} functions, {} findings",
+            "crate {}: processed {} functions, {} actionable findings",
             package.crate_name,
             package.functions.len(),
             analysis.findings.len()
         );
 
-        let sarif = sarif_report(&package, &analysis);
         package_outputs.push(PackageOutput {
             package,
             analysis,
@@ -3011,29 +2991,44 @@ fn build_llm_prompt_content(
                 "| **Location** | `{}:{}` |",
                 span.file, span.start_line
             )?;
-
-            // Add context hints for pruning
-            let file_lower = span.file.to_lowercase();
-            if file_lower.contains("test") || file_lower.contains("/tests/") {
+        }
+        
+        // Use CodeContext field for context hints
+        match finding.code_context {
+            mir_extractor::CodeContext::Test => {
                 writeln!(
                     content,
                     "| **Context** | ⚠️ Test code - likely false positive |"
                 )?;
-            } else if file_lower.contains("example") || file_lower.contains("/examples/") {
+            }
+            mir_extractor::CodeContext::Example => {
                 writeln!(
                     content,
                     "| **Context** | ⚠️ Example code - likely false positive |"
                 )?;
-            } else if file_lower.contains("bench") || file_lower.contains("/benches/") {
+            }
+            mir_extractor::CodeContext::Benchmark => {
                 writeln!(
                     content,
                     "| **Context** | ⚠️ Benchmark code - likely false positive |"
                 )?;
-            } else if span.file.ends_with("build.rs") {
+            }
+            mir_extractor::CodeContext::Generated => {
                 writeln!(
                     content,
-                    "| **Context** | Build script - assess if running external commands |"
+                    "| **Context** | Generated code - assess if running external commands |"
                 )?;
+            }
+            mir_extractor::CodeContext::Production => {
+                // Check for build.rs as special case within production context
+                if let Some(span) = &finding.span {
+                    if span.file.ends_with("build.rs") {
+                        writeln!(
+                            content,
+                            "| **Context** | Build script - assess if running external commands |"
+                        )?;
+                    }
+                }
             }
         }
         writeln!(&mut content)?;
@@ -3143,24 +3138,75 @@ fn generate_llm_prompt(
     Ok(())
 }
 
+/// Detect the code context (production, test, example, benchmark) for a finding
+/// based on file path patterns and function name patterns
+fn detect_code_context(finding: &Finding) -> mir_extractor::CodeContext {
+    // Check file path from span
+    if let Some(span) = &finding.span {
+        let file_path = span.file.to_lowercase();
+        
+        // Test code patterns
+        if file_path.starts_with("tests/") 
+            || file_path.contains("/tests/")
+            || file_path.contains("/test_")
+            || file_path.ends_with("_test.rs")
+            || file_path.contains("::test::")
+            || file_path.contains("/tests.rs") {
+            return mir_extractor::CodeContext::Test;
+        }
+        
+        // Example code patterns
+        if file_path.starts_with("examples/") 
+            || file_path.contains("/examples/") {
+            return mir_extractor::CodeContext::Example;
+        }
+        
+        // Benchmark code patterns
+        if file_path.starts_with("benches/") 
+            || file_path.contains("/benches/") {
+            return mir_extractor::CodeContext::Benchmark;
+        }
+    }
+    
+    // Also check the function field which sometimes contains path info
+    let func_lower = finding.function.to_lowercase();
+    
+    if func_lower.contains("::tests::") 
+        || func_lower.contains("::test_")
+        || func_lower.starts_with("test_") {
+        return mir_extractor::CodeContext::Test;
+    }
+    
+    if func_lower.contains("/examples/") {
+        return mir_extractor::CodeContext::Example;
+    }
+    
+    if func_lower.contains("/benches/") 
+        || func_lower.contains("::bench_") {
+        return mir_extractor::CodeContext::Benchmark;
+    }
+    
+    mir_extractor::CodeContext::Production
+}
+
 /// Compute a heuristic false positive likelihood score (0.0 = definitely real, 1.0 = definitely FP)
 fn compute_false_positive_likelihood(finding: &Finding) -> f64 {
     let mut score: f64 = 0.0;
 
-    // Check file path patterns
+    // Use CodeContext as primary signal for non-production code
+    match finding.code_context {
+        mir_extractor::CodeContext::Test => score += 0.5,
+        mir_extractor::CodeContext::Example => score += 0.45,
+        mir_extractor::CodeContext::Benchmark => score += 0.35,
+        mir_extractor::CodeContext::Generated => score += 0.3,
+        mir_extractor::CodeContext::Production => {}
+    }
+
+    // Additional heuristics for mock/fixture patterns (not covered by CodeContext)
     if let Some(span) = &finding.span {
         let file = span.file.to_lowercase();
-        if file.contains("/test") || file.contains("_test.rs") || file.contains("/tests/") {
-            score += 0.4;
-        }
-        if file.contains("/example") {
-            score += 0.35;
-        }
         if file.contains("/mock") || file.contains("/fixture") {
             score += 0.3;
-        }
-        if file.contains("/benches/") || file.contains("_bench.rs") {
-            score += 0.25;
         }
     }
 
@@ -3196,23 +3242,24 @@ fn compute_false_positive_likelihood(finding: &Finding) -> f64 {
 
 /// Get a human-readable reason for why something is likely a false positive
 fn get_fp_reason(finding: &Finding) -> &'static str {
+    // Use CodeContext as primary signal
+    match finding.code_context {
+        mir_extractor::CodeContext::Test => return "In test code",
+        mir_extractor::CodeContext::Example => return "In example code",
+        mir_extractor::CodeContext::Benchmark => return "In benchmark code",
+        mir_extractor::CodeContext::Generated => return "In generated code",
+        mir_extractor::CodeContext::Production => {}
+    }
+
+    // Additional checks for patterns not covered by CodeContext
     if let Some(span) = &finding.span {
         let file = span.file.to_lowercase();
-        if file.contains("/test") || file.contains("_test.rs") || file.contains("/tests/") {
-            return "In test code";
-        }
-        if file.contains("/example") {
-            return "In example code";
-        }
         if file.contains("/mock") || file.contains("/fixture") {
             return "In mock/fixture code";
         }
     }
 
     let func = finding.function.to_lowercase();
-    if func.contains("test") {
-        return "Test function";
-    }
     if func.contains("mock") || func.contains("fake") {
         return "Mock/fake function";
     }

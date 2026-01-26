@@ -173,6 +173,7 @@ impl Rule for InsecureMd5Rule {
                 code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+                ..Default::default()
             });
         }
 
@@ -249,6 +250,7 @@ impl Rule for InsecureSha1Rule {
                 code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+                ..Default::default()
             });
         }
 
@@ -335,6 +337,7 @@ impl Rule for WeakHashingExtendedRule {
                 code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+                ..Default::default()
             });
         }
 
@@ -856,6 +859,7 @@ impl Rule for WeakCipherRule {
                         code_snippet: None,
                         exploitability: Exploitability::default(),
                         exploitability_score: Exploitability::default().score(),
+                        ..Default::default()
                     });
                 }
             }
@@ -970,6 +974,7 @@ impl Rule for PredictableRandomnessRule {
                         code_snippet: None,
                         exploitability: Exploitability::default(),
                         exploitability_score: Exploitability::default().score(),
+                        ..Default::default()
                     });
                 }
             }
@@ -1065,6 +1070,7 @@ impl Rule for ModuloBiasRandomRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                 });
             }
         }

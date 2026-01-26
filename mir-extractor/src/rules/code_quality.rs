@@ -718,6 +718,7 @@ impl Rule for DeadStoreArrayRule {
                     code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+                        ..Default::default()
                         });
                         break; // Only report first overwrite
                     }

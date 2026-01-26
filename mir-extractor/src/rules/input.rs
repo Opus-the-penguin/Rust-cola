@@ -147,6 +147,7 @@ impl Rule for CleartextEnvVarRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                 });
             }
         }
@@ -238,6 +239,7 @@ impl Rule for EnvVarLiteralRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                 });
             }
         }
@@ -350,6 +352,7 @@ impl Rule for InvisibleUnicodeRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                 });
             }
         }
@@ -448,6 +451,7 @@ impl Rule for UntrimmedStdinRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                 });
             }
         }
@@ -784,6 +788,7 @@ impl Rule for DivisionByUntrustedRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                 });
             }
         }
@@ -1001,6 +1006,7 @@ impl Rule for InsecureYamlDeserializationRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                 });
             }
         }
@@ -1205,6 +1211,7 @@ impl Rule for UnboundedReadRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                 });
             }
         }
@@ -1431,6 +1438,7 @@ impl Rule for InsecureJsonTomlDeserializationRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                 });
             }
         }
@@ -1788,6 +1796,7 @@ impl Rule for SerdeLengthMismatchRule {
                     code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+                ..Default::default()
                     });
                     continue;
                 }
@@ -1827,6 +1836,7 @@ impl Rule for SerdeLengthMismatchRule {
                         code_snippet: None,
                         exploitability: Exploitability::default(),
                         exploitability_score: Exploitability::default().score(),
+                        ..Default::default()
                     });
                 }
             }

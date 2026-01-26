@@ -123,6 +123,7 @@ impl Rule for SpawnedChildNoWaitRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                ..Default::default()
                 });
             }
         }
@@ -209,6 +210,7 @@ impl Rule for PermissionsSetReadonlyFalseRule {
                 code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+            ..Default::default()
             });
         }
 
@@ -291,6 +293,7 @@ impl Rule for WorldWritableModeRule {
                 code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+            ..Default::default()
             });
         }
 
@@ -410,6 +413,7 @@ impl Rule for OpenOptionsMissingTruncateRule {
                     code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+                                ..Default::default()
                                 });
                             }
                             open_options_start_line = None;
@@ -902,6 +906,7 @@ impl Rule for HardcodedHomePathRule {
                     code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+            ..Default::default()
             });
         }
 
@@ -1163,6 +1168,7 @@ impl Rule for UnboundedAllocationRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                ..Default::default()
                 });
             }
         }

@@ -152,6 +152,7 @@ impl Rule for AllocatorMismatchFfiRule {
                                 code_snippet: None,
                                 exploitability: Exploitability::default(),
                                 exploitability_score: Exploitability::default().score(),
+                            ..Default::default()
                             });
                         }
                     }
@@ -191,6 +192,7 @@ impl Rule for AllocatorMismatchFfiRule {
                                 code_snippet: None,
                                 exploitability: Exploitability::default(),
                                 exploitability_score: Exploitability::default().score(),
+                            ..Default::default()
                             });
                         }
                     }
@@ -230,6 +232,7 @@ impl Rule for AllocatorMismatchFfiRule {
                                 code_snippet: None,
                                 exploitability: Exploitability::default(),
                                 exploitability_score: Exploitability::default().score(),
+                            ..Default::default()
                             });
                         }
                     }
@@ -339,6 +342,7 @@ impl Rule for UnsafeFfiPointerReturnRule {
                     code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+                ..Default::default()
                 });
             }
         }

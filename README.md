@@ -61,7 +61,7 @@ By default, all artifacts are written to `out/cola/` **relative to your current 
 | `ast.json` | AST extraction (modules, functions, structs) |
 | `hir.json` | HIR extraction for researchers (optional, requires `--features hir-driver`) |
 | `raw-findings.json` | Raw findings from all rules (pre-LLM validation) |
-| `raw-findings.sarif` | Raw SARIF 2.1.0 output (pre-LLM validation) |
+| `raw-findings.sarif` | Raw SARIF 2.1.0 output with all findings (includes `codeContext` and `suppressions` for audit trail) |
 | `raw-report.md` | Standalone report without LLM validation |
 | `llm-prompt.md` | Prompt file for manual LLM submission |
 | `report.md` | LLM-validated report (when `--llm-report` is used) |
@@ -156,6 +156,9 @@ See `examples/cargo-cola.yaml` for a complete example.
 | `--with-audit` | Run cargo-audit to check dependencies |
 | `--no-ast` | Suppress AST output |
 | `--sarif <PATH>` | Custom SARIF output path |
+| `--exclude-tests <bool>` | Exclude test code from analysis (default: `true`) |
+| `--exclude-examples <bool>` | Exclude example code from analysis (default: `true`) |
+| `--exclude-benches <bool>` | Exclude benchmark code from analysis (default: `true`) |
 | `--rulepack <PATH>` | Additional rules from YAML |
 | `--rules` | Print the currently loaded rule metadata (built-ins plus rulepacks) |
 

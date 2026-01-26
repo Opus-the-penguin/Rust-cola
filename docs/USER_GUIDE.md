@@ -87,6 +87,28 @@ cargo-cola --rules
 ```
 Prints the live rule inventory (including loaded rulepacks) so you know exactly what checks will run.
 
+### Test/Example Code Filtering
+
+By default, rust-cola excludes findings from test, example, and benchmark code to reduce noise:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--exclude-tests` | `true` | Exclude `tests/`, `#[test]`, `#[cfg(test)]` modules |
+| `--exclude-examples` | `true` | Exclude `examples/` directory |
+| `--exclude-benches` | `true` | Exclude `benches/` directory |
+
+To include test code findings (e.g., for training or auditing):
+```bash
+cargo-cola --exclude-tests=false
+```
+
+To include all code contexts:
+```bash
+cargo-cola --exclude-tests=false --exclude-examples=false --exclude-benches=false
+```
+
+**Important:** The `raw-findings.sarif` file always contains **all findings** regardless of exclusion flags, with each finding annotated by its `codeContext` (production, test, example, benchmark). Non-production findings are marked with SARIF `suppressions` for tool compatibility. This preserves a complete audit trail while keeping reports focused on actionable production issues.
+
 ---
 
 ## Understanding Output

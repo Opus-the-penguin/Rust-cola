@@ -35,6 +35,14 @@ This patch release significantly reduces false positives discovered during real-
   - Function name patterns (`::tests::`, `test_`, `::mock_`)
   - Test attributes (`#[test]`, `#[cfg(test)]`, `#[tokio::test]`)
 
+#### CodeContext Classification (Audit Trail Preservation)
+- **`CodeContext` enum**: New classification for findings (`Production`, `Test`, `Example`, `Benchmark`, `Generated`)
+- **Finding extensions**: Added `code_context` and `filter_reason` fields to `Finding` struct
+- **Full audit trail in SARIF**: Raw SARIF now contains ALL findings with `codeContext` property, regardless of exclusion flags
+- **SARIF suppressions**: Non-production findings include SARIF-compliant `suppressions` array with justification
+- **Terminal summary stats**: Shows breakdown by code context when filtering (e.g., "production: 12, test: 847 (filtered)")
+- **LLM prompt integration**: Context hints now use `CodeContext` field for accurate classification
+
 ### Changed
 - `SqlInjectionRule::evaluate()` now applies dual-layer filtering (sink + context)
 - `PrototypeOptions::guard_markers` expanded from 9 to 24+ patterns

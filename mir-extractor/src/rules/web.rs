@@ -89,6 +89,7 @@ impl Rule for NonHttpsUrlRule {
                 code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+                ..Default::default()
             });
         }
 
@@ -218,6 +219,7 @@ impl Rule for DangerAcceptInvalidCertRule {
                 code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+                ..Default::default()
             });
         }
 
@@ -355,6 +357,7 @@ impl Rule for OpensslVerifyNoneRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                 });
             }
         }
@@ -443,6 +446,7 @@ impl Rule for CookieSecureAttributeRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                 });
             }
         }
@@ -522,6 +526,7 @@ impl Rule for CorsWildcardRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                 });
             }
         }
@@ -608,6 +613,7 @@ impl Rule for ConnectionStringPasswordRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                 });
             }
         }
@@ -701,6 +707,7 @@ impl Rule for PasswordFieldMaskingRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                 });
             }
         }
@@ -787,6 +794,7 @@ impl Rule for CleartextLoggingRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                 });
             }
         }
@@ -980,6 +988,7 @@ impl Rule for TlsVerificationDisabledRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                 });
             }
         }
@@ -1337,6 +1346,7 @@ impl Rule for AwsS3UnscopedAccessRule {
                     code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+                ..Default::default()
                             });
 
                             break; // Only report once per S3 call
@@ -1421,6 +1431,7 @@ impl Rule for ContentLengthAllocationRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                 });
             }
         }

@@ -139,6 +139,53 @@ impl Default for Confidence {
     }
 }
 
+/// Code context classification for findings
+/// Used to categorize where a finding was detected, enabling filtering without data loss
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CodeContext {
+    /// Normal production code (default)
+    #[default]
+    Production,
+    /// Test code: #[test], tests/, #[cfg(test)] modules
+    Test,
+    /// Example code: examples/ directory
+    Example,
+    /// Benchmark code: benches/ directory, #[bench]
+    Benchmark,
+    /// Generated code: build.rs output, proc macros (future)
+    Generated,
+}
+
+impl CodeContext {
+    /// Human-readable label for this context
+    pub fn label(&self) -> &'static str {
+        match self {
+            CodeContext::Production => "production",
+            CodeContext::Test => "test",
+            CodeContext::Example => "example",
+            CodeContext::Benchmark => "benchmark",
+            CodeContext::Generated => "generated",
+        }
+    }
+
+    /// Whether this context is typically excluded from primary analysis
+    pub fn is_non_production(&self) -> bool {
+        !matches!(self, CodeContext::Production)
+    }
+
+    /// SARIF suppression justification for this context
+    pub fn suppression_justification(&self) -> Option<&'static str> {
+        match self {
+            CodeContext::Production => None,
+            CodeContext::Test => Some("Finding is in test code"),
+            CodeContext::Example => Some("Finding is in example code"),
+            CodeContext::Benchmark => Some("Finding is in benchmark code"),
+            CodeContext::Generated => Some("Finding is in generated code"),
+        }
+    }
+}
+
 // ============================================================================
 // CVSS-like Exploitability Metrics
 // ============================================================================
@@ -422,6 +469,12 @@ pub struct Finding {
     /// Computed exploitability score (0.0 - 3.9)
     #[serde(default)]
     pub exploitability_score: f32,
+    /// Code context where this finding was detected (production, test, example, etc.)
+    #[serde(default)]
+    pub code_context: CodeContext,
+    /// Reason for filtering if this finding was excluded from primary results
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter_reason: Option<String>,
 }
 
 impl Finding {
@@ -453,6 +506,8 @@ impl Finding {
             code_snippet: None,
             exploitability,
             exploitability_score,
+            code_context: CodeContext::Production,
+            filter_reason: None,
         }
     }
 
@@ -486,6 +541,23 @@ impl Finding {
         self.exploitability_score = exploitability.score();
         self
     }
+
+    /// Set code context (production, test, example, benchmark)
+    pub fn with_code_context(mut self, context: CodeContext) -> Self {
+        self.code_context = context;
+        self
+    }
+
+    /// Mark this finding as filtered with a reason
+    pub fn with_filter_reason(mut self, reason: impl Into<String>) -> Self {
+        self.filter_reason = Some(reason.into());
+        self
+    }
+
+    /// Returns true if this finding is from non-production code
+    pub fn is_non_production(&self) -> bool {
+        self.code_context.is_non_production()
+    }
 }
 
 impl Default for Finding {
@@ -506,6 +578,8 @@ impl Default for Finding {
             code_snippet: None,
             exploitability_score: exploitability.score(),
             exploitability,
+            code_context: CodeContext::Production,
+            filter_reason: None,
         }
     }
 }
@@ -1560,6 +1634,7 @@ impl Rule for DeclarativeRule {
                 code_snippet: None,
                 exploitability_score: exploitability.score(),
                 exploitability,
+                ..Default::default()
             });
         }
 
@@ -2984,10 +3059,21 @@ pub fn sarif_report(package: &MirPackage, analysis: &AnalysisResult) -> serde_js
                         ]
                     }
                 ],
+                "suppressions": if finding.code_context.is_non_production() {
+                    json!([{
+                        "kind": "inSource",
+                        "status": "underReview",
+                        "justification": finding.code_context.suppression_justification()
+                    }])
+                } else {
+                    json!([])
+                },
                 "properties": {
                     "ruleName": finding.rule_name,
                     "origin": origin,
                     "evidence": finding.evidence,
+                    "codeContext": finding.code_context.label(),
+                    "filterReason": finding.filter_reason,
                 }
             })
         })
@@ -3532,6 +3618,7 @@ fn <impl at C:\\workspace\\demo\\src\\lib.rs:40:1: 40:32>::vec_set_len(_1: &mut 
             code_snippet: None,
             exploitability_score: exploitability.score(),
             exploitability,
+            ..Default::default()
         };
 
         let analysis = AnalysisResult {
@@ -3617,6 +3704,7 @@ fn <impl at C:\\workspace\\demo\\src\\lib.rs:40:1: 40:32>::vec_set_len(_1: &mut 
             code_snippet: None,
             exploitability_score: exploitability.score(),
             exploitability,
+            ..Default::default()
         };
 
         let analysis = AnalysisResult {

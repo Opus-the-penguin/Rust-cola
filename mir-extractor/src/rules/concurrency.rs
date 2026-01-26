@@ -167,6 +167,7 @@ impl Rule for NonThreadSafeTestRule {
                     code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+                ..Default::default()
                 });
             }
         }
@@ -1006,6 +1007,7 @@ impl Rule for UnderscoreLockGuardRule {
                         code_snippet: None,
                         exploitability: Exploitability::default(),
                         exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                     });
                     continue;
                 }
@@ -1059,6 +1061,7 @@ impl Rule for UnderscoreLockGuardRule {
                     code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+                                ..Default::default()
                                 });
                                 break;
                             }
@@ -1134,6 +1137,7 @@ impl Rule for BroadcastUnsyncPayloadRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                ..Default::default()
                 });
             }
         }

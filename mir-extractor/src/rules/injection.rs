@@ -170,6 +170,7 @@ impl Rule for CommandInjectionRiskRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                ..Default::default()
                 });
             }
         }
@@ -298,6 +299,7 @@ impl Rule for CommandArgConcatenationRule {
                     code_snippet: None,
                 exploitability: Exploitability::default(),
                 exploitability_score: Exploitability::default().score(),
+                ..Default::default()
                 });
             }
         }
@@ -586,6 +588,7 @@ impl Rule for LogInjectionRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                ..Default::default()
                 });
             }
         }
@@ -997,6 +1000,7 @@ impl Rule for RegexInjectionRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                ..Default::default()
                 });
             }
         }
@@ -1390,6 +1394,7 @@ impl Rule for UncheckedIndexRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                ..Default::default()
                 });
             }
         }
@@ -1775,6 +1780,7 @@ impl Rule for PathTraversalRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                ..Default::default()
                 });
             }
         }
@@ -2170,6 +2176,7 @@ impl Rule for SsrfRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                ..Default::default()
                 });
             }
         }
@@ -2849,6 +2856,7 @@ impl Rule for SqlInjectionRule {
                     code_snippet: None,
                     exploitability: Exploitability::default(),
                     exploitability_score: Exploitability::default().score(),
+                ..Default::default()
                 });
             }
         }
@@ -3178,6 +3186,7 @@ impl Rule for InterProceduralCommandInjectionRule {
                         code_snippet: None,
                         exploitability: Exploitability::default(),
                         exploitability_score: Exploitability::default().score(),
+                    ..Default::default()
                     });
 
                     reported_functions.insert(function.name.clone());

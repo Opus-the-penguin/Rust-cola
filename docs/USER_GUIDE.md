@@ -30,6 +30,10 @@ flowchart LR
     LLM --> Report[Security Report]
 ```
 
+```
+Source Code -> MIR Extraction -> Rule Engine -> Raw Findings -> LLM Triage -> Security Report
+```
+
 The optional LLM triage step applies a structured analysis workflow:
 
 ```mermaid
@@ -40,6 +44,10 @@ flowchart LR
     R --> I[Impact]
     I --> S[Severity]
     S --> F[Fix]
+```
+
+```
+Verify -> Guards -> Prune -> Exploit -> Impact -> Severity -> Fix
 ```
 
 **Why MIR analysis matters:**

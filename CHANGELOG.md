@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🎯 False Positive Reduction & Guard Detection Release
 
-This patch release significantly reduces false positives discovered during real-world analysis of large Rust codebases (InfluxDB OSS), and adds LLM-assisted guard detection for improved triage accuracy. Expected reduction: ~90% fewer noisy findings.
+This patch release improves precision through better false positive filtering and adds LLM-assisted guard detection for more accurate triage. Validated against InfluxDB OSS.
 
 ### Added
 

@@ -1,10 +1,9 @@
 # Rust-cola
 
-Experimental security analyzer for Rust, exploring three ideas:
+Experimental security analyzer for Rust exploring two ideas:
 
-1. **Can LLMs help build security analyzers?** Rules and codebase were written with AI assistance.
-2. **Is MIR a better analysis target than source code?** MIR is generated after macro expansion, type resolution, and borrow checking.
-3. **Can LLMs improve precision by triaging findings?** Static analysis is exhaustive but not every pattern is exploitable.
+1. **MIR as analysis target.** Analyze after macro expansion, type resolution, and borrow checking. Rust's safety guarantees become explicit in MIR, making violations detectable.
+2. **LLM-assisted triage.** A rules engine exhaustively finds patterns; LLMs assess exploitability and suggest fixes.
 
 ```mermaid
 flowchart LR

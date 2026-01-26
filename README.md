@@ -43,6 +43,14 @@ Verify -> Guards -> Prune -> Exploit -> Impact -> Severity -> Fix
 
 It's not a complete product. It's functional as a rules engine that finds vulnerable patterns, but precision varies by rule. See the [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md) for how to improve individual rules.
 
+## Why It Requires Compilation
+
+Rust-cola analyzes MIR (Mid-level IR) from the compiler. This requires the target code to compile, but lets it see things source-level tools can't:
+
+- **Expanded macros** — vulnerabilities hidden in macro-generated code become visible
+- **Resolved types and generics** — issues in generic code or trait dispatch are caught after type resolution
+- **Data flow across functions** — tracks tainted data through call chains, async/await, and complex control flow
+
 ## Installation
 
 ```bash
@@ -86,31 +94,6 @@ cargo-cola --crate-path . --report out/cola/raw-report.md
 ```
 
 Generates a raw report with heuristic triage. Useful when LLM access is unavailable, but requires manual review of findings.
-
-### Suppressing Findings
-
-Inline suppression:
-
-```rust
-// rust-cola:ignore RUSTCOLA001
-let raw = Box::into_raw(boxed);
-
-// rust-cola:ignore
-unsafe { do_something_scary(); }
-```
-
-Rulepack suppression (see [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md)):
-
-```yaml
-# my-suppressions.yaml
-suppressions:
-  - rule_id: RUSTCOLA042
-    reason: "Intentional for research"
-```
-
-```bash
-cargo-cola --rulepack my-suppressions.yaml --crate-path .
-```
 
 ## Output Artifacts
 
@@ -175,14 +158,6 @@ Most rules are heuristic—they find patterns but may produce false positives. T
 
 See the [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md) for custom rules and YAML rulepacks.
 
-## Why It Requires Compilation
-
-Rust-cola analyzes MIR (Mid-level IR) from the compiler. This requires the target code to compile, but lets it see things source-level tools can't:
-
-- **Expanded macros** — vulnerabilities hidden in macro-generated code become visible
-- **Resolved types and generics** — issues in generic code or trait dispatch are caught after type resolution
-- **Data flow across functions** — tracks tainted data through call chains, async/await, and complex control flow
-
 ## Interprocedural Analysis
 
 Some rules (SQL injection, path traversal, SSRF, etc.) track data flow across function calls. This is memory-intensive on large codebases, so analysis has built-in limits configurable via YAML:
@@ -206,93 +181,31 @@ See `examples/cargo-cola.yaml` for a complete example.
 
 ## Options
 
-### Core
-
 | Flag | Description |
 |------|-------------|
 | `--crate-path <PATH>` | Target crate or workspace (default: `.`) |
 | `--out-dir <PATH>` | Output directory (default: `out/cola`) |
 | `--config <PATH>` | Path to configuration file (YAML format) |
-| `--fail-on-findings <bool>` | Exit with code 1 when findings are produced (default: `true`) |
-
-### Reports
-
-| Flag | Description |
-|------|-------------|
 | `--report <PATH>` | Generate standalone heuristic report |
-| `--no-report` | Suppress standalone report |
 | `--sarif <PATH>` | Custom SARIF output path |
-
-### LLM Integration
-
-| Flag | Description |
-|------|-------------|
-| `--llm-prompt <PATH>` | Path for LLM prompt file (default: `out/cola/llm-prompt.md`) |
-| `--no-llm-prompt` | Suppress LLM prompt generation |
-| `--llm-report <PATH>` | Generate report via LLM API |
+| `--llm-prompt <PATH>` | Path for LLM prompt file |
 | `--llm-endpoint <URL>` | LLM API endpoint |
 | `--llm-model <NAME>` | Model name (e.g., gpt-4, llama3) |
-| `--llm-temperature <FLOAT>` | Sampling temperature (default: `0.0`) |
-
-### Filtering
-
-| Flag | Description |
-|------|-------------|
 | `--exclude-tests <bool>` | Exclude test code (default: `true`) |
-| `--exclude-examples <bool>` | Exclude example code (default: `true`) |
-| `--exclude-benches <bool>` | Exclude benchmark code (default: `true`) |
-
-### Additional
-
-| Flag | Description |
-|------|-------------|
 | `--with-audit` | Run cargo-audit to check dependencies |
-| `--no-ast` | Suppress AST output |
 | `--rulepack <PATH>` | Additional rules from YAML |
 | `--rules` | Print loaded rule metadata |
+| `--fail-on-findings <bool>` | Exit with code 1 when findings are produced (default: `true`) |
 
-## Performance
-
-Benchmarks on Apple M1 (8-core, 16GB RAM):
-
-| Crate | LOC | Findings | Time | Memory |
-|-------|-----|----------|------|--------|
-| ci-test-crate | 39 | 1 | 0.2s | <50MB |
-| small-crate | ~500 | 8 | 1.6s | ~100MB |
-| medium-crate | ~5,000 | 100+ | 18s | ~500MB |
-
-**Typical analysis rate:** ~300 LOC/second including full interprocedural analysis.
-
-Memory usage scales with crate size. Large workspaces (10K+ functions) may require 1-2GB RAM. Analysis limits are configurable via `cargo-cola.yaml` to control memory usage on constrained systems.
+Run `cargo-cola --help` for the full list.
 
 ## Dependency Auditing
 
-Rust-cola can integrate with [cargo-audit](https://rustsec.org/) to check your dependencies for known vulnerabilities:
-
-```bash
-# Install cargo-audit (one-time)
-cargo install cargo-audit
-
-# Run rust-cola with dependency audit
-cargo-cola --crate-path . --report --with-audit
-```
-
-When `--with-audit` is enabled:
-- cargo-audit scans `Cargo.lock` against the RustSec Advisory Database
-- Known CVEs and security advisories are included in the report
-- Findings from both static analysis and dependency audit are merged
+Use `--with-audit` to integrate with [cargo-audit](https://rustsec.org/) and check dependencies for known CVEs.
 
 ## Etymology
 
-**Rust** — The programming language.
-
-**cola** — Two meanings:
-
-1. **Acronym:** **CO**de **L**exical **A**nalyzer
-
-2. **The beverage:** Cola drinks (Coca-Cola, Pepsi, etc.) contain phosphoric acid, which chemically converts iron oxide (rust) into a water-soluble compound that's easy to scrub away. It's a classic life hack for cleaning rusty tools and bolts.
-
-Hence **Rust-cola**: the security analyzer that cleans Rust code of security vulnerabilities.
+**cola** = **CO**de **L**exical **A**nalyzer. Also, cola removes rust.
 
 ## License
 

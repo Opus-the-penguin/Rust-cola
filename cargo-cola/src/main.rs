@@ -785,19 +785,62 @@ fn main() -> Result<()> {
         if exclude_tests || exclude_examples || exclude_benches {
             let pre_exclude_count = analysis.findings.len();
             analysis.findings.retain(|finding| {
-                // Check if finding is from test/example/bench code
-                // Look up the function in the package to check its code type
-                if let Some(func) = package.functions.iter().find(|f| f.name == finding.function) {
-                    if exclude_tests && func.is_test_code() {
-                        return false;
+                // v1.0.1: Filter based on finding's file path from span
+                // The span contains the actual source file location
+                if let Some(span) = &finding.span {
+                    let file_path = &span.file;
+                    
+                    // Exclude test code: files in tests/, or paths containing /tests/
+                    // Also exclude #[cfg(test)] modules (indicated by test:: in path)
+                    if exclude_tests {
+                        if file_path.starts_with("tests/") 
+                            || file_path.contains("/tests/")
+                            || file_path.contains("/test_")
+                            || file_path.ends_with("_test.rs")
+                            || file_path.contains("::test::")
+                            || file_path.contains("/tests.rs") {
+                            return false;
+                        }
                     }
-                    if exclude_examples && func.is_example_code() {
-                        return false;
+                    
+                    // Exclude example code: files in examples/
+                    if exclude_examples {
+                        if file_path.starts_with("examples/") 
+                            || file_path.contains("/examples/") {
+                            return false;
+                        }
                     }
-                    if exclude_benches && func.is_bench_code() {
+                    
+                    // Exclude benchmark code: files in benches/
+                    if exclude_benches {
+                        if file_path.starts_with("benches/") 
+                            || file_path.contains("/benches/") {
+                            return false;
+                        }
+                    }
+                }
+                
+                // Also check the function field which sometimes contains file path info
+                let func_str = &finding.function;
+                if exclude_tests {
+                    if func_str.starts_with("tests/") 
+                        || func_str.contains("/tests/") {
                         return false;
                     }
                 }
+                if exclude_examples {
+                    if func_str.starts_with("examples/") 
+                        || func_str.contains("/examples/") {
+                        return false;
+                    }
+                }
+                if exclude_benches {
+                    if func_str.starts_with("benches/") 
+                        || func_str.contains("/benches/") {
+                        return false;
+                    }
+                }
+                
                 true
             });
 

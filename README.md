@@ -43,14 +43,6 @@ Verify -> Guards -> Prune -> Exploit -> Impact -> Severity -> Fix
 
 It's not a complete product. It's functional as a rules engine that finds vulnerable patterns, but precision varies by rule. See the [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md) for how to improve individual rules.
 
-## Why It Requires Compilation
-
-Rust-cola analyzes MIR (Mid-level IR) from the compiler. This requires the target code to compile, but lets it see things source-level tools can't:
-
-- **Expanded macros** — vulnerabilities hidden in macro-generated code become visible
-- **Resolved types and generics** — issues in generic code or trait dispatch are caught after type resolution
-- **Data flow across functions** — tracks tainted data through call chains, async/await, and complex control flow
-
 ## Installation
 
 ```bash

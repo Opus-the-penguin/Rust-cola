@@ -4,6 +4,18 @@ Experimental security scanner for Rust. Works by compiling your code and analyzi
 
 rust-cola is a **research tool** for exploring static analysis techniques on Rust's MIR representation. The focus is on advancing the state of taint tracking, dataflow analysis, and vulnerability detection—not on production deployment or enterprise workflows.
 
+**Note:** The environment running cargo-cola must be able to compile the target code. This is required to extract MIR.
+
+Requires the nightly Rust toolchain.
+
+## Background
+
+Rust-cola is an experimental proof of concept exploring three ideas:
+
+1. **Can LLMs help build security analyzers?** Rules and codebase were written with AI assistance.
+2. **Is MIR a better scan target than source code?** MIR is generated after macro expansion, type resolution, and borrow checking. Rust's safety guarantees become explicit, and therefore checkable.
+3. **Can LLMs improve precision by triaging findings?** Static analysis is exhaustive but not every pattern is exploitable. LLMs can assess context to prioritize what actually needs fixing.
+
 ```mermaid
 flowchart LR
     Source[Source Code] --> MIR[MIR Extraction]
@@ -33,25 +45,7 @@ flowchart LR
 Verify -> Guards -> Prune -> Exploit -> Impact -> Severity -> Fix
 ```
 
-**Note:** The environment running cargo-cola must be able to compile the target code. This is required to extract MIR.
-
-Requires the nightly Rust toolchain.
-
-## Background
-
-Rust-cola is an experimental proof of concept exploring three ideas:
-
-1. **Can LLMs help build security analyzers?** Rules and codebase were written with AI assistance.
-2. **Is MIR a better scan target than source code?** MIR is generated after macro expansion, type resolution, and borrow checking. Rust's safety guarantees become explicit, and therefore checkable.
-3. **Can LLMs improve precision by triaging findings?** Static analysis is exhaustive but not every pattern is exploitable. LLMs can assess context to prioritize what actually needs fixing.
-
 It's not a complete product. It's functional as a rules engine that finds vulnerable patterns, but precision varies by rule. See the [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md) for how to improve individual rules.
-
-### Acknowledgments
-
-This project would not exist without AI tools: Claude, ChatGPT, and GitHub Copilot. The human involved is a rusty C++ programmer with a systems engineering background—enough to guide the architecture and intent, but not enough to build this alone.
-
-Please [file issues](https://github.com/Opus-the-penguin/Rust-cola/issues) with feedback or suggestions.
 
 ## Usage
 
@@ -307,4 +301,10 @@ Hence **Rust-cola**: the security analyzer that cleans Rust code of security vul
 ## License
 
 MIT
+
+## Acknowledgments
+
+This project would not exist without AI tools: Claude, ChatGPT, and GitHub Copilot. The human involved is a rusty C++ programmer with a systems engineering background—enough to guide the architecture and intent, but not enough to build this alone.
+
+Please [file issues](https://github.com/Opus-the-penguin/Rust-cola/issues) with feedback or suggestions.
 

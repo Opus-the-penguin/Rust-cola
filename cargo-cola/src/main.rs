@@ -2207,6 +2207,124 @@ fn generate_standalone_report(
     Ok(())
 }
 
+/// Rule-specific guard patterns that the LLM should check for during verification.
+/// Each entry maps a rule ID prefix to common guard/validation patterns.
+struct GuardHints {
+    patterns: &'static [&'static str],
+    what_to_check: &'static str,
+    false_positive_if: &'static str,
+}
+
+fn get_guard_hints_for_rule(rule_id: &str) -> Option<GuardHints> {
+    match rule_id {
+        // Unbounded allocation (memory exhaustion)
+        "RUSTCOLA024" | "RUSTCOLA203" => Some(GuardHints {
+            patterns: &[
+                "MAX_*", "LIMIT_*", "*_LIMIT", "*_MAX",
+                "min(", "clamp(", "saturating_",
+                "checked_", "if size >", "if len >",
+                ".take(", "truncate(",
+            ],
+            what_to_check: "Look for constants defining maximum sizes, min/clamp calls on size values, or conditional checks before allocation",
+            false_positive_if: "Size is bounded by a constant (e.g., max columns = 500 → max 16KB allocation)",
+        }),
+        // SQL/Command/Path injection
+        "RUSTCOLA001" | "RUSTCOLA003" | "RUSTCOLA004" | "RUSTCOLA100" | "RUSTCOLA101" | "RUSTCOLA102" => Some(GuardHints {
+            patterns: &[
+                "sanitize", "escape", "quote", "parameterize",
+                "validate", "whitelist", "allowlist",
+                "regex::Regex", ".is_alphanumeric()", ".is_ascii_alphanumeric()",
+                "sqlx::query!", "diesel::", "prepared_statement",
+            ],
+            what_to_check: "Look for input validation, escaping functions, parameterized queries, or allowlist checks before the sink",
+            false_positive_if: "Input is parameterized, validated against allowlist, or comes from trusted internal source",
+        }),
+        // Integer overflow
+        "RUSTCOLA204" => Some(GuardHints {
+            patterns: &[
+                "checked_add", "checked_mul", "checked_sub",
+                "saturating_add", "saturating_mul",
+                "overflowing_", "wrapping_",
+                "try_into()", "TryFrom",
+            ],
+            what_to_check: "Look for checked arithmetic, TryFrom conversions, or explicit overflow handling",
+            false_positive_if: "Arithmetic uses checked_* methods or values are bounded by type constraints",
+        }),
+        // Cryptographic issues
+        "RUSTCOLA012" | "RUSTCOLA200" | "RUSTCOLA201" => Some(GuardHints {
+            patterns: &[
+                "constant_time_eq", "subtle::ConstantTimeEq",
+                "ring::", "rustcrypto::", "sha2::", "sha3::",
+                "Argon2", "bcrypt", "scrypt", "pbkdf2",
+            ],
+            what_to_check: "Check if weak hash is used for security purposes vs checksums/caching",
+            false_positive_if: "Hash is used for non-security purposes (cache keys, data integrity of non-sensitive data)",
+        }),
+        // TLS verification disabled
+        "RUSTCOLA005" => Some(GuardHints {
+            patterns: &[
+                "#[cfg(test)]", "cfg!(test)", "debug_assert",
+                "// SAFETY:", "// NOTE:", "localhost",
+                "127.0.0.1", "::1", "development",
+            ],
+            what_to_check: "Check if TLS verification is disabled only in test/dev contexts",
+            false_positive_if: "Disabled only in test code or for localhost connections with documented reason",
+        }),
+        // Mutex guard held across await
+        "RUSTCOLA301" => Some(GuardHints {
+            patterns: &[
+                "tokio::sync::Mutex", "async_std::sync::Mutex",
+                "drop(guard)", "std::mem::drop(",
+                "let _ = guard;",
+            ],
+            what_to_check: "Check if an async-aware mutex is used or guard is explicitly dropped before await",
+            false_positive_if: "Using async mutex (tokio::sync::Mutex) or guard is dropped before await point",
+        }),
+        // Blocking in async context
+        "RUSTCOLA300" | "RUSTCOLA302" => Some(GuardHints {
+            patterns: &[
+                "spawn_blocking", "block_in_place",
+                "tokio::task::spawn_blocking",
+                "actix_web::web::block",
+                "// blocking ok:", "// short operation",
+            ],
+            what_to_check: "Check if blocking operation is wrapped in spawn_blocking or is trivially short",
+            false_positive_if: "Wrapped in spawn_blocking, or operation is provably short (< 1ms)",
+        }),
+        // Content-length allocation
+        "RUSTCOLA021" => Some(GuardHints {
+            patterns: &[
+                "MAX_BODY_SIZE", "BODY_LIMIT", "max_body",
+                "content_length_limit", "PayloadConfig",
+                "if content_length >", ".take(",
+            ],
+            what_to_check: "Check for body size limits in HTTP framework config or explicit checks",
+            false_positive_if: "Framework enforces max body size or explicit limit check before allocation",
+        }),
+        // Unbounded read (DoS via memory exhaustion)
+        "RUSTCOLA090" => Some(GuardHints {
+            patterns: &[
+                ".take(", "BufReader", "read_exact",
+                "MAX_SIZE", "MAX_BYTES", "LIMIT",
+                "if size >", "content_length",
+            ],
+            what_to_check: "Check for .take(max_bytes) wrapper, explicit size limits, or BufReader with size constraints",
+            false_positive_if: "Read is bounded by .take(), has content-length validation, or operates on trusted local files only",
+        }),
+        // Path traversal
+        "RUSTCOLA086" => Some(GuardHints {
+            patterns: &[
+                "canonicalize", "starts_with", "strip_prefix",
+                "Path::new", "PathBuf::from", "join",
+                "sanitize", "validate_path", "is_absolute",
+            ],
+            what_to_check: "Check for canonicalize() + starts_with() validation or path sanitization",
+            false_positive_if: "Path is canonicalized and validated against base directory, or comes from trusted config",
+        }),
+        _ => None,
+    }
+}
+
 /// Build the canonical LLM prompt content shared by manual and automated workflows.
 fn build_llm_prompt_content(
     project_name: &str,
@@ -2395,6 +2513,81 @@ fn build_llm_prompt_content(
     writeln!(content, "```")?;
     writeln!(&mut content)?;
     writeln!(content, "This verification step prevents hallucinated file paths and keeps conclusions grounded in static analysis output plus real source context.")?;
+
+    // ===== GUARD DETECTION GUIDE =====
+    writeln!(content, "---")?;
+    writeln!(content, "## Step 0.5: Guard Detection (CRITICAL for Reducing False Positives)")?;
+    writeln!(&mut content)?;
+    writeln!(content, "⚠️ **The taint tracker identifies data flow but may miss validation/bounds checks along the path.**")?;
+    writeln!(&mut content)?;
+    writeln!(content, "### What is a Guard?")?;
+    writeln!(&mut content)?;
+    writeln!(content, "A **guard** is any code that validates, bounds, or sanitizes data between a taint source and sink.")?;
+    writeln!(content, "Common guard types:")?;
+    writeln!(&mut content)?;
+    writeln!(content, "| Guard Type | Examples | Effect |")?;
+    writeln!(content, "|------------|----------|--------|")?;
+    writeln!(content, "| **Bounds Check** | `if len > MAX {{ return Err(...) }}`, `min(len, MAX)`, `clamp()` | Limits numeric values |")?;
+    writeln!(content, "| **Validation** | `validate_input()`, `is_valid()`, regex checks | Rejects invalid input |")?;
+    writeln!(content, "| **Sanitization** | `escape()`, `sanitize()`, `quote()` | Transforms dangerous chars |")?;
+    writeln!(content, "| **Type Constraint** | Schema validation, column limits, enum parsing | Structural bounds |")?;
+    writeln!(content, "| **Allowlist** | `if !ALLOWED.contains(&x) {{ return Err(...) }}` | Rejects unexpected values |")?;
+    writeln!(&mut content)?;
+    writeln!(content, "### Where to Look for Guards")?;
+    writeln!(&mut content)?;
+    writeln!(content, "1. **Between source and sink**: Read the entire call chain, not just the reported line")?;
+    writeln!(content, "2. **In constants**: Look for `MAX_*`, `LIMIT_*`, `*_LIMIT` constants that may bound values")?;
+    writeln!(content, "3. **In type definitions**: Schema validation, enum parsing, or struct constructors")?;
+    writeln!(content, "4. **In callers**: Validation may happen before calling the reported function")?;
+    writeln!(content, "5. **In configuration**: Framework-level limits (e.g., `max_body_size` in HTTP config)")?;
+    writeln!(&mut content)?;
+
+    // Build rule-specific guard hints table from findings
+    let unique_rules: std::collections::HashSet<_> = findings.iter().map(|f| f.rule_id.as_str()).collect();
+    let hints_needed: Vec<_> = unique_rules
+        .iter()
+        .filter_map(|rule_id| get_guard_hints_for_rule(rule_id).map(|h| (*rule_id, h)))
+        .collect();
+
+    if !hints_needed.is_empty() {
+        writeln!(content, "### Rule-Specific Guard Patterns")?;
+        writeln!(&mut content)?;
+        writeln!(content, "For the finding types in this scan, look for these specific guards:")?;
+        writeln!(&mut content)?;
+        writeln!(content, "| Rule | Guard Patterns to Search | False Positive If |")?;
+        writeln!(content, "|------|--------------------------|-------------------|")?;
+        for (rule_id, hints) in &hints_needed {
+            let patterns = hints.patterns.iter().take(5).cloned().collect::<Vec<_>>().join("`, `");
+            writeln!(
+                content,
+                "| **{}** | `{}` | {} |",
+                rule_id, patterns, hints.false_positive_if
+            )?;
+        }
+        writeln!(&mut content)?;
+    }
+
+    writeln!(content, "### Guard Verification Process")?;
+    writeln!(&mut content)?;
+    writeln!(content, "For each finding with a tainted data flow:")?;
+    writeln!(content, "1. **Identify the source**: Where does the untrusted data originate?")?;
+    writeln!(content, "2. **Trace to sink**: Follow the data through all function calls")?;
+    writeln!(content, "3. **Search for guards**: At each step, look for validation/bounds/sanitization")?;
+    writeln!(content, "4. **Check constants**: Search the crate for MAX_*/LIMIT_* constants that might apply")?;
+    writeln!(content, "5. **Document findings**: If guard found, cite file:line and dismiss as FP")?;
+    writeln!(&mut content)?;
+    writeln!(content, "**Example Guard Discovery:**")?;
+    writeln!(content, "```")?;
+    writeln!(content, "Finding: RUSTCOLA024 - Unbounded allocation at cache.rs:274")?;
+    writeln!(content, "Source: key_column_ids.len() used in Vec::with_capacity()")?;
+    writeln!(content, "Guard Search:")?;
+    writeln!(content, "  → key_column_ids comes from table schema")?;
+    writeln!(content, "  → table schema validated in catalog.rs")?;
+    writeln!(content, "  → Found: NUM_COLUMNS_PER_TABLE_LIMIT = 500 (catalog/versions/v1.rs:42)")?;
+    writeln!(content, "  → Max allocation: 500 * 32 bytes = 16KB")?;
+    writeln!(content, "Result: FALSE POSITIVE - allocation bounded by catalog limit")?;
+    writeln!(content, "```")?;
+    writeln!(&mut content)?;
 
     // ===== PRUNING INSTRUCTIONS (MANDATORY - FIRST) =====
     writeln!(content, "---")?;
@@ -3043,6 +3236,15 @@ fn build_llm_prompt_content(
             }
             writeln!(content, "```")?;
         }
+
+        // Add rule-specific guard hints
+        if let Some(hints) = get_guard_hints_for_rule(&finding.rule_id) {
+            writeln!(&mut content)?;
+            writeln!(content, "**🔍 Guard Check:** {}", hints.what_to_check)?;
+            writeln!(content, "- Search for: `{}`", hints.patterns.iter().take(6).cloned().collect::<Vec<_>>().join("`, `"))?;
+            writeln!(content, "- **False positive if:** {}", hints.false_positive_if)?;
+        }
+
         writeln!(&mut content)?;
         writeln!(content, "---")?;
         writeln!(&mut content)?;
@@ -3071,6 +3273,10 @@ fn build_llm_prompt_content(
         "- [ ] **CRITICAL: Every code snippet was read from actual source files, NOT synthesized**"
     )?;
     writeln!(content, "- [ ] **CRITICAL: Line numbers verified against source - finding exists at reported location**")?;
+    writeln!(
+        content,
+        "- [ ] **CRITICAL: Guard patterns searched for each finding (Step 0.5) - bounded allocations dismissed**"
+    )?;
     writeln!(
         content,
         "- [ ] All test/example/benchmark code findings dismissed with evidence"

@@ -62,18 +62,29 @@ This patch release significantly reduces false positives discovered during real-
 ## [Unreleased - Post 1.0.1]
 
 ### Added
+- **Guard Detection Enhancement**: New Step 0.5 in LLM prompt with rule-specific guard detection guidance
+  - `GuardHints` struct and `get_guard_hints_for_rule()` function for rule-specific patterns
+  - Dynamically generated guard patterns table based on finding types in scan
+  - Per-finding "🔍 Guard Check" hints with patterns to search and false positive criteria
+  - Coverage for: RUSTCOLA024/203 (allocation), RUSTCOLA001/003/004/100-102 (injection), RUSTCOLA204 (overflow), RUSTCOLA012/200/201 (crypto), RUSTCOLA005 (TLS), RUSTCOLA301 (mutex await), RUSTCOLA300/302 (blocking async), RUSTCOLA021 (content-length), RUSTCOLA090 (unbounded read), RUSTCOLA086 (path traversal)
+- **Roadmap Considerations**: New `docs/ROADMAP_CONSIDERATIONS.md` working document for enhancement ideas
 - **User Guide**: Comprehensive `docs/USER_GUIDE.md` covering theory of operation, LLM integration, CI/CD, configuration, suppression, and troubleshooting
 - **Save Instructions**: LLM prompt now includes instructions for saving the generated report
 
 ### Changed
 - **LLM Prompt Overhaul**: Redesigned `llm-prompt.md` generation for enterprise-ready security reports:
+  - Added Step 0: Source Verification (MANDATORY) with verification checklist
+  - Added Step 0.5: Guard Detection with rule-specific patterns and false positive criteria
   - Added aggressive pruning instructions with automatic false positive criteria (test code, examples, constants, dead code)
   - Added reachability classification (EXPOSED, INDIRECT, AUTHENTICATED, INTERNAL, CONFIG-DRIVEN) with severity modifiers
+  - Added mandatory authentication verification checklist
   - Added impact taxonomy (RCE, AUTH, MEM, INJ, PRIV, DATA, PATH, SSRF, DOS, INFO, QUAL)
   - Replaced raw CVSS with contextual severity model: `Final = Base + Reachability + Context`
   - Added remediation section requiring compilable code fixes with effort estimates
   - Added enterprise output format with executive summary, risk matrix, and remediation roadmap
-  - Added final verification checklist
+  - Added Step 6: Output Verification
+  - Added final verification checklist with guard pattern check requirement
+- **Documentation Update**: Updated `docs/prompts/llm-prompt-reference.md` to reflect current prompt structure
 - Renamed `docs/prompts/security-report-template.md` → `llm-prompt-reference.md` with code-is-authoritative note
 
 ### Removed

@@ -36,8 +36,6 @@ Verify -> Guards -> Prune -> Exploit -> Impact -> Severity -> Fix
 
 **Note:** Requires nightly Rust. Target code must compile to extract MIR.
 
-It's not a complete product. It's functional as a rules engine that finds vulnerable patterns, but precision varies by rule. See the [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md) for how to improve individual rules.
-
 ## Installation
 
 ```bash

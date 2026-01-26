@@ -2,7 +2,7 @@
 
 Experimental security analyzer for Rust exploring two ideas:
 
-1. **MIR as analysis target.** Analyze after macro expansion, type resolution, and borrow checking. Rust's safety guarantees become explicit in MIR, making violations detectable.
+1. **MIR as analysis target.** Analyze MIR (Mid-level Intermediate Representation) after macro expansion, type resolution, and borrow checking. Rust's safety guarantees become explicit in MIR, making violations detectable.
 2. **LLM-assisted triage.** A rules engine exhaustively finds patterns; LLMs assess exploitability and suggest fixes.
 
 ```mermaid

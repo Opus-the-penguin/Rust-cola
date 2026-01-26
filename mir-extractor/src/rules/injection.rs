@@ -2367,6 +2367,72 @@ impl SqlInjectionRule {
         "Path",
     ];
 
+    // v1.0.1: Actual SQL execution sinks (not just string building)
+    // Only flag SQL injection if these execution functions are present
+    const SQL_EXECUTION_SINKS: &'static [&'static str] = &[
+        "execute(",
+        "query(",
+        "query_as(",
+        "query_one(",
+        "query_row(",
+        "query_map(",
+        "prepare(",
+        "sql_query(",
+        "execute_batch(",
+        "raw_query(",
+        "Connection::execute",
+        "Client::query",
+        "sqlx::query",
+        "diesel::sql_query",
+        "rusqlite::execute",
+        "tokio_postgres::query",
+        "Statement::execute",
+        "Transaction::execute",
+        "Pool::execute",
+    ];
+
+    // v1.0.1: Patterns indicating non-SQL contexts (logs, errors, CLI help)
+    // Strings containing SQL keywords in these contexts are false positives
+    const NON_SQL_CONTEXTS: &'static [&'static str] = &[
+        // Logging macros
+        "error!",
+        "warn!",
+        "info!",
+        "debug!",
+        "trace!",
+        "tracing::",
+        "log::",
+        "eprintln!",
+        "println!",
+        // Error handling
+        "anyhow::Context",
+        ".context(",
+        "Error::new",
+        "bail!",
+        "thiserror",
+        "snafu",
+        // CLI/help text patterns
+        "--help",
+        "Usage:",
+        "USAGE:",
+        "[OPTIONS]",
+        "[ARGS]",
+        "Examples",
+        "[env:",
+        "[default:",
+        // Database terminology in non-SQL contexts
+        "catalog",
+        "persist",
+        "snapshot",
+        "compaction",
+        "partition",
+        // Error message patterns
+        "failed to",
+        "unable to",
+        "could not",
+        "unexpected error",
+    ];
+
     const SANITIZERS: &'static [&'static str] = &[
         " ? ",
         "?)",
@@ -2407,6 +2473,35 @@ impl SqlInjectionRule {
         "chars().all(",
         " as Iterator>::all::<",
     ];
+
+    /// v1.0.1: Check if function body contains an actual SQL execution sink
+    fn has_sql_execution_sink(&self, body: &[String]) -> bool {
+        let body_str = body.join("\n");
+        Self::SQL_EXECUTION_SINKS
+            .iter()
+            .any(|sink| body_str.contains(sink))
+    }
+
+    /// v1.0.1: Check if evidence line is in a non-SQL context (log/error/CLI)
+    fn is_non_sql_context(&self, body: &[String], evidence_line: &str) -> bool {
+        // Check if evidence line itself contains non-SQL patterns
+        let evidence_lower = evidence_line.to_lowercase();
+        for pattern in Self::NON_SQL_CONTEXTS {
+            if evidence_lower.contains(&pattern.to_lowercase()) {
+                return true;
+            }
+        }
+
+        // Check if function body is primarily logging/error handling
+        let body_str = body.join("\n").to_lowercase();
+        let log_count = Self::NON_SQL_CONTEXTS
+            .iter()
+            .filter(|p| body_str.contains(&p.to_lowercase()))
+            .count();
+
+        // If multiple non-SQL context patterns found, likely not SQL code
+        log_count >= 2
+    }
 
     fn track_untrusted_vars(&self, body: &[String]) -> HashSet<String> {
         let mut untrusted_vars = HashSet::new();
@@ -2655,6 +2750,12 @@ impl Rule for SqlInjectionRule {
                 continue;
             }
 
+            // v1.0.1: Skip if no actual SQL execution sink exists
+            // This prevents false positives from log messages containing SQL keywords
+            if !self.has_sql_execution_sink(&function.body) {
+                continue;
+            }
+
             let mut untrusted_vars = self.track_untrusted_vars(&function.body);
 
             // Add taint from called functions
@@ -2720,7 +2821,13 @@ impl Rule for SqlInjectionRule {
 
             let unsafe_ops = self.find_unsafe_sql_operations(&function.body, &untrusted_vars);
 
-            if !unsafe_ops.is_empty() {
+            // v1.0.1: Filter out evidence from non-SQL contexts (logs, errors, CLI help)
+            let filtered_ops: Vec<String> = unsafe_ops
+                .into_iter()
+                .filter(|op| !self.is_non_sql_context(&function.body, op))
+                .collect();
+
+            if !filtered_ops.is_empty() {
                 findings.push(Finding {
                     rule_id: self.metadata.id.clone(),
                     rule_name: self.metadata.name.clone(),
@@ -2734,7 +2841,7 @@ impl Rule for SqlInjectionRule {
                     ),
                     function: function.name.clone(),
                     function_signature: function.signature.clone(),
-                    evidence: unsafe_ops.into_iter().take(3).collect(),
+                    evidence: filtered_ops.into_iter().take(3).collect(),
                     span: function.span.clone(),
                     confidence: Confidence::Medium,
                     cwe_ids: Vec::new(),

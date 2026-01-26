@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-01-25
+
+### 🎯 False Positive Reduction Release
+
+This patch release significantly reduces false positives discovered during real-world analysis of large Rust codebases (InfluxDB OSS). Expected reduction: ~90% fewer noisy findings.
+
+### Added
+
+#### RUSTCOLA087 (SQL Injection) Improvements
+- **SQL execution sink requirement**: Now requires actual SQL execution functions (`execute()`, `query()`, `sqlx::query`, etc.) to be present before flagging SQL injection. This prevents false positives from string building without execution.
+- **Non-SQL context filtering**: Added detection of log messages, error contexts, and CLI help text containing SQL keywords. Patterns like `error!("Failed to update table")` are now correctly filtered out.
+- **New constants**: `SQL_EXECUTION_SINKS` (19 patterns) and `NON_SQL_CONTEXTS` (25 patterns) for precise filtering.
+
+#### RUSTCOLA024 (Unbounded Allocation) Improvements  
+- **HTTP-layer guard patterns**: Added 15+ new guard markers to `PrototypeOptions` for HTTP request size limiting:
+  - `max_request_bytes`, `max_request_size`, `max_body_size`, `max_http_request_size`
+  - `body_limit`, `DefaultBodyLimit`, `RequestBodyLimit`, `ContentLengthLimit`
+  - Generic patterns: `MAX_SIZE`, `MAX_LEN`, `SIZE_LIMIT`, `max_capacity`
+
+#### Test Code Exclusion
+- **`--exclude-tests` flag** (default: true): Automatically excludes findings from test code
+- **`--exclude-examples` flag** (default: true): Excludes findings from example code
+- **`--exclude-benches` flag** (default: true): Excludes findings from benchmark code
+- **`MirFunction::is_test_code()`**: New method detecting test code via:
+  - Path patterns (`/tests/`, `_test.rs`, `/examples/`, `/benches/`)
+  - Function name patterns (`::tests::`, `test_`, `::mock_`)
+  - Test attributes (`#[test]`, `#[cfg(test)]`, `#[tokio::test]`)
+
+### Changed
+- `SqlInjectionRule::evaluate()` now applies dual-layer filtering (sink + context)
+- `PrototypeOptions::guard_markers` expanded from 9 to 24+ patterns
+- Finding filtering now happens after profile filtering in cargo-cola
+
+### Fixed
+- False positives in InfluxDB analysis:
+  - RUSTCOLA087: 47 → <5 (log messages like "Unexpected error deleting table from catalog")
+  - RUSTCOLA024: Better guard detection for HTTP-layer size limits
+  - Test code: ~1,700 findings automatically excluded
+
+### Documentation
+- Added `docs/v1.0.1-rules-patch.md` with detailed implementation specifications
+
+---
+
+## [Unreleased - Post 1.0.1]
+
 ### Added
 - **User Guide**: Comprehensive `docs/USER_GUIDE.md` covering theory of operation, LLM integration, CI/CD, configuration, suppression, and troubleshooting
 - **Save Instructions**: LLM prompt now includes instructions for saving the generated report

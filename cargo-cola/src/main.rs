@@ -137,6 +137,21 @@ struct Args {
     #[arg(long = "with-audit", action = ArgAction::SetTrue)]
     with_audit: bool,
 
+    /// v1.0.1: Exclude test code from analysis (files in tests/, test modules, #[cfg(test)])
+    /// Default: true - test code is excluded to reduce noise
+    #[arg(long, value_parser = BoolishValueParser::new(), default_value = "true")]
+    exclude_tests: Option<bool>,
+
+    /// v1.0.1: Exclude example code from analysis (files in examples/)
+    /// Default: true - example code is excluded
+    #[arg(long, value_parser = BoolishValueParser::new(), default_value = "true")]
+    exclude_examples: Option<bool>,
+
+    /// v1.0.1: Exclude benchmark code from analysis (files in benches/)
+    /// Default: true - benchmark code is excluded
+    #[arg(long, value_parser = BoolishValueParser::new(), default_value = "true")]
+    exclude_benches: Option<bool>,
+
     /// Path to cargo-cola configuration file (YAML format)
     /// See examples/cargo-cola.yaml for available options
     #[arg(long)]
@@ -760,6 +775,39 @@ fn main() -> Result<()> {
                 pre_filter_count,
                 analysis.findings.len()
             );
+        }
+
+        // v1.0.1: Filter findings from test/example/bench code based on CLI flags
+        let exclude_tests = args.exclude_tests.unwrap_or(true);
+        let exclude_examples = args.exclude_examples.unwrap_or(true);
+        let exclude_benches = args.exclude_benches.unwrap_or(true);
+
+        if exclude_tests || exclude_examples || exclude_benches {
+            let pre_exclude_count = analysis.findings.len();
+            analysis.findings.retain(|finding| {
+                // Check if finding is from test/example/bench code
+                // Look up the function in the package to check its code type
+                if let Some(func) = package.functions.iter().find(|f| f.name == finding.function) {
+                    if exclude_tests && func.is_test_code() {
+                        return false;
+                    }
+                    if exclude_examples && func.is_example_code() {
+                        return false;
+                    }
+                    if exclude_benches && func.is_bench_code() {
+                        return false;
+                    }
+                }
+                true
+            });
+
+            if analysis.findings.len() < pre_exclude_count {
+                println!(
+                    "  test/example/bench exclusion: filtered {} → {} findings",
+                    pre_exclude_count,
+                    analysis.findings.len()
+                );
+            }
         }
 
         println!(

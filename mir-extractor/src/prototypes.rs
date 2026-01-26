@@ -16,6 +16,7 @@ impl Default for PrototypeOptions {
     fn default() -> Self {
         Self {
             guard_markers: vec![
+                // Numeric clamping/bounding
                 "::min".to_string(),
                 ".min(".to_string(),
                 "cmp::min".to_string(),
@@ -25,6 +26,26 @@ impl Default for PrototypeOptions {
                 "::checked_sub".to_string(),
                 "::min_by".to_string(),
                 "::min_by_key".to_string(),
+                // v1.0.1: HTTP/request size guards
+                "max_request_bytes".to_string(),
+                "max_request_size".to_string(),
+                "max_body_size".to_string(),
+                "max_http_request_size".to_string(),
+                "body_limit".to_string(),
+                "DefaultBodyLimit".to_string(),
+                "RequestBodyLimit".to_string(),
+                "content_length_limit".to_string(),
+                "PayloadConfig".to_string(),
+                "ContentLengthLimit".to_string(),
+                // v1.0.1: Generic limit patterns
+                "MAX_SIZE".to_string(),
+                "MAX_LEN".to_string(),
+                "MAX_LENGTH".to_string(),
+                "SIZE_LIMIT".to_string(),
+                "max_size".to_string(),
+                "size_limit".to_string(),
+                "max_capacity".to_string(),
+                "limit_bytes".to_string(),
             ],
             unsync_markers: vec![
                 "::rc<".to_string(),

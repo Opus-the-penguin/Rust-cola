@@ -539,6 +539,89 @@ impl Default for MirFunction {
     }
 }
 
+impl MirFunction {
+    /// v1.0.1: Returns true if this function is test code that should be excluded from analysis.
+    ///
+    /// Detects test code based on:
+    /// - File path patterns (tests/, examples/, benches/)
+    /// - Function name patterns (test_, ::tests::, ::mock_)
+    /// - Test attributes (#[test], #[cfg(test)])
+    pub fn is_test_code(&self) -> bool {
+        // Check file path patterns from span
+        if let Some(ref span) = self.span {
+            let path_lower = span.file.to_lowercase();
+            let path_patterns = [
+                "/tests/",
+                "/test/",
+                "_test.rs",
+                "_tests.rs",
+                "/benches/",
+                "/bench/",
+                "/examples/",
+                "/example/",
+            ];
+
+            if path_patterns.iter().any(|p| path_lower.contains(p)) {
+                return true;
+            }
+        }
+
+        // Check function name patterns
+        let name_lower = self.name.to_lowercase();
+        let name_patterns = [
+            "::tests::",
+            "::test_",
+            "test_",
+            "::mock_",
+            "::fake_",
+            "::stub_",
+            "_test::",
+            "::benches::",
+            "::bench_",
+        ];
+
+        if name_patterns.iter().any(|p| name_lower.contains(p)) {
+            return true;
+        }
+
+        // Check for test attributes in body (from MIR metadata)
+        let body_str = self.body.join("\n").to_lowercase();
+        let attr_patterns = [
+            "#[test]",
+            "#[cfg(test)]",
+            "#[tokio::test]",
+            "#[async_std::test]",
+            "#[ignore]",
+            "proptest!",
+            "quickcheck!",
+        ];
+
+        if attr_patterns.iter().any(|p| body_str.contains(&p.to_lowercase())) {
+            return true;
+        }
+
+        false
+    }
+
+    /// v1.0.1: Returns true if this function is example code
+    pub fn is_example_code(&self) -> bool {
+        if let Some(ref span) = self.span {
+            let path_lower = span.file.to_lowercase();
+            return path_lower.contains("/examples/") || path_lower.contains("/example/");
+        }
+        false
+    }
+
+    /// v1.0.1: Returns true if this function is benchmark code
+    pub fn is_bench_code(&self) -> bool {
+        if let Some(ref span) = self.span {
+            let path_lower = span.file.to_lowercase();
+            return path_lower.contains("/benches/") || path_lower.contains("/bench/");
+        }
+        self.name.to_lowercase().contains("::bench_")
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MirPackage {
     pub crate_name: String,

@@ -1,6 +1,6 @@
 # Rust-cola
 
-Experimental security scanner for Rust that analyzes compiler MIR.
+Experimental security scanner for Rust that analyzes compiler MIR (Mid-level Intermediate Representation) with LLM-assisted triage.
 
 **Note:** Requires nightly Rust. Target code must compile to extract MIR.
 

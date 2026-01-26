@@ -1,16 +1,10 @@
 # Rust-cola
 
-Experimental security analyzer for Rust that analyzes compiler MIR (Mid-level Intermediate Representation) with LLM-assisted triage.
-
-**Note:** Requires nightly Rust. Target code must compile to extract MIR.
-
-## Background
-
-Rust-cola is an experimental proof of concept exploring three ideas:
+Experimental security analyzer for Rust, exploring three ideas:
 
 1. **Can LLMs help build security analyzers?** Rules and codebase were written with AI assistance.
-2. **Is MIR a better scan target than source code?** MIR is generated after macro expansion, type resolution, and borrow checking. Rust's safety guarantees become explicit, and therefore checkable.
-3. **Can LLMs improve precision by triaging findings?** Static analysis is exhaustive but not every pattern is exploitable. LLMs can assess context to prioritize what actually needs fixing.
+2. **Is MIR a better analysis target than source code?** MIR is generated after macro expansion, type resolution, and borrow checking.
+3. **Can LLMs improve precision by triaging findings?** Static analysis is exhaustive but not every pattern is exploitable.
 
 ```mermaid
 flowchart LR
@@ -40,6 +34,8 @@ flowchart LR
 ```
 Verify -> Guards -> Prune -> Exploit -> Impact -> Severity -> Fix
 ```
+
+**Note:** Requires nightly Rust. Target code must compile to extract MIR.
 
 It's not a complete product. It's functional as a rules engine that finds vulnerable patterns, but precision varies by rule. See the [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md) for how to improve individual rules.
 

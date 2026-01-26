@@ -34,7 +34,7 @@ flowchart LR
 Source Code -> MIR Extraction -> Rule Engine -> Raw Findings -> LLM Triage -> Security Report
 ```
 
-The optional LLM triage step applies a structured analysis workflow:
+The LLM triage step applies a structured analysis workflow:
 
 ```mermaid
 flowchart LR

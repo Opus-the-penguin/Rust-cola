@@ -80,6 +80,27 @@ cargo-cola --crate-path . --report out/cola/raw-report.md
 
 Generates a raw report with heuristic triage. Useful when LLM access is unavailable, but requires manual review of findings.
 
+### Options
+
+| Flag | Description |
+|------|-------------|
+| `--crate-path <PATH>` | Target crate or workspace (default: `.`) |
+| `--out-dir <PATH>` | Output directory (default: `out/cola`) |
+| `--config <PATH>` | Path to configuration file (YAML format) |
+| `--report <PATH>` | Generate standalone heuristic report |
+| `--sarif <PATH>` | Custom SARIF output path |
+| `--llm-prompt <PATH>` | Path for LLM prompt file |
+| `--llm-endpoint <URL>` | LLM API endpoint |
+| `--llm-model <NAME>` | Model name (e.g., gpt-4, llama3) |
+| `--llm-temperature <FLOAT>` | Sampling temperature (default: `0.0`) |
+| `--exclude-tests <bool>` | Exclude test code (default: `true`) |
+| `--with-audit` | Run cargo-audit to check dependencies |
+| `--rulepack <PATH>` | Additional rules from YAML |
+| `--rules` | Print loaded rule metadata |
+| `--fail-on-findings <bool>` | Exit with code 1 when findings are produced (default: `true`) |
+
+Run `cargo-cola --help` for the full list.
+
 ## Output Artifacts
 
 By default, all artifacts are written to `out/cola/` **relative to your current working directory** (not the target crate):
@@ -163,27 +184,6 @@ analysis:
 ```
 
 See `examples/cargo-cola.yaml` for a complete example.
-
-## Options
-
-| Flag | Description |
-|------|-------------|
-| `--crate-path <PATH>` | Target crate or workspace (default: `.`) |
-| `--out-dir <PATH>` | Output directory (default: `out/cola`) |
-| `--config <PATH>` | Path to configuration file (YAML format) |
-| `--report <PATH>` | Generate standalone heuristic report |
-| `--sarif <PATH>` | Custom SARIF output path |
-| `--llm-prompt <PATH>` | Path for LLM prompt file |
-| `--llm-endpoint <URL>` | LLM API endpoint |
-| `--llm-model <NAME>` | Model name (e.g., gpt-4, llama3) |
-| `--llm-temperature <FLOAT>` | Sampling temperature (default: `0.0`) |
-| `--exclude-tests <bool>` | Exclude test code (default: `true`) |
-| `--with-audit` | Run cargo-audit to check dependencies |
-| `--rulepack <PATH>` | Additional rules from YAML |
-| `--rules` | Print loaded rule metadata |
-| `--fail-on-findings <bool>` | Exit with code 1 when findings are produced (default: `true`) |
-
-Run `cargo-cola --help` for the full list.
 
 ## Dependency Auditing
 

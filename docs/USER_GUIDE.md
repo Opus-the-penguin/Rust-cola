@@ -36,9 +36,10 @@ The optional LLM triage step applies a structured analysis workflow:
 flowchart LR
     V[Verify] --> G[Guards]
     G --> P[Prune]
-    P --> R[Reachability]
+    P --> R[Exploit]
     R --> I[Impact]
     I --> S[Severity]
+    S --> F[Fix]
 ```
 
 **Why MIR analysis matters:**

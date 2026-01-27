@@ -102,7 +102,7 @@ By default, all artifacts are written to `out/cola/` **relative to your current 
 | `raw-findings.sarif` | Raw SARIF 2.1.0 output with all findings (includes `codeContext` and `suppressions` for audit trail) |
 | `raw-report.md` | Standalone report without LLM validation |
 | `llm-prompt.md` | Prompt file for manual LLM submission |
-| `report.md` | LLM-validated report (when `--llm-report` is used) |
+| `security-report.md` | LLM-generated report (created after LLM triage) |
 
 **Raw vs Validated:** Files prefixed with `raw-` contain all findings before LLM analysis. Use these for deep investigation or when LLM access is unavailable. The LLM-validated outputs contain only confirmed findings with severity scores and remediation guidance.
 

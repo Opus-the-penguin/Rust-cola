@@ -53,32 +53,19 @@ Binary: `target/release/cargo-cola`
 
 ## Usage
 
-### Recommended: LLM-assisted analysis
-
-Rust-cola works best with an LLM. The LLM helps filter false positives, rate severity, and suggest fixes.
-
-**Manual Workflow (Recommended):**
+Rust-cola works with LLM-assisted triage.
 
 1. Run the scan on your target project:
    ```bash
    cargo-cola --crate-path /path/to/project
    ```
+   The scan emits an artifact set at `out/cola/`, including an LLM prompt.
 
 2. Point your LLM at `out/cola/llm-prompt.md`:
    - **VS Code + Copilot:** Reference the file in chat
    - **Claude/ChatGPT:** Upload or paste the file contents
 
-3. The prompt tells the LLM to save its report to `out/cola/security-report.md`.
-
-**Automated (experimental):** There's also `--llm-endpoint` and `--llm-model` flags to call an LLM API directly, but the manual workflow above is more reliable.
-
-### Standalone (no LLM)
-
-```bash
-cargo-cola --crate-path . --report out/cola/raw-report.md
-```
-
-Generates a raw report with heuristic triage. Useful when LLM access is unavailable, but requires manual review of findings.
+3. The LLM follows the prompt instructions and saves its report to `out/cola/security-report.md`.
 
 ### Options
 
@@ -118,8 +105,6 @@ By default, all artifacts are written to `out/cola/` **relative to your current 
 | `report.md` | LLM-validated report (when `--llm-report` is used) |
 
 **Raw vs Validated:** Files prefixed with `raw-` contain all findings before LLM analysis. Use these for deep investigation or when LLM access is unavailable. The LLM-validated outputs contain only confirmed findings with severity scores and remediation guidance.
-
-Use `--no-ast` or `--no-llm-prompt` to suppress specific outputs.
 
 If an output file already exists, a timestamped version is created to avoid overwriting.
 

@@ -73,7 +73,7 @@ Verify -> Guards -> Prune -> Exploit -> Impact -> Severity -> Fix
 
 ## Output Artifacts
 
-By default, all artifacts are written to `out/cola/` **relative to your current working directory** (not the target crate):
+By default, all artifacts are written to `out/cola/` **relative to your current working directory** (not the target crate). Existing files are timestamped to avoid overwriting.
 
 | File | Description |
 |------|-------------|
@@ -84,12 +84,10 @@ By default, all artifacts are written to `out/cola/` **relative to your current 
 | `raw-findings.json` | Raw findings from all rules (pre-LLM validation) |
 | `raw-findings.sarif` | Raw SARIF 2.1.0 output with all findings (includes `codeContext` and `suppressions` for audit trail) |
 | `raw-report.md` | Standalone report without LLM validation |
-| `llm-prompt.md` | Prompt file for manual LLM submission |
+| `llm-prompt.md` | Prompt file for LLM triage |
 | `security-report.md` | LLM-generated report (created after LLM triage) |
 
-**Raw vs Validated:** Files prefixed with `raw-` contain all findings before LLM analysis. Use these for deep investigation or when LLM access is unavailable. The LLM-validated outputs contain only confirmed findings with severity scores and remediation guidance.
-
-If an output file already exists, a timestamped version is created to avoid overwriting.
+## Rules
 
 ## Rules
 

@@ -2,37 +2,8 @@
 
 Experimental security static analyzer for Rust code exploring two ideas:
 
-1. **MIR as analysis target.** Rust's safety guarantees are explicit in MIR (Mid-level Intermediate Representation), making issues detectable that source-level analysis may miss.
+1. **MIR as analysis target.** Rust's safety guarantees are explicit in [MIR](https://rustc-dev-guide.rust-lang.org/mir/index.html) (Mid-level Intermediate Representation), making issues detectable that source-level analysis may miss.
 2. **LLM-assisted triage.** A rules engine exhaustively finds patterns; LLMs assess context, prune false positives, and suggest fixes.
-
-```mermaid
-flowchart LR
-    Source[Source Code] --> MIR[MIR Extraction]
-    MIR --> Rules[Rule Engine]
-    Rules --> Raw[Raw Findings]
-    Raw --> LLM[LLM Triage]
-    LLM --> Report[Security Report]
-```
-
-```
-Source Code -> MIR Extraction -> Rule Engine -> Raw Findings -> LLM Triage -> Security Report
-```
-
-The LLM triage step applies a structured analysis workflow:
-
-```mermaid
-flowchart LR
-    V[Verify] --> G[Guards]
-    G --> P[Prune]
-    P --> R[Exploit]
-    R --> I[Impact]
-    I --> S[Severity]
-    S --> F[Fix]
-```
-
-```
-Verify -> Guards -> Prune -> Exploit -> Impact -> Severity -> Fix
-```
 
 **Note:** Requires nightly Rust. Target code must compile to extract MIR.
 
@@ -87,6 +58,18 @@ Rust-cola works with LLM-assisted triage.
 | `--fail-on-findings <bool>` | Exit with code 1 when findings are produced (default: `true`) |
 
 Run `cargo-cola --help` for the full list.
+
+### Workflow
+
+```
+Source Code -> MIR Extraction -> Rule Engine -> Raw Findings -> LLM Triage -> Security Report
+```
+
+The LLM triage step applies a structured analysis:
+
+```
+Verify -> Guards -> Prune -> Exploit -> Impact -> Severity -> Fix
+```
 
 ## Output Artifacts
 

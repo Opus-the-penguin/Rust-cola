@@ -1,6 +1,6 @@
 # Rust-cola
 
-Experimental security analyzer for Rust exploring two ideas:
+Experimental security static analyzer for Rust code exploring two ideas:
 
 1. **MIR as analysis target.** Rust's safety guarantees are explicit in MIR (Mid-level Intermediate Representation), making issues detectable that source-level analysis may miss.
 2. **LLM-assisted triage.** A rules engine exhaustively finds patterns; LLMs assess context, prune false positives, and suggest fixes.

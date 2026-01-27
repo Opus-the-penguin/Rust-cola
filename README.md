@@ -89,8 +89,6 @@ By default, all artifacts are written to `out/cola/` **relative to your current 
 
 ## Rules
 
-## Rules
-
 126 rules grouped by vulnerability category:
 
 | Category | Rules | Examples |

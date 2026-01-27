@@ -129,23 +129,12 @@ If an output file already exists, a timestamped version is created to avoid over
 
 Rules use different analysis techniques with varying precision:
 
-| Level | Method | Precision | Example |
-|-------|--------|-----------|---------|
-| **Heuristic** | Pattern matching on MIR text | Good | `transmute`, `into_raw` |
-| **Structural** | MIR statement/terminator analysis | Better | Mutex guard across await |
-| **Dataflow** | Intra-function value tracking | High | Uninitialized memory use |
-| **Interprocedural** | Cross-function taint tracking | Highest | SQL injection chains |
-
-Current distribution:
-
-| Level | Rules | Percentage |
-|-------|-------|------------|
-| Heuristic | 63 | 50% |
-| Structural | 26 | 21% |
-| Dataflow | 32 | 25% |
-| Interprocedural | 5 | 4% |
-
-Most rules are heuristic—they find patterns but may produce false positives. The LLM-assisted workflow helps triage these.
+| Level | Method | Precision | Rules | % |
+|-------|--------|-----------|-------|---|
+| **Heuristic** | Pattern matching on MIR text | Good | 63 | 50% |
+| **Structural** | MIR statement/terminator analysis | Better | 26 | 21% |
+| **Dataflow** | Intra-function value tracking | High | 32 | 25% |
+| **Interprocedural** | Cross-function taint tracking | Highest | 5 | 4% |
 
 See the [Rule Development Guide](docs/RULE_DEVELOPMENT_GUIDE.md) for custom rules and YAML rulepacks.
 

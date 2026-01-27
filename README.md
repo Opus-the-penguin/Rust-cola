@@ -57,7 +57,7 @@ Rust-cola works with LLM-assisted triage.
 
 1. Run the scan on your target project:
    ```bash
-   cargo-cola --crate-path /path/to/project
+   cargo-cola --crate-path <PATH>
    ```
    The scan emits an artifact set at `out/cola/`, including an LLM prompt.
 

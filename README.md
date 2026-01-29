@@ -15,6 +15,8 @@ cargo build --release
 
 Binary: `target/release/cargo-cola`
 
+The CLI you run is named `cargo-cola`, so after building you will invoke `cargo-cola ...` for scans.
+
 **Linux only:** Requires OpenSSL development libraries (`libssl-dev` on Debian/Ubuntu, `openssl-devel` on Fedora/RHEL). macOS and Windows use native TLS and need no extra dependencies.
 
 > **Note:** The `examples/` directory contains intentionally vulnerable code patterns for testing Rust-COLA's detection capabilities. These crates may have unmaintained or vulnerable dependencies by design and are not part of the distributed tool.

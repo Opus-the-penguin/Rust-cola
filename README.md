@@ -15,7 +15,7 @@ cargo build --release
 
 Binary: `target/release/cargo-cola`
 
-The CLI you run is named `cargo-cola`, so after building you will invoke `cargo-cola ...` for scans.
+The CLI is named `cargo-cola`; once built, invoke `cargo-cola ...` for scans.
 
 **Linux only:** Requires OpenSSL development libraries (`libssl-dev` on Debian/Ubuntu, `openssl-devel` on Fedora/RHEL). macOS and Windows use native TLS and need no extra dependencies.
 

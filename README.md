@@ -2,7 +2,7 @@
 
 Experimental security static analyzer for Rust code.
 
-**Note:** Requires nightly Rust. Target code must compile to extract MIR.
+**Note:** Requires nightly Rust. Target code must compile to extract [MIR (Mid-level Intermediate Representation)](https://blog.rust-lang.org/2016/04/19/MIR/).
 
 ## Installation
 

@@ -56,6 +56,17 @@ Rust-cola works with LLM-assisted triage.
 
 Run `cargo-cola --help` for the full list.
 
+### VS Code Copilot Chat workflow
+
+If you prefer to stay inside VS Code and let Copilot Chat drive the scan, a lightweight flow is:
+
+- `run cargo-cola scan on /<PATH>` to point at the target crate/workspace.
+- `emit artifacts to /<PATH>/out/cola/` (or specify `--out-dir <PATH>` explicitly).
+- `read and execute instructions in /<PATH>/out/cola/llm-prompt.md` once the artifacts land.
+- `save final security report in /<PATH>/out/cola/security-report.md` so the scan and triage output live together.
+
+This mirrors the manual “generate prompt then paste into an LLM” loop, but keeps code navigation, raw findings, and report authoring in a single chat thread.
+
 ### Workflow
 
 ```

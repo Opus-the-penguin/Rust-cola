@@ -67,7 +67,7 @@ If you prefer to stay inside VS Code and let Copilot Chat drive the scan, a ligh
 - `read and execute instructions in /<PATH>/out/cola/llm-prompt.md` once the artifacts land.
 - `save final security report in /<PATH>/out/cola/security-report.md` so the scan and triage output live together.
 
-This mirrors the manual “generate prompt then paste into an LLM” loop, but keeps code navigation, raw findings, and report authoring in a single chat thread.
+This skips the manual paste workflow and keeps the Scan -> LLM triage -> report loop inside one chat context.
 
 ### Workflow
 

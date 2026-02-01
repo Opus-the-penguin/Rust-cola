@@ -72,7 +72,7 @@ This skips the manual paste workflow and keeps the Scan -> LLM triage -> report 
 ### Workflow
 
 ```
-Source Code -> MIR Extraction -> Rule Engine -> Taint* -> Raw Findings -> LLM Triage -> Security Report
+Source Code -> MIR -> Rule Engine -> Taint* -> Raw Findings -> LLM Triage -> Security Report
 ```
 
 *Taint stage runs only for rules that opt into MIR data-flow today; pattern-only rules skip straight to Raw Findings.*

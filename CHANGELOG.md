@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+#### LLM Report Template Improvements
+- **Dynamic model attribution**: Changed "Assessed By: AI-Assisted Analysis" to "Triaged by: [your model name]" so reports reflect which LLM performed the triage
+- **Target project info section**: Added structured header with project name, repository URL, and local path for better report context
+- **Scan Configuration repositioned**: Moved from top of report to after Remediation Roadmap (before Appendices) for better flow
+- **Updated instructions**: LLM prompt now instructs models to fill in their name and extract target info from scan config
+
+### Documentation
+- **LLM Prompt Reference**: Updated `docs/prompts/llm-prompt-reference.md` to reflect new report format
+
 ## [1.0.1] - 2026-01-26
 
 ### 🎯 False Positive Reduction & Guard Detection Release

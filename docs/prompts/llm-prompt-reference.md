@@ -171,6 +171,14 @@ Each true positive requires:
 ```markdown
 # Security Assessment Report: {PROJECT}
 
+**Target Project:** `{PROJECT}` - [brief description]
+**Repository:** [repository URL or 'local project']
+**Local Path:** [scanned crate path]
+
+**Date:** YYYY-MM-DD | **Triaged by:** [your model name] | **Tool:** Rust-COLA v1.0
+
+---
+
 ## Executive Summary
 - Risk Rating: [Critical|High|Medium|Low]
 - 2-3 sentence summary
@@ -191,6 +199,9 @@ Each true positive requires:
 | P0 | ... | ... | Immediate |
 | P1 | ... | ... | Sprint |
 | P2 | ... | ... | Quarter |
+
+## Scan Configuration
+[Reproduce the Scan Configuration table from the prompt]
 
 ## Appendix A: False Positives Dismissed
 [Evidence-backed dismissals with guard citations]

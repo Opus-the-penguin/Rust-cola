@@ -2,7 +2,6 @@
 
 use anyhow::{anyhow, Context, Result};
 use cargo_metadata::MetadataCommand;
-use chrono::Local;
 use clap::{builder::BoolishValueParser, ArgAction, Parser};
 #[cfg(not(feature = "hir-driver"))]
 use mir_extractor::extract_with_cache;
@@ -19,6 +18,7 @@ use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use chrono::Local;
 
 mod suppression;
 
@@ -110,10 +110,6 @@ struct Args {
     #[arg(long, default_value = "4096")]
     llm_max_tokens: u32,
 
-    /// Temperature for LLM responses (0.0 = deterministic)
-    #[arg(long, default_value = "0.0")]
-    llm_temperature: f32,
-
     /// Generate a standalone raw human-readable security report (no LLM required)
     /// Defaults to <out_dir>/reports/raw-report.md if no path specified
     #[arg(long, num_args = 0..=1, default_missing_value = "")]
@@ -137,29 +133,10 @@ struct Args {
     #[arg(long = "with-audit", action = ArgAction::SetTrue)]
     with_audit: bool,
 
-    /// v1.0.1: Exclude test code from analysis (files in tests/, test modules, #[cfg(test)])
-    /// Default: true - test code is excluded to reduce noise
-    #[arg(long, value_parser = BoolishValueParser::new(), default_value = "true")]
-    exclude_tests: Option<bool>,
-
-    /// v1.0.1: Exclude example code from analysis (files in examples/)
-    /// Default: true - example code is excluded
-    #[arg(long, value_parser = BoolishValueParser::new(), default_value = "true")]
-    exclude_examples: Option<bool>,
-
-    /// v1.0.1: Exclude benchmark code from analysis (files in benches/)
-    /// Default: true - benchmark code is excluded
-    #[arg(long, value_parser = BoolishValueParser::new(), default_value = "true")]
-    exclude_benches: Option<bool>,
-
     /// Path to cargo-cola configuration file (YAML format)
     /// See examples/cargo-cola.yaml for available options
     #[arg(long)]
     config: Option<PathBuf>,
-
-    /// List all available rules (built-ins plus loaded rulepacks) and exit
-    #[arg(long = "rules", action = ArgAction::SetTrue)]
-    list_rules: bool,
 }
 
 /// Configuration file format for cargo-cola
@@ -202,7 +179,8 @@ impl RuleProfile {
             }
             RuleProfile::Permissive => {
                 // Only high-confidence OR high/critical severity
-                finding.confidence == Confidence::High || finding.severity >= Severity::High
+                finding.confidence == Confidence::High 
+                    || finding.severity >= Severity::High
             }
         }
     }
@@ -214,364 +192,6 @@ struct PackageOutput {
     sarif: Value,
     #[cfg(feature = "hir-driver")]
     hir: Option<HirPackage>,
-}
-
-#[derive(Clone)]
-struct ScanConfigSnapshot {
-    entries: Vec<ScanConfigEntry>,
-}
-
-impl ScanConfigSnapshot {
-    fn entries(&self) -> &[ScanConfigEntry] {
-        &self.entries
-    }
-}
-
-#[derive(Clone)]
-struct ScanConfigEntry {
-    flag: &'static str,
-    value: String,
-    source: ConfigValueSource,
-}
-
-impl ScanConfigEntry {
-    fn new(flag: &'static str, value: String, source: ConfigValueSource) -> Self {
-        Self {
-            flag,
-            value,
-            source,
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-enum ConfigValueSource {
-    Default,
-    User,
-}
-
-impl ConfigValueSource {
-    fn label(&self) -> &'static str {
-        match self {
-            ConfigValueSource::Default => "default",
-            ConfigValueSource::User => "user",
-        }
-    }
-}
-
-fn build_scan_config_snapshot(
-    args: &Args,
-    fail_on_findings: bool,
-    cache_enabled: bool,
-) -> ScanConfigSnapshot {
-    let mut entries = Vec::new();
-    let default_crate = PathBuf::from(".");
-    let default_out_dir = PathBuf::from("out/cola");
-
-    let crate_source = if args.crate_path == default_crate {
-        ConfigValueSource::Default
-    } else {
-        ConfigValueSource::User
-    };
-    entries.push(ScanConfigEntry::new(
-        "--crate-path",
-        args.crate_path.display().to_string(),
-        crate_source,
-    ));
-
-    let out_dir_source = if args.out_dir == default_out_dir {
-        ConfigValueSource::Default
-    } else {
-        ConfigValueSource::User
-    };
-    entries.push(ScanConfigEntry::new(
-        "--out-dir",
-        args.out_dir.display().to_string(),
-        out_dir_source,
-    ));
-
-    let (mir_json_value, mir_json_source) = describe_optional_path(
-        &args.mir_json,
-        format!("auto ({})", args.out_dir.join("mir.json").display()),
-    );
-    entries.push(ScanConfigEntry::new(
-        "--mir-json",
-        mir_json_value,
-        mir_json_source,
-    ));
-
-    let (findings_value, findings_source) = describe_optional_path(
-        &args.findings_json,
-        format!(
-            "auto ({})",
-            args.out_dir.join("raw-findings.json").display()
-        ),
-    );
-    entries.push(ScanConfigEntry::new(
-        "--findings-json",
-        findings_value,
-        findings_source,
-    ));
-
-    let (sarif_value, sarif_source) = describe_optional_path(
-        &args.sarif,
-        format!(
-            "auto ({})",
-            args.out_dir.join("raw-findings.sarif").display()
-        ),
-    );
-    entries.push(ScanConfigEntry::new("--sarif", sarif_value, sarif_source));
-
-    let fail_source = if args.fail_on_findings.is_some() {
-        ConfigValueSource::User
-    } else {
-        ConfigValueSource::Default
-    };
-    entries.push(ScanConfigEntry::new(
-        "--fail-on-findings",
-        fail_on_findings.to_string(),
-        fail_source,
-    ));
-
-    let cache_source = if args.cache.is_some() {
-        ConfigValueSource::User
-    } else {
-        ConfigValueSource::Default
-    };
-    entries.push(ScanConfigEntry::new(
-        "--cache",
-        cache_enabled.to_string(),
-        cache_source,
-    ));
-
-    entries.push(ScanConfigEntry::new(
-        "--clear-cache",
-        args.clear_cache.to_string(),
-        if args.clear_cache {
-            ConfigValueSource::User
-        } else {
-            ConfigValueSource::Default
-        },
-    ));
-
-    let (rulepack_value, rulepack_source) = if args.rulepack.is_empty() {
-        ("none".to_string(), ConfigValueSource::Default)
-    } else {
-        (
-            args.rulepack
-                .iter()
-                .map(|p| p.display().to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
-            ConfigValueSource::User,
-        )
-    };
-    entries.push(ScanConfigEntry::new(
-        "--rulepack",
-        rulepack_value,
-        rulepack_source,
-    ));
-
-    let (wasm_rule_value, wasm_rule_source) = if args.wasm_rule.is_empty() {
-        ("none".to_string(), ConfigValueSource::Default)
-    } else {
-        (
-            args.wasm_rule
-                .iter()
-                .map(|p| p.display().to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
-            ConfigValueSource::User,
-        )
-    };
-    entries.push(ScanConfigEntry::new(
-        "--wasm-rule",
-        wasm_rule_value,
-        wasm_rule_source,
-    ));
-
-    let (config_value, config_source) = match &args.config {
-        Some(path) => (path.display().to_string(), ConfigValueSource::User),
-        None => ("unset (default)".to_string(), ConfigValueSource::Default),
-    };
-    entries.push(ScanConfigEntry::new(
-        "--config",
-        config_value,
-        config_source,
-    ));
-
-    entries.push(ScanConfigEntry::new(
-        "--with-audit",
-        args.with_audit.to_string(),
-        if args.with_audit {
-            ConfigValueSource::User
-        } else {
-            ConfigValueSource::Default
-        },
-    ));
-
-    entries.push(ScanConfigEntry::new(
-        "--no-ast",
-        args.no_ast.to_string(),
-        if args.no_ast {
-            ConfigValueSource::User
-        } else {
-            ConfigValueSource::Default
-        },
-    ));
-
-    let (ast_json_value, ast_json_source) = if args.no_ast {
-        ("disabled (--no-ast)".to_string(), ConfigValueSource::User)
-    } else {
-        describe_optional_path(
-            &args.ast_json,
-            format!("auto ({})", args.out_dir.join("ast.json").display()),
-        )
-    };
-    entries.push(ScanConfigEntry::new(
-        "--ast-json",
-        ast_json_value,
-        ast_json_source,
-    ));
-
-    let (report_value, report_source) = if args.no_report {
-        (
-            "disabled (--no-report)".to_string(),
-            ConfigValueSource::User,
-        )
-    } else {
-        describe_optional_path(
-            &args.report,
-            format!("auto ({})", args.out_dir.join("raw-report.md").display()),
-        )
-    };
-    entries.push(ScanConfigEntry::new(
-        "--report",
-        report_value,
-        report_source,
-    ));
-    entries.push(ScanConfigEntry::new(
-        "--no-report",
-        args.no_report.to_string(),
-        if args.no_report {
-            ConfigValueSource::User
-        } else {
-            ConfigValueSource::Default
-        },
-    ));
-
-    let (llm_prompt_value, llm_prompt_source) = if args.no_llm_prompt {
-        (
-            "disabled (--no-llm-prompt)".to_string(),
-            ConfigValueSource::User,
-        )
-    } else {
-        describe_optional_path(
-            &args.llm_prompt,
-            format!("auto ({})", args.out_dir.join("llm-prompt.md").display()),
-        )
-    };
-    entries.push(ScanConfigEntry::new(
-        "--llm-prompt",
-        llm_prompt_value,
-        llm_prompt_source,
-    ));
-    entries.push(ScanConfigEntry::new(
-        "--no-llm-prompt",
-        args.no_llm_prompt.to_string(),
-        if args.no_llm_prompt {
-            ConfigValueSource::User
-        } else {
-            ConfigValueSource::Default
-        },
-    ));
-
-    let (llm_report_value, llm_report_source) =
-        describe_optional_path(&args.llm_report, "not requested (default)".to_string());
-    entries.push(ScanConfigEntry::new(
-        "--llm-report",
-        llm_report_value,
-        llm_report_source,
-    ));
-
-    let (llm_endpoint_value, llm_endpoint_source) = match &args.llm_endpoint {
-        Some(endpoint) => (endpoint.clone(), ConfigValueSource::User),
-        None => ("unset (default)".to_string(), ConfigValueSource::Default),
-    };
-    entries.push(ScanConfigEntry::new(
-        "--llm-endpoint",
-        llm_endpoint_value,
-        llm_endpoint_source,
-    ));
-
-    let llm_model_source = if args.llm_model == "gpt-4" {
-        ConfigValueSource::Default
-    } else {
-        ConfigValueSource::User
-    };
-    entries.push(ScanConfigEntry::new(
-        "--llm-model",
-        args.llm_model.clone(),
-        llm_model_source,
-    ));
-
-    let llm_max_tokens_source = if args.llm_max_tokens == 4096 {
-        ConfigValueSource::Default
-    } else {
-        ConfigValueSource::User
-    };
-    entries.push(ScanConfigEntry::new(
-        "--llm-max-tokens",
-        args.llm_max_tokens.to_string(),
-        llm_max_tokens_source,
-    ));
-
-    let llm_temperature_source = if (args.llm_temperature - 0.0).abs() < f32::EPSILON {
-        ConfigValueSource::Default
-    } else {
-        ConfigValueSource::User
-    };
-    entries.push(ScanConfigEntry::new(
-        "--llm-temperature",
-        format!("{:.2}", args.llm_temperature),
-        llm_temperature_source,
-    ));
-
-    let (llm_api_key_value, llm_api_key_source) = match &args.llm_api_key {
-        Some(_) => ("<redacted>".to_string(), ConfigValueSource::User),
-        None => (
-            "not provided (default)".to_string(),
-            ConfigValueSource::Default,
-        ),
-    };
-    entries.push(ScanConfigEntry::new(
-        "--llm-api-key",
-        llm_api_key_value,
-        llm_api_key_source,
-    ));
-
-    entries.push(ScanConfigEntry::new(
-        "--list-rules",
-        args.list_rules.to_string(),
-        if args.list_rules {
-            ConfigValueSource::User
-        } else {
-            ConfigValueSource::Default
-        },
-    ));
-
-    ScanConfigSnapshot { entries }
-}
-
-fn describe_optional_path(
-    option: &Option<PathBuf>,
-    default_desc: String,
-) -> (String, ConfigValueSource) {
-    match option {
-        Some(path) if path.as_os_str().is_empty() => (default_desc, ConfigValueSource::User),
-        Some(path) => (path.display().to_string(), ConfigValueSource::User),
-        None => (default_desc, ConfigValueSource::Default),
-    }
 }
 
 fn resolve_output_path(
@@ -592,8 +212,16 @@ fn resolve_output_path(
 
     let default_path = out_dir.join(base_name);
     if default_path.exists() {
-        let stem = Path::new(base_name).file_stem().unwrap().to_str().unwrap();
-        let ext = Path::new(base_name).extension().unwrap().to_str().unwrap();
+        let stem = Path::new(base_name)
+            .file_stem()
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let ext = Path::new(base_name)
+            .extension()
+            .unwrap()
+            .to_str()
+            .unwrap();
         out_dir.join(format!("{}_{}.{}", stem, timestamp, ext))
     } else {
         default_path
@@ -603,7 +231,7 @@ fn resolve_output_path(
 fn main() -> Result<()> {
     // Initialize memory profiler (enabled with RUSTCOLA_MEMORY_PROFILE=1)
     mir_extractor::memory_profiler::init();
-
+    
     let args = Args::parse();
     let timestamp = Local::now().format("%Y%m%d-%H%M%S").to_string();
 
@@ -611,7 +239,6 @@ fn main() -> Result<()> {
 
     let fail_on_findings = args.fail_on_findings.unwrap_or(true);
     let cache_enabled = args.cache.unwrap_or(true);
-    let scan_config_snapshot = build_scan_config_snapshot(&args, fail_on_findings, cache_enabled);
 
     // Load configuration file if specified
     let cola_config: ColaConfig = if let Some(config_path) = &args.config {
@@ -696,11 +323,6 @@ fn main() -> Result<()> {
         }
     }
 
-    if args.list_rules {
-        print_rules_inventory(&engine);
-        return Ok(());
-    }
-
     let mut package_outputs = Vec::new();
 
     for crate_root in crate_roots {
@@ -757,17 +379,11 @@ fn main() -> Result<()> {
         };
 
         // Filter suppressed findings
-        suppression::filter_suppressed_findings(
-            &mut analysis.findings,
-            &crate_root,
-            &engine.suppressions,
-        );
+        suppression::filter_suppressed_findings(&mut analysis.findings, &crate_root, &engine.suppressions);
 
         // Apply rule profile filtering
         let pre_filter_count = analysis.findings.len();
-        analysis
-            .findings
-            .retain(|f| cola_config.profile.should_include(f));
+        analysis.findings.retain(|f| cola_config.profile.should_include(f));
         if analysis.findings.len() < pre_filter_count {
             println!(
                 "  profile {:?}: filtered {} → {} findings",
@@ -777,70 +393,14 @@ fn main() -> Result<()> {
             );
         }
 
-        // v1.0.1: Annotate findings with CodeContext based on file path
-        // This preserves all findings in raw output while enabling filtering for reports
-        for finding in &mut analysis.findings {
-            let context = detect_code_context(finding);
-            finding.code_context = context;
-        }
-
-        // Generate raw SARIF with ALL findings (including test/example/bench) before filtering
-        // This preserves full audit trail with code_context annotations
-        let sarif = sarif_report(&package, &analysis);
-
-        // v1.0.1: Filter findings from test/example/bench code for actionable output
-        let exclude_tests = args.exclude_tests.unwrap_or(true);
-        let exclude_examples = args.exclude_examples.unwrap_or(true);
-        let exclude_benches = args.exclude_benches.unwrap_or(true);
-
-        // Count findings by context before filtering
-        let mut context_counts = std::collections::HashMap::new();
-        for finding in &analysis.findings {
-            *context_counts.entry(finding.code_context).or_insert(0) += 1;
-        }
-
-        let pre_exclude_count = analysis.findings.len();
-        if exclude_tests || exclude_examples || exclude_benches {
-            analysis.findings.retain(|finding| {
-                match finding.code_context {
-                    mir_extractor::CodeContext::Test => !exclude_tests,
-                    mir_extractor::CodeContext::Example => !exclude_examples,
-                    mir_extractor::CodeContext::Benchmark => !exclude_benches,
-                    _ => true,
-                }
-            });
-        }
-
-        // Print summary statistics by code context
-        if analysis.findings.len() < pre_exclude_count {
-            println!("  📊 Findings by context:");
-            if let Some(&count) = context_counts.get(&mir_extractor::CodeContext::Production) {
-                println!("     production: {} (shown)", count);
-            }
-            if let Some(&count) = context_counts.get(&mir_extractor::CodeContext::Test) {
-                let status = if exclude_tests { "filtered" } else { "shown" };
-                println!("     test:       {} ({})", count, status);
-            }
-            if let Some(&count) = context_counts.get(&mir_extractor::CodeContext::Example) {
-                let status = if exclude_examples { "filtered" } else { "shown" };
-                println!("     example:    {} ({})", count, status);
-            }
-            if let Some(&count) = context_counts.get(&mir_extractor::CodeContext::Benchmark) {
-                let status = if exclude_benches { "filtered" } else { "shown" };
-                println!("     benchmark:  {} ({})", count, status);
-            }
-            println!(
-                "  💡 Use --exclude-tests=false to include test code in reports"
-            );
-        }
-
         println!(
-            "crate {}: processed {} functions, {} actionable findings",
+            "crate {}: processed {} functions, {} findings",
             package.crate_name,
             package.functions.len(),
             analysis.findings.len()
         );
 
+        let sarif = sarif_report(&package, &analysis);
         package_outputs.push(PackageOutput {
             package,
             analysis,
@@ -850,8 +410,12 @@ fn main() -> Result<()> {
         });
     }
 
-    let mir_json_path =
-        resolve_output_path(args.mir_json.clone(), &args.out_dir, "mir.json", &timestamp);
+    let mir_json_path = resolve_output_path(
+        args.mir_json.clone(),
+        &args.out_dir,
+        "mir.json",
+        &timestamp,
+    );
     let findings_path = resolve_output_path(
         args.findings_json.clone(),
         &args.out_dir,
@@ -878,16 +442,13 @@ fn main() -> Result<()> {
                 model: args.llm_model.clone(),
                 api_key: args.llm_api_key.clone().unwrap_or_default(),
                 max_tokens: args.llm_max_tokens,
-                temperature: args.llm_temperature,
             });
             generate_llm_analysis(
                 llm_path,
                 &output.package.crate_name,
                 &output.analysis.findings,
                 &output.analysis.rules,
-                &audit_vulnerabilities,
                 llm_config.as_ref(),
-                &scan_config_snapshot,
             )?;
             println!("- LLM Report: {}", llm_path.display());
         }
@@ -926,7 +487,6 @@ fn main() -> Result<()> {
                 &output.analysis.findings,
                 &output.analysis.rules,
                 &audit_vulnerabilities,
-                &scan_config_snapshot,
             )?;
             Some(prompt_path)
         } else {
@@ -937,8 +497,12 @@ fn main() -> Result<()> {
         let mut hir_summary_path: Option<PathBuf> = None;
         #[cfg(feature = "hir-driver")]
         if !args.no_hir {
-            let hir_path =
-                resolve_output_path(args.hir_json.clone(), &args.out_dir, "hir.json", &timestamp);
+            let hir_path = resolve_output_path(
+                args.hir_json.clone(),
+                &args.out_dir,
+                "hir.json",
+                &timestamp,
+            );
             if let Some(hir_package) = &output.hir {
                 mir_extractor::write_hir_json(&hir_path, hir_package)?;
                 hir_summary_path = Some(hir_path);
@@ -954,8 +518,12 @@ fn main() -> Result<()> {
 
         // Write AST JSON (automatic unless --no-ast)
         let ast_summary_path: Option<PathBuf> = if !args.no_ast {
-            let ast_path =
-                resolve_output_path(args.ast_json.clone(), &args.out_dir, "ast.json", &timestamp);
+            let ast_path = resolve_output_path(
+                args.ast_json.clone(),
+                &args.out_dir,
+                "ast.json",
+                &timestamp,
+            );
             let crate_root = PathBuf::from(&output.package.crate_root);
             if let Ok(ast_package) = collect_ast_package(&crate_root, &output.package.crate_name) {
                 write_ast_json(&ast_path, &ast_package)?;
@@ -1037,8 +605,12 @@ fn main() -> Result<()> {
 
     // Write AST JSON (workspace mode - automatic unless --no-ast)
     let workspace_ast_path: Option<PathBuf> = if !args.no_ast {
-        let ast_path =
-            resolve_output_path(args.ast_json.clone(), &args.out_dir, "ast.json", &timestamp);
+        let ast_path = resolve_output_path(
+            args.ast_json.clone(),
+            &args.out_dir,
+            "ast.json",
+            &timestamp,
+        );
         let mut ast_packages = Vec::new();
         for output in &package_outputs {
             let crate_root = PathBuf::from(&output.package.crate_root);
@@ -1072,18 +644,14 @@ fn main() -> Result<()> {
             model: args.llm_model.clone(),
             api_key: args.llm_api_key.clone().unwrap_or_default(),
             max_tokens: args.llm_max_tokens,
-            temperature: args.llm_temperature,
         });
         generate_llm_analysis(
             llm_path,
             project_name,
             &aggregated_findings,
             &aggregated_rules,
-            &audit_vulnerabilities,
             llm_config.as_ref(),
-            &scan_config_snapshot,
         )?;
-        println!("- LLM Report: {}", llm_path.display());
     }
 
     // Generate standalone report (automatic unless --no-report) (workspace mode)
@@ -1126,7 +694,6 @@ fn main() -> Result<()> {
             &aggregated_findings,
             &aggregated_rules,
             &audit_vulnerabilities,
-            &scan_config_snapshot,
         )?;
         println!("- LLM Prompt: {}", prompt_path.display());
         Some(prompt_path)
@@ -1138,24 +705,28 @@ fn main() -> Result<()> {
     #[cfg(feature = "hir-driver")]
     let hir_summary_path: Option<PathBuf> = {
         // For workspaces, create a combined HIR file similar to AST
-        let hir_path =
-            resolve_output_path(args.hir_json.clone(), &args.out_dir, "hir.json", &timestamp);
-
+        let hir_path = resolve_output_path(
+            args.hir_json.clone(),
+            &args.out_dir,
+            "hir.json",
+            &timestamp,
+        );
+        
         let mut hir_packages = Vec::new();
         for output in &package_outputs {
             if let Some(hir_package) = &output.hir {
                 hir_packages.push(hir_package.clone());
             }
         }
-
+        
         if !hir_packages.is_empty() {
             // Write combined HIR as array of packages
             let combined = serde_json::json!({
                 "workspace_root": workspace_root.display().to_string(),
                 "packages": hir_packages
             });
-            let json =
-                serde_json::to_string_pretty(&combined).context("serialize workspace HIR")?;
+            let json = serde_json::to_string_pretty(&combined)
+                .context("serialize workspace HIR")?;
             fs::write(&hir_path, json)
                 .with_context(|| format!("write workspace HIR to {}", hir_path.display()))?;
             println!("- HIR JSON: {}", hir_path.display());
@@ -1215,7 +786,7 @@ fn main() -> Result<()> {
     }
 
     mir_extractor::memory_profiler::final_report();
-
+    
     if fail_on_findings {
         std::process::exit(1);
     }
@@ -1453,8 +1024,7 @@ fn resolve_crate_roots(path: &Path) -> Result<(Vec<PathBuf>, PathBuf)> {
     let matching_member: Vec<_> = members
         .iter()
         .filter(|(_, member_path)| {
-            let member_canonical =
-                fs::canonicalize(member_path).unwrap_or_else(|_| member_path.clone());
+            let member_canonical = fs::canonicalize(member_path).unwrap_or_else(|_| member_path.clone());
             member_canonical == user_canonical || user_canonical.starts_with(&member_canonical)
         })
         .cloned()
@@ -1492,14 +1062,14 @@ fn resolve_report_path(user_path: &Path, out_dir: &Path, default_filename: &str)
     } else {
         user_path.to_path_buf()
     };
-
+    
     // Ensure parent directories exist
     if let Some(parent) = resolved.parent() {
         if !parent.exists() {
             let _ = fs::create_dir_all(parent);
         }
     }
-
+    
     resolved
 }
 
@@ -1649,7 +1219,6 @@ struct LlmConfig {
     model: String,
     api_key: String,
     max_tokens: u32,
-    temperature: f32,
 }
 
 /// Call an LLM API to analyze findings and generate a curated security report.
@@ -1664,7 +1233,7 @@ fn call_llm_api(config: &LlmConfig, prompt: &str) -> Result<String> {
         content: String,
     }
 
-    #[allow(dead_code)] // Used by serde Serialize
+    #[allow(dead_code)] // Used by serde Serialize  
     #[derive(Serialize)]
     struct ChatRequest {
         model: String,
@@ -1690,8 +1259,7 @@ fn call_llm_api(config: &LlmConfig, prompt: &str) -> Result<String> {
 
     // Detect API type from endpoint
     let is_anthropic = config.endpoint.contains("anthropic.com");
-    let is_ollama =
-        config.endpoint.contains("localhost:11434") || config.endpoint.contains("127.0.0.1:11434");
+    let is_ollama = config.endpoint.contains("localhost:11434") || config.endpoint.contains("127.0.0.1:11434");
 
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(300)) // 5 min timeout for large reports
@@ -1716,7 +1284,6 @@ fn call_llm_api(config: &LlmConfig, prompt: &str) -> Result<String> {
         json!({
             "model": config.model,
             "max_tokens": config.max_tokens,
-            "temperature": config.temperature,
             "messages": [{
                 "role": "user",
                 "content": prompt
@@ -1732,12 +1299,12 @@ fn call_llm_api(config: &LlmConfig, prompt: &str) -> Result<String> {
                     "content": "You are a senior security engineer specializing in Rust security analysis. Produce clear, actionable security reports with code fixes."
                 },
                 {
-                    "role": "user",
+                    "role": "user", 
                     "content": prompt
                 }
             ],
             "max_tokens": config.max_tokens,
-            "temperature": config.temperature
+            "temperature": 0.3
         })
     };
 
@@ -1753,15 +1320,13 @@ fn call_llm_api(config: &LlmConfig, prompt: &str) -> Result<String> {
 
     let status = response.status();
     if !status.is_success() {
-        let error_text = response
-            .text()
-            .unwrap_or_else(|_| "unknown error".to_string());
+        let error_text = response.text().unwrap_or_else(|_| "unknown error".to_string());
         return Err(anyhow!("LLM API returned error {}: {}", status, error_text));
     }
 
     // Parse response - handle both OpenAI and Anthropic formats
     let response_text = response.text().context("failed to read LLM response")?;
-
+    
     if is_anthropic {
         // Anthropic format: { "content": [{ "text": "..." }] }
         #[derive(Deserialize)]
@@ -1774,18 +1339,14 @@ fn call_llm_api(config: &LlmConfig, prompt: &str) -> Result<String> {
         }
         let parsed: AnthropicResponse = serde_json::from_str(&response_text)
             .context("failed to parse Anthropic API response")?;
-        parsed
-            .content
-            .first()
+        parsed.content.first()
             .map(|c| c.text.clone())
             .ok_or_else(|| anyhow!("Anthropic response contained no content"))
     } else {
         // OpenAI-compatible format
-        let parsed: ChatResponse =
-            serde_json::from_str(&response_text).context("failed to parse LLM API response")?;
-        parsed
-            .choices
-            .first()
+        let parsed: ChatResponse = serde_json::from_str(&response_text)
+            .context("failed to parse LLM API response")?;
+        parsed.choices.first()
             .map(|c| c.message.content.clone())
             .ok_or_else(|| anyhow!("LLM response contained no choices"))
     }
@@ -1797,40 +1358,80 @@ fn generate_llm_analysis(
     project_name: &str,
     findings: &[Finding],
     rules: &[mir_extractor::RuleMetadata],
-    audit_vulns: &[AuditVulnerability],
     llm_config: Option<&LlmConfig>,
-    scan_config: &ScanConfigSnapshot,
 ) -> Result<()> {
     use std::fmt::Write as _;
 
-    let prompt_content = build_llm_prompt_content(
-        project_name,
-        findings,
-        audit_vulns,
-        None,
-        false,
-        Some(rules),
-        Some(scan_config),
-    )?;
+    // First, generate the prompt content (same as write_llm_report)
+    let mut prompt_content = String::new();
+    
+    // Build the analysis prompt
+    writeln!(&mut prompt_content, "Analyze the following {} security findings from the Rust project '{}'.", 
+        findings.len(), project_name)?;
+    writeln!(&mut prompt_content)?;
+    writeln!(&mut prompt_content, "## Instructions")?;
+    writeln!(&mut prompt_content)?;
+    writeln!(&mut prompt_content, "Produce a security report with:")?;
+    writeln!(&mut prompt_content, "1. **Executive Summary** - Total findings, true positives vs false positives, top 3 critical issues")?;
+    writeln!(&mut prompt_content, "2. **True Positives** - For each real vulnerability:")?;
+    writeln!(&mut prompt_content, "   - Severity (Critical/High/Medium/Low), CVSS estimate")?;
+    writeln!(&mut prompt_content, "   - Attack scenario")?;
+    writeln!(&mut prompt_content, "   - **Vulnerable code** (from evidence)")?;
+    writeln!(&mut prompt_content, "   - **Recommended fix** with corrected Rust code")?;
+    writeln!(&mut prompt_content, "3. **False Positives** - Explain why each is likely a false detection")?;
+    writeln!(&mut prompt_content, "4. **Remediation Priority** - P0 (immediate), P1 (sprint), P2 (quarter)")?;
+    writeln!(&mut prompt_content)?;
+    writeln!(&mut prompt_content, "### Fix Patterns Reference")?;
+    writeln!(&mut prompt_content, "- SQL Injection: Use `.bind()` or `?` placeholders")?;
+    writeln!(&mut prompt_content, "- Path Traversal: `path.canonicalize()?.starts_with(base)`")?;
+    writeln!(&mut prompt_content, "- Regex Injection: `regex::escape(&input)`")?;
+    writeln!(&mut prompt_content, "- SSRF: Validate URL host against allowlist")?;
+    writeln!(&mut prompt_content, "- Unbounded Allocation: Add size check before allocation")?;
+    writeln!(&mut prompt_content)?;
+
+    // Rule reference
+    writeln!(&mut prompt_content, "## Rule Reference")?;
+    writeln!(&mut prompt_content)?;
+    for rule in rules {
+        writeln!(&mut prompt_content, "- **{}** ({}): {} [Severity: {:?}]", 
+            rule.id, rule.name, rule.short_description, rule.default_severity)?;
+    }
+    writeln!(&mut prompt_content)?;
+
+    // Findings
+    writeln!(&mut prompt_content, "## Findings to Analyze")?;
+    writeln!(&mut prompt_content)?;
+    
+    for (i, finding) in findings.iter().enumerate() {
+        writeln!(&mut prompt_content, "### Finding {}: {} - {}", i + 1, finding.rule_id, finding.rule_name)?;
+        writeln!(&mut prompt_content, "- **Severity:** {:?}", finding.severity)?;
+        writeln!(&mut prompt_content, "- **Function:** `{}`", finding.function)?;
+        if let Some(span) = &finding.span {
+            writeln!(&mut prompt_content, "- **File:** {}:{}-{}", span.file, span.start_line, span.end_line)?;
+        }
+        writeln!(&mut prompt_content, "- **Message:** {}", finding.message)?;
+        if !finding.evidence.is_empty() {
+            writeln!(&mut prompt_content, "- **Evidence:**")?;
+            for ev in &finding.evidence {
+                writeln!(&mut prompt_content, "```")?;
+                writeln!(&mut prompt_content, "{}", ev.trim())?;
+                writeln!(&mut prompt_content, "```")?;
+            }
+        }
+        writeln!(&mut prompt_content)?;
+    }
 
     // If LLM config provided, call the API
     let final_content = if let Some(config) = llm_config {
-        eprintln!(
-            "  Sending {} findings to LLM for analysis...",
-            findings.len()
-        );
-
+        eprintln!("  Sending {} findings to LLM for analysis...", findings.len());
+        
         match call_llm_api(config, &prompt_content) {
             Ok(llm_response) => {
                 // Wrap LLM response with metadata
                 let mut output = String::new();
                 writeln!(&mut output, "# Security Analysis Report: {}", project_name)?;
                 writeln!(&mut output)?;
-                writeln!(
-                    &mut output,
-                    "*Generated by rust-cola with {} analysis*",
-                    config.model
-                )?;
+                writeln!(&mut output, "*Generated by rust-cola with {} analysis*", config.model)?;
                 writeln!(&mut output, "*Findings analyzed: {}*", findings.len())?;
                 writeln!(&mut output)?;
                 writeln!(&mut output, "---")?;
@@ -1841,16 +1442,13 @@ fn generate_llm_analysis(
             Err(e) => {
                 eprintln!("  Warning: LLM API call failed: {}", e);
                 eprintln!("  Falling back to prompt-only output");
-
+                
                 // Fall back to prompt-only format
                 let mut output = String::new();
                 writeln!(&mut output, "# Security Analysis Context for LLM Review")?;
                 writeln!(&mut output)?;
                 writeln!(&mut output, "*LLM API call failed: {}*", e)?;
-                writeln!(
-                    &mut output,
-                    "*Copy the content below to your preferred LLM for analysis.*"
-                )?;
+                writeln!(&mut output, "*Copy the content below to your preferred LLM for analysis.*")?;
                 writeln!(&mut output)?;
                 writeln!(&mut output, "---")?;
                 writeln!(&mut output)?;
@@ -1866,10 +1464,7 @@ fn generate_llm_analysis(
         writeln!(&mut output, "**Project:** {}", project_name)?;
         writeln!(&mut output, "**Total Findings:** {}", findings.len())?;
         writeln!(&mut output)?;
-        writeln!(
-            &mut output,
-            "*Copy the content below to your preferred LLM (Claude, GPT-4, etc.) for analysis.*"
-        )?;
+        writeln!(&mut output, "*Copy the content below to your preferred LLM (Claude, GPT-4, etc.) for analysis.*")?;
         writeln!(&mut output)?;
         writeln!(&mut output, "---")?;
         writeln!(&mut output)?;
@@ -1878,17 +1473,17 @@ fn generate_llm_analysis(
     };
 
     // Write output file
-    let mut file =
-        File::create(path).with_context(|| format!("create LLM report at {}", path.display()))?;
+    let mut file = File::create(path)
+        .with_context(|| format!("create LLM report at {}", path.display()))?;
     file.write_all(final_content.as_bytes())?;
-
+    
     if llm_config.is_some() {
         eprintln!("  LLM-analyzed report written to: {}", path.display());
     } else {
         eprintln!("  Prompt file written to: {}", path.display());
         eprintln!("  Tip: Use --llm-endpoint to automatically send to an LLM API");
     }
-
+    
     Ok(())
 }
 
@@ -1925,11 +1520,7 @@ fn generate_standalone_report(
     // Header
     writeln!(content, "# Security Report: {}", project_name)?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "Generated by rust-cola v{}",
-        env!("CARGO_PKG_VERSION")
-    )?;
+    writeln!(content, "Generated by rust-cola v{}", env!("CARGO_PKG_VERSION"))?;
     writeln!(content, "Date: {}", chrono_lite_date())?;
     writeln!(&mut content)?;
 
@@ -1939,17 +1530,9 @@ fn generate_standalone_report(
     writeln!(content, "| Category | Count |")?;
     writeln!(content, "|----------|-------|")?;
     if !audit_vulns.is_empty() {
-        writeln!(
-            content,
-            "| Dependency Vulnerabilities | {} |",
-            audit_vulns.len()
-        )?;
+        writeln!(content, "| Dependency Vulnerabilities | {} |", audit_vulns.len())?;
     }
-    writeln!(
-        content,
-        "| High Confidence Issues | {} |",
-        high_confidence.len()
-    )?;
+    writeln!(content, "| High Confidence Issues | {} |", high_confidence.len())?;
     writeln!(content, "| Needs Review | {} |", needs_review.len())?;
     writeln!(content, "| Likely False Positives | {} |", likely_fp.len())?;
     writeln!(content, "| Total Findings | {} |", findings.len())?;
@@ -1961,22 +1544,10 @@ fn generate_standalone_report(
     }
 
     // Severity breakdown
-    let high_count = findings
-        .iter()
-        .filter(|f| matches!(f.severity, mir_extractor::Severity::High))
-        .count();
-    let medium_count = findings
-        .iter()
-        .filter(|f| matches!(f.severity, mir_extractor::Severity::Medium))
-        .count();
-    let low_count = findings
-        .iter()
-        .filter(|f| matches!(f.severity, mir_extractor::Severity::Low))
-        .count();
-    let critical_count = findings
-        .iter()
-        .filter(|f| matches!(f.severity, mir_extractor::Severity::Critical))
-        .count();
+    let high_count = findings.iter().filter(|f| matches!(f.severity, mir_extractor::Severity::High)).count();
+    let medium_count = findings.iter().filter(|f| matches!(f.severity, mir_extractor::Severity::Medium)).count();
+    let low_count = findings.iter().filter(|f| matches!(f.severity, mir_extractor::Severity::Low)).count();
+    let critical_count = findings.iter().filter(|f| matches!(f.severity, mir_extractor::Severity::Critical)).count();
 
     writeln!(content, "### By Severity")?;
     writeln!(&mut content)?;
@@ -1993,40 +1564,18 @@ fn generate_standalone_report(
         writeln!(content, "- Low: {}", low_count)?;
     }
     writeln!(&mut content)?;
-
+    
     // Priority classification
     writeln!(content, "### Remediation Priority")?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "- P0 (immediate): {} critical/high in production code",
-        high_confidence
-            .iter()
-            .filter(|f| matches!(
-                f.severity,
-                mir_extractor::Severity::Critical | mir_extractor::Severity::High
-            ))
-            .count()
-    )?;
-    writeln!(
-        content,
-        "- P1 (this sprint): {} medium in production code",
-        high_confidence
-            .iter()
-            .filter(|f| matches!(f.severity, mir_extractor::Severity::Medium))
-            .count()
-    )?;
-    writeln!(
-        content,
-        "- P2 (backlog): {} low priority or needs review",
-        high_confidence
-            .iter()
-            .filter(|f| matches!(f.severity, mir_extractor::Severity::Low))
-            .count()
-            + needs_review.len()
-    )?;
+    writeln!(content, "- P0 (immediate): {} critical/high in production code", 
+        high_confidence.iter().filter(|f| matches!(f.severity, mir_extractor::Severity::Critical | mir_extractor::Severity::High)).count())?;
+    writeln!(content, "- P1 (this sprint): {} medium in production code",
+        high_confidence.iter().filter(|f| matches!(f.severity, mir_extractor::Severity::Medium)).count())?;
+    writeln!(content, "- P2 (backlog): {} low priority or needs review",
+        high_confidence.iter().filter(|f| matches!(f.severity, mir_extractor::Severity::Low)).count() + needs_review.len())?;
     writeln!(&mut content)?;
-
+    
     // Rule summary table with FP estimates
     write_rule_summary_table(&mut content, findings, rules)?;
 
@@ -2034,16 +1583,9 @@ fn generate_standalone_report(
     if !high_confidence.is_empty() {
         writeln!(content, "---")?;
         writeln!(&mut content)?;
-        writeln!(
-            content,
-            "## High Confidence Issues ({} findings)",
-            high_confidence.len()
-        )?;
+        writeln!(content, "## High Confidence Issues ({} findings)", high_confidence.len())?;
         writeln!(&mut content)?;
-        writeln!(
-            content,
-            "These findings are in application code and likely represent real vulnerabilities."
-        )?;
+        writeln!(content, "These findings are in application code and likely represent real vulnerabilities.")?;
         writeln!(&mut content)?;
 
         for (i, finding) in high_confidence.iter().enumerate() {
@@ -2057,10 +1599,7 @@ fn generate_standalone_report(
         writeln!(&mut content)?;
         writeln!(content, "## Needs Review ({} findings)", needs_review.len())?;
         writeln!(&mut content)?;
-        writeln!(
-            content,
-            "These findings require manual review to determine if they are true positives."
-        )?;
+        writeln!(content, "These findings require manual review to determine if they are true positives.")?;
         writeln!(&mut content)?;
 
         // Group by rule for easier review
@@ -2070,28 +1609,17 @@ fn generate_standalone_report(
         }
 
         for (rule_id, findings_list) in by_rule {
-            let rule_name = rules
-                .iter()
+            let rule_name = rules.iter()
                 .find(|r| r.id == rule_id)
                 .map(|r| r.name.as_str())
                 .unwrap_or("unknown");
-            writeln!(
-                content,
-                "### {} - {} ({} findings)",
-                rule_id,
-                rule_name,
-                findings_list.len()
-            )?;
+            writeln!(content, "### {} - {} ({} findings)", rule_id, rule_name, findings_list.len())?;
             writeln!(&mut content)?;
-
+            
             for finding in findings_list.iter().take(5) {
-                writeln!(
-                    content,
-                    "- {} @ {}",
+                writeln!(content, "- {} @ {}", 
                     finding.function,
-                    finding
-                        .span
-                        .as_ref()
+                    finding.span.as_ref()
                         .map(|s| format!("{}:{}", s.file, s.start_line))
                         .unwrap_or_else(|| "unknown".to_string())
                 )?;
@@ -2107,16 +1635,9 @@ fn generate_standalone_report(
     if !likely_fp.is_empty() {
         writeln!(content, "---")?;
         writeln!(&mut content)?;
-        writeln!(
-            content,
-            "## Likely False Positives ({} findings)",
-            likely_fp.len()
-        )?;
+        writeln!(content, "## Likely False Positives ({} findings)", likely_fp.len())?;
         writeln!(&mut content)?;
-        writeln!(
-            content,
-            "These findings are in test/example code or match common false positive patterns."
-        )?;
+        writeln!(content, "These findings are in test/example code or match common false positive patterns.")?;
         writeln!(&mut content)?;
         writeln!(content, "<details>")?;
         writeln!(content, "<summary>Click to expand</summary>")?;
@@ -2151,35 +1672,14 @@ fn generate_standalone_report(
     writeln!(&mut content)?;
     writeln!(content, "| Vulnerability | Fix |")?;
     writeln!(content, "|---------------|-----|")?;
-    writeln!(
-        content,
-        "| SQL Injection | Use parameterized queries with .bind() or ? placeholders |"
-    )?;
-    writeln!(
-        content,
-        "| Path Traversal | Canonicalize and validate: path.canonicalize()?.starts_with(base) |"
-    )?;
-    writeln!(
-        content,
-        "| Command Injection | Use Command::new().arg() instead of string concatenation |"
-    )?;
+    writeln!(content, "| SQL Injection | Use parameterized queries with .bind() or ? placeholders |")?;
+    writeln!(content, "| Path Traversal | Canonicalize and validate: path.canonicalize()?.starts_with(base) |")?;
+    writeln!(content, "| Command Injection | Use Command::new().arg() instead of string concatenation |")?;
     writeln!(content, "| SSRF | Validate URL host against allowlist |")?;
-    writeln!(
-        content,
-        "| Regex Injection | Escape user input: regex::escape(&input) |"
-    )?;
-    writeln!(
-        content,
-        "| Weak Crypto | Replace MD5/SHA1 with SHA-256 or stronger |"
-    )?;
-    writeln!(
-        content,
-        "| Hardcoded Secrets | Use environment variables or secret managers |"
-    )?;
-    writeln!(
-        content,
-        "| Unbounded Allocation | Validate size: if size > MAX then return error |"
-    )?;
+    writeln!(content, "| Regex Injection | Escape user input: regex::escape(&input) |")?;
+    writeln!(content, "| Weak Crypto | Replace MD5/SHA1 with SHA-256 or stronger |")?;
+    writeln!(content, "| Hardcoded Secrets | Use environment variables or secret managers |")?;
+    writeln!(content, "| Unbounded Allocation | Validate size: if size > MAX then return error |")?;
     writeln!(&mut content)?;
 
     // LLM note (brief)
@@ -2187,154 +1687,30 @@ fn generate_standalone_report(
     writeln!(&mut content)?;
     writeln!(content, "## LLM-Enhanced Analysis")?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "For false positive filtering and detailed fix suggestions, run with --llm-prompt"
-    )?;
-    writeln!(
-        content,
-        "and submit the generated prompt to an LLM (Claude, GPT-4, etc.)."
-    )?;
+    writeln!(content, "For false positive filtering and detailed fix suggestions, run with --llm-prompt")?;
+    writeln!(content, "and submit the generated prompt to an LLM (Claude, GPT-4, etc.).")?;
     writeln!(&mut content)?;
 
     // Write file
     let mut file = File::create(path)
         .with_context(|| format!("create standalone report at {}", path.display()))?;
     file.write_all(content.as_bytes())?;
-
+    
     eprintln!("  Standalone report written to: {}", path.display());
-
+    
     Ok(())
 }
 
-/// Rule-specific guard patterns that the LLM should check for during verification.
-/// Each entry maps a rule ID prefix to common guard/validation patterns.
-struct GuardHints {
-    patterns: &'static [&'static str],
-    what_to_check: &'static str,
-    false_positive_if: &'static str,
-}
-
-fn get_guard_hints_for_rule(rule_id: &str) -> Option<GuardHints> {
-    match rule_id {
-        // Unbounded allocation (memory exhaustion)
-        "RUSTCOLA024" | "RUSTCOLA203" => Some(GuardHints {
-            patterns: &[
-                "MAX_*", "LIMIT_*", "*_LIMIT", "*_MAX",
-                "min(", "clamp(", "saturating_",
-                "checked_", "if size >", "if len >",
-                ".take(", "truncate(",
-            ],
-            what_to_check: "Look for constants defining maximum sizes, min/clamp calls on size values, or conditional checks before allocation",
-            false_positive_if: "Size is bounded by a constant (e.g., max columns = 500 → max 16KB allocation)",
-        }),
-        // SQL/Command/Path injection
-        "RUSTCOLA001" | "RUSTCOLA003" | "RUSTCOLA004" | "RUSTCOLA100" | "RUSTCOLA101" | "RUSTCOLA102" => Some(GuardHints {
-            patterns: &[
-                "sanitize", "escape", "quote", "parameterize",
-                "validate", "whitelist", "allowlist",
-                "regex::Regex", ".is_alphanumeric()", ".is_ascii_alphanumeric()",
-                "sqlx::query!", "diesel::", "prepared_statement",
-            ],
-            what_to_check: "Look for input validation, escaping functions, parameterized queries, or allowlist checks before the sink",
-            false_positive_if: "Input is parameterized, validated against allowlist, or comes from trusted internal source",
-        }),
-        // Integer overflow
-        "RUSTCOLA204" => Some(GuardHints {
-            patterns: &[
-                "checked_add", "checked_mul", "checked_sub",
-                "saturating_add", "saturating_mul",
-                "overflowing_", "wrapping_",
-                "try_into()", "TryFrom",
-            ],
-            what_to_check: "Look for checked arithmetic, TryFrom conversions, or explicit overflow handling",
-            false_positive_if: "Arithmetic uses checked_* methods or values are bounded by type constraints",
-        }),
-        // Cryptographic issues
-        "RUSTCOLA012" | "RUSTCOLA200" | "RUSTCOLA201" => Some(GuardHints {
-            patterns: &[
-                "constant_time_eq", "subtle::ConstantTimeEq",
-                "ring::", "rustcrypto::", "sha2::", "sha3::",
-                "Argon2", "bcrypt", "scrypt", "pbkdf2",
-            ],
-            what_to_check: "Check if weak hash is used for security purposes vs checksums/caching",
-            false_positive_if: "Hash is used for non-security purposes (cache keys, data integrity of non-sensitive data)",
-        }),
-        // TLS verification disabled
-        "RUSTCOLA005" => Some(GuardHints {
-            patterns: &[
-                "#[cfg(test)]", "cfg!(test)", "debug_assert",
-                "// SAFETY:", "// NOTE:", "localhost",
-                "127.0.0.1", "::1", "development",
-            ],
-            what_to_check: "Check if TLS verification is disabled only in test/dev contexts",
-            false_positive_if: "Disabled only in test code or for localhost connections with documented reason",
-        }),
-        // Mutex guard held across await
-        "RUSTCOLA301" => Some(GuardHints {
-            patterns: &[
-                "tokio::sync::Mutex", "async_std::sync::Mutex",
-                "drop(guard)", "std::mem::drop(",
-                "let _ = guard;",
-            ],
-            what_to_check: "Check if an async-aware mutex is used or guard is explicitly dropped before await",
-            false_positive_if: "Using async mutex (tokio::sync::Mutex) or guard is dropped before await point",
-        }),
-        // Blocking in async context
-        "RUSTCOLA300" | "RUSTCOLA302" => Some(GuardHints {
-            patterns: &[
-                "spawn_blocking", "block_in_place",
-                "tokio::task::spawn_blocking",
-                "actix_web::web::block",
-                "// blocking ok:", "// short operation",
-            ],
-            what_to_check: "Check if blocking operation is wrapped in spawn_blocking or is trivially short",
-            false_positive_if: "Wrapped in spawn_blocking, or operation is provably short (< 1ms)",
-        }),
-        // Content-length allocation
-        "RUSTCOLA021" => Some(GuardHints {
-            patterns: &[
-                "MAX_BODY_SIZE", "BODY_LIMIT", "max_body",
-                "content_length_limit", "PayloadConfig",
-                "if content_length >", ".take(",
-            ],
-            what_to_check: "Check for body size limits in HTTP framework config or explicit checks",
-            false_positive_if: "Framework enforces max body size or explicit limit check before allocation",
-        }),
-        // Unbounded read (DoS via memory exhaustion)
-        "RUSTCOLA090" => Some(GuardHints {
-            patterns: &[
-                ".take(", "BufReader", "read_exact",
-                "MAX_SIZE", "MAX_BYTES", "LIMIT",
-                "if size >", "content_length",
-            ],
-            what_to_check: "Check for .take(max_bytes) wrapper, explicit size limits, or BufReader with size constraints",
-            false_positive_if: "Read is bounded by .take(), has content-length validation, or operates on trusted local files only",
-        }),
-        // Path traversal
-        "RUSTCOLA086" => Some(GuardHints {
-            patterns: &[
-                "canonicalize", "starts_with", "strip_prefix",
-                "Path::new", "PathBuf::from", "join",
-                "sanitize", "validate_path", "is_absolute",
-            ],
-            what_to_check: "Check for canonicalize() + starts_with() validation or path sanitization",
-            false_positive_if: "Path is canonicalized and validated against base directory, or comes from trusted config",
-        }),
-        _ => None,
-    }
-}
-
-/// Build the canonical LLM prompt content shared by manual and automated workflows.
-fn build_llm_prompt_content(
+/// Generate an LLM prompt file for use with IDE-integrated AI assistants
+/// This creates a markdown file with findings formatted as a prompt ready to paste
+/// into Copilot Chat, Cursor, or any other AI assistant integrated into the IDE.
+fn generate_llm_prompt(
+    path: &Path,
     project_name: &str,
     findings: &[Finding],
+    _rules: &[mir_extractor::RuleMetadata],
     audit_vulns: &[AuditVulnerability],
-    prompt_path: Option<&Path>,
-    include_save_instructions: bool,
-    rule_reference: Option<&[mir_extractor::RuleMetadata]>,
-    scan_config: Option<&ScanConfigSnapshot>,
-) -> Result<String> {
+) -> Result<()> {
     use std::fmt::Write as _;
 
     let mut content = String::new();
@@ -2344,248 +1720,68 @@ fn build_llm_prompt_content(
 
     // ===== HEADER =====
     writeln!(content, "# Security Analysis Request: {}", project_name)?;
-    writeln!(
-        content,
-        "**Analysis Date:** {} | **Tool:** Rust-COLA v1.0 | **Findings:** {}",
-        date_str,
-        findings.len()
-    )?;
+    writeln!(content, "**Analysis Date:** {} | **Tool:** Rust-COLA v1.0 | **Findings:** {}", date_str, findings.len())?;
     writeln!(&mut content)?;
 
-    if findings.is_empty() {
-        writeln!(
-            content,
-            "> No findings were reported. If you're craving a little chaos, re-run cargo-cola with `--llm-temperature 0.4` (default 0.0) to let the LLM riff more freely."
-        )?;
-        writeln!(&mut content)?;
-    }
-
-    if let Some(config) = scan_config {
-        writeln!(content, "## Scan Configuration")?;
-        writeln!(&mut content)?;
-        writeln!(
-            content,
-            "Cargo-cola executed with the following CLI flags. **Reproduce this table in your final report**, calling out whether each value is a default or an explicit override."
-        )?;
-        writeln!(&mut content)?;
-        writeln!(content, "| Flag | Value | Source |")?;
-        writeln!(content, "|------|-------|--------|")?;
-        for entry in config.entries() {
-            writeln!(
-                content,
-                "| {} | {} | {} |",
-                entry.flag,
-                escape_markdown_pipes(&entry.value),
-                entry.source.label()
-            )?;
-        }
-        writeln!(&mut content)?;
-    }
-
     // ===== SAVE INSTRUCTIONS =====
-    if include_save_instructions {
-        let prompt_dir_display = prompt_path
-            .and_then(|p| p.parent())
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|| ".".to_string());
-        let report_dir_display = prompt_path
-            .and_then(|p| p.parent())
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|| "out/cola".to_string());
-        writeln!(content, "> **Save Instructions:** After analysis, save the generated report as `security-report.md`")?;
-        writeln!(
-            content,
-            "> in the same directory as this prompt file (`{}`), or use the automated option:",
-            prompt_dir_display
-        )?;
-        writeln!(content, "> ```")?;
-        writeln!(
-            content,
-            "> cargo-cola --crate-path <PROJECT> --llm-report {}/security-report.md",
-            report_dir_display
-        )?;
-        writeln!(content, "> ```")?;
-        writeln!(&mut content)?;
-    }
+    writeln!(content, "> **Save Instructions:** After analysis, save the generated report as `security-report.md`")?;
+    writeln!(content, "> in the same directory as this prompt file (`{}`), or use the automated option:", path.parent().map(|p| p.display().to_string()).unwrap_or_else(|| ".".to_string()))?;
+    writeln!(content, "> ```")?;
+    writeln!(content, "> cargo-cola --crate-path <PROJECT> --llm-report {}/security-report.md", path.parent().map(|p| p.display().to_string()).unwrap_or_else(|| "out/cola".to_string()))?;
+    writeln!(content, "> ```")?;
+    writeln!(&mut content)?;
 
     // ===== ROLE & OBJECTIVE =====
     writeln!(content, "## Your Role")?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "You are a senior application security engineer performing a security assessment."
-    )?;
+    writeln!(content, "You are a senior application security engineer performing a security assessment.")?;
     writeln!(content, "Your goal is to transform these static analysis findings into an **actionable, executive-ready security report**.")?;
     writeln!(&mut content)?;
     writeln!(content, "The report will be reviewed by:")?;
-    writeln!(
-        content,
-        "- **Security team**: Need technical details and remediation code"
-    )?;
-    writeln!(
-        content,
-        "- **Engineering leads**: Need priority and effort estimates"
-    )?;
-    writeln!(
-        content,
-        "- **Leadership**: Need executive summary and risk posture"
-    )?;
+    writeln!(content, "- **Security team**: Need technical details and remediation code")?;
+    writeln!(content, "- **Engineering leads**: Need priority and effort estimates")?;
+    writeln!(content, "- **Leadership**: Need executive summary and risk posture")?;
     writeln!(&mut content)?;
 
-    // ===== SOURCE VERIFICATION (STEP 0) =====
+    // ===== MANDATORY SOURCE VERIFICATION (STEP 0) =====
     writeln!(content, "---")?;
-    writeln!(content, "## Step 0: Source Verification (MANDATORY)")?;
+    writeln!(content, "## Step 0: Source Code Verification (MANDATORY)")?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "⚠️ **CRITICAL: You MUST read the actual source file before analyzing ANY finding.**"
-    )?;
+    writeln!(content, "⚠️ **CRITICAL: You MUST read the actual source file before analyzing ANY finding.**")?;
     writeln!(&mut content)?;
     writeln!(content, "### Why This Matters")?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "Static analysis tools report line numbers and patterns, but:"
-    )?;
-    writeln!(
-        content,
-        "- The reported line may have changed since analysis"
-    )?;
-    writeln!(
-        content,
-        "- Evidence snippets may be MIR, not the real source"
-    )?;
-    writeln!(
-        content,
-        "- Context around the line is essential for accurate assessment"
-    )?;
+    writeln!(content, "Static analysis tools report line numbers and code patterns, but:")?;
+    writeln!(content, "- The reported line may have changed since analysis")?;
+    writeln!(content, "- The evidence snippets may be MIR (intermediate representation), not source code")?;
+    writeln!(content, "- Context around the line is essential for accurate assessment")?;
     writeln!(&mut content)?;
     writeln!(content, "### Verification Checklist")?;
     writeln!(&mut content)?;
-    writeln!(content, "For EVERY finding you keep in the report:")?;
+    writeln!(content, "For EVERY finding you include in the report:")?;
     writeln!(&mut content)?;
     writeln!(content, "| Step | Action | If You Cannot Complete |")?;
     writeln!(content, "|------|--------|------------------------|")?;
-    writeln!(content, "| **1. Read the file** | Fetch the actual source at the reported lines | Mark finding as UNVERIFIED |")?;
-    writeln!(content, "| **2. Confirm the pattern** | Ensure the vulnerable construct truly exists | Dismiss as false positive |")?;
-    writeln!(content, "| **3. Check context** | Read 20-50 surrounding lines for guards/sanitizers | Note mitigations found |")?;
-    writeln!(content, "| **4. Trace call chain** | Verify the entry point reaches this code | Downgrade reachability if uncertain |")?;
-    writeln!(&mut content)?;
-    writeln!(content, "### Before analyzing anything else:")?;
-    writeln!(&mut content)?;
-    writeln!(content, "1. Cross-check every file + line reference against the entries in **Findings to Analyze**.")?;
-    writeln!(content, "2. Only quote code that appears in the provided Evidence blocks or verified source reads. Do **not** invent or reformat snippets.")?;
-    writeln!(content, "3. If a file path, line number, or snippet cannot be matched verbatim to the prompt or verified source, exclude the finding (note it as dismissed for lack of evidence).")?;
+    writeln!(content, "| **1. Read the file** | Use file read tools to get the actual source at the reported line | Mark finding as UNVERIFIED |")?;
+    writeln!(content, "| **2. Confirm the pattern** | Verify the vulnerable code pattern exists as reported | Dismiss as false positive |")?;
+    writeln!(content, "| **3. Check context** | Read 20-50 lines around the finding for guards, limits, or sanitization | Note any mitigations found |")?;
+    writeln!(content, "| **4. Trace call chain** | For EXPOSED/INDIRECT, verify entry points actually call this code | Downgrade reachability if uncertain |")?;
     writeln!(&mut content)?;
     writeln!(content, "### NEVER Do This")?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "❌ **NEVER synthesize or guess what code looks like**"
-    )?;
-    writeln!(
-        content,
-        "❌ **NEVER copy code snippets from tool output without verification**"
-    )?;
-    writeln!(
-        content,
-        "❌ **NEVER write `Vulnerable Code` sections without reading the actual file**"
-    )?;
-    writeln!(
-        content,
-        "❌ **NEVER invent variable names, function signatures, or code patterns**"
-    )?;
+    writeln!(content, "❌ **NEVER synthesize or guess what code looks like**")?;
+    writeln!(content, "❌ **NEVER copy code snippets from the tool output without verification**")?;
+    writeln!(content, "❌ **NEVER write \"Vulnerable Code:\" blocks without reading the actual file**")?;
+    writeln!(content, "❌ **NEVER invent variable names, function signatures, or code patterns**")?;
     writeln!(&mut content)?;
     writeln!(content, "### Required Evidence Format")?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "When showing vulnerable code, include verification:"
-    )?;
+    writeln!(content, "When showing vulnerable code, include verification:")?;
     writeln!(content, "```")?;
-    writeln!(
-        content,
-        "**Verified Source** (read from `src/handler.rs` lines 145-152):"
-    )?;
+    writeln!(content, "**Verified Source** (read from `src/handler.rs` lines 145-152):")?;
     writeln!(content, "```rust")?;
     writeln!(content, "// ACTUAL CODE from source file")?;
     writeln!(content, "```")?;
-    writeln!(content, "```")?;
-    writeln!(&mut content)?;
-    writeln!(content, "This verification step prevents hallucinated file paths and keeps conclusions grounded in static analysis output plus real source context.")?;
-
-    // ===== GUARD DETECTION GUIDE =====
-    writeln!(content, "---")?;
-    writeln!(content, "## Step 0.5: Guard Detection (CRITICAL for Reducing False Positives)")?;
-    writeln!(&mut content)?;
-    writeln!(content, "⚠️ **The taint tracker identifies data flow but may miss validation/bounds checks along the path.**")?;
-    writeln!(&mut content)?;
-    writeln!(content, "### What is a Guard?")?;
-    writeln!(&mut content)?;
-    writeln!(content, "A **guard** is any code that validates, bounds, or sanitizes data between a taint source and sink.")?;
-    writeln!(content, "Common guard types:")?;
-    writeln!(&mut content)?;
-    writeln!(content, "| Guard Type | Examples | Effect |")?;
-    writeln!(content, "|------------|----------|--------|")?;
-    writeln!(content, "| **Bounds Check** | `if len > MAX {{ return Err(...) }}`, `min(len, MAX)`, `clamp()` | Limits numeric values |")?;
-    writeln!(content, "| **Validation** | `validate_input()`, `is_valid()`, regex checks | Rejects invalid input |")?;
-    writeln!(content, "| **Sanitization** | `escape()`, `sanitize()`, `quote()` | Transforms dangerous chars |")?;
-    writeln!(content, "| **Type Constraint** | Schema validation, column limits, enum parsing | Structural bounds |")?;
-    writeln!(content, "| **Allowlist** | `if !ALLOWED.contains(&x) {{ return Err(...) }}` | Rejects unexpected values |")?;
-    writeln!(&mut content)?;
-    writeln!(content, "### Where to Look for Guards")?;
-    writeln!(&mut content)?;
-    writeln!(content, "1. **Between source and sink**: Read the entire call chain, not just the reported line")?;
-    writeln!(content, "2. **In constants**: Look for `MAX_*`, `LIMIT_*`, `*_LIMIT` constants that may bound values")?;
-    writeln!(content, "3. **In type definitions**: Schema validation, enum parsing, or struct constructors")?;
-    writeln!(content, "4. **In callers**: Validation may happen before calling the reported function")?;
-    writeln!(content, "5. **In configuration**: Framework-level limits (e.g., `max_body_size` in HTTP config)")?;
-    writeln!(&mut content)?;
-
-    // Build rule-specific guard hints table from findings
-    let unique_rules: std::collections::HashSet<_> = findings.iter().map(|f| f.rule_id.as_str()).collect();
-    let hints_needed: Vec<_> = unique_rules
-        .iter()
-        .filter_map(|rule_id| get_guard_hints_for_rule(rule_id).map(|h| (*rule_id, h)))
-        .collect();
-
-    if !hints_needed.is_empty() {
-        writeln!(content, "### Rule-Specific Guard Patterns")?;
-        writeln!(&mut content)?;
-        writeln!(content, "For the finding types in this scan, look for these specific guards:")?;
-        writeln!(&mut content)?;
-        writeln!(content, "| Rule | Guard Patterns to Search | False Positive If |")?;
-        writeln!(content, "|------|--------------------------|-------------------|")?;
-        for (rule_id, hints) in &hints_needed {
-            let patterns = hints.patterns.iter().take(5).cloned().collect::<Vec<_>>().join("`, `");
-            writeln!(
-                content,
-                "| **{}** | `{}` | {} |",
-                rule_id, patterns, hints.false_positive_if
-            )?;
-        }
-        writeln!(&mut content)?;
-    }
-
-    writeln!(content, "### Guard Verification Process")?;
-    writeln!(&mut content)?;
-    writeln!(content, "For each finding with a tainted data flow:")?;
-    writeln!(content, "1. **Identify the source**: Where does the untrusted data originate?")?;
-    writeln!(content, "2. **Trace to sink**: Follow the data through all function calls")?;
-    writeln!(content, "3. **Search for guards**: At each step, look for validation/bounds/sanitization")?;
-    writeln!(content, "4. **Check constants**: Search the crate for MAX_*/LIMIT_* constants that might apply")?;
-    writeln!(content, "5. **Document findings**: If guard found, cite file:line and dismiss as FP")?;
-    writeln!(&mut content)?;
-    writeln!(content, "**Example Guard Discovery:**")?;
-    writeln!(content, "```")?;
-    writeln!(content, "Finding: RUSTCOLA024 - Unbounded allocation at cache.rs:274")?;
-    writeln!(content, "Source: key_column_ids.len() used in Vec::with_capacity()")?;
-    writeln!(content, "Guard Search:")?;
-    writeln!(content, "  → key_column_ids comes from table schema")?;
-    writeln!(content, "  → table schema validated in catalog.rs")?;
-    writeln!(content, "  → Found: NUM_COLUMNS_PER_TABLE_LIMIT = 500 (catalog/versions/v1.rs:42)")?;
-    writeln!(content, "  → Max allocation: 500 * 32 bytes = 16KB")?;
-    writeln!(content, "Result: FALSE POSITIVE - allocation bounded by catalog limit")?;
     writeln!(content, "```")?;
     writeln!(&mut content)?;
 
@@ -2597,19 +1793,10 @@ fn build_llm_prompt_content(
     writeln!(&mut content)?;
     writeln!(content, "### Automatic False Positive Criteria")?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "**Dismiss immediately** (with brief evidence citation) if ANY of these apply:"
-    )?;
+    writeln!(content, "**Dismiss immediately** (with brief evidence citation) if ANY of these apply:")?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "| Criterion | How to Identify | Example Evidence |"
-    )?;
-    writeln!(
-        content,
-        "|-----------|-----------------|------------------|"
-    )?;
+    writeln!(content, "| Criterion | How to Identify | Example Evidence |")?;
+    writeln!(content, "|-----------|-----------------|------------------|")?;
     writeln!(content, "| **Test Code** | Path contains `/tests/`, `/test_`, `_test.rs`, `#[test]`, `#[cfg(test)]` | \"File: src/tests/db_test.rs\" |")?;
     writeln!(content, "| **Example/Demo Code** | Path contains `/examples/`, `/demo/`, `/sample/` | \"File: examples/basic_usage.rs\" |")?;
     writeln!(content, "| **Benchmark Code** | Path contains `/benches/`, `_bench.rs` | \"File: benches/perf.rs\" |")?;
@@ -2621,18 +1808,9 @@ fn build_llm_prompt_content(
     writeln!(content, "### Lower Priority (Keep but Deprioritize)")?;
     writeln!(&mut content)?;
     writeln!(content, "Move to **Low/P3** (not dismissed) if:")?;
-    writeln!(
-        content,
-        "- Requires authenticated access AND has rate limiting"
-    )?;
-    writeln!(
-        content,
-        "- Impact limited to self-DoS (user can only crash their own request)"
-    )?;
-    writeln!(
-        content,
-        "- Defense-in-depth issue where primary controls exist"
-    )?;
+    writeln!(content, "- Requires authenticated access AND has rate limiting")?;
+    writeln!(content, "- Impact limited to self-DoS (user can only crash their own request)")?;
+    writeln!(content, "- Defense-in-depth issue where primary controls exist")?;
     writeln!(&mut content)?;
     writeln!(content, "### Pruning Output")?;
     writeln!(&mut content)?;
@@ -2645,14 +1823,8 @@ fn build_llm_prompt_content(
     writeln!(&mut content)?;
     writeln!(content, "For each remaining finding, classify reachability. This determines if a vulnerability is exploitable or theoretical.")?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "| Reachability | Definition | Severity Impact | Action |"
-    )?;
-    writeln!(
-        content,
-        "|--------------|------------|-----------------|--------|"
-    )?;
+    writeln!(content, "| Reachability | Definition | Severity Impact | Action |")?;
+    writeln!(content, "|--------------|------------|-----------------|--------|")?;
     writeln!(content, "| **EXPOSED** | Direct path from untrusted input (HTTP handler params, CLI args, stdin, file upload) | Full severity | Immediate fix required |")?;
     writeln!(content, "| **INDIRECT** | Reachable via call chain from entry point; may have intermediate processing | -1 severity level if sanitized | Trace the call chain |")?;
     writeln!(content, "| **AUTHENTICATED** | Behind authentication/authorization checks | -1 severity level | Note auth requirements |")?;
@@ -2665,22 +1837,13 @@ fn build_llm_prompt_content(
     writeln!(content, "```")?;
     writeln!(content, "Entry: POST /api/users (handler: create_user)")?;
     writeln!(content, "  → calls validate_input(body.name)")?;
-    writeln!(
-        content,
-        "  → calls db::insert_user(name)  // ← vulnerable sink"
-    )?;
-    writeln!(
-        content,
-        "Taint: body.name flows to SQL query without parameterization"
-    )?;
+    writeln!(content, "  → calls db::insert_user(name)  // ← vulnerable sink")?;
+    writeln!(content, "Taint: body.name flows to SQL query without parameterization")?;
     writeln!(content, "```")?;
     writeln!(&mut content)?;
 
     // ===== MANDATORY AUTHENTICATION VERIFICATION =====
-    writeln!(
-        content,
-        "### ⚠️ MANDATORY: Authentication Verification Checklist"
-    )?;
+    writeln!(content, "### ⚠️ MANDATORY: Authentication Verification Checklist")?;
     writeln!(&mut content)?;
     writeln!(content, "**Before classifying ANY finding as AUTHENTICATED, you MUST verify ALL of the following:**")?;
     writeln!(&mut content)?;
@@ -2691,38 +1854,20 @@ fn build_llm_prompt_content(
     writeln!(content, "| **3. Endpoint is protected** | Verify endpoint is NOT in any auth bypass list (`public_routes`, `skip_auth`, etc.) | Assume EXPOSED |")?;
     writeln!(content, "| **4. Auth cannot be bypassed** | Check for debug modes, test modes, or feature flags that disable auth | Note as CONFIG-DEPENDENT |")?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "**Required Evidence Format for AUTHENTICATED classification:**"
-    )?;
+    writeln!(content, "**Required Evidence Format for AUTHENTICATED classification:**")?;
     writeln!(content, "```")?;
     writeln!(content, "Authentication Status: AUTHENTICATED")?;
     writeln!(content, "Evidence:")?;
-    writeln!(
-        content,
-        "  - Middleware: `AuthMiddleware` applied at router level (src/http.rs:45)"
-    )?;
+    writeln!(content, "  - Middleware: `AuthMiddleware` applied at router level (src/http.rs:45)")?;
     writeln!(content, "  - No bypass flags found for this endpoint")?;
     writeln!(content, "  - Endpoint NOT in public_routes list")?;
-    writeln!(
-        content,
-        "  - Auth required by default (--without-auth flag exists but disabled by default)"
-    )?;
-    writeln!(
-        content,
-        "Caveat: Exploitable if server started with --without-auth flag"
-    )?;
+    writeln!(content, "  - Auth required by default (--without-auth flag exists but disabled by default)")?;
+    writeln!(content, "Caveat: Exploitable if server started with --without-auth flag")?;
     writeln!(content, "```")?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "**If auth can be disabled via config, state BOTH scenarios:**"
-    )?;
+    writeln!(content, "**If auth can be disabled via config, state BOTH scenarios:**")?;
     writeln!(content, "> \"Reachability: EXPOSED when `--without-auth` is used; AUTHENTICATED in default configuration.\"")?;
-    writeln!(
-        content,
-        "> \"Severity assessment uses worst-case (EXPOSED) for final rating.\""
-    )?;
+    writeln!(content, "> \"Severity assessment uses worst-case (EXPOSED) for final rating.\"")?;
     writeln!(&mut content)?;
 
     // ===== IMPACT TAXONOMY =====
@@ -2731,90 +1876,39 @@ fn build_llm_prompt_content(
     writeln!(&mut content)?;
     writeln!(content, "Classify each true positive by impact type:")?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "| Impact Type | Code | Description | Typical Severity |"
-    )?;
-    writeln!(
-        content,
-        "|-------------|------|-------------|------------------|"
-    )?;
-    writeln!(
-        content,
-        "| **Remote Code Execution** | RCE | Attacker executes arbitrary code | Critical |"
-    )?;
-    writeln!(
-        content,
-        "| **Authentication Bypass** | AUTH | Circumvent login/access controls | Critical |"
-    )?;
+    writeln!(content, "| Impact Type | Code | Description | Typical Severity |")?;
+    writeln!(content, "|-------------|------|-------------|------------------|")?;
+    writeln!(content, "| **Remote Code Execution** | RCE | Attacker executes arbitrary code | Critical |")?;
+    writeln!(content, "| **Authentication Bypass** | AUTH | Circumvent login/access controls | Critical |")?;
     writeln!(content, "| **Memory Corruption** | MEM | Use-after-free, buffer overflow, undefined behavior | Critical |")?;
-    writeln!(
-        content,
-        "| **SQL/Command Injection** | INJ | Execute arbitrary queries/commands | Critical-High |"
-    )?;
-    writeln!(
-        content,
-        "| **Privilege Escalation** | PRIV | Gain elevated permissions | High |"
-    )?;
-    writeln!(
-        content,
-        "| **Sensitive Data Exposure** | DATA | Leak credentials, PII, secrets | High |"
-    )?;
-    writeln!(
-        content,
-        "| **Path Traversal** | PATH | Access files outside intended directory | High-Medium |"
-    )?;
+    writeln!(content, "| **SQL/Command Injection** | INJ | Execute arbitrary queries/commands | Critical-High |")?;
+    writeln!(content, "| **Privilege Escalation** | PRIV | Gain elevated permissions | High |")?;
+    writeln!(content, "| **Sensitive Data Exposure** | DATA | Leak credentials, PII, secrets | High |")?;
+    writeln!(content, "| **Path Traversal** | PATH | Access files outside intended directory | High-Medium |")?;
     writeln!(content, "| **Server-Side Request Forgery** | SSRF | Make server fetch attacker-controlled URLs | High-Medium |")?;
-    writeln!(
-        content,
-        "| **Denial of Service** | DOS | Crash, hang, or resource exhaust | Medium |"
-    )?;
-    writeln!(
-        content,
-        "| **Data Integrity** | INTEG | Unauthorized data modification | Medium |"
-    )?;
-    writeln!(
-        content,
-        "| **Information Disclosure** | INFO | Leak non-sensitive internal details | Low |"
-    )?;
-    writeln!(
-        content,
-        "| **Code Quality** | QUAL | Maintainability, not security-exploitable | Low |"
-    )?;
+    writeln!(content, "| **Denial of Service** | DOS | Crash, hang, or resource exhaust | Medium |")?;
+    writeln!(content, "| **Data Integrity** | INTEG | Unauthorized data modification | Medium |")?;
+    writeln!(content, "| **Information Disclosure** | INFO | Leak non-sensitive internal details | Low |")?;
+    writeln!(content, "| **Code Quality** | QUAL | Maintainability, not security-exploitable | Low |")?;
     writeln!(&mut content)?;
 
     // ===== CONTEXTUAL SEVERITY MODEL =====
     writeln!(content, "---")?;
     writeln!(content, "## Step 4: Contextual Severity Rating")?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "Use this model instead of raw CVSS. Final severity considers reachability and context."
-    )?;
+    writeln!(content, "Use this model instead of raw CVSS. Final severity considers reachability and context.")?;
     writeln!(&mut content)?;
     writeln!(content, "```")?;
-    writeln!(
-        content,
-        "Final Severity = Base Severity + Reachability Modifier + Context Modifier"
-    )?;
+    writeln!(content, "Final Severity = Base Severity + Reachability Modifier + Context Modifier")?;
     writeln!(content, "```")?;
     writeln!(&mut content)?;
     writeln!(content, "### Base Severity (from Impact Type)")?;
     writeln!(&mut content)?;
     writeln!(content, "| Base | Impact Types |")?;
     writeln!(content, "|------|-------------|")?;
-    writeln!(
-        content,
-        "| Critical | RCE, AUTH bypass, MEM corruption with control |"
-    )?;
-    writeln!(
-        content,
-        "| High | INJ (SQL/Cmd), PRIV escalation, DATA exposure (credentials/PII) |"
-    )?;
-    writeln!(
-        content,
-        "| Medium | SSRF, PATH traversal, DOS, DATA exposure (non-sensitive) |"
-    )?;
+    writeln!(content, "| Critical | RCE, AUTH bypass, MEM corruption with control |")?;
+    writeln!(content, "| High | INJ (SQL/Cmd), PRIV escalation, DATA exposure (credentials/PII) |")?;
+    writeln!(content, "| Medium | SSRF, PATH traversal, DOS, DATA exposure (non-sensitive) |")?;
     writeln!(content, "| Low | INFO disclosure, QUAL issues |")?;
     writeln!(&mut content)?;
     writeln!(content, "### Reachability Modifier")?;
@@ -2833,28 +1927,16 @@ fn build_llm_prompt_content(
     writeln!(content, "| Context | Modifier |")?;
     writeln!(content, "|---------|----------|")?;
     writeln!(content, "| Rate limiting present | -1 level for DOS |")?;
-    writeln!(
-        content,
-        "| Input validation exists (but incomplete) | Note in analysis |"
-    )?;
-    writeln!(
-        content,
-        "| Defense-in-depth (other controls exist) | Note, don't reduce |"
-    )?;
-    writeln!(
-        content,
-        "| Rust's borrow checker prevents exploitation | Can dismiss if proven |"
-    )?;
+    writeln!(content, "| Input validation exists (but incomplete) | Note in analysis |")?;
+    writeln!(content, "| Defense-in-depth (other controls exist) | Note, don't reduce |")?;
+    writeln!(content, "| Rust's borrow checker prevents exploitation | Can dismiss if proven |")?;
     writeln!(&mut content)?;
 
     // ===== REMEDIATION REQUIREMENTS =====
     writeln!(content, "---")?;
     writeln!(content, "## Step 5: Remediation with Code")?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "For each true positive, provide **concrete code fixes**:"
-    )?;
+    writeln!(content, "For each true positive, provide **concrete code fixes**:")?;
     writeln!(&mut content)?;
     writeln!(content, "### Required Format")?;
     writeln!(&mut content)?;
@@ -2863,53 +1945,32 @@ fn build_llm_prompt_content(
     writeln!(&mut content)?;
     writeln!(content, "**Vulnerable Code:**")?;
     writeln!(content, "```rust")?;
-    writeln!(
-        content,
-        "// Current: SQL injection via string interpolation"
-    )?;
-    writeln!(
-        content,
-        "let query = format!(\"SELECT * FROM users WHERE id = {{}}\", user_id);"
-    )?;
+    writeln!(content, "// Current: SQL injection via string interpolation")?;
+    writeln!(content, "let query = format!(\"SELECT * FROM users WHERE id = {{}}\", user_id);")?;
     writeln!(content, "conn.execute(&query)?;")?;
     writeln!(content, "```")?;
     writeln!(&mut content)?;
     writeln!(content, "**Fixed Code:**")?;
     writeln!(content, "```rust")?;
     writeln!(content, "// Fixed: Parameterized query prevents injection")?;
-    writeln!(
-        content,
-        "sqlx::query(\"SELECT * FROM users WHERE id = $1\")"
-    )?;
+    writeln!(content, "sqlx::query(\"SELECT * FROM users WHERE id = $1\")")?;
     writeln!(content, "    .bind(user_id)")?;
     writeln!(content, "    .fetch_one(&pool)")?;
     writeln!(content, "    .await?;")?;
     writeln!(content, "```")?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "**Recommended Libraries:** `sqlx` with compile-time query checking"
-    )?;
+    writeln!(content, "**Recommended Libraries:** `sqlx` with compile-time query checking")?;
     writeln!(content, "**Effort Estimate:** ~2 hours (includes testing)")?;
     writeln!(content, "**Breaking Changes:** None - same return type")?;
     writeln!(content, "````")?;
     writeln!(&mut content)?;
     writeln!(content, "### Remediation Quality Checklist")?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "- [ ] **SOURCE VERIFIED**: Code snippet was read from actual source file, not synthesized"
-    )?;
-    writeln!(
-        content,
-        "- [ ] **LINE CONFIRMED**: The reported line number matches the vulnerable pattern"
-    )?;
+    writeln!(content, "- [ ] **SOURCE VERIFIED**: Code snippet was read from actual source file, not synthesized")?;
+    writeln!(content, "- [ ] **LINE CONFIRMED**: The reported line number matches the vulnerable pattern")?;
     writeln!(content, "- [ ] Code compiles (valid Rust syntax)")?;
     writeln!(content, "- [ ] Uses idiomatic Rust patterns")?;
-    writeln!(
-        content,
-        "- [ ] Recommends well-maintained crates (check if unsure)"
-    )?;
+    writeln!(content, "- [ ] Recommends well-maintained crates (check if unsure)")?;
     writeln!(content, "- [ ] Includes error handling")?;
     writeln!(content, "- [ ] Notes any API/behavior changes")?;
     writeln!(&mut content)?;
@@ -2919,24 +1980,11 @@ fn build_llm_prompt_content(
     writeln!(content, "## Required Output Format")?;
     writeln!(&mut content)?;
     writeln!(content, "Generate the report in this exact structure:")?;
-    writeln!(content, "- Include a **Scan Configuration** section (Flag, Value, Source) after Remediation Roadmap, before the Appendices.")?;
-    writeln!(content, "- Replace `[your model name]` with your actual model identifier (e.g., Claude Sonnet 4, GPT-4o, Llama 3.1).")?;
-    writeln!(content, "- Fill in `[repository URL]` and `[local path]` from the crate path in Scan Configuration if known.")?;
-    writeln!(&mut content)?;
-    writeln!(content, "> Do not create new findings, functions, files, or line numbers beyond what is present in the Findings table. If information is missing, state 'Insufficient data in prompt' instead of guessing.")?;
     writeln!(&mut content)?;
     writeln!(content, "````markdown")?;
     writeln!(content, "# Security Assessment Report: {}", project_name)?;
     writeln!(&mut content)?;
-    writeln!(content, "**Target Project:** `{}` - [brief description]", project_name)?;
-    writeln!(content, "**Repository:** [repository URL or 'local project']")?;
-    writeln!(content, "**Local Path:** [scanned crate path]")?;
-    writeln!(&mut content)?;
-    writeln!(
-        content,
-        "**Date:** {} | **Triaged by:** [your model name] | **Tool:** Rust-COLA v1.0",
-        date_str
-    )?;
+    writeln!(content, "**Date:** {} | **Assessed By:** AI-Assisted Analysis | **Tool:** Rust-COLA v1.0", date_str)?;
     writeln!(&mut content)?;
     writeln!(content, "---")?;
     writeln!(&mut content)?;
@@ -2948,14 +1996,8 @@ fn build_llm_prompt_content(
     writeln!(&mut content)?;
     writeln!(content, "### Findings Overview")?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "| Severity | Count | Exploitable | Requires Immediate Action |"
-    )?;
-    writeln!(
-        content,
-        "|----------|-------|-------------|---------------------------|"
-    )?;
+    writeln!(content, "| Severity | Count | Exploitable | Requires Immediate Action |")?;
+    writeln!(content, "|----------|-------|-------------|---------------------------|")?;
     writeln!(content, "| Critical | X | X | Yes |")?;
     writeln!(content, "| High | X | X | Yes - within 1 sprint |")?;
     writeln!(content, "| Medium | X | X | Within 30 days |")?;
@@ -2964,10 +2006,7 @@ fn build_llm_prompt_content(
     writeln!(&mut content)?;
     writeln!(content, "### Key Findings")?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "1. **[Most critical finding]** - [one-line description]"
-    )?;
+    writeln!(content, "1. **[Most critical finding]** - [one-line description]")?;
     writeln!(content, "2. **[Second priority]** - [one-line description]")?;
     writeln!(content, "3. **[Third priority]** - [one-line description]")?;
     writeln!(&mut content)?;
@@ -2985,10 +2024,7 @@ fn build_llm_prompt_content(
     writeln!(content, "| **Location** | `file.rs:line` |")?;
     writeln!(content, "| **Exploitability** | [Proven/Likely/Possible] |")?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "**Description:** [What the vulnerability is and why it matters]"
-    )?;
+    writeln!(content, "**Description:** [What the vulnerability is and why it matters]")?;
     writeln!(&mut content)?;
     writeln!(content, "**Attack Path:**")?;
     writeln!(content, "```")?;
@@ -2997,10 +2033,7 @@ fn build_llm_prompt_content(
     writeln!(content, "  → [vulnerable sink]")?;
     writeln!(content, "```")?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "**Business Impact:** [What an attacker could achieve]"
-    )?;
+    writeln!(content, "**Business Impact:** [What an attacker could achieve]")?;
     writeln!(&mut content)?;
     writeln!(content, "#### Remediation")?;
     writeln!(&mut content)?;
@@ -3028,10 +2061,7 @@ fn build_llm_prompt_content(
     writeln!(&mut content)?;
     writeln!(content, "| ID | Finding | Location | Impact | Effort |")?;
     writeln!(content, "|----|---------|----------|--------|--------|")?;
-    writeln!(
-        content,
-        "| RUSTCOLAXX | [description] | file.rs:line | [impact] | [X hours] |"
-    )?;
+    writeln!(content, "| RUSTCOLAXX | [description] | file.rs:line | [impact] | [X hours] |")?;
     writeln!(&mut content)?;
     writeln!(content, "---")?;
     writeln!(&mut content)?;
@@ -3039,28 +2069,10 @@ fn build_llm_prompt_content(
     writeln!(&mut content)?;
     writeln!(content, "| Priority | Finding | Effort | Target |")?;
     writeln!(content, "|----------|---------|--------|--------|")?;
-    writeln!(
-        content,
-        "| **P0** (Immediate) | [finding] | [hours] | Before next deploy |"
-    )?;
-    writeln!(
-        content,
-        "| **P1** (Sprint) | [finding] | [hours] | This sprint |"
-    )?;
-    writeln!(
-        content,
-        "| **P2** (30 days) | [finding] | [hours] | This month |"
-    )?;
-    writeln!(
-        content,
-        "| **P3** (Backlog) | [finding] | [hours] | When convenient |"
-    )?;
-    writeln!(&mut content)?;
-    writeln!(content, "---")?;
-    writeln!(&mut content)?;
-    writeln!(content, "## Scan Configuration")?;
-    writeln!(&mut content)?;
-    writeln!(content, "[Reproduce the Scan Configuration table from above]")?;
+    writeln!(content, "| **P0** (Immediate) | [finding] | [hours] | Before next deploy |")?;
+    writeln!(content, "| **P1** (Sprint) | [finding] | [hours] | This sprint |")?;
+    writeln!(content, "| **P2** (30 days) | [finding] | [hours] | This month |")?;
+    writeln!(content, "| **P3** (Backlog) | [finding] | [hours] | When convenient |")?;
     writeln!(&mut content)?;
     writeln!(content, "---")?;
     writeln!(&mut content)?;
@@ -3068,64 +2080,30 @@ fn build_llm_prompt_content(
     writeln!(&mut content)?;
     writeln!(content, "| Finding | Reason | Evidence |")?;
     writeln!(content, "|---------|--------|----------|")?;
-    writeln!(
-        content,
-        "| [RULE_ID] | [Test code/Constant/etc.] | [file path or code quote] |"
-    )?;
+    writeln!(content, "| [RULE_ID] | [Test code/Constant/etc.] | [file path or code quote] |")?;
     writeln!(&mut content)?;
     writeln!(content, "---")?;
     writeln!(&mut content)?;
     writeln!(content, "## Appendix B: Methodology")?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "This assessment was performed using Rust-COLA static analysis on MIR (Mid-level IR),"
-    )?;
+    writeln!(content, "This assessment was performed using Rust-COLA static analysis on MIR (Mid-level IR),")?;
     writeln!(content, "followed by AI-assisted triage for false positive elimination and exploitability analysis.")?;
     writeln!(content, "````")?;
     writeln!(&mut content)?;
-
-    if let Some(rules) = rule_reference {
-        if !rules.is_empty() {
-            writeln!(content, "---")?;
-            writeln!(content, "## Rule Reference")?;
-            writeln!(&mut content)?;
-            for rule in rules {
-                writeln!(
-                    content,
-                    "- **{}** ({}): {} [Severity: {:?}]",
-                    rule.id, rule.name, rule.short_description, rule.default_severity
-                )?;
-            }
-            writeln!(&mut content)?;
-        }
-    }
 
     // ===== DEPENDENCY VULNERABILITIES (if any) =====
     if !audit_vulns.is_empty() {
         writeln!(content, "---")?;
         writeln!(content, "## Dependency Vulnerabilities (cargo-audit)")?;
         writeln!(&mut content)?;
-        writeln!(
-            content,
-            "Include these in your report under a \"Dependency Vulnerabilities\" section:"
-        )?;
+        writeln!(content, "Include these in your report under a \"Dependency Vulnerabilities\" section:")?;
         writeln!(&mut content)?;
-        writeln!(
-            content,
-            "| Advisory | Package | Version | Severity | Title |"
-        )?;
-        writeln!(
-            content,
-            "|----------|---------|---------|----------|-------|"
-        )?;
+        writeln!(content, "| Advisory | Package | Version | Severity | Title |")?;
+        writeln!(content, "|----------|---------|---------|----------|-------|")?;
         for vuln in audit_vulns {
             let severity = vuln.severity.as_deref().unwrap_or("unknown");
-            writeln!(
-                content,
-                "| {} | {} | {} | {} | {} |",
-                vuln.id, vuln.package, vuln.version, severity, vuln.title
-            )?;
+            writeln!(content, "| {} | {} | {} | {} | {} |",
+                vuln.id, vuln.package, vuln.version, severity, vuln.title)?;
         }
         writeln!(&mut content)?;
     }
@@ -3137,14 +2115,9 @@ fn build_llm_prompt_content(
 
     let findings_limit = 100;
     let show_all = findings.len() <= findings_limit;
-
+    
     if !show_all {
-        writeln!(
-            content,
-            "⚠️ *Showing {} of {} findings. Focus on highest severity first.*",
-            findings_limit,
-            findings.len()
-        )?;
+        writeln!(content, "⚠️ *Showing {} of {} findings. Focus on highest severity first.*", findings_limit, findings.len())?;
         writeln!(&mut content)?;
     }
 
@@ -3152,21 +2125,13 @@ fn build_llm_prompt_content(
     writeln!(&mut content)?;
 
     // Group findings by severity for better organization
-    let critical_high: Vec<_> = findings
-        .iter()
-        .filter(|f| {
-            matches!(
-                f.severity,
-                mir_extractor::Severity::Critical | mir_extractor::Severity::High
-            )
-        })
+    let critical_high: Vec<_> = findings.iter()
+        .filter(|f| matches!(f.severity, mir_extractor::Severity::Critical | mir_extractor::Severity::High))
         .collect();
-    let medium: Vec<_> = findings
-        .iter()
+    let medium: Vec<_> = findings.iter()
         .filter(|f| matches!(f.severity, mir_extractor::Severity::Medium))
         .collect();
-    let low_info: Vec<_> = findings
-        .iter()
+    let low_info: Vec<_> = findings.iter()
         .filter(|f| matches!(f.severity, mir_extractor::Severity::Low))
         .collect();
 
@@ -3177,13 +2142,7 @@ fn build_llm_prompt_content(
 
     // Output findings
     for (i, finding) in findings.iter().take(findings_limit).enumerate() {
-        writeln!(
-            content,
-            "### Finding {}: {} ({:?})",
-            i + 1,
-            finding.rule_id,
-            finding.severity
-        )?;
+        writeln!(content, "### Finding {}: {} ({:?})", i + 1, finding.rule_id, finding.severity)?;
         writeln!(&mut content)?;
         writeln!(content, "| Attribute | Value |")?;
         writeln!(content, "|-----------|-------|")?;
@@ -3191,55 +2150,24 @@ fn build_llm_prompt_content(
         writeln!(content, "| **Severity** | {:?} |", finding.severity)?;
         writeln!(content, "| **Function** | `{}` |", finding.function)?;
         if let Some(span) = &finding.span {
-            writeln!(
-                content,
-                "| **Location** | `{}:{}` |",
-                span.file, span.start_line
-            )?;
-        }
-        
-        // Use CodeContext field for context hints
-        match finding.code_context {
-            mir_extractor::CodeContext::Test => {
-                writeln!(
-                    content,
-                    "| **Context** | ⚠️ Test code - likely false positive |"
-                )?;
-            }
-            mir_extractor::CodeContext::Example => {
-                writeln!(
-                    content,
-                    "| **Context** | ⚠️ Example code - likely false positive |"
-                )?;
-            }
-            mir_extractor::CodeContext::Benchmark => {
-                writeln!(
-                    content,
-                    "| **Context** | ⚠️ Benchmark code - likely false positive |"
-                )?;
-            }
-            mir_extractor::CodeContext::Generated => {
-                writeln!(
-                    content,
-                    "| **Context** | Generated code - assess if running external commands |"
-                )?;
-            }
-            mir_extractor::CodeContext::Production => {
-                // Check for build.rs as special case within production context
-                if let Some(span) = &finding.span {
-                    if span.file.ends_with("build.rs") {
-                        writeln!(
-                            content,
-                            "| **Context** | Build script - assess if running external commands |"
-                        )?;
-                    }
-                }
+            writeln!(content, "| **Location** | `{}:{}` |", span.file, span.start_line)?;
+            
+            // Add context hints for pruning
+            let file_lower = span.file.to_lowercase();
+            if file_lower.contains("test") || file_lower.contains("/tests/") {
+                writeln!(content, "| **Context** | ⚠️ Test code - likely false positive |")?;
+            } else if file_lower.contains("example") || file_lower.contains("/examples/") {
+                writeln!(content, "| **Context** | ⚠️ Example code - likely false positive |")?;
+            } else if file_lower.contains("bench") || file_lower.contains("/benches/") {
+                writeln!(content, "| **Context** | ⚠️ Benchmark code - likely false positive |")?;
+            } else if span.file.ends_with("build.rs") {
+                writeln!(content, "| **Context** | Build script - assess if running external commands |")?;
             }
         }
         writeln!(&mut content)?;
         writeln!(content, "**Issue:** {}", finding.message)?;
         writeln!(&mut content)?;
-
+        
         if !finding.evidence.is_empty() {
             writeln!(content, "**Evidence:**")?;
             writeln!(content, "```rust")?;
@@ -3248,186 +2176,65 @@ fn build_llm_prompt_content(
             }
             writeln!(content, "```")?;
         }
-
-        // Add rule-specific guard hints
-        if let Some(hints) = get_guard_hints_for_rule(&finding.rule_id) {
-            writeln!(&mut content)?;
-            writeln!(content, "**🔍 Guard Check:** {}", hints.what_to_check)?;
-            writeln!(content, "- Search for: `{}`", hints.patterns.iter().take(6).cloned().collect::<Vec<_>>().join("`, `"))?;
-            writeln!(content, "- **False positive if:** {}", hints.false_positive_if)?;
-        }
-
         writeln!(&mut content)?;
         writeln!(content, "---")?;
         writeln!(&mut content)?;
     }
-
-    // ===== OUTPUT VERIFICATION =====
-    writeln!(content, "## Step 6: Output Verification")?;
-    writeln!(&mut content)?;
-    writeln!(content, "Before delivering the report:")?;
-    writeln!(
-        content,
-        "- Re-read your draft and highlight every code/file reference."
-    )?;
-    writeln!(content, "- Confirm each path + line exists in the Findings table and the quoted snippet matches the provided Evidence block exactly (no invention or rewording).")?;
-    writeln!(content, "- Ensure every Exploitable/Not exploitable statement agrees with the reachability table created in Step 2.")?;
-    writeln!(content, "- If any reference cannot be tied back to the static findings, replace it with `Unknown – not present in static findings` and explain the gap instead of speculating.")?;
-    writeln!(&mut content)?;
 
     // ===== FINAL REMINDERS =====
     writeln!(content, "## Final Checklist")?;
     writeln!(&mut content)?;
     writeln!(content, "Before submitting your report, verify:")?;
     writeln!(&mut content)?;
-    writeln!(
-        content,
-        "- [ ] **CRITICAL: Every code snippet was read from actual source files, NOT synthesized**"
-    )?;
+    writeln!(content, "- [ ] **CRITICAL: Every code snippet was read from actual source files, NOT synthesized**")?;
     writeln!(content, "- [ ] **CRITICAL: Line numbers verified against source - finding exists at reported location**")?;
-    writeln!(
-        content,
-        "- [ ] **CRITICAL: Guard patterns searched for each finding (Step 0.5) - bounded allocations dismissed**"
-    )?;
-    writeln!(
-        content,
-        "- [ ] All test/example/benchmark code findings dismissed with evidence"
-    )?;
-    writeln!(
-        content,
-        "- [ ] Each true positive has reachability classification"
-    )?;
+    writeln!(content, "- [ ] All test/example/benchmark code findings dismissed with evidence")?;
+    writeln!(content, "- [ ] Each true positive has reachability classification")?;
     writeln!(content, "- [ ] **CRITICAL: Each AUTHENTICATED claim has evidence (middleware location, no bypass flags)**")?;
-    writeln!(
-        content,
-        "- [ ] **CRITICAL: Auth bypass flags (--without-auth, etc.) documented if they exist**"
-    )?;
-    writeln!(
-        content,
-        "- [ ] Each true positive has impact type (RCE/INJ/DOS/etc.)"
-    )?;
-    writeln!(
-        content,
-        "- [ ] Severity reflects reachability, not just base CVSS"
-    )?;
+    writeln!(content, "- [ ] **CRITICAL: Auth bypass flags (--without-auth, etc.) documented if they exist**")?;
+    writeln!(content, "- [ ] Each true positive has impact type (RCE/INJ/DOS/etc.)")?;
+    writeln!(content, "- [ ] Severity reflects reachability, not just base CVSS")?;
     writeln!(content, "- [ ] Remediation includes compilable code fixes")?;
     writeln!(content, "- [ ] Executive summary is 2-3 sentences max")?;
-    writeln!(
-        content,
-        "- [ ] Roadmap has clear priorities and effort estimates"
-    )?;
+    writeln!(content, "- [ ] Roadmap has clear priorities and effort estimates")?;
     writeln!(&mut content)?;
 
-    Ok(content)
-}
-
-/// Generate an LLM prompt file for use with IDE-integrated AI assistants
-/// This creates a markdown file with findings formatted as a prompt ready to paste
-/// into Copilot Chat, Cursor, or any other AI assistant integrated into the IDE.
-fn generate_llm_prompt(
-    path: &Path,
-    project_name: &str,
-    findings: &[Finding],
-    _rules: &[mir_extractor::RuleMetadata],
-    audit_vulns: &[AuditVulnerability],
-    scan_config: &ScanConfigSnapshot,
-) -> Result<()> {
-    let content = build_llm_prompt_content(
-        project_name,
-        findings,
-        audit_vulns,
-        Some(path),
-        true,
-        None,
-        Some(scan_config),
-    )?;
-
+    // Write file
     if let Some(parent) = path.parent() {
         if !parent.exists() {
             fs::create_dir_all(parent)?;
         }
     }
-    let mut file =
-        File::create(path).with_context(|| format!("create LLM prompt at {}", path.display()))?;
+    let mut file = File::create(path)
+        .with_context(|| format!("create LLM prompt at {}", path.display()))?;
     file.write_all(content.as_bytes())?;
-
+    
     eprintln!("  LLM prompt written to: {}", path.display());
-
+    
     Ok(())
-}
-
-/// Detect the code context (production, test, example, benchmark) for a finding
-/// based on file path patterns and function name patterns
-fn detect_code_context(finding: &Finding) -> mir_extractor::CodeContext {
-    // Check file path from span
-    if let Some(span) = &finding.span {
-        let file_path = span.file.to_lowercase();
-        
-        // Test code patterns
-        if file_path.starts_with("tests/") 
-            || file_path.contains("/tests/")
-            || file_path.contains("/test_")
-            || file_path.ends_with("_test.rs")
-            || file_path.contains("::test::")
-            || file_path.contains("/tests.rs") {
-            return mir_extractor::CodeContext::Test;
-        }
-        
-        // Example code patterns
-        if file_path.starts_with("examples/") 
-            || file_path.contains("/examples/") {
-            return mir_extractor::CodeContext::Example;
-        }
-        
-        // Benchmark code patterns
-        if file_path.starts_with("benches/") 
-            || file_path.contains("/benches/") {
-            return mir_extractor::CodeContext::Benchmark;
-        }
-    }
-    
-    // Also check the function field which sometimes contains path info
-    let func_lower = finding.function.to_lowercase();
-    
-    if func_lower.contains("::tests::") 
-        || func_lower.contains("::test_")
-        || func_lower.starts_with("test_") {
-        return mir_extractor::CodeContext::Test;
-    }
-    
-    if func_lower.contains("/examples/") {
-        return mir_extractor::CodeContext::Example;
-    }
-    
-    if func_lower.contains("/benches/") 
-        || func_lower.contains("::bench_") {
-        return mir_extractor::CodeContext::Benchmark;
-    }
-    
-    mir_extractor::CodeContext::Production
 }
 
 /// Compute a heuristic false positive likelihood score (0.0 = definitely real, 1.0 = definitely FP)
 fn compute_false_positive_likelihood(finding: &Finding) -> f64 {
     let mut score: f64 = 0.0;
-
-    // Use CodeContext as primary signal for non-production code
-    match finding.code_context {
-        mir_extractor::CodeContext::Test => score += 0.5,
-        mir_extractor::CodeContext::Example => score += 0.45,
-        mir_extractor::CodeContext::Benchmark => score += 0.35,
-        mir_extractor::CodeContext::Generated => score += 0.3,
-        mir_extractor::CodeContext::Production => {}
-    }
-
-    // Additional heuristics for mock/fixture patterns (not covered by CodeContext)
+    
+    // Check file path patterns
     if let Some(span) = &finding.span {
         let file = span.file.to_lowercase();
+        if file.contains("/test") || file.contains("_test.rs") || file.contains("/tests/") {
+            score += 0.4;
+        }
+        if file.contains("/example") {
+            score += 0.35;
+        }
         if file.contains("/mock") || file.contains("/fixture") {
             score += 0.3;
         }
+        if file.contains("/benches/") || file.contains("_bench.rs") {
+            score += 0.25;
+        }
     }
-
+    
     // Check function name patterns
     let func = finding.function.to_lowercase();
     if func.contains("test_") || func.starts_with("test") || func.contains("_test") {
@@ -3439,13 +2246,11 @@ fn compute_false_positive_likelihood(finding: &Finding) -> f64 {
     if func.contains("example") || func.contains("demo") {
         score += 0.2;
     }
-
+    
     // Check evidence for common FP patterns
     for ev in &finding.evidence {
         let ev_lower = ev.to_lowercase();
-        if ev_lower.contains("const ")
-            && (ev_lower.contains("\"select") || ev_lower.contains("\"insert"))
-        {
+        if ev_lower.contains("const ") && (ev_lower.contains("\"select") || ev_lower.contains("\"insert")) {
             // SQL in const string - common false positive
             score += 0.2;
         }
@@ -3454,34 +2259,33 @@ fn compute_false_positive_likelihood(finding: &Finding) -> f64 {
             score += 0.1;
         }
     }
-
+    
     score.min(1.0_f64)
 }
 
 /// Get a human-readable reason for why something is likely a false positive
 fn get_fp_reason(finding: &Finding) -> &'static str {
-    // Use CodeContext as primary signal
-    match finding.code_context {
-        mir_extractor::CodeContext::Test => return "In test code",
-        mir_extractor::CodeContext::Example => return "In example code",
-        mir_extractor::CodeContext::Benchmark => return "In benchmark code",
-        mir_extractor::CodeContext::Generated => return "In generated code",
-        mir_extractor::CodeContext::Production => {}
-    }
-
-    // Additional checks for patterns not covered by CodeContext
     if let Some(span) = &finding.span {
         let file = span.file.to_lowercase();
+        if file.contains("/test") || file.contains("_test.rs") || file.contains("/tests/") {
+            return "In test code";
+        }
+        if file.contains("/example") {
+            return "In example code";
+        }
         if file.contains("/mock") || file.contains("/fixture") {
             return "In mock/fixture code";
         }
     }
-
+    
     let func = finding.function.to_lowercase();
+    if func.contains("test") {
+        return "Test function";
+    }
     if func.contains("mock") || func.contains("fake") {
         return "Mock/fake function";
     }
-
+    
     "Other heuristic match"
 }
 
@@ -3493,41 +2297,37 @@ fn write_finding_detail(
     rules: &[mir_extractor::RuleMetadata],
 ) -> Result<()> {
     use std::fmt::Write as _;
-
+    
     let rule = rules.iter().find(|r| r.id == finding.rule_id);
     let rule_name = rule.map(|r| r.name.as_str()).unwrap_or("unknown");
 
-    writeln!(
-        content,
-        "### {}. {} - {} [{:?}]",
-        index, finding.rule_id, rule_name, finding.severity
-    )?;
+    writeln!(content, "### {}. {} - {} [{:?}]", index, finding.rule_id, rule_name, finding.severity)?;
     writeln!(content)?;
-
+    
     // Location
     if let Some(span) = &finding.span {
         writeln!(content, "**Location:** {}:{}", span.file, span.start_line)?;
     }
     writeln!(content, "**Function:** {}", finding.function)?;
-
+    
     // CWE if available
     if !finding.cwe_ids.is_empty() {
         writeln!(content, "**CWE:** {}", finding.cwe_ids.join(", "))?;
     }
-
+    
     // Confidence
     writeln!(content, "**Confidence:** {:?}", finding.confidence)?;
     writeln!(content)?;
-
+    
     writeln!(content, "**Issue:** {}", finding.message)?;
     writeln!(content)?;
-
+    
     // Fix suggestion if available
     if let Some(fix) = &finding.fix_suggestion {
         writeln!(content, "**Fix:** {}", fix)?;
         writeln!(content)?;
     }
-
+    
     // Evidence (simplified)
     if !finding.evidence.is_empty() {
         writeln!(content, "**Evidence:**")?;
@@ -3538,7 +2338,7 @@ fn write_finding_detail(
         writeln!(content, "```")?;
         writeln!(content)?;
     }
-
+    
     Ok(())
 }
 
@@ -3548,7 +2348,7 @@ fn chrono_lite_date() -> String {
     let duration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
-
+    
     // Attempt to get local timezone offset
     // On Unix systems, we can check /etc/localtime or TZ environment variable
     // For simplicity, we'll use a heuristic based on common US timezones
@@ -3556,25 +2356,13 @@ fn chrono_lite_date() -> String {
         .ok()
         .and_then(|tz| {
             let tz_lower = tz.to_lowercase();
-            if tz_lower.contains("pst")
-                || tz_lower.contains("pacific")
-                || tz_lower.contains("los_angeles")
-            {
+            if tz_lower.contains("pst") || tz_lower.contains("pacific") || tz_lower.contains("los_angeles") {
                 Some(-8)
-            } else if tz_lower.contains("mst")
-                || tz_lower.contains("mountain")
-                || tz_lower.contains("denver")
-            {
+            } else if tz_lower.contains("mst") || tz_lower.contains("mountain") || tz_lower.contains("denver") {
                 Some(-7)
-            } else if tz_lower.contains("cst")
-                || tz_lower.contains("central")
-                || tz_lower.contains("chicago")
-            {
+            } else if tz_lower.contains("cst") || tz_lower.contains("central") || tz_lower.contains("chicago") {
                 Some(-6)
-            } else if tz_lower.contains("est")
-                || tz_lower.contains("eastern")
-                || tz_lower.contains("new_york")
-            {
+            } else if tz_lower.contains("est") || tz_lower.contains("eastern") || tz_lower.contains("new_york") {
                 Some(-5)
             } else if tz_lower.contains("utc") || tz_lower.contains("gmt") {
                 Some(0)
@@ -3583,10 +2371,10 @@ fn chrono_lite_date() -> String {
             }
         })
         .unwrap_or(-8); // Default to PST for US-based development
-
+    
     let adjusted_secs = duration.as_secs() as i64 + (tz_offset_hours * 3600);
     let mut days = adjusted_secs / 86400;
-
+    
     // Calculate year, accounting for leap years
     let mut year = 1970i64;
     loop {
@@ -3597,14 +2385,14 @@ fn chrono_lite_date() -> String {
         days -= days_in_year;
         year += 1;
     }
-
+    
     // Calculate month and day
     let days_in_months: [i64; 12] = if is_leap_year(year) {
         [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
     } else {
         [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
     };
-
+    
     let mut month = 1;
     for &dim in &days_in_months {
         if days < dim {
@@ -3614,7 +2402,7 @@ fn chrono_lite_date() -> String {
         month += 1;
     }
     let day = days + 1;
-
+    
     format!("{:04}-{:02}-{:02}", year, month, day)
 }
 
@@ -3633,22 +2421,22 @@ fn get_rule_fp_estimate(rule_id: &str) -> (Option<u8>, &'static str) {
         "RUSTCOLA065" => (Some(10), "Cleartext env vars - keyword-based"),
         "RUSTCOLA005" => (Some(5), "Weak crypto - MD5/SHA1 detection"),
         "RUSTCOLA006" => (Some(5), "Hardcoded secrets - pattern-based"),
-
+        
         // Medium FP rate rules - context-dependent
         "RUSTCOLA024" => (Some(25), "Unbounded allocation - needs context"),
         "RUSTCOLA044" => (Some(35), "Timing attack - may be intentional"),
         "RUSTCOLA007" => (Some(40), "Command execution - may be intentional"),
         "RUSTCOLA088" => (Some(35), "SSRF - depends on URL source"),
         "RUSTCOLA011" => (Some(45), "Non-HTTPS - many safe dev/local cases"),
-
+        
         // Higher FP rate rules - need more context
         "RUSTCOLA022" => (Some(50), "Length truncation - often safe casts"),
         "RUSTCOLA003" => (Some(60), "Unsafe usage - many are safe patterns"),
-
+        
         // Code quality rules - not security FPs
         "RUSTCOLA067" => (None, "Commented code - informational only"),
         "RUSTCOLA020" => (None, "Cargo auditable - build config check"),
-
+        
         _ => (None, ""),
     }
 }
@@ -3661,56 +2449,52 @@ fn write_rule_summary_table(
 ) -> Result<()> {
     use std::collections::HashMap;
     use std::fmt::Write as _;
-
+    
     // Count findings by rule
     let mut by_rule: HashMap<&str, usize> = HashMap::new();
     for finding in findings {
         *by_rule.entry(&finding.rule_id).or_default() += 1;
     }
-
+    
     if by_rule.is_empty() {
         return Ok(());
     }
-
+    
     // Sort by count descending
     let mut sorted_rules: Vec<_> = by_rule.into_iter().collect();
     sorted_rules.sort_by(|a, b| b.1.cmp(&a.1));
-
+    
     writeln!(content, "### Findings by Rule")?;
     writeln!(content)?;
     writeln!(content, "| Rule ID | Name | Count | Est. FP Rate | Notes |")?;
     writeln!(content, "|---------|------|-------|--------------|-------|")?;
-
+    
     for (rule_id, count) in sorted_rules {
-        let rule_name = rules
-            .iter()
+        let rule_name = rules.iter()
             .find(|r| r.id == rule_id)
             .map(|r| r.name.as_str())
             .unwrap_or("unknown");
-
+        
         let (fp_rate, notes) = get_rule_fp_estimate(rule_id);
         let fp_str = fp_rate
             .map(|r| format!("~{}%", r))
             .unwrap_or_else(|| "N/A".to_string());
-
-        writeln!(
-            content,
-            "| {} | {} | {} | {} | {} |",
-            rule_id, rule_name, count, fp_str, notes
-        )?;
+        
+        writeln!(content, "| {} | {} | {} | {} | {} |",
+            rule_id, rule_name, count, fp_str, notes)?;
     }
     writeln!(content)?;
-
+    
     Ok(())
 }
 
 /// Represents a vulnerability found by cargo-audit
 #[derive(Debug, Clone)]
 struct AuditVulnerability {
-    id: String,      // RUSTSEC-XXXX-XXXX
-    package: String, // affected crate name
-    version: String, // installed version
-    title: String,   // vulnerability title
+    id: String,           // RUSTSEC-XXXX-XXXX
+    package: String,      // affected crate name
+    version: String,      // installed version
+    title: String,        // vulnerability title
     severity: Option<String>,
     url: Option<String>,
 }
@@ -3720,7 +2504,9 @@ fn run_cargo_audit(crate_path: &Path) -> Result<Vec<AuditVulnerability>> {
     use std::process::Command;
 
     // Check if cargo-audit is installed
-    let check = Command::new("cargo").args(["audit", "--version"]).output();
+    let check = Command::new("cargo")
+        .args(["audit", "--version"])
+        .output();
 
     match check {
         Ok(output) if output.status.success() => {}
@@ -3752,8 +2538,8 @@ fn run_cargo_audit(crate_path: &Path) -> Result<Vec<AuditVulnerability>> {
     }
 
     // Parse the JSON output
-    let json: Value =
-        serde_json::from_str(&stdout).context("failed to parse cargo-audit JSON output")?;
+    let json: Value = serde_json::from_str(&stdout)
+        .context("failed to parse cargo-audit JSON output")?;
 
     let mut vulnerabilities = Vec::new();
 
@@ -3916,9 +2702,9 @@ struct AstItem {
 /// Collect AST from all source files in a crate
 fn collect_ast_package(crate_root: &Path, crate_name: &str) -> Result<AstPackage> {
     use walkdir::WalkDir;
-
+    
     let mut files = Vec::new();
-
+    
     for entry in WalkDir::new(crate_root)
         .into_iter()
         .filter_entry(|e| {
@@ -3937,7 +2723,7 @@ fn collect_ast_package(crate_root: &Path, crate_name: &str) -> Result<AstPackage
             }
         }
     }
-
+    
     Ok(AstPackage {
         crate_name: crate_name.to_string(),
         files,
@@ -3946,24 +2732,21 @@ fn collect_ast_package(crate_root: &Path, crate_name: &str) -> Result<AstPackage
 
 /// Parse a single source file into AST items
 fn parse_ast_file(path: &Path, crate_root: &Path) -> Result<AstFile> {
-    let content =
-        fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
-
-    let syntax =
-        syn::parse_file(&content).with_context(|| format!("Failed to parse {}", path.display()))?;
-
-    let relative_path = path
-        .strip_prefix(crate_root)
+    let content = fs::read_to_string(path)
+        .with_context(|| format!("Failed to read {}", path.display()))?;
+    
+    let syntax = syn::parse_file(&content)
+        .with_context(|| format!("Failed to parse {}", path.display()))?;
+    
+    let relative_path = path.strip_prefix(crate_root)
         .unwrap_or(path)
         .to_string_lossy()
         .to_string();
-
-    let items: Vec<AstItem> = syntax
-        .items
-        .iter()
-        .filter_map(|item| extract_ast_item(item))
-        .collect();
-
+    
+    let items: Vec<AstItem> = syntax.items.iter().filter_map(|item| {
+        extract_ast_item(item)
+    }).collect();
+    
     Ok(AstFile {
         path: relative_path,
         items,
@@ -3973,7 +2756,7 @@ fn parse_ast_file(path: &Path, crate_root: &Path) -> Result<AstFile> {
 /// Extract simplified AST item information
 fn extract_ast_item(item: &syn::Item) -> Option<AstItem> {
     use syn::*;
-
+    
     let (kind, name, visibility, signature) = match item {
         Item::Fn(f) => (
             "function".to_string(),
@@ -4002,10 +2785,7 @@ fn extract_ast_item(item: &syn::Item) -> Option<AstItem> {
         Item::Impl(i) => (
             "impl".to_string(),
             i.trait_.as_ref().map(|(_, path, _)| {
-                path.segments
-                    .last()
-                    .map(|s| s.ident.to_string())
-                    .unwrap_or_default()
+                path.segments.last().map(|s| s.ident.to_string()).unwrap_or_default()
             }),
             None,
             Some(format!("impl {}", type_to_string(&i.self_ty))),
@@ -4016,7 +2796,12 @@ fn extract_ast_item(item: &syn::Item) -> Option<AstItem> {
             Some(vis_to_string(&m.vis)),
             None,
         ),
-        Item::Use(u) => ("use".to_string(), None, Some(vis_to_string(&u.vis)), None),
+        Item::Use(u) => (
+            "use".to_string(),
+            None,
+            Some(vis_to_string(&u.vis)),
+            None,
+        ),
         Item::Const(c) => (
             "const".to_string(),
             Some(c.ident.to_string()),
@@ -4043,7 +2828,7 @@ fn extract_ast_item(item: &syn::Item) -> Option<AstItem> {
         ),
         _ => return None,
     };
-
+    
     let attributes: Vec<String> = match item {
         Item::Fn(f) => extract_attrs(&f.attrs),
         Item::Struct(s) => extract_attrs(&s.attrs),
@@ -4053,7 +2838,7 @@ fn extract_ast_item(item: &syn::Item) -> Option<AstItem> {
         Item::Mod(m) => extract_attrs(&m.attrs),
         _ => Vec::new(),
     };
-
+    
     Some(AstItem {
         kind,
         name,
@@ -4072,25 +2857,20 @@ fn vis_to_string(vis: &syn::Visibility) -> String {
 }
 
 fn format_fn_args(sig: &syn::Signature) -> String {
-    sig.inputs
-        .iter()
-        .map(|arg| match arg {
-            syn::FnArg::Receiver(r) => if r.reference.is_some() {
-                if r.mutability.is_some() {
-                    "&mut self"
+    sig.inputs.iter().map(|arg| {
+        match arg {
+            syn::FnArg::Receiver(r) => {
+                if r.reference.is_some() {
+                    if r.mutability.is_some() { "&mut self" } else { "&self" }
                 } else {
-                    "&self"
-                }
-            } else {
-                "self"
+                    "self"
+                }.to_string()
             }
-            .to_string(),
             syn::FnArg::Typed(t) => {
                 format!("{}: {}", quote::quote!(#t.pat), quote::quote!(#t.ty))
             }
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
+        }
+    }).collect::<Vec<_>>().join(", ")
 }
 
 fn type_to_string(ty: &syn::Type) -> String {
@@ -4098,22 +2878,24 @@ fn type_to_string(ty: &syn::Type) -> String {
 }
 
 fn extract_attrs(attrs: &[syn::Attribute]) -> Vec<String> {
-    attrs
-        .iter()
-        .filter_map(|attr| attr.path().get_ident().map(|i| i.to_string()))
-        .collect()
+    attrs.iter().filter_map(|attr| {
+        attr.path().get_ident().map(|i| i.to_string())
+    }).collect()
 }
 
 /// Write AST package to JSON file
 fn write_ast_json(path: &Path, ast_package: &AstPackage) -> Result<()> {
-    let json = serde_json::to_string_pretty(ast_package).context("serialize AST package")?;
-    fs::write(path, json).with_context(|| format!("write AST JSON to {}", path.display()))?;
+    let json = serde_json::to_string_pretty(ast_package)
+        .context("serialize AST package")?;
+    fs::write(path, json)
+        .with_context(|| format!("write AST JSON to {}", path.display()))?;
     Ok(())
 }
 
 /// Write workspace AST (multiple crates) to JSON file
 fn write_workspace_ast_json(path: &Path, workspace_ast: &WorkspaceAst) -> Result<()> {
-    let json = serde_json::to_string_pretty(workspace_ast).context("serialize workspace AST")?;
+    let json = serde_json::to_string_pretty(workspace_ast)
+        .context("serialize workspace AST")?;
     fs::write(path, json)
         .with_context(|| format!("write workspace AST JSON to {}", path.display()))?;
     Ok(())
@@ -4183,7 +2965,8 @@ fn write_manifest(
     };
 
     let manifest_path = out_dir.join("manifest.json");
-    let json = serde_json::to_string_pretty(&manifest).context("serialize manifest")?;
+    let json = serde_json::to_string_pretty(&manifest)
+        .context("serialize manifest")?;
     fs::write(&manifest_path, json)
         .with_context(|| format!("write manifest to {}", manifest_path.display()))?;
     Ok(())
@@ -4193,36 +2976,5 @@ fn write_manifest(
 fn path_to_relative(path: &Path, out_dir: &Path) -> String {
     path.strip_prefix(out_dir)
         .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| {
-            path.file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string()
-        })
-}
-
-fn print_rules_inventory(engine: &RuleEngine) {
-    let mut metadata = engine.rule_metadata();
-    metadata.sort_by(|a, b| a.id.cmp(&b.id));
-
-    println!(
-        "cargo-cola ships with {} available rules (built-ins plus loaded rulepacks).",
-        metadata.len()
-    );
-    println!("| ID | Name | Severity | Description |");
-    println!("|-----|------|----------|-------------|");
-
-    for meta in metadata {
-        println!(
-            "| {} | {} | {:?} | {} |",
-            meta.id,
-            meta.name,
-            meta.default_severity,
-            escape_markdown_pipes(&meta.short_description)
-        );
-    }
-}
-
-fn escape_markdown_pipes(text: &str) -> String {
-    text.replace('|', "\\|")
+        .unwrap_or_else(|_| path.file_name().unwrap_or_default().to_string_lossy().to_string())
 }

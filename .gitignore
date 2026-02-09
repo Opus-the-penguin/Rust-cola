@@ -6,6 +6,10 @@ out/
 **/.DS_Store
 test_output/
 
+# Temporary files and scan targets
+tmp/
+targets/
+
 # Cached analysis outputs
 **/mir/
 **/*.cola-cache.json

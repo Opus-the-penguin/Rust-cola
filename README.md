@@ -3,7 +3,7 @@
 [![Version](https://img.shields.io/badge/version-1.0.1-blue.svg)](https://github.com/Opus-the-penguin/Rust-cola/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-Experimental security static analyzer for Rust code.
+Experimental/Researcher security static analyzer for Rust code.
 
 **Note:** Requires nightly Rust. Target code must compile to extract [MIR (Mid-level Intermediate Representation)](https://blog.rust-lang.org/2016/04/19/MIR/).
 

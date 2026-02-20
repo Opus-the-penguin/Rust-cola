@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+#### README
+- **Updated tagline**: Removed "Experimental/Researcher" qualifier
+- **Air-gapped workflow**: Added documentation for `--no-llm-prompt` usage for data residency requirements
+
 #### Workspace Configuration
 - **Unified versioning**: Implemented workspace version inheritance so `cargo-cola` and `mir-extractor` share a single version defined in root `Cargo.toml`
 - **crates.io publishing readiness**: Added version requirement to `mir-extractor` dependency for publishing compatibility

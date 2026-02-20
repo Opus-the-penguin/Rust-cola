@@ -3,7 +3,7 @@
 [![Version](https://img.shields.io/badge/version-1.0.1-blue.svg)](https://github.com/Opus-the-penguin/Rust-cola/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-Experimental/Researcher security static analyzer for Rust code.
+Security static analyzer for Rust code.
 
 **Note:** Requires nightly Rust. Target code must compile to extract [MIR (Mid-level Intermediate Representation)](https://blog.rust-lang.org/2016/04/19/MIR/).
 
@@ -39,6 +39,8 @@ Rust-cola works with LLM-assisted triage.
    - **Claude/ChatGPT:** Upload or paste the file contents
 
 3. The LLM follows the prompt instructions and saves its report to `out/cola/security-report.md`.
+
+**Without LLM (air-gapped/data residency):** Use `--no-llm-prompt` for standalone analysis. The `raw-report.md` contains all findings but without LLM false-positive filtering.
 
 ### Options
 

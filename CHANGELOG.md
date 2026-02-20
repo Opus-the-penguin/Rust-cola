@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+#### Workspace Configuration
+- **Unified versioning**: Implemented workspace version inheritance so `cargo-cola` and `mir-extractor` share a single version defined in root `Cargo.toml`
+- **crates.io publishing readiness**: Added version requirement to `mir-extractor` dependency for publishing compatibility
+
 #### LLM Report Template Improvements
 - **Dynamic model attribution**: Changed "Assessed By: AI-Assisted Analysis" to "Triaged by: [your model name]" so reports reflect which LLM performed the triage
 - **Target project info section**: Added structured header with project name, repository URL, and local path for better report context

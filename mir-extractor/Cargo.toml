@@ -1,11 +1,11 @@
 [package]
 name = "mir-extractor"
-version = "1.0.1"
-edition = "2021"
-authors = ["The Rust-cola Contributors"]
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
 description = "MIR extraction and security rule engine for Rust-cola"
-repository = "https://github.com/Opus-the-penguin/Rust-cola"
-license = "MIT"
+repository.workspace = true
+license.workspace = true
 keywords = ["mir", "rust", "security", "static-analysis"]
 categories = ["development-tools"]
 build = "build.rs"

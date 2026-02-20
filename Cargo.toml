@@ -88,3 +88,10 @@ exclude = [
     "tmp/*",
 ]
 resolver = "2"
+
+[workspace.package]
+version = "1.0.1"
+edition = "2021"
+authors = ["The Rust-cola Contributors"]
+repository = "https://github.com/Opus-the-penguin/Rust-cola"
+license = "MIT"

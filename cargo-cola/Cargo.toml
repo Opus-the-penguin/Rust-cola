@@ -22,7 +22,8 @@ serde_json = "1.0"
 serde_yaml = "0.9"
 mir-extractor = { version = "1.0.1", path = "../mir-extractor" }
 cargo_metadata = "0.18"
-reqwest = { version = "0.11", features = ["blocking", "json"] }
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+bytes = "1.11.1"  # Force patched version for RUSTSEC-2026-0007
 walkdir = "2.5"
 syn = { version = "2.0", features = ["full", "extra-traits"] }
 quote = "1.0"

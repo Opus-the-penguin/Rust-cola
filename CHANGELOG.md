@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **Upgraded reqwest**: Updated from 0.11 to 0.12 to address transitive dependency vulnerabilities
+- **Fixed RUSTSEC-2026-0007**: Added explicit `bytes >= 1.11.1` dependency to patch integer overflow in `BytesMut::reserve`
+
 ### Changed
 
 #### Workspace Configuration

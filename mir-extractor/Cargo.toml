@@ -6,6 +6,7 @@ authors.workspace = true
 description = "MIR extraction and security rule engine for Rust-cola. (Requires nightly)"
 repository.workspace = true
 license.workspace = true
+readme = "README.md"
 keywords = ["mir", "rust", "security", "static-analysis"]
 categories = ["development-tools"]
 build = "build.rs"

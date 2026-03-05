@@ -80,13 +80,27 @@ Explore incremental re-analysis for iterative research workflows:
 - Function-level change detection
 - Taint summary caching across runs
 
-#### 2. Hybrid Analysis
+#### 2. Multi-Threading & Parallelization
+Investigate parallel analysis strategies for large crates and project-level scans:
+- Per-function or per-module parallel taint analysis
+- Concurrent MIR extraction across workspace crates
+- Thread-safe taint summary merging
+- Work-stealing schedulers for load balancing
+- Benchmarking scaling characteristics (core count vs. analysis time)
+
+#### 3. Hybrid Analysis
 Investigate combining static analysis with other techniques:
-- Fuzzing integration for reachability validation
-- Symbolic execution for path feasibility
+- **Cargo-fuzz integration**: Leverage LLVM libFuzzer via cargo-fuzz for reachability validation and input generation
+  - Use static analysis to identify fuzz-worthy entry points
+  - Generate fuzz harnesses from taint paths
+  - Correlate fuzzer-discovered crashes with static findings
+- **Symbolic execution with constraint solvers**: Integrate SMT solvers (Z3, CVC5) for path feasibility analysis
+  - Encode path conditions from MIR control flow
+  - Prove/disprove reachability of vulnerable sinks
+  - Reason about integer bounds to eliminate false positives
 - LLM-assisted code understanding
 
-#### 3. Cross-Crate Analysis
+#### 4. Cross-Crate Analysis
 Research challenges in analyzing crate dependencies:
 - Taint propagation across crate boundaries
 - Trait-based polymorphism handling
@@ -101,10 +115,26 @@ Research challenges in analyzing crate dependencies:
 - Trade-offs between expressiveness and performance
 - Composable rule primitives
 
+### Query Language / Engine (CodeQL-style)
+Investigate a declarative query language for expressing vulnerability patterns:
+- SQL-like or Datalog-based syntax for querying MIR/CFG structures
+- Composable predicates for taint sources, sinks, and sanitizers
+- Integration with existing rule definitions
+- Query optimization for large codebases
+- Potential inspiration: CodeQL, Semgrep, tree-sitter queries
+
 ### Empirical Rule Evaluation
 - Methodology for measuring precision/recall on labeled datasets
 - Mutation testing for assessing rule coverage
 - False positive/negative characterization
+
+### Rules Iteration via LLM Feedback
+Leverage LLM analysis of real-world targets to iteratively refine rule logic:
+- Collect LLM verdicts (true positive, false positive, guard detected) from production scans
+- Identify systematic false positive patterns requiring rule refinement
+- Use feedback to tune confidence thresholds and guard detection heuristics
+- Build labeled datasets from LLM-assisted triage for regression testing
+- Track rule precision/recall trends over time across target repositories
 
 ---
 
@@ -119,6 +149,28 @@ Research challenges in analyzing crate dependencies:
 - Precision/recall on curated benchmarks
 - Analysis time vs. codebase size scaling
 - Comparison with other Rust analysis tools
+
+---
+
+## Custom LLM Training & Hosting
+
+### Organization-Specific Model Fine-Tuning
+Explore training/hosting a local LLM specialized for codebase-specific analysis:
+- Fine-tune on InfluxDB codebase, historical issues, and security advisories
+- Train on internal bug tracker data (false positives, true positives, triage decisions)
+- Incorporate domain knowledge (time-series databases, query engines, storage layers)
+- Local hosting for data privacy and reduced latency
+
+### Training Data Sources
+- Historical security issues and CVEs
+- Code review comments and PR discussions
+- Internal documentation and architecture decisions
+- Existing triage verdicts from rust-cola scans
+
+### Deployment Considerations
+- Model quantization for resource-efficient hosting
+- Inference latency vs. analysis depth trade-offs
+- Hybrid approach: local model for fast triage, cloud model for deep analysis
 
 ---
 

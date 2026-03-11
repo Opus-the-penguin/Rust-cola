@@ -138,6 +138,132 @@ Leverage LLM analysis of real-world targets to iteratively refine rule logic:
 
 ---
 
+## LLM-Augmented Vulnerability Discovery
+
+### Current State
+The LLM prompt generation currently focuses on **validation and triage** of findings produced by the rust-cola rules engine:
+- Validating true positives vs. false positives
+- Detecting guards and sanitizers
+- Exploitability analysis and severity ranking
+- Remediation recommendations
+
+The LLM acts as a verification layer but does not independently search for vulnerabilities.
+
+### Research Direction: Supplementary Vulnerability Hunting
+
+After the rules engine completes its scan and the LLM performs validation/triage, leverage the LLM's capabilities for **original vulnerability discovery**:
+
+#### 1. Post-Triage Quality Control (QC) Scan
+Add a final LLM task that asks it to independently hunt for security vulnerabilities:
+- Timing: After all triage tasks complete, when the LLM has maximum context
+- Context advantage: LLM now has access to:
+  - Raw rules engine scan results (patterns already checked)
+  - Full source code of relevant modules
+  - Code graphs and call hierarchies
+  - MIR intermediate representations
+  - Taint flow analysis results
+- Goal: Identify vulnerabilities the exhaustive rules engine may have missed
+
+#### 2. Contextual Vulnerability Discovery
+The LLM's accumulated context from prior phases enables more sophisticated analysis:
+- **Gap identification**: Rules engine covers known patterns; LLM can spot novel patterns
+- **Semantic understanding**: LLM can reason about business logic vulnerabilities
+- **Cross-cutting concerns**: Identify issues spanning multiple code regions
+- **Emergent patterns**: Spot vulnerability patterns from combinations of benign code
+
+#### 3. LLM Prompt Structure Extension
+Extend the prompt generation to include a new phase:
+```
+Phase N+1: Supplementary Vulnerability Hunt
+- Review the target code independent of prior findings
+- Apply security expertise to identify missed vulnerabilities
+- Consider vulnerability classes not covered by rules engine
+- Report any additional security concerns with evidence
+```
+
+#### 4. Feedback Loop to Rules Engine
+Vulnerabilities discovered by LLM QC scan can inform rule development:
+- New vulnerability patterns → candidate rules for future versions
+- Recurring blind spots → rule coverage gaps to address
+- Edge cases → refine existing rule sensitivity
+
+---
+
+## Unusual Code Detection Research
+
+### Motivation
+Traditional SAST tools (including rust-cola) focus on **unintentional/inadvertent vulnerabilities**—coding mistakes that create security weaknesses. However, codebases may also contain **intentional or implanted malicious code** that requires different detection approaches.
+
+### Target Scenarios
+
+#### 1. Implanted Code
+- Backdoors inserted by compromised developers or supply chain attacks
+- Malicious contributions hidden in large PRs
+- Obfuscated payloads in seemingly innocuous code
+
+#### 2. Self-Modifying Code
+- Code that alters its own behavior or environment without operator consent
+- Runtime code generation with untrusted inputs
+- Dynamic loading of unvetted external code
+
+#### 3. Supply Chain Attack Vectors
+- Build scripts (`build.rs`) with suspicious network or filesystem activity
+- Proc macros that inject unexpected code during compilation
+- Dependencies with obfuscated or minified source
+
+#### 4. Covert Data Exfiltration
+- Hidden channels for extracting sensitive data
+- Unusual network patterns (DNS tunneling, steganography)
+- Filesystem writes to unexpected locations
+
+### Detection Approaches to Research
+
+#### 1. Behavioral Anomaly Detection
+Identify code patterns that deviate from expected crate behavior:
+- Network calls in non-networking crates
+- Filesystem access outside expected directories
+- Environment variable harvesting
+- Process spawning and execution
+
+#### 2. Build-Time Analysis
+Extend analysis to `build.rs` and proc macro code:
+- Flag network requests during build (already partially covered)
+- Detect code generation from external inputs
+- Identify unexpected file system modifications
+
+#### 3. Obfuscation Detection
+Spot signs of intentional code hiding:
+- Unusual Unicode characters (homoglyphs, invisible characters)
+- Base64/encoded payloads in string literals
+- Heavily nested control flow without clear purpose
+- Variable names with entropy anomalies
+
+#### 4. Dependency Provenance
+Research integration with supply chain security:
+- Verify crate source matches published artifacts
+- Flag recently created crates with sensitive APIs
+- Detect dependency confusion/typosquatting patterns
+
+#### 5. Comparative Analysis
+Detect unusual code via baseline comparison:
+- Flag functions significantly different from crate's coding style
+- Identify outlier complexity metrics
+- Spot code copied from known malware samples
+
+### LLM Integration for Unusual Code Detection
+Leverage LLM capabilities for subjective "code smell" detection:
+- Ask LLM to identify code that "doesn't belong" in context
+- Use semantic understanding to spot suspicious intent
+- Cross-reference with known malware patterns/techniques
+
+### Relationship to Vulnerability Detection
+Unusual code detection complements vulnerability detection:
+- Vulnerabilities: Unintentional weaknesses exploitable by attackers
+- Unusual code: Intentional code that may not be "vulnerable" but poses risk
+- Both require attention but different detection methodologies
+
+---
+
 ## Benchmarking & Evaluation
 
 ### Dataset Curation
